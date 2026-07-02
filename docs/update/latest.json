@@ -1,0 +1,15 @@
+{
+	"version": "1.7.5",
+	"releasedAt": "2026-07-02",
+	"title": "Kaganga v1.7.5",
+	"installerName": "KagangaSetup.exe",
+	"installerSize": 74352491,
+	"installerUrl": "https://github.com/Argilang14/kaganga-update/releases/download/v1.7.5/KagangaSetup.exe",
+	"htmlUrl": "https://github.com/Argilang14/kaganga-update/releases/tag/v1.7.5",
+	"notes": [
+		"Perbaikan jadwal",
+		"Perbaikan kalender pendidikan",
+		"Pembaruan halaman Tentang Aplikasi",
+		"Persiapan alur cek update Kaganga"
+	]
+}

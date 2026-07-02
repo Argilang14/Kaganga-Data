@@ -8,7 +8,9 @@ import { join, dirname } from 'node:path';
 
 import { getAppVersion } from './app-info';
 
-const releasesEndpoint = 'https://api.github.com/repos/sira313/raporkumer/releases/latest';
+const defaultManifestEndpoint =
+	'https://raw.githubusercontent.com/Argilang14/kaganga-update/main/latest.json';
+const manifestEndpoint = process.env.KAGANGA_UPDATE_MANIFEST_URL || defaultManifestEndpoint;
 const userAgent = 'KagangaUpdater/1.0';
 
 const downloads = new Map<string, DownloadRecord>();
@@ -32,14 +34,11 @@ function normalizeVersion(input: string | null | undefined): string {
 	return trimmed.startsWith('v') || trimmed.startsWith('V') ? trimmed.slice(1) : trimmed;
 }
 
-function buildGithubHeaders(): HeadersInit {
-	const headers = new Headers({
-		Accept: 'application/vnd.github+json',
+function buildManifestHeaders(): HeadersInit {
+	return new Headers({
+		Accept: 'application/json',
 		'User-Agent': userAgent
 	});
-	const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
-	if (token) headers.set('Authorization', `Bearer ${token}`);
-	return headers;
 }
 
 function buildGithubDownloadHeaders(): HeadersInit {
@@ -89,6 +88,18 @@ interface GithubReleaseResponse {
 	assets: GithubReleaseAsset[];
 }
 
+interface UpdateManifest {
+	version: string;
+	releasedAt?: string;
+	installerUrl: string;
+	installerName?: string;
+	installerSize?: number;
+	title?: string;
+	notes?: string[] | string;
+	htmlUrl?: string;
+	prerelease?: boolean;
+}
+
 interface DownloadRecord {
 	id: string;
 	version: string;
@@ -108,15 +119,16 @@ interface DownloadRecord {
 type DownloadState = 'pending' | 'downloading' | 'completed' | 'failed' | 'cancelled';
 
 export async function fetchLatestRelease(): Promise<ReleaseSummary> {
-	const response = await fetch(releasesEndpoint, { headers: buildGithubHeaders() });
+	const response = await fetch(manifestEndpoint, { headers: buildManifestHeaders() });
 	if (!response.ok) {
 		const details = await response.text().catch(() => '');
 		throw new Error(
-			`Gagal mengambil data rilis GitHub (${response.status} ${response.statusText}): ${details}`.trim()
+			`Gagal mengambil data pembaruan Kaganga (${response.status} ${response.statusText}): ${details}`.trim()
 		);
 	}
 
-	const payload = (await response.json()) as GithubReleaseResponse;
+	const payload = (await response.json()) as UpdateManifest | GithubReleaseResponse;
+	if ('installerUrl' in payload) return mapManifest(payload);
 	return mapRelease(payload);
 }
 
@@ -138,6 +150,37 @@ function mapRelease(payload: GithubReleaseResponse): ReleaseSummary {
 	};
 }
 
+function mapManifest(payload: UpdateManifest): ReleaseSummary {
+	const version = normalizeVersion(payload.version);
+	const installerUrl = payload.installerUrl?.trim();
+	if (!installerUrl) {
+		throw new Error('Manifest pembaruan tidak memiliki installerUrl.');
+	}
+
+	const installerName =
+		payload.installerName?.trim() ||
+		installerUrl.split('/').filter(Boolean).at(-1) ||
+		'KagangaSetup.exe';
+	const notes = Array.isArray(payload.notes) ? payload.notes.join('\n') : (payload.notes ?? '');
+
+	return {
+		version,
+		name: payload.title?.trim() || `Kaganga v${version}`,
+		notes,
+		publishedAt: payload.releasedAt ?? '',
+		htmlUrl: payload.htmlUrl ?? installerUrl,
+		isPrerelease: Boolean(payload.prerelease),
+		assets: [
+			{
+				id: 1,
+				name: installerName,
+				size: Number.isFinite(payload.installerSize) ? Number(payload.installerSize) : 0,
+				downloadUrl: installerUrl,
+				contentType: 'application/vnd.microsoft.portable-executable'
+			}
+		]
+	};
+}
 interface StartDownloadParams {
 	version: string;
 	assetId: number;

@@ -1,0 +1,59 @@
+@import 'tailwindcss';
+@source not '../node_modules_bad_20260614221426';
+@plugin 'daisyui' {
+	exclude: rootscrollgutter;
+}
+@plugin '@tailwindcss/typography';
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@utility prose {
+	:root & {
+		:where(code):not(pre > code) {
+			@apply bg-primary text-base-100 border-none;
+		}
+	}
+}
+
+a[data-preloading] {
+	@apply cursor-wait opacity-50;
+}
+
+@layer base {
+	.modal:not([open]) {
+		display: none;
+	}
+}
+
+@layer components {
+	.select-ellipsis {
+		max-width: min(100vw, 20rem);
+	}
+
+	.select-ellipsis option {
+		max-width: min(100vw, 20rem);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	table[data-intrak-table='true'] {
+		border-collapse: collapse;
+	}
+
+	table[data-intrak-table='true'] tr[data-tail-row='true'],
+	table[data-intrak-table='true'] tr[data-tail-row='true'] > th,
+	table[data-intrak-table='true'] tr[data-tail-row='true'] > td {
+		border-width: 0 !important;
+		border-color: transparent !important;
+	}
+}
+
+.preview {
+	background-image: repeating-linear-gradient(
+		-45deg,
+		rgba(0, 0, 0, 0.09),
+		rgba(0, 0, 0, 0.09) 1px,
+		transparent 1px,
+		transparent 12px
+	);
+}

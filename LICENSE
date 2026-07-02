@@ -1,0 +1,56 @@
+Lisensi Raporkumer
+==================
+
+Dengan ini, pemegang hak cipta memberikan izin kepada siapa pun yang memperoleh
+salinan dari perangkat lunak ini dan file-file terkait, untuk menggunakan,
+menyalin, memodifikasi, menggabungkan, memublikasikan, mendistribusikan, dan/atau
+menyalin perangkat lunak ini, dengan ketentuan sebagai berikut:
+
+1. **Penggunaan Pribadi & Kontribusi**
+   Perangkat lunak ini boleh digunakan untuk keperluan pribadi, pendidikan,
+   penelitian, atau kontribusi ke repositori asli (Raporkumer).
+
+2. **Berbagi**
+   Diperbolehkan menyalin dan mendistribusikan perangkat lunak ini dalam bentuk
+   asli maupun termodifikasi, selama menyertakan pemberitahuan hak cipta ini.
+
+3. **Larangan Komersial**
+   Perangkat lunak ini dan setiap modifikasi, turunan, atau kontribusi
+   berdasarkannya TIDAK BOLEH diperjualbelikan, disewakan, dilisensikan kembali
+   secara komersial, atau digunakan untuk tujuan komersial dalam bentuk apa pun.
+   Termasuk namun tidak terbatas pada: menjual perangkat lunak itu sendiri,
+   menjual hasil modifikasi, atau memungut biaya untuk akses, unduhan,
+   atau dukungan.
+
+4. **Atribusi**
+   Setiap distribusi atau publikasi yang menggunakan perangkat lunak ini (atau
+   modifikasinya) harus mencantumkan kredit yang sesuai kepada pengembang asli
+   Raporkumer, menyertakan tautan ke repositori resmi, dan menyebutkan jika ada
+   perubahan yang dilakukan.
+
+5. **Cakupan Lisensi**
+   Lisensi ini berlaku untuk seluruh kode sumber dan aset berikut:
+   - Seluruh kode sumber dalam repositori ini
+   - `static/logo.png`
+   - `static/logo.ico`
+   - `static/favicon.ico`
+   - `static/favicon.png`
+   - `static/bipmap2.png`
+
+   Aset lain di luar daftar di atas (termasuk namun tidak terbatas pada file di
+   folder `static/` yang tidak disebutkan) tetap berada di bawah lisensi aslinya
+   masing-masing sebagaimana ditentukan oleh pemegang hak cipta yang relevan.
+
+6. **Ikon Eksternal**
+   Ikon dalam folder `src/lib/icons/` berasal dari proyek Feather Icons
+   (https://github.com/feathericons/feather) dan dirilis di bawah lisensi MIT.
+   Penggunaan ikon tersebut harus mematuhi syarat lisensi MIT, bukan lisensi ini.
+
+7. **Penafian**
+   PERANGKAT LUNAK INI DISEDIAKAN "SEBAGAIMANA ADANYA", TANPA JAMINAN APA PUN,
+   BAIK TERSURAT MAUPUN TERSIRAT. DALAM HAL APA PUN PEMEGANG HAK CIPTA TIDAK
+   BERTANGGUNG JAWAB ATAS KLAIM, KERUGIAN, ATAU KEWAJIBAN LAINNYA YANG TIMBUL
+   DARI PENGGUNAAN PERANGKAT LUNAK INI.
+
+---
+Raporkumer — Rapor Kurikulum Merdeka

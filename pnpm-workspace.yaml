@@ -1,0 +1,14 @@
+onlyBuiltDependencies:
+  - core-js
+  - es5-ext
+  - esbuild
+  - puppeteer
+
+ignoredBuiltDependencies:
+  - '@tailwindcss/oxide'
+
+allowBuilds:
+  core-js: true
+  es5-ext: true
+  esbuild: true
+  puppeteer: true

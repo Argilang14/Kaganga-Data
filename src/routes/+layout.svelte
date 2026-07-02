@@ -1,0 +1,221 @@
+<script lang="ts">
+	/* eslint-disable svelte/no-navigation-without-resolve -- layout contains many intentional href links for navigation */
+	import { afterNavigate, beforeNavigate } from '$app/navigation';
+	import { page } from '$app/state';
+	import GlobalModal from '$lib/components/global-modal.svelte';
+	import Icon from '$lib/components/icon.svelte';
+	import Menu from '$lib/components/menu.svelte';
+	import Navbar from '$lib/components/navbar.svelte';
+	import Toast, { toast } from '$lib/components/toast.svelte';
+
+	import NavIndicator from '$lib/components/nav-indicator.svelte';
+	import ScrollToTop from '$lib/components/scroll-to-top.svelte';
+	import { onMount } from 'svelte';
+	import '../app.css';
+
+	let { data, children } = $props();
+
+	const appName = 'Kaganga';
+	let stoppingServer = $state(false);
+	let loggingOut = $state(false);
+	let pageScrollContainer = $state<HTMLDivElement | null>(null);
+	const scrollSnapshotKey = 'kaganga-scroll-snapshot';
+	const isLoginPage = $derived(page.url.pathname === '/login');
+
+	type ScrollSnapshot = { path: string; top: number; left: number };
+
+	function currentScrollSnapshot(): ScrollSnapshot {
+		return {
+			path: window.location.pathname,
+			top: pageScrollContainer?.scrollTop ?? window.scrollY,
+			left: pageScrollContainer?.scrollLeft ?? window.scrollX
+		};
+	}
+
+	function saveScrollSnapshot() {
+		try {
+			sessionStorage.setItem(scrollSnapshotKey, JSON.stringify(currentScrollSnapshot()));
+		} catch (error) {
+			console.debug('Gagal menyimpan posisi scroll', error);
+		}
+	}
+
+	function restoreScrollSnapshot() {
+		try {
+			const raw = sessionStorage.getItem(scrollSnapshotKey);
+			if (!raw) return;
+			const snapshot = JSON.parse(raw) as ScrollSnapshot;
+			if (snapshot.path !== window.location.pathname) return;
+			requestAnimationFrame(() => {
+				const target = pageScrollContainer;
+				if (target) target.scrollTo({ top: snapshot.top, left: snapshot.left, behavior: 'auto' });
+				else window.scrollTo(snapshot.left, snapshot.top);
+			});
+		} catch (error) {
+			console.debug('Gagal memulihkan posisi scroll', error);
+		}
+	}
+
+	beforeNavigate(() => {
+		saveScrollSnapshot();
+	});
+
+	afterNavigate(() => {
+		restoreScrollSnapshot();
+	});
+
+	onMount(() => {
+		restoreScrollSnapshot();
+		const handleSubmit = (event: SubmitEvent) => {
+			const form = event.target instanceof HTMLFormElement ? event.target : null;
+			if (form?.method?.toLowerCase() === 'dialog') return;
+			saveScrollSnapshot();
+		};
+		document.addEventListener('submit', handleSubmit, true);
+		return () => document.removeEventListener('submit', handleSubmit, true);
+	});
+
+	async function stopServer() {
+		if (stoppingServer) return;
+		stoppingServer = true;
+
+		const showSuccess = () =>
+			toast({
+				message:
+					'Server dihentikan. Tutup jendela Kaganga ini lalu jalankan ulang bila diperlukan.',
+				type: 'info',
+				persist: true
+			});
+
+		try {
+			const response = await fetch('/api/runtime/stop', { method: 'POST', keepalive: true });
+			if (response.ok) {
+				showSuccess();
+			} else {
+				const details = await response.text().catch(() => '');
+				console.error('Gagal menghentikan server', response.status, details);
+				toast({ message: 'Gagal menghentikan server. Coba lagi.', type: 'error' });
+			}
+		} catch (error) {
+			console.warn(
+				'Permintaan stop server berakhir sebelum respons diterima. Diasumsikan berhasil.',
+				error
+			);
+			showSuccess();
+		} finally {
+			stoppingServer = false;
+		}
+	}
+
+	async function logout() {
+		if (loggingOut) return;
+		loggingOut = true;
+
+		try {
+			const response = await fetch('/logout', { method: 'POST' });
+			if (response.redirected) {
+				window.location.href = response.url;
+				return;
+			}
+
+			if (response.ok) {
+				window.location.href = '/login';
+				return;
+			}
+
+			console.error('Gagal logout', response.status, await response.text().catch(() => ''));
+			toast({ message: 'Gagal keluar. Coba lagi.', type: 'error' });
+		} catch (error) {
+			console.error('Gagal logout', error);
+			toast({ message: 'Gagal keluar. Coba lagi.', type: 'error' });
+		} finally {
+			loggingOut = false;
+		}
+	}
+</script>
+
+<svelte:head>
+	<script>
+		(function () {
+			try {
+				var stored = localStorage.getItem('dark-mode');
+				var theme;
+				if (stored === 'dark' || stored === 'light') {
+					theme = stored;
+				} else if (stored === 'true' || stored === 'false') {
+					theme = stored === 'true' ? 'dark' : 'light';
+				} else if (stored) {
+					try {
+						var parsed = JSON.parse(stored);
+						theme = parsed ? 'dark' : 'light';
+					} catch (err) {
+						theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+					}
+				} else {
+					theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+				}
+				document.documentElement.setAttribute('data-theme', theme);
+			} catch (e) {
+				console.error('failed initialize dark mode:', e);
+			}
+		})();
+	</script>
+	<title>{appName}{page.data.meta.title ? ' - ' + page.data.meta.title : ''}</title>
+</svelte:head>
+
+{#if isLoginPage}
+	<div class="bg-base-200 flex min-h-screen flex-col items-center justify-center p-6">
+		{@render children()}
+	</div>
+{:else}
+	<main class="drawer lg:drawer-open">
+		<input id="my-drawer-2" type="checkbox" class="drawer-toggle" />
+		<div class="drawer-content flex min-h-screen flex-col">
+			<Navbar {stopServer} {stoppingServer} {logout} {loggingOut} />
+
+			<div
+				class="bg-base-300 dark:bg-base-200 dark:border-base-200 border-base-300 flex flex-1 flex-col border lg:mr-2 lg:mb-2 lg:rounded-xl"
+			>
+				<div
+					bind:this={pageScrollContainer}
+					class="max-h-[calc(100vh-4.2rem)] min-h-[calc(100vh-4.2rem)] max-w-none overflow-y-auto md:max-h-[calc(100vh-4.6rem)] md:min-h-[calc(100vh-4.6rem)]"
+				>
+					<div class="m-4 flex flex-row xl:gap-4">
+						<div class="w-full max-w-7xl min-w-0 flex-1">
+							<ScrollToTop />
+							{@render children()}
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="drawer-side">
+			<label for="my-drawer-2" aria-label="close sidebar" class="drawer-overlay"></label>
+			<ul class="menu bg-base-100 text-base-content min-h-full w-70 p-4">
+				<div class="mt-16 flex items-center gap-2 pb-4 lg:mt-1">
+					{#if data.meta?.logoUrl}
+						<img class="h-8 rounded" src={data.meta.logoUrl} alt="Brand logo" />
+					{/if}
+					<a href="/"><h2 class="mb-2 text-xl font-bold">Dashboard</h2></a>
+				</div>
+
+				<Menu />
+
+				<div class="mt-4 flex flex-col gap-3">
+					<a href="/pengaturan" class="flex items-center gap-2">
+						<Icon name="gear" />
+						<h2 class="font-bold">Pengaturan</h2>
+					</a>
+					<a href="/tentang" class="flex items-center gap-2">
+						<Icon name="info" />
+						<h2 class="font-bold">Tentang Aplikasi</h2>
+					</a>
+				</div>
+			</ul>
+		</div>
+	</main>
+{/if}
+
+<Toast />
+<GlobalModal />
+<NavIndicator />

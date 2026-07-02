@@ -1,0 +1,66 @@
+node_modules
+
+# Output
+.output
+.vercel
+.netlify
+.wrangler
+/.svelte-kit
+/build
+/dist/windows
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Our custom
+/src/lib/icons/__icons.d.ts
+/data/*.sqlite3
+/data/*.sqlite3-shm
+/data/*.sqlite3-wal
+# Uploaded photos
+/data/uploads
+
+#cert
+/installer/cert
+
+# sync scripts
+/installer/scripts/ensure-columns.mjs
+/installer/scripts/fix-drizzle-indexes.mjs
+/installer/scripts/grant-admin-permissions.mjs
+/installer/scripts/migrate-installed-db.mjs
+/installer/scripts/notify-server-reload.mjs
+/installer/scripts/seed-default-admin.mjs
+/installer/scripts/start-build.mjs
+
+# csrf
+/data/csrf-origins.txt
+# Kaganga local safety
+.pnpm-store
+.svelte-kit
+build
+/dist
+/outputs
+*.log
+dev-server*.out.log
+dev-server*.err.log
+/data/*.sqlite3-*
+/data/*.backup*
+/data/*.bak
+/data/*.db
+/data/*.db-*
+backup-db-restore-check/
+data-backup*/
+static-logo-backup*/
+*.backup
+*.bak

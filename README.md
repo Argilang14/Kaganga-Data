@@ -4,7 +4,7 @@
 
 <a href='https://nodejs.org/en' target="_blank"><img alt='node.js' src='https://img.shields.io/badge/Node.JS-100000?style=for-the-badge&logo=node.js&logoColor=35C354&labelColor=000000&color=35C354'/></a> <a href='https://svelte.dev/' target="_blank"><img alt='Svelte' src='https://img.shields.io/badge/Svelte-100000?style=for-the-badge&logo=Svelte&logoColor=F45A20&labelColor=000000&color=F45A20'/></a> <a href='https://orm.drizzle.team/' target="_blank"><img alt='Drizzle' src='https://img.shields.io/badge/Drizzle_ORM-100000?style=for-the-badge&logo=Drizzle&logoColor=FAF61D&labelColor=000000&color=FAF61D'/></a> <a href='https://sqlite.org/' target="_blank"><img alt='Sqlite' src='https://img.shields.io/badge/SQLite3-100000?style=for-the-badge&logo=Sqlite&logoColor=5EA765&labelColor=000000&color=5EA765'/></a> <a href='https://tailwindcss.com/' target="_blank"><img alt='tailwindcss' src='https://img.shields.io/badge/Tailwind_CSS-100000?style=for-the-badge&logo=tailwindcss&logoColor=36DBFF&labelColor=000000&color=36DBFF'/></a> <a href='https://daisyui.com/' target="_blank"><img alt='DaisyUI' src='https://img.shields.io/badge/Daisy_UI-100000?style=for-the-badge&logo=DaisyUI&logoColor=FFEC25&labelColor=000000&color=FFEC25'/></a>
 
-Kaganga Data adalah aplikasi administrasi dan informasi data sekolah untuk rapor, absensi, jadwal, kalender pendidikan, data pegawai, data murid, dan kebutuhan sekolah terpadu.
+Kaganga Data adalah aplikasi administrasi dan informasi data sekolah untuk rapor, absensi, jadwal, kalender pendidikan, data pegawai, data murid, dan kebutuhan sekolah terpadu. yang mana saya kembangkan dari https://github.com/sira313/raporkumer
 
 Dokumentasi lengkap proyek disusun dalam bahasa Indonesia. File ini memberi ringkasan cepat untuk pengguna dan pengembang; bagian teknis dan pedoman kontribusi ada di folder `docs/`.
 
@@ -25,6 +25,7 @@ Dokumentasi lengkap proyek disusun dalam bahasa Indonesia. File ini memberi ring
 1. Kunjungi halaman rilis: https://github.com/Argilang14/Kaganga-Data/releases
 2. Unduh `KagangaSetup.exe` dan jalankan installer.
 3. Setelah terpasang, buka aplikasi dari shortcut yang tersedia.
+4. Khusus Sekolah selain Sekolah Rakyat (Sekolah Umum) saran untuk update dari sini saja: https://github.com/sira313/raporkumer karena sistem sekolah rakyat berbeda dengan sistem sekolah umum.
 
 Untuk instalasi manual Kaganga dan pengembangan Kaganga, baca [docs/DEVELOPMENT.md](https://github.com/Argilang14/Kaganga-Data/blob/main/docs/DEVELOPMENT.md).
 

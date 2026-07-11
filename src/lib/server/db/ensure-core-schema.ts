@@ -1,11 +1,7 @@
-import { randomUUID } from 'node:crypto';
-import { eq, isNull, or } from 'drizzle-orm';
-import db from './index';
-import { tableMurid } from './schema';
+import db from '$lib/server/db';
 import { ensureSchema } from './ensure-helper';
 
 const CORE = 'core';
-let coreUpgradesEnsured = false;
 
 export async function ensureCoreSchema() {
 	await ensureSchema(CORE, [
@@ -200,49 +196,36 @@ export async function ensureCoreSchema() {
 			foto TEXT,
 			wali_asuh_nama TEXT,
 			wali_asuh_nip TEXT,
-			qr_token TEXT,
 			created_at TEXT NOT NULL,
 			updated_at TEXT,
 			UNIQUE(sekolah_id, semester_id, nis)
-		)`,
-		`CREATE TABLE IF NOT EXISTS absensi (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			murid_id INTEGER NOT NULL REFERENCES murid(id) ON DELETE CASCADE,
-			waktu TEXT NOT NULL,
-			mode TEXT NOT NULL DEFAULT 'masuk',
-			metode TEXT NOT NULL DEFAULT 'qr',
-			created_at TEXT NOT NULL,
-			updated_at TEXT
-		)`,
-		`CREATE INDEX IF NOT EXISTS absensi_murid_waktu_idx ON absensi(murid_id, waktu)`
+		)`
 	]);
 
-	if (coreUpgradesEnsured) return;
-	coreUpgradesEnsured = true;
-
+	// Add tanggal_masuk column to existing semester tables (migration)
 	try {
-		await db.$client.execute('ALTER TABLE murid ADD COLUMN qr_token TEXT');
+		await db.$client.execute(`ALTER TABLE semester ADD COLUMN tanggal_masuk TEXT`);
 	} catch {
 		// column already exists
 	}
 
+	// Create user_favorites table
 	try {
+		await db.$client.execute(`
+			CREATE TABLE IF NOT EXISTS user_favorites (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				user_id INTEGER NOT NULL REFERENCES auth_user(id) ON DELETE CASCADE,
+				path TEXT NOT NULL,
+				title TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				updated_at TEXT,
+				UNIQUE(user_id, path)
+			)
+		`);
 		await db.$client.execute(
-			'CREATE UNIQUE INDEX IF NOT EXISTS murid_qr_token_unique ON murid(qr_token)'
+			`CREATE INDEX IF NOT EXISTS user_favorites_user_idx ON user_favorites(user_id)`
 		);
 	} catch {
-		// index already exists or could not be created now
-	}
-
-	try {
-		const rows = await db
-			.select({ id: tableMurid.id })
-			.from(tableMurid)
-			.where(or(isNull(tableMurid.qrToken), eq(tableMurid.qrToken, '')));
-		for (const row of rows) {
-			await db.update(tableMurid).set({ qrToken: randomUUID() }).where(eq(tableMurid.id, row.id));
-		}
-	} catch (err) {
-		console.warn('[ensure-core-schema] failed to backfill murid qr_token', err);
+		// table already exists
 	}
 }

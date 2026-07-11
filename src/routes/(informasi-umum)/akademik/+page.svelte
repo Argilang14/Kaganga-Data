@@ -1,7 +1,8 @@
-﻿<script lang="ts">
+<script lang="ts">
 	import { resolve } from '$app/paths';
 	import FormEnhance from '$lib/components/form-enhance.svelte';
 	import Icon from '$lib/components/icon.svelte';
+	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
 
 	type SekolahRow = typeof import('$lib/server/db/schema').tableSekolah.$inferSelect;
@@ -26,12 +27,20 @@
 		genapId?: number;
 		genap?: string | null;
 	};
+	const tanggalMasuk = data.tanggalMasuk as {
+		ganjilId?: number;
+		ganjil?: string | null;
+		genapId?: number;
+		genap?: string | null;
+	};
 
 	let selectedSekolahId = $derived(activeSekolahId ? String(activeSekolahId) : '');
 	let selectedTahunAjaranId = $state(activeTahunAjaranId ? String(activeTahunAjaranId) : '');
 	let selectedSemesterId = $state(activeSemesterId ? String(activeSemesterId) : '');
 	let tanggalRaporGanjil = $state(tanggalBagiRaport.ganjil ?? '');
 	let tanggalRaporGenap = $state(tanggalBagiRaport.genap ?? '');
+	let tanggalMasukGanjil = $state(tanggalMasuk.ganjil ?? '');
+	let tanggalMasukGenap = $state(tanggalMasuk.genap ?? '');
 
 	let tahunAjaranOptions = $state(tahunAjaranList);
 	const disabledSekolahActions = sekolahList.length === 0;
@@ -42,12 +51,9 @@
 	let selectedSemesterRecord = $state<SemesterRow | null>(null);
 	let disabledSave = $state(false);
 	const disableTanggalInputs = $derived(!semesterGanjil && !semesterGenap);
-	const disableTanggalGanjil = $derived(
-		!selectedSemesterRecord || selectedSemesterRecord.tipe !== 'ganjil'
-	);
-	const disableTanggalGenap = $derived(
-		!selectedSemesterRecord || selectedSemesterRecord.tipe !== 'genap'
-	);
+	const selectedTipe = $derived(selectedSemesterRecord?.tipe ?? null);
+	const showGanjil = $derived(!selectedTipe || selectedTipe === 'ganjil');
+	const showGenap = $derived(!selectedTipe || selectedTipe === 'genap');
 	const canCopySemester = $derived.by(() => {
 		const target = selectedSemesterRecord;
 		if (!target) return false;
@@ -99,6 +105,7 @@
 		const currentId = semesterGanjil?.id ?? null;
 		if (currentId !== prevGanjilId) {
 			tanggalRaporGanjil = semesterGanjil?.tanggalBagiRaport ?? '';
+			tanggalMasukGanjil = semesterGanjil?.tanggalMasuk ?? '';
 			prevGanjilId = currentId;
 		}
 	});
@@ -108,6 +115,7 @@
 		const currentId = semesterGenap?.id ?? null;
 		if (currentId !== prevGenapId) {
 			tanggalRaporGenap = semesterGenap?.tanggalBagiRaport ?? '';
+			tanggalMasukGenap = semesterGenap?.tanggalMasuk ?? '';
 			prevGenapId = currentId;
 		}
 	});
@@ -121,8 +129,10 @@
 		semesterId: activeSemesterId ? String(activeSemesterId) : '',
 		'ganjil.id': tanggalBagiRaport.ganjilId ? String(tanggalBagiRaport.ganjilId) : '',
 		'ganjil.tanggalBagiRaport': tanggalBagiRaport.ganjil ?? '',
+		'ganjil.tanggalMasuk': tanggalMasuk.ganjil ?? '',
 		'genap.id': tanggalBagiRaport.genapId ? String(tanggalBagiRaport.genapId) : '',
-		'genap.tanggalBagiRaport': tanggalBagiRaport.genap ?? ''
+		'genap.tanggalBagiRaport': tanggalBagiRaport.genap ?? '',
+		'genap.tanggalMasuk': tanggalMasuk.genap ?? ''
 	});
 
 	type AcademicPayload = {
@@ -131,6 +141,12 @@
 		activeTahunAjaranId?: number | null;
 		activeSemesterId?: number | null;
 		tanggalBagiRaport?: {
+			ganjilId?: number;
+			ganjil?: string | null;
+			genapId?: number;
+			genap?: string | null;
+		};
+		tanggalMasuk?: {
 			ganjilId?: number;
 			ganjil?: string | null;
 			genapId?: number;
@@ -166,16 +182,29 @@
 			genap: tanggalRaporGenap || null
 		};
 
+		const masuk = data.tanggalMasuk ?? {
+			ganjilId: formInitPengaturan['ganjil.id']
+				? Number(formInitPengaturan['ganjil.id'])
+				: undefined,
+			ganjil: tanggalMasukGanjil || null,
+			genapId: formInitPengaturan['genap.id'] ? Number(formInitPengaturan['genap.id']) : undefined,
+			genap: tanggalMasukGenap || null
+		};
+
 		tanggalRaporGanjil = rapor.ganjil ?? '';
 		tanggalRaporGenap = rapor.genap ?? '';
+		tanggalMasukGanjil = masuk.ganjil ?? '';
+		tanggalMasukGenap = masuk.genap ?? '';
 
 		formInitPengaturan = {
 			tahunAjaranId: selectedTahunAjaranId,
 			semesterId: selectedSemesterId,
 			'ganjil.id': rapor.ganjilId ? String(rapor.ganjilId) : '',
 			'ganjil.tanggalBagiRaport': rapor.ganjil ?? '',
+			'ganjil.tanggalMasuk': masuk.ganjil ?? '',
 			'genap.id': rapor.genapId ? String(rapor.genapId) : '',
-			'genap.tanggalBagiRaport': rapor.genap ?? ''
+			'genap.tanggalBagiRaport': rapor.genap ?? '',
+			'genap.tanggalMasuk': masuk.genap ?? ''
 		};
 	};
 
@@ -199,15 +228,76 @@
 		if (!activeSekolahId || !selectedSekolahId) return false;
 		return String(activeSekolahId) !== selectedSekolahId;
 	});
+
+	import { showModal } from '$lib/components/global-modal.svelte';
+	import PresensiSettingsModal from '$lib/components/presensi/presensi-settings-modal.svelte';
+
+	type PresensiSettingRow =
+		typeof import('$lib/server/db/schema').tablePresensiSettings.$inferSelect;
+	const presensiSettingsList = $derived(data.presensiSettingsList as PresensiSettingRow[]);
+	const presensiTahunSet = $derived(new Set(presensiSettingsList.map((p) => p.tahunAjaranId)));
+
+	const selectedTahunAjaranNum = $derived(Number(selectedTahunAjaranId));
+	const hasPresensiSettings = $derived(
+		Number.isFinite(selectedTahunAjaranNum) && selectedTahunAjaranNum > 0
+			? presensiTahunSet.has(selectedTahunAjaranNum)
+			: false
+	);
+
+	function openPresensiSettings() {
+		const tahunId = Number(selectedTahunAjaranId);
+		if (!tahunId) return;
+		const existing = presensiSettingsList.find((p) => p.tahunAjaranId === tahunId) ?? null;
+		let actions: { submit: () => Promise<void>; cancel: () => void };
+		showModal({
+			title: 'Pengaturan Presensi',
+			body: PresensiSettingsModal,
+			bodyProps: {
+				tahunAjaranId: tahunId,
+				jamMasuk: existing?.jamMasuk ?? '07:30',
+				jamPulang: existing?.jamPulang ?? '15:00',
+				hariSekolah: existing?.hariSekolah ?? 6,
+				tipePresensi: existing?.tipePresensi ?? 'masuk_pulang',
+				jenisPresensi: existing?.jenisPresensi ?? 'wali_kelas_saja',
+				liburNasional: existing?.liburNasional ?? '[]',
+				liburSemester: existing?.liburSemester ?? '[]',
+				onAction: (a: { submit: () => Promise<void>; cancel: () => void }) => {
+					actions = a;
+				}
+			},
+			onPositive: {
+				label: 'Simpan',
+				action: () => actions.submit()
+			},
+			onNegative: {
+				label: 'Batal'
+			},
+			dismissible: false
+		});
+	}
+
+	let presensiBtnClass = $derived(
+		hasPresensiSettings ? 'btn-success shadow-none' : 'btn-error shadow-none'
+	);
+
+	const presensiJadwalReady = $derived(
+		hasPresensiSettings && !!selectedSemesterRecord?.tanggalMasuk
+	);
+
+	function openJadwalBell() {
+		goto(resolve('/akademik/jadwal-pelajaran'));
+	}
+
+	const jadwalBellDisabled = $derived(!presensiJadwalReady || !canRaporManage);
 </script>
 
 <div class="grid grid-cols-1 gap-6">
 	<section class="card bg-base-100 rounded-lg border border-none p-6 shadow-md">
 		<div class="space-y-6">
 			<header>
-				<h1 class="text-2xl font-bold">Pengaturan Data Rapor</h1>
+				<h1 class="text-2xl font-bold">Manajemen Akademik</h1>
 				<p class="text-base-content/70 text-sm">
-					Kelola sekolah aktif, tahun ajaran, semester, dan tanggal bagi rapor.
+					Kelola sekolah aktif, tahun ajaran, semester, presensi, dan jadwal pelajaran.
 				</p>
 			</header>
 
@@ -216,22 +306,24 @@
 				<FormEnhance action="?/switch" init={formInitSekolah} onsuccess={handleSwitchSuccess}>
 					{#snippet children({ submitting })}
 						<div class="flex flex-row">
-							<select
-								class="select bg-base-200 dark:bg-base-300 w-full rounded-r-none dark:border-none"
-								name="sekolahId"
-								bind:value={selectedSekolahId}
-								required
-								disabled={disabledSekolahActions || submitting || !canRaporManage}
-							>
-								<option value="" disabled>Pilih Sekolah</option>
-								{#if sekolahList.length === 0}
-									<option disabled value="">Belum ada data sekolah</option>
-								{:else}
-									{#each sekolahList as item (item.id)}
-										<option value={String(item.id)}>{item.nama}</option>
-									{/each}
-								{/if}
-							</select>
+							<div class="min-w-0 flex-1 overflow-hidden">
+								<select
+									class="select bg-base-200 dark:bg-base-300 w-full truncate rounded-r-none dark:border-none"
+									name="sekolahId"
+									bind:value={selectedSekolahId}
+									required
+									disabled={disabledSekolahActions || submitting || !canRaporManage}
+								>
+									<option value="" disabled>Pilih Sekolah</option>
+									{#if sekolahList.length === 0}
+										<option disabled value="">Belum ada data sekolah</option>
+									{:else}
+										{#each sekolahList as item (item.id)}
+											<option value={String(item.id)}>{item.nama}</option>
+										{/each}
+									{/if}
+								</select>
+							</div>
 							<button
 								class="btn btn-primary rounded-l-none shadow-none"
 								type="submit"
@@ -288,7 +380,7 @@
 						<fieldset class="fieldset">
 							<legend class="fieldset-legend">Tahun Ajaran</legend>
 							<select
-								class="select bg-base-200 dark:bg-base-300 w-full dark:border-none"
+								class="select bg-base-200 dark:bg-base-300 w-full truncate dark:border-none"
 								name="tahunAjaranId"
 								bind:value={selectedTahunAjaranId}
 								required
@@ -307,7 +399,7 @@
 						<fieldset class="fieldset">
 							<legend class="fieldset-legend">Semester</legend>
 							<select
-								class="select bg-base-200 dark:bg-base-300 w-full dark:border-none"
+								class="select bg-base-200 dark:bg-base-300 w-full truncate dark:border-none"
 								name="semesterId"
 								bind:value={selectedSemesterId}
 								required
@@ -323,39 +415,77 @@
 							</select>
 						</fieldset>
 
-						<fieldset class="fieldset">
-							<legend class="fieldset-legend">Tanggal bagi rapor semester ganjil</legend>
-							{#if disableTanggalGanjil}
-								<input type="hidden" name="ganjil.tanggalBagiRaport" value={tanggalRaporGanjil} />
-							{/if}
-							<input
-								class="input bg-base-200 dark:bg-base-300 w-full dark:border-none"
-								type="date"
-								name="ganjil.tanggalBagiRaport"
-								bind:value={tanggalRaporGanjil}
-								disabled={disableTanggalGanjil || !canRaporManage}
-							/>
-							<p class="text-base-content/70 mt-2 text-xs">
-								Tanggal ini akan muncul di catatan rapor semester ganjil.
-							</p>
-						</fieldset>
+						{#if showGanjil}
+							<fieldset class="fieldset">
+								<legend class="fieldset-legend">Tanggal masuk semester ganjil</legend>
+								<input
+									class="input bg-base-200 dark:bg-base-300 w-full dark:border-none"
+									type="date"
+									name="ganjil.tanggalMasuk"
+									bind:value={tanggalMasukGanjil}
+									disabled={!canRaporManage}
+								/>
+								<p class="text-base-content/70 mt-2 text-xs">
+									Tanggal ini akan menjadi acuan mulai presensi semester ganjil.
+								</p>
+							</fieldset>
+						{:else}
+							<input type="hidden" name="ganjil.tanggalMasuk" value={tanggalMasukGanjil} />
+						{/if}
 
-						<fieldset class="fieldset">
-							<legend class="fieldset-legend">Tanggal bagi rapor semester genap</legend>
-							{#if disableTanggalGenap}
-								<input type="hidden" name="genap.tanggalBagiRaport" value={tanggalRaporGenap} />
-							{/if}
-							<input
-								class="input bg-base-200 dark:bg-base-300 w-full dark:border-none"
-								type="date"
-								name="genap.tanggalBagiRaport"
-								bind:value={tanggalRaporGenap}
-								disabled={disableTanggalGenap || !canRaporManage}
-							/>
-							<p class="text-base-content/70 mt-2 text-xs">
-								Tanggal ini akan muncul di catatan rapor semester genap.
-							</p>
-						</fieldset>
+						{#if showGenap}
+							<fieldset class="fieldset">
+								<legend class="fieldset-legend">Tanggal masuk semester genap</legend>
+								<input
+									class="input bg-base-200 dark:bg-base-300 w-full dark:border-none"
+									type="date"
+									name="genap.tanggalMasuk"
+									bind:value={tanggalMasukGenap}
+									disabled={!canRaporManage}
+								/>
+								<p class="text-base-content/70 mt-2 text-xs">
+									Tanggal ini akan menjadi acuan mulai presensi semester genap.
+								</p>
+							</fieldset>
+						{:else}
+							<input type="hidden" name="genap.tanggalMasuk" value={tanggalMasukGenap} />
+						{/if}
+
+						{#if showGanjil}
+							<fieldset class="fieldset">
+								<legend class="fieldset-legend">Tanggal bagi rapor semester ganjil</legend>
+								<input
+									class="input bg-base-200 dark:bg-base-300 w-full dark:border-none"
+									type="date"
+									name="ganjil.tanggalBagiRaport"
+									bind:value={tanggalRaporGanjil}
+									disabled={!canRaporManage}
+								/>
+								<p class="text-base-content/70 mt-2 text-xs">
+									Tanggal ini akan muncul di catatan rapor semester ganjil.
+								</p>
+							</fieldset>
+						{:else}
+							<input type="hidden" name="ganjil.tanggalBagiRaport" value={tanggalRaporGanjil} />
+						{/if}
+
+						{#if showGenap}
+							<fieldset class="fieldset">
+								<legend class="fieldset-legend">Tanggal bagi rapor semester genap</legend>
+								<input
+									class="input bg-base-200 dark:bg-base-300 w-full dark:border-none"
+									type="date"
+									name="genap.tanggalBagiRaport"
+									bind:value={tanggalRaporGenap}
+									disabled={!canRaporManage}
+								/>
+								<p class="text-base-content/70 mt-2 text-xs">
+									Tanggal ini akan muncul di catatan rapor semester genap.
+								</p>
+							</fieldset>
+						{:else}
+							<input type="hidden" name="genap.tanggalBagiRaport" value={tanggalRaporGenap} />
+						{/if}
 
 						<fieldset class="fieldset md:col-span-2">
 							<legend class="fieldset-legend">Import data siswa dan kelas</legend>
@@ -416,21 +546,49 @@
 					</div>
 
 					<div class="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-between">
+						<div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+							<button
+								class="btn btn-soft shadow-none max-sm:w-full"
+								type="submit"
+								formaction="?/copy-semester"
+								disabled={submitting || !canCopySemester || !canRaporManage}
+								aria-disabled={!canRaporManage}
+								title={!canRaporManage
+									? 'Anda tidak memiliki izin untuk menyalin semester'
+									: (copyButtonTooltip ?? undefined)}
+							>
+								<Icon name="copy" />
+								Salin Semester Ganjil
+							</button>
+							<button
+								type="button"
+								class="btn {presensiBtnClass} max-sm:w-full"
+								onclick={openPresensiSettings}
+								disabled={!selectedTahunAjaranId || !canRaporManage}
+								aria-disabled={!canRaporManage}
+								title={!canRaporManage ? 'Anda tidak memiliki izin untuk mengatur presensi' : ''}
+							>
+								<Icon name="gear" />
+								Pengaturan Presensi
+							</button>
+							<button
+								type="button"
+								class="btn btn-soft shadow-none max-sm:w-full"
+								onclick={openJadwalBell}
+								disabled={jadwalBellDisabled}
+								aria-disabled={jadwalBellDisabled}
+								title={!presensiJadwalReady
+									? 'Atur presensi dan tanggal masuk semester terlebih dahulu'
+									: !canRaporManage
+										? 'Anda tidak memiliki izin'
+										: ''}
+							>
+								<Icon name="table" />
+								Jadwal dan Bell
+							</button>
+						</div>
 						<button
-							class="btn btn-soft shadow-none"
-							type="submit"
-							formaction="?/copy-semester"
-							disabled={submitting || !canCopySemester || !canRaporManage}
-							aria-disabled={!canRaporManage}
-							title={!canRaporManage
-								? 'Anda tidak memiliki izin untuk menyalin semester'
-								: (copyButtonTooltip ?? undefined)}
-						>
-							<Icon name="copy" />
-							Salin Semester Ganjil
-						</button>
-						<button
-							class="btn btn-primary shadow-none"
+							class="btn btn-primary shadow-none max-sm:w-full"
 							type="submit"
 							disabled={submitting || invalid || disabledSave || !canRaporManage}
 							aria-disabled={!canRaporManage}

@@ -1,10 +1,11 @@
-﻿<script lang="ts">
+<script lang="ts">
 	/* eslint-disable svelte/no-navigation-without-resolve -- layout contains many intentional href links for navigation */
 	import { page } from '$app/state';
 	import GlobalModal from '$lib/components/global-modal.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import Menu from '$lib/components/menu.svelte';
 	import Navbar from '$lib/components/navbar.svelte';
+	import FavoriteMenusSidebar from '$lib/components/dashboard/favorite-menus-sidebar.svelte';
 	import Toast, { toast } from '$lib/components/toast.svelte';
 
 	import NavIndicator from '$lib/components/nav-indicator.svelte';
@@ -164,6 +165,7 @@
 				</div>
 
 				<Menu />
+				<FavoriteMenusSidebar />
 
 				<div class="mt-4 flex flex-col gap-3">
 					<a href="/pengaturan" class="flex items-center gap-2">

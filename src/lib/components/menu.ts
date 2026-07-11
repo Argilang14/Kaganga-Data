@@ -12,12 +12,43 @@ export const appMenuItems: MenuItem[] = [
 				path: '/rapor'
 			},
 			{
+				title: 'Data Pegawai',
+				path: '/pegawai'
+			},
+			{
 				title: 'Data Kelas',
 				path: '/kelas'
 			},
 			{
 				title: 'Data Murid',
 				path: '/murid'
+			},
+			{
+				title: 'Riwayat Pertumbuhan',
+				path: '/riwayat-pertumbuhan'
+			}
+		]
+	},
+	{
+		title: 'Kurikulum',
+		icon: 'calendar',
+		tags: ['jadwal', 'bell', 'akademik', 'jadwal pelajaran'],
+		subMenu: [
+			{
+				title: 'Jadwal Pelajaran',
+				path: '/rapor/jadwal-pelajaran'
+			},
+			{
+				title: 'Pengaturan Jadwal',
+				path: '/jadwal/pengaturan'
+			},
+			{
+				title: 'Kalender Pendidikan',
+				path: '/jadwal/kalender'
+			},
+			{
+				title: 'Data Mata Pelajaran',
+				path: '/data-mata-pelajaran'
 			}
 		]
 	},
@@ -90,8 +121,16 @@ export const appMenuItems: MenuItem[] = [
 				path: '/catatan-wali-kelas'
 			},
 			{
-				title: 'Rekap Nilai',
+				title: 'Catatan Wali Asrama',
+				path: '/catatan-wali-asrama'
+			},
+			{
+				title: 'Rekap Nilai Akademik',
 				path: '/nilai-akhir'
+			},
+			{
+				title: 'Rekap Nilai Keasramaan',
+				path: '/rekap-nilai-asrama'
 			},
 			{
 				title: 'Keputusan',
@@ -105,5 +144,11 @@ export const appMenuItems: MenuItem[] = [
 		title: 'Cetak Dokumen',
 		icon: 'print',
 		path: '/cetak'
+	},
+	{
+		title: 'Cetak Dokumen SR',
+		icon: 'print',
+		path: '/cetak?sr=1'
 	}
 ];
+

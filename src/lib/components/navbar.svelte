@@ -1,12 +1,12 @@
-<script lang="ts">
+﻿<script lang="ts">
 	/* eslint-disable svelte/no-navigation-without-resolve */
 	import { page } from '$app/state';
 	import DarkMode from '$lib/components/dark-mode.svelte';
 	import Icon from '$lib/components/icon.svelte';
-	import TasksModal from '$lib/components/modal-tasks.svelte';
+	import Task from '$lib/components/tasks.svelte';
 	import { toast } from '$lib/components/toast.svelte';
 	import { showModal } from '$lib/components/global-modal.svelte';
-	import type { Component } from 'svelte';
+	import { onMount, type Component } from 'svelte';
 
 	type NavbarProps = {
 		stopServer?: () => void;
@@ -29,8 +29,9 @@
 		logout = () => {},
 		loggingOut = false
 	}: NavbarProps = $props();
-
-	let tasksModalRef: { open: () => void } | null = null;
+	let showTasksPopup = $state(false);
+	let taskPopupRef = $state<HTMLDivElement | null>(null);
+	let taskButtonRef = $state<HTMLButtonElement | null>(null);
 	const daftarKelas = $derived(page.data.daftarKelas ?? []);
 	const kelasAktif = $derived(page.data.kelasAktif ?? null);
 	const user = $derived(page.data.user ?? null);
@@ -112,7 +113,22 @@
 			ContentPage: page.default as Component
 		};
 	}
+	function toggleTasksPopup() {
+		showTasksPopup = !showTasksPopup;
+	}
 
+	onMount(() => {
+		const handlePointerDown = (event: PointerEvent) => {
+			if (!showTasksPopup) return;
+			const target = event.target as Node | null;
+			if (!target) return;
+			if (taskPopupRef?.contains(target) || taskButtonRef?.contains(target)) return;
+			showTasksPopup = false;
+		};
+
+		document.addEventListener('pointerdown', handlePointerDown, true);
+		return () => document.removeEventListener('pointerdown', handlePointerDown, true);
+	});
 	async function showHelp() {
 		const pathname = page.url.pathname.replace(/\/+$/, '') || '/';
 		const fileName = resolveHelpFile(pathname);
@@ -144,18 +160,31 @@
 	<span class="mx-2 flex-1 truncate px-2 text-lg font-bold">{page.data.meta?.title || ''}</span>
 	<div class="ml-auto flex-none">
 		<ul class="flex items-center px-1">
-			<!-- tasks modal for mobile -->
-			<li>
+			<!-- Daftar Tugas -->
+			<li class="relative">
 				<button
-					class="btn btn-ghost btn-circle shadow-none xl:hidden"
+					bind:this={taskButtonRef}
+					class="btn btn-ghost btn-circle shadow-none"
+					class:btn-active={showTasksPopup}
 					aria-label="Daftar Tugas"
+					aria-expanded={showTasksPopup}
 					title="Daftar Tugas"
-					onclick={() => tasksModalRef?.open()}
+					onclick={toggleTasksPopup}
 				>
-					<Icon name="check" class="text-lg" />
+					<span class="text-xl">
+						<Icon name="check" />
+					</span>
 				</button>
-			</li>
 
+				{#if showTasksPopup}
+					<div
+						bind:this={taskPopupRef}
+						class="bg-base-100 border-base-300 absolute top-full right-0 z-20 mt-3 w-[min(92vw,24rem)] rounded-xl border p-0 shadow-xl"
+					>
+						<Task variant="popup" />
+					</div>
+				{/if}
+			</li>
 			<!-- Dark Mode -->
 			<li>
 				<DarkMode />
@@ -291,6 +320,3 @@
 		</ul>
 	</div>
 </div>
-
-<!-- Tempel instance modal di bawah navbar dan bind ref -->
-<TasksModal bind:this={tasksModalRef} />

@@ -119,8 +119,9 @@ function resolveRedirectTarget(value: string | null) {
 }
 
 const authGuard: Handle = async ({ event, resolve }) => {
+	await ensureCoreSchema();
+
 	if (!ensureDefaultAdminResolved) {
-		await ensureCoreSchema();
 		await ensureDefaultAdmin();
 		ensureDefaultAdminResolved = true;
 	}

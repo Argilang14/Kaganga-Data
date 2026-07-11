@@ -64,7 +64,8 @@ export const GET = (async ({ locals, params }) => {
 		pdfBuffer = await generatePDF(
 			docType,
 			data as unknown as Record<string, unknown>,
-			stored.template
+			stored.template,
+		stored.variant ?? 'default'
 		);
 	} catch (e) {
 		console.error('PDF generation failed:', e);
@@ -77,3 +78,4 @@ export const GET = (async ({ locals, params }) => {
 		}
 	});
 }) satisfies RequestHandler;
+

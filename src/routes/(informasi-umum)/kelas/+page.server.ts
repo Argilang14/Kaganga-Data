@@ -1,3 +1,4 @@
+import { ensureKelasDependenciesSchema } from '$lib/server/db/ensure-kelas-dependencies';
 import db from '$lib/server/db';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import {
@@ -18,8 +19,10 @@ import {
 import { tableAuthUser } from '$lib/server/db/schema.js';
 import { fail } from '@sveltejs/kit';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import type { Actions, PageServerLoad } from './$types';
 
-export async function load({ depends, locals }) {
+export const load: PageServerLoad = async ({ depends, locals }) => {
+	await ensureKelasDependenciesSchema();
 	depends('app:kelas');
 	const sekolahId = locals.sekolah?.id ?? null;
 
@@ -104,10 +107,11 @@ export async function load({ depends, locals }) {
 	}));
 
 	return { daftarKelas: kelasList, academicContext };
-}
+};
 
-export const actions = {
+export const actions: Actions = {
 	async delete({ request, locals }) {
+		await ensureKelasDependenciesSchema();
 		const formData = await request.formData();
 		const kelasId = formData.get('id')?.toString();
 		if (!kelasId) {

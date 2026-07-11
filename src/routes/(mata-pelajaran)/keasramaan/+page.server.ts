@@ -1,5 +1,10 @@
-import db from '$lib/server/db';
-import { tableKeasramaan, tableKeasramaanIndikator, tableKeasramaanTujuan } from '$lib/server/db/schema';
+﻿import db from '$lib/server/db';
+import { ensureKeasramaanSchema } from '$lib/server/db/ensure-keasramaan';
+import {
+	tableKeasramaan,
+	tableKeasramaanIndikator,
+	tableKeasramaanTujuan
+} from '$lib/server/db/schema';
 import { redirect, fail } from '@sveltejs/kit';
 import { and, asc, eq } from 'drizzle-orm';
 import { readBufferToAoA } from '$lib/utils/excel.js';
@@ -37,6 +42,7 @@ const MAX_IMPORT_FILE_SIZE = 2 * 1024 * 1024; // 2MB
 
 export async function load({ depends, parent }) {
 	depends('app:keasramaan');
+	await ensureKeasramaanSchema();
 	const { kelasAktif, user } = await parent();
 
 	if (!kelasAktif?.id) {
@@ -76,6 +82,7 @@ function canManageKeasramaan(user: unknown): boolean {
 
 export const actions = {
 	async import_matev({ request, cookies, locals }) {
+		await ensureKeasramaanSchema();
 		if (!canManageKeasramaan(locals.user)) {
 			return fail(403, { fail: 'Anda tidak memiliki izin' });
 		}

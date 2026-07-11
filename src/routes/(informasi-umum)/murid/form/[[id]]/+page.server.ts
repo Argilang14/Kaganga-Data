@@ -1,17 +1,22 @@
-import fs from 'node:fs/promises';
+﻿import fs from 'node:fs/promises';
 import path from 'node:path';
 import db from '$lib/server/db/index.js';
+import { ensureMuridWaliAsramaSchema } from '$lib/server/db/ensure-murid-wali-asrama';
 import { tableAlamat, tableKelas, tableMurid, tableWaliMurid } from '$lib/server/db/schema.js';
 import { unflattenFormData } from '$lib/utils.js';
-import { error, redirect } from '@sveltejs/kit';
-import { eq } from 'drizzle-orm';
+import { error, fail, redirect } from '@sveltejs/kit';
+import { and, eq, ne } from 'drizzle-orm';
 import { isAuthorizedUser } from '../../../../pengguna/permissions';
+import type { Actions, PageServerLoad } from './$types';
 
-export async function load({ params, locals }) {
-	// Allow wali_kelas and wali_asuh to access student forms, or users with kelas_manage permission
+export const load: PageServerLoad = async ({ params, locals }) => {
+	await ensureMuridWaliAsramaSchema();
+
+	// Allow homeroom/full users to manage student data; wali_asrama gets limited edit access.
 	if (
 		locals.user?.type !== 'wali_kelas' &&
 		locals.user?.type !== 'wali_asuh' &&
+		locals.user?.type !== 'wali_asrama' &&
 		!isAuthorizedUser(['kelas_manage'], locals.user)
 	) {
 		redirect(303, '/forbidden?required=kelas_manage');
@@ -26,14 +31,17 @@ export async function load({ params, locals }) {
 	});
 	if (!murid) error(404, `Data murid tidak ditemukan`);
 	return { murid, meta };
-}
+};
 
-export const actions = {
+export const actions: Actions = {
 	async save({ locals, request, params }) {
-		// Allow wali_kelas and wali_asuh to save student forms, or users with kelas_manage permission
+		await ensureMuridWaliAsramaSchema();
+
+		// Allow homeroom/full users to manage student data; wali_asrama gets limited edit access.
 		if (
 			locals.user?.type !== 'wali_kelas' &&
 			locals.user?.type !== 'wali_asuh' &&
+			locals.user?.type !== 'wali_asrama' &&
 			!isAuthorizedUser(['kelas_manage'], locals.user)
 		) {
 			redirect(303, '/forbidden?required=kelas_manage');
@@ -42,6 +50,7 @@ export const actions = {
 		const formData = await request.formData();
 		const uploadedFile = formData.get('foto') as File | null;
 		const formMurid = unflattenFormData<Murid>(formData);
+		const isLimitedWaliAsramaEdit = locals.user?.type === 'wali_asrama';
 
 		function uploadsDir() {
 			const envPhoto = process.env.photo || 'file:./data/uploads';
@@ -94,6 +103,42 @@ export const actions = {
 			}
 		}
 		formMurid.sekolahId = locals.sekolah!.id;
+
+		if (isLimitedWaliAsramaEdit) {
+			if (!params.id) {
+				error(403, 'Wali Asrama hanya dapat mengubah data wali pada murid yang sudah ada');
+			}
+
+			const murid = await db.query.tableMurid.findFirst({
+				where: eq(tableMurid.id, +params.id),
+				columns: { id: true, sekolahId: true, foto: true }
+			});
+			if (!murid || murid.sekolahId !== locals.sekolah!.id) {
+				error(404, 'Data murid tidak ditemukan');
+			}
+
+			await db
+				.update(tableMurid)
+				.set({
+					waliAsramaNama: formMurid.waliAsramaNama ?? null,
+					waliAsramaNip: formMurid.waliAsramaNip ?? null,
+					waliAsuhNama: formMurid.waliAsuhNama ?? null,
+					waliAsuhNip: formMurid.waliAsuhNip ?? null,
+					updatedAt: new Date().toISOString()
+				})
+				.where(eq(tableMurid.id, +params.id));
+
+			return {
+				message: `Data wali asrama dan wali asuh berhasil disimpan`,
+				id: murid.id,
+				foto: murid.foto ?? null,
+				waliAsramaNama: formMurid.waliAsramaNama ?? null,
+				waliAsramaNip: formMurid.waliAsramaNip ?? null,
+				waliAsuhNama: formMurid.waliAsuhNama ?? null,
+				waliAsuhNip: formMurid.waliAsuhNip ?? null
+			};
+		}
+
 		if (!formMurid.kelasId) {
 			error(400, 'Kelas harus dipilih');
 		}
@@ -108,6 +153,32 @@ export const actions = {
 		}
 
 		formMurid.semesterId = kelas.semesterId;
+
+		const nis = String(formMurid.nis ?? '').trim();
+		if (!nis) {
+			return fail(400, { fail: 'NIS wajib diisi.' });
+		}
+
+		const duplicateNis = await db.query.tableMurid.findFirst({
+			columns: { id: true, nama: true },
+			where: params.id
+				? and(
+						eq(tableMurid.sekolahId, formMurid.sekolahId),
+						eq(tableMurid.semesterId, formMurid.semesterId),
+						eq(tableMurid.nis, nis),
+						ne(tableMurid.id, +params.id)
+					)
+				: and(
+						eq(tableMurid.sekolahId, formMurid.sekolahId),
+						eq(tableMurid.semesterId, formMurid.semesterId),
+						eq(tableMurid.nis, nis)
+					)
+		});
+		if (duplicateNis) {
+			return fail(400, {
+				fail: `NIS ${nis} sudah digunakan oleh ${duplicateNis.nama} pada semester kelas yang dipilih. Gunakan NIS yang berbeda atau edit data murid yang sudah ada.`
+			});
+		}
 
 		await db.transaction(async (db) => {
 			if (params.id) {
@@ -218,6 +289,8 @@ export const actions = {
 			message: `Data murid berhasil disimpan`,
 			id: formMurid.id,
 			foto: formMurid.foto ?? null,
+			waliAsramaNama: formMurid.waliAsramaNama ?? null,
+			waliAsramaNip: formMurid.waliAsramaNip ?? null,
 			waliAsuhNama: formMurid.waliAsuhNama ?? null,
 			waliAsuhNip: formMurid.waliAsuhNip ?? null
 		};

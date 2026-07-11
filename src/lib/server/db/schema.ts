@@ -19,7 +19,7 @@ export const tableAuthUser = sqliteTable(
 		passwordUpdatedAt: text(),
 		permissions: text({ mode: 'json' }).notNull().default('[]').$type<UserPermission[]>(),
 		// tipe user: admin (penuh), wali_kelas (terbatas ke kelas_id), wali_asuh (terbatas ke keasramaan), atau user (default/other)
-		type: text({ enum: ['admin', 'wali_kelas', 'wali_asuh', 'user'] })
+		type: text({ enum: ['admin', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'user'] })
 			.notNull()
 			.default('admin'),
 		// optional: directly associate a user to a sekolah so login can pick it reliably
@@ -62,12 +62,43 @@ export const tableAlamat = sqliteTable('alamat', {
 	...audit
 });
 
-export const tablePegawai = sqliteTable('pegawai', {
-	id: int().primaryKey({ autoIncrement: true }),
-	nama: text().notNull(),
-	nip: text().notNull(),
-	...audit
-});
+export const tablePegawai = sqliteTable(
+	'pegawai',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int(),
+		nama: text().notNull(),
+		nip: text().notNull(),
+		jenis: text({
+			enum: [
+				'guru',
+				'kepala_sekolah',
+				'operator',
+				'tu',
+				'kebersihan',
+				'keamanan',
+				'wali_asuh',
+				'wali_asrama',
+				'lainnya'
+			]
+		})
+			.default('guru')
+			.notNull(),
+		jabatan: text(),
+		status: text({ enum: ['aktif', 'nonaktif'] })
+			.default('aktif')
+			.notNull(),
+		telepon: text(),
+		email: text(),
+		catatan: text(),
+		...audit
+	},
+	(table) => [
+		index('pegawai_sekolah_idx').on(table.sekolahId),
+		index('pegawai_jenis_idx').on(table.jenis),
+		index('pegawai_status_idx').on(table.status)
+	]
+);
 
 export const tableSekolah = sqliteTable('sekolah', {
 	id: int().primaryKey({ autoIncrement: true }),
@@ -333,8 +364,11 @@ export const tableMurid = sqliteTable(
 		// optional: path/filename (or url) ke foto murid
 		foto: text(),
 		// wali asuh (nama + nip) per murid, bukan per kelas
+		waliAsramaNama: text(),
+		waliAsramaNip: text(),
 		waliAsuhNama: text(),
 		waliAsuhNip: text(),
+		qrToken: text(),
 		...audit
 	},
 	(t) => [unique().on(t.sekolahId, t.semesterId, t.nis)]
@@ -353,6 +387,50 @@ export const tableCatatanWaliKelas = sqliteTable(
 	(table) => [unique().on(table.muridId), index('catatan_wali_kelas_murid_idx').on(table.muridId)]
 );
 
+export const tableCatatanWaliAsrama = sqliteTable(
+	'catatan_wali_asrama',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		muridId: int()
+			.references(() => tableMurid.id, { onDelete: 'cascade' })
+			.notNull(),
+		catatan: text(),
+		...audit
+	},
+	(table) => [unique().on(table.muridId), index('catatan_wali_asrama_murid_idx').on(table.muridId)]
+);
+export const tableKesehatanMurid = sqliteTable(
+	'kesehatan_murid',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		muridId: int()
+			.references(() => tableMurid.id, { onDelete: 'cascade' })
+			.notNull(),
+		semesterId: int().references(() => tableSemester.id, { onDelete: 'set null' }),
+		tanggalPengukuran: text().notNull(),
+		tinggiBadan: real(),
+		beratBadan: real(),
+		zScore: real(),
+		statusGizi: text({ enum: ['gizi_buruk', 'gizi_kurang', 'normal', 'gizi_lebih', 'obesitas'] }),
+		kondisiFisik: text(),
+		ukuranBaju: text(),
+		ukuranCelana: text(),
+		ukuranSepatu: text(),
+		catatan: text(),
+		petugasUserId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		...audit
+	},
+	(table) => [
+		unique().on(table.muridId, table.tanggalPengukuran),
+		index('kesehatan_murid_sekolah_idx').on(table.sekolahId),
+		index('kesehatan_murid_murid_tanggal_idx').on(table.muridId, table.tanggalPengukuran),
+		index('kesehatan_murid_semester_idx').on(table.semesterId),
+		index('kesehatan_murid_status_gizi_idx').on(table.statusGizi)
+	]
+);
 export const tableKehadiranMurid = sqliteTable(
 	'kehadiran_murid',
 	{
@@ -387,9 +465,28 @@ export const tableMuridRelations = relations(tableMurid, ({ one, many }) => ({
 		fields: [tableMurid.id],
 		references: [tableKeputusanMurid.muridId]
 	}),
-	muridMataPelajaran: many(tableMuridMataPelajaran)
+	muridMataPelajaran: many(tableMuridMataPelajaran),
+	absensi: many(tableAbsensi)
 }));
 
+export const tableKesehatanMuridRelations = relations(tableKesehatanMurid, ({ one }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableKesehatanMurid.sekolahId],
+		references: [tableSekolah.id]
+	}),
+	murid: one(tableMurid, {
+		fields: [tableKesehatanMurid.muridId],
+		references: [tableMurid.id]
+	}),
+	semester: one(tableSemester, {
+		fields: [tableKesehatanMurid.semesterId],
+		references: [tableSemester.id]
+	}),
+	petugas: one(tableAuthUser, {
+		fields: [tableKesehatanMurid.petugasUserId],
+		references: [tableAuthUser.id]
+	})
+}));
 export const tableCatatanWaliKelasRelations = relations(tableCatatanWaliKelas, ({ one }) => ({
 	murid: one(tableMurid, {
 		fields: [tableCatatanWaliKelas.muridId],
@@ -397,9 +494,42 @@ export const tableCatatanWaliKelasRelations = relations(tableCatatanWaliKelas, (
 	})
 }));
 
+export const tableCatatanWaliAsramaRelations = relations(tableCatatanWaliAsrama, ({ one }) => ({
+	murid: one(tableMurid, {
+		fields: [tableCatatanWaliAsrama.muridId],
+		references: [tableMurid.id]
+	})
+}));
+
 export const tableKehadiranMuridRelations = relations(tableKehadiranMurid, ({ one }) => ({
 	murid: one(tableMurid, {
 		fields: [tableKehadiranMurid.muridId],
+		references: [tableMurid.id]
+	})
+}));
+
+export const tableAbsensi = sqliteTable(
+	'absensi',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		muridId: int()
+			.references(() => tableMurid.id, { onDelete: 'cascade' })
+			.notNull(),
+		waktu: text().notNull(),
+		mode: text({ enum: ['masuk', 'pulang'] })
+			.default('masuk')
+			.notNull(),
+		metode: text({ enum: ['qr', 'manual'] })
+			.default('qr')
+			.notNull(),
+		...audit
+	},
+	(table) => [index('absensi_murid_waktu_idx').on(table.muridId, table.waktu)]
+);
+
+export const tableAbsensiRelations = relations(tableAbsensi, ({ one }) => ({
+	murid: one(tableMurid, {
+		fields: [tableAbsensi.muridId],
 		references: [tableMurid.id]
 	})
 }));
@@ -821,6 +951,361 @@ export const tableKokurikulerRelations = relations(tableKokurikuler, ({ one }) =
 		fields: [tableKokurikuler.kelasId],
 		references: [tableKelas.id]
 	})
+}));
+export const tableBellSettings = sqliteTable(
+	'bell_settings',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		jamPelajaranMenit: int().notNull().default(35),
+		durasiIstirahat: int().notNull().default(30),
+		durasiUpacara: int().notNull().default(70),
+		jamMulai: text().notNull().default('07:00'),
+		isActive: int({ mode: 'boolean' }).notNull().default(false),
+		...audit
+	},
+	(table) => [unique().on(table.sekolahId)]
+);
+
+export const tableKegiatanCustom = sqliteTable(
+	'kegiatan_custom',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		nama: text().notNull(),
+		kode: text().notNull(),
+		durasi: int(),
+		soundFileName: text(),
+		soundMimeType: text(),
+		...audit
+	},
+	(table) => [unique().on(table.sekolahId, table.kode)]
+);
+
+export const tableBellSounds = sqliteTable(
+	'bell_sounds',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		tipe: text().notNull(),
+		fileName: text().notNull(),
+		mimeType: text().notNull().default('audio/mpeg'),
+		ttsMessage: text(),
+		...audit
+	},
+	(table) => [unique().on(table.sekolahId, table.tipe)]
+);
+
+export const tableJadwalTemplate = sqliteTable(
+	'jadwal_template',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		tahunAjaranId: int().references(() => tableTahunAjaran.id, { onDelete: 'cascade' }),
+		semesterId: int().references(() => tableSemester.id, { onDelete: 'cascade' }),
+		nama: text().notNull(),
+		jenjang: text({ enum: ['semua', 'sd', 'smp', 'sma'] })
+			.default('semua')
+			.notNull(),
+		aktif: int({ mode: 'boolean' }).default(true).notNull(),
+		...audit
+	},
+	(table) => [
+		index('jadwal_template_sekolah_idx').on(table.sekolahId),
+		index('jadwal_template_semester_idx').on(table.semesterId),
+		index('jadwal_template_jenjang_idx').on(table.jenjang)
+	]
+);
+
+export const tableJadwalJam = sqliteTable(
+	'jadwal_jam',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		templateId: int().references(() => tableJadwalTemplate.id, { onDelete: 'cascade' }),
+		jenjang: text({ enum: ['srd', 'srmp', 'srma'] })
+			.default('srma')
+			.notNull(),
+		hari: text({ enum: ['senin', 'selasa', 'rabu', 'kamis', 'jumat'] }).notNull(),
+		jamKe: int().notNull(),
+		label: text(),
+		pukulMulai: text().notNull(),
+		pukulSelesai: text().notNull(),
+		tipe: text({ enum: ['pelajaran', 'kegiatan', 'istirahat', 'kosong'] })
+			.default('pelajaran')
+			.notNull(),
+		namaDefault: text(),
+		urutan: int().default(0).notNull(),
+		aktif: int({ mode: 'boolean' }).default(true).notNull(),
+		...audit
+	},
+	(table) => [
+		unique().on(table.sekolahId, table.templateId, table.hari, table.jamKe),
+		index('jadwal_jam_sekolah_hari_idx').on(table.sekolahId, table.hari),
+		index('jadwal_jam_jenjang_idx').on(table.jenjang),
+		index('jadwal_jam_template_idx').on(table.templateId)
+	]
+);
+
+export const tableJadwalKegiatan = sqliteTable(
+	'jadwal_kegiatan',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		kode: text().notNull(),
+		nama: text().notNull(),
+		kategori: text({ enum: ['umum', 'kokurikuler', 'keagamaan', 'istirahat'] })
+			.default('umum')
+			.notNull(),
+		warna: text(),
+		aktif: int({ mode: 'boolean' }).default(true).notNull(),
+		...audit
+	},
+	(table) => [
+		unique().on(table.sekolahId, table.kode),
+		index('jadwal_kegiatan_sekolah_idx').on(table.sekolahId),
+		index('jadwal_kegiatan_kategori_idx').on(table.kategori)
+	]
+);
+
+export const tableJadwalMapel = sqliteTable(
+	'jadwal_mata_pelajaran',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		kode: text().notNull(),
+		nama: text().notNull(),
+		jenjang: text({ enum: ['semua', 'srd', 'srmp', 'srma'] })
+			.default('semua')
+			.notNull(),
+		fase: text(),
+		kategori: text({ enum: ['akademik', 'kokurikuler', 'keasramaan', 'muatan_lokal'] })
+			.default('akademik')
+			.notNull(),
+		jpPerMinggu: int('jp_per_minggu').default(0).notNull(),
+		guruPegawaiId: int().references(() => tablePegawai.id, { onDelete: 'set null' }),
+		warna: text(),
+		aktif: int({ mode: 'boolean' }).default(true).notNull(),
+		catatan: text(),
+		...audit
+	},
+	(table) => [
+		unique().on(table.sekolahId, table.kode),
+		index('jadwal_mapel_sekolah_idx').on(table.sekolahId),
+		index('jadwal_mapel_jenjang_idx').on(table.jenjang),
+		index('jadwal_mapel_guru_idx').on(table.guruPegawaiId)
+	]
+);
+
+export const tableJadwalPelajaran = sqliteTable(
+	'jadwal_pelajaran',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		semesterId: int().references(() => tableSemester.id, { onDelete: 'cascade' }),
+		kelasId: int()
+			.references(() => tableKelas.id, { onDelete: 'cascade' })
+			.notNull(),
+		jamId: int().references(() => tableJadwalJam.id, { onDelete: 'cascade' }),
+		hari: text().notNull(),
+		jamKe: int(),
+		kodeKegiatan: text(),
+		tipe: text({ enum: ['pelajaran', 'kegiatan', 'istirahat', 'kosong'] })
+			.default('pelajaran')
+			.notNull(),
+		jadwalMapelId: int().references(() => tableJadwalMapel.id, { onDelete: 'set null' }),
+		mataPelajaranId: int().references(() => tableMataPelajaran.id, { onDelete: 'set null' }),
+		kokurikulerId: int().references(() => tableKokurikuler.id, { onDelete: 'set null' }),
+		kegiatanId: int().references(() => tableJadwalKegiatan.id, { onDelete: 'set null' }),
+		guruPegawaiId: int().references(() => tablePegawai.id, { onDelete: 'set null' }),
+		catatan: text(),
+		...audit
+	},
+	(table) => [
+		index('jadwal_pelajaran_sekolah_idx').on(table.sekolahId),
+		index('jadwal_pelajaran_semester_idx').on(table.semesterId),
+		index('jadwal_pelajaran_kelas_hari_idx').on(table.kelasId, table.hari),
+		index('jadwal_pelajaran_guru_idx').on(table.guruPegawaiId),
+		index('jadwal_pelajaran_mapel_idx').on(table.mataPelajaranId),
+		index('jadwal_pelajaran_jadwal_mapel_idx').on(table.jadwalMapelId)
+	]
+);
+
+export const tableKalenderPendidikan = sqliteTable(
+	'kalender_pendidikan',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		tahunAjaranId: int().references(() => tableTahunAjaran.id, { onDelete: 'cascade' }),
+		semesterId: int().references(() => tableSemester.id, { onDelete: 'cascade' }),
+		kelasId: int().references(() => tableKelas.id, { onDelete: 'cascade' }),
+		tanggalMulai: text().notNull(),
+		tanggalSelesai: text().notNull(),
+		judul: text().notNull(),
+		jenis: text({
+			enum: [
+				'hari_efektif',
+				'libur_nasional',
+				'libur_sekolah',
+				'ujian',
+				'asesmen',
+				'pembagian_rapor',
+				'kegiatan_sekolah',
+				'lainnya'
+			]
+		})
+			.default('lainnya')
+			.notNull(),
+		jenjang: text({ enum: ['semua', 'srd', 'srmp', 'srma'] })
+			.default('semua')
+			.notNull(),
+		keterangan: text(),
+		warna: text(),
+		...audit
+	},
+	(table) => [
+		index('kalender_pendidikan_sekolah_tanggal_idx').on(table.sekolahId, table.tanggalMulai),
+		index('kalender_pendidikan_tahun_idx').on(table.tahunAjaranId),
+		index('kalender_pendidikan_semester_idx').on(table.semesterId),
+		index('kalender_pendidikan_kelas_idx').on(table.kelasId),
+		index('kalender_pendidikan_jenis_idx').on(table.jenis),
+		index('kalender_pendidikan_jenjang_idx').on(table.jenjang)
+	]
+);
+export const tableBellSettingsRelations = relations(tableBellSettings, ({ one }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableBellSettings.sekolahId],
+		references: [tableSekolah.id]
+	})
+}));
+
+export const tableKegiatanCustomRelations = relations(tableKegiatanCustom, ({ one }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableKegiatanCustom.sekolahId],
+		references: [tableSekolah.id]
+	})
+}));
+
+export const tableBellSoundsRelations = relations(tableBellSounds, ({ one }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableBellSounds.sekolahId],
+		references: [tableSekolah.id]
+	})
+}));
+
+export const tableJadwalTemplateRelations = relations(tableJadwalTemplate, ({ one, many }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableJadwalTemplate.sekolahId],
+		references: [tableSekolah.id]
+	}),
+	tahunAjaran: one(tableTahunAjaran, {
+		fields: [tableJadwalTemplate.tahunAjaranId],
+		references: [tableTahunAjaran.id]
+	}),
+	semester: one(tableSemester, {
+		fields: [tableJadwalTemplate.semesterId],
+		references: [tableSemester.id]
+	}),
+	jam: many(tableJadwalJam)
+}));
+
+export const tableJadwalJamRelations = relations(tableJadwalJam, ({ one, many }) => ({
+	sekolah: one(tableSekolah, { fields: [tableJadwalJam.sekolahId], references: [tableSekolah.id] }),
+	template: one(tableJadwalTemplate, {
+		fields: [tableJadwalJam.templateId],
+		references: [tableJadwalTemplate.id]
+	}),
+	jadwalPelajaran: many(tableJadwalPelajaran)
+}));
+
+export const tableJadwalKegiatanRelations = relations(tableJadwalKegiatan, ({ one, many }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableJadwalKegiatan.sekolahId],
+		references: [tableSekolah.id]
+	}),
+	jadwalPelajaran: many(tableJadwalPelajaran)
+}));
+
+export const tableJadwalMapelRelations = relations(tableJadwalMapel, ({ one, many }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableJadwalMapel.sekolahId],
+		references: [tableSekolah.id]
+	}),
+	guru: one(tablePegawai, {
+		fields: [tableJadwalMapel.guruPegawaiId],
+		references: [tablePegawai.id]
+	}),
+	jadwalPelajaran: many(tableJadwalPelajaran)
+}));
+
+export const tableJadwalPelajaranRelations = relations(tableJadwalPelajaran, ({ one }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableJadwalPelajaran.sekolahId],
+		references: [tableSekolah.id]
+	}),
+	semester: one(tableSemester, {
+		fields: [tableJadwalPelajaran.semesterId],
+		references: [tableSemester.id]
+	}),
+	kelas: one(tableKelas, { fields: [tableJadwalPelajaran.kelasId], references: [tableKelas.id] }),
+	jam: one(tableJadwalJam, {
+		fields: [tableJadwalPelajaran.jamId],
+		references: [tableJadwalJam.id]
+	}),
+	jadwalMapel: one(tableJadwalMapel, {
+		fields: [tableJadwalPelajaran.jadwalMapelId],
+		references: [tableJadwalMapel.id]
+	}),
+	mataPelajaran: one(tableMataPelajaran, {
+		fields: [tableJadwalPelajaran.mataPelajaranId],
+		references: [tableMataPelajaran.id]
+	}),
+	kokurikuler: one(tableKokurikuler, {
+		fields: [tableJadwalPelajaran.kokurikulerId],
+		references: [tableKokurikuler.id]
+	}),
+	kegiatan: one(tableJadwalKegiatan, {
+		fields: [tableJadwalPelajaran.kegiatanId],
+		references: [tableJadwalKegiatan.id]
+	}),
+	guru: one(tablePegawai, {
+		fields: [tableJadwalPelajaran.guruPegawaiId],
+		references: [tablePegawai.id]
+	})
+}));
+
+export const tableKalenderPendidikanRelations = relations(tableKalenderPendidikan, ({ one }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableKalenderPendidikan.sekolahId],
+		references: [tableSekolah.id]
+	}),
+	tahunAjaran: one(tableTahunAjaran, {
+		fields: [tableKalenderPendidikan.tahunAjaranId],
+		references: [tableTahunAjaran.id]
+	}),
+	semester: one(tableSemester, {
+		fields: [tableKalenderPendidikan.semesterId],
+		references: [tableSemester.id]
+	}),
+	kelas: one(tableKelas, { fields: [tableKalenderPendidikan.kelasId], references: [tableKelas.id] })
 }));
 
 export const tableAsesmenKokurikuler = sqliteTable(

@@ -10,6 +10,7 @@ type PdfParams = {
 	template?: '1' | '2';
 	bgLogo?: boolean;
 	raporPeriode?: string;
+	variant?: 'default' | 'sr';
 	slug: string;
 };
 
@@ -44,3 +45,4 @@ export function consumePdfParams(token: string): PdfParams | null {
 	store.delete(token);
 	return entry.params;
 }
+

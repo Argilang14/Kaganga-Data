@@ -1,18 +1,25 @@
-<script lang="ts">
+﻿<script lang="ts">
+	import { resolve } from '$app/paths';
 	import FormEnhance from '$lib/components/form-enhance.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import type { PageData } from './$types';
 
+	type SekolahRow = typeof import('$lib/server/db/schema').tableSekolah.$inferSelect;
 	type TahunAjaranRow = typeof import('$lib/server/db/schema').tableTahunAjaran.$inferSelect;
 	type SemesterRow = typeof import('$lib/server/db/schema').tableSemester.$inferSelect;
 	type TahunAjaranWithSemester = TahunAjaranRow & { semester: SemesterRow[] };
 
 	const { data } = $props<{ data: PageData }>();
-	const sekolahList = (data.sekolahList ?? []) as Sekolah[];
+	const sekolahList = (data.sekolahList ?? []) as SekolahRow[];
 	const tahunAjaranList = (data.tahunAjaranList ?? []) as TahunAjaranWithSemester[];
 	let activeSekolahId = $state(data.activeSekolahId ?? null);
 	const activeTahunAjaranId = data.activeTahunAjaranId ?? null;
 	const activeSemesterId = data.activeSemesterId ?? null;
+	const downloadDataSiswaHref = $derived(
+		activeSemesterId
+			? resolve('/api/rapor/unduh-data-siswa?semesterId=' + activeSemesterId)
+			: resolve('/api/rapor/unduh-data-siswa')
+	);
 	const tanggalBagiRaport = data.tanggalBagiRaport as {
 		ganjilId?: number;
 		ganjil?: string | null;
@@ -352,18 +359,58 @@
 
 						<fieldset class="fieldset md:col-span-2">
 							<legend class="fieldset-legend">Import data siswa dan kelas</legend>
-							<input
-								type="file"
-								class="file-input file-input-ghost"
-								accept=".xlsx, .xls"
-								name="data"
-								disabled={!canRaporManage}
-								aria-disabled={!canRaporManage}
-								title={!canRaporManage ? 'Anda tidak memiliki izin untuk mengimpor data siswa' : ''}
-							/>
+							<div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+								<input
+									type="file"
+									class="file-input file-input-ghost"
+									accept=".xlsx, .xls"
+									name="data"
+									disabled={!canRaporManage}
+									aria-disabled={!canRaporManage}
+									title={!canRaporManage
+										? 'Anda tidak memiliki izin untuk mengimpor data siswa'
+										: ''}
+								/>
+								{#if canRaporManage}
+									<a
+										class="btn btn-soft shadow-none"
+										href={resolve('/api/rapor/import-siswa-kelas-template')}
+										download
+									>
+										<Icon name="download" />
+										Download template
+									</a>
+								{:else}
+									<button
+										class="btn btn-soft shadow-none"
+										type="button"
+										disabled
+										title="Anda tidak memiliki izin untuk mengunduh template"
+									>
+										<Icon name="download" />
+										Download template
+									</button>
+								{/if}
+								{#if canRaporManage}
+									<a class="btn btn-soft shadow-none" href={downloadDataSiswaHref} download>
+										<Icon name="download" />
+										Unduh data siswa
+									</a>
+								{:else}
+									<button
+										class="btn btn-soft shadow-none"
+										type="button"
+										disabled
+										title="Anda tidak memiliki izin untuk mengunduh data siswa"
+									>
+										<Icon name="download" />
+										Unduh data siswa
+									</button>
+								{/if}
+							</div>
 							<p class="text-base-content/70 mt-1 text-xs">
-								File daftar siswa dengan format excel dari dapodik. Pastikan file dapat dibuka
-								sebelum import.
+								Gunakan template Excel atau file daftar siswa dari Dapodik. Kolom Nama, NIPD/NIS,
+								dan Rombel wajib diisi.
 							</p>
 						</fieldset>
 					</div>

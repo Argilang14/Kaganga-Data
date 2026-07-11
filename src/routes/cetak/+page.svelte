@@ -18,6 +18,9 @@
 	import { DEFAULT_RAPOR_CRITERIA, type RaporPeriode } from '$lib/rapor-params';
 	let { data } = $props();
 
+	const pdfVariant = $derived(page.url.searchParams.get('sr') === '1' ? 'sr' : 'default');
+	const isSRVariant = $derived(pdfVariant === 'sr');
+
 	const userType = $derived((page.data.user as { type?: string } | null)?.type);
 
 	const documentOptions = $derived.by<Array<{ value: DocumentType; label: string }>>(() => {
@@ -293,6 +296,7 @@
 					template: documentType === 'piagam' ? selectedTemplate : undefined,
 					docLabel,
 					bgLogo: showBgLogo,
+					pdfVariant,
 					raporPeriode:
 						documentType === 'rapor' && selectedRaporPeriode ? selectedRaporPeriode : undefined
 				})
@@ -383,6 +387,8 @@
 					docLabel: selectedDocumentEntry?.label ?? documentType,
 					kelasLabel: kelasAktifLabel ? kelasAktifLabel.replace(/\s+/g, '') : 'Semua-Kelas',
 					bgLogo: showBgLogo,
+					pdfVariant,
+					pdfVariant,
 					raporPeriode:
 						documentType === 'rapor' && selectedRaporPeriode ? selectedRaporPeriode : undefined
 				})
@@ -498,6 +504,12 @@
 </script>
 
 <div class="card bg-base-100 rounded-lg border border-none p-4 shadow-md">
+	{#if isSRVariant}
+		<div class="border-info/25 bg-info/10 mb-3 rounded-lg border px-4 py-3 text-sm">
+			<strong>Cetak Dokumen SR</strong>
+			<span class="ml-1">menggunakan data yang sama dengan Cetak Dokumen, dengan format PDF SR.</span>
+		</div>
+	{/if}
 	<PreviewHeader
 		{headingTitle}
 		{kelasAktifLabel}
@@ -594,3 +606,5 @@
 	onPrintableReady={handlePrintableReady}
 	onBulkPrintableReady={handleBulkPrintableReady}
 />
+
+

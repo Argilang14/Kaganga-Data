@@ -8,14 +8,39 @@ import { renderRaporHTML } from './templates/rapor';
 import { renderBiodataHTML } from './templates/biodata';
 import { renderKeasramaanHTML } from './templates/keasramaan';
 import { renderPiagamHTML } from './templates/piagam';
+import {
+	renderSRBiodataHTML,
+	renderSRCoverHTML,
+	renderSRKeasramaanHTML,
+	renderSRRaporHTML
+} from './templates/sr';
 
 export type DocumentType = 'cover' | 'rapor' | 'biodata' | 'keasramaan' | 'piagam';
+export type PdfVariant = 'default' | 'sr';
 
 export function renderHTML(
 	docType: DocumentType,
 	data: Record<string, unknown>,
-	template?: '1' | '2'
+	template?: '1' | '2',
+	variant: PdfVariant = 'default'
 ): string {
+	if (variant === 'sr') {
+		switch (docType) {
+			case 'cover':
+				return renderSRCoverHTML(data as never);
+			case 'rapor':
+				return renderSRRaporHTML(data as never);
+			case 'biodata':
+				return renderSRBiodataHTML(data as never);
+			case 'keasramaan':
+				return renderSRKeasramaanHTML(data as never);
+			case 'piagam':
+				return renderPiagamHTML(data as never, template ?? '1');
+			default:
+				throw new Error(`Unknown document type: ${docType}`);
+		}
+	}
+
 	switch (docType) {
 		case 'cover':
 			return renderCoverHTML(data as never);
@@ -35,15 +60,17 @@ export function renderHTML(
 export async function generatePDF(
 	docType: DocumentType,
 	data: Record<string, unknown>,
-	template?: '1' | '2'
+	template?: '1' | '2',
+	variant: PdfVariant = 'default'
 ): Promise<Uint8Array> {
-	return renderPDF(renderHTML(docType, data, template));
+	return renderPDF(renderHTML(docType, data, template, variant));
 }
 
 type BulkItem = {
 	docType: DocumentType;
 	data: Record<string, unknown>;
 	template?: '1' | '2';
+	variant?: PdfVariant;
 };
 
 /** Jumlah worker concurrent untuk generate PDF individual. */
@@ -57,7 +84,7 @@ async function generateAllPDFs(items: BulkItem[], tmpDir: string): Promise<strin
 	async function worker(): Promise<void> {
 		while (index < items.length) {
 			const i = index++;
-			const pdf = await generatePDF(items[i].docType, items[i].data, items[i].template);
+			const pdf = await generatePDF(items[i].docType, items[i].data, items[i].template, items[i].variant ?? 'default');
 			const filePath = join(tmpDir, `${i}.pdf`);
 			await writeFile(filePath, pdf);
 			filePaths[i] = filePath;
@@ -85,7 +112,7 @@ async function mergeTwoPDFs(aPath: string, bPath: string, outPath: string): Prom
 
 export async function generateBulkPDF(items: BulkItem[]): Promise<Uint8Array> {
 	if (!items.length) throw new Error('No items to generate PDF for.');
-	if (items.length === 1) return generatePDF(items[0].docType, items[0].data, items[0].template);
+	if (items.length === 1) return generatePDF(items[0].docType, items[0].data, items[0].template, items[0].variant ?? 'default');
 
 	const tmpDir = await mkdtemp(join(tmpdir(), 'rapkumer-bulk-'));
 
@@ -124,3 +151,4 @@ export async function generateBulkPDF(items: BulkItem[]): Promise<Uint8Array> {
 		await rm(tmpDir, { recursive: true, force: true });
 	}
 }
+

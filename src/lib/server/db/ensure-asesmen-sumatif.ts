@@ -1,4 +1,23 @@
+import db from '$lib/server/db';
 import { ensureSchema } from './ensure-helper';
+
+async function addColumnIfMissing(tableName: string, columnName: string, definition: string) {
+	const result = (await db.$client.execute(`PRAGMA table_info(${tableName})`)) as unknown as {
+		rows?: Array<Record<string, unknown> | unknown[]>;
+	};
+	const rows = result.rows ?? [];
+	const hasColumn = rows.some((row) =>
+		Array.isArray(row) ? row[1] === columnName : row.name === columnName
+	);
+	if (hasColumn) return;
+
+	try {
+		await db.$client.execute(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+	} catch (error) {
+		if (error instanceof Error && error.message.includes('duplicate column')) return;
+		throw error;
+	}
+}
 
 export async function ensureAsesmenSumatifSchema() {
 	await ensureSchema('asesmen_sumatif', [
@@ -9,8 +28,12 @@ export async function ensureAsesmenSumatifSchema() {
 			"na_lingkup" real,
 			"sas_tes" real,
 			"sas_non_tes" real,
+			"sts_tes" real,
+			"sts_non_tes" real,
+			"sts" real,
 			"sas" real,
 			"nilai_akhir" real,
+			"nilai_akhir_rts" real,
 			"created_at" text NOT NULL,
 			"updated_at" text,
 			CONSTRAINT "asesmen_sumatif_murid_id_murid_id_fk" FOREIGN KEY ("murid_id") REFERENCES "murid" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
@@ -36,4 +59,9 @@ export async function ensureAsesmenSumatifSchema() {
 		`CREATE INDEX IF NOT EXISTS "asesmen_sumatif_tujuan_mapel_idx" ON "asesmen_sumatif_tujuan" ("mata_pelajaran_id")`,
 		`CREATE INDEX IF NOT EXISTS "asesmen_sumatif_tujuan_tp_idx" ON "asesmen_sumatif_tujuan" ("tujuan_pembelajaran_id")`
 	]);
+
+	await addColumnIfMissing('asesmen_sumatif', 'sts_tes', 'real');
+	await addColumnIfMissing('asesmen_sumatif', 'sts_non_tes', 'real');
+	await addColumnIfMissing('asesmen_sumatif', 'sts', 'real');
+	await addColumnIfMissing('asesmen_sumatif', 'nilai_akhir_rts', 'real');
 }

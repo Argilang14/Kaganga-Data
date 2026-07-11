@@ -1,5 +1,10 @@
-import db from '$lib/server/db';
-import { tableKeasramaan, tableKeasramaanIndikator, tableKeasramaanTujuan } from '$lib/server/db/schema';
+﻿import db from '$lib/server/db';
+import { ensureKeasramaanSchema } from '$lib/server/db/ensure-keasramaan';
+import {
+	tableKeasramaan,
+	tableKeasramaanIndikator,
+	tableKeasramaanTujuan
+} from '$lib/server/db/schema';
 import { fail, redirect, error } from '@sveltejs/kit';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 
@@ -18,6 +23,7 @@ function isTableMissingError(error: unknown, tableName: string) {
 
 export async function load({ depends, url, parent }) {
 	depends('app:keasramaan:tp');
+	await ensureKeasramaanSchema();
 	const { kelasAktif, user } = await parent();
 
 	const indikatorIdParam = url.searchParams.get('indikatorId');
@@ -130,6 +136,7 @@ export const actions = {
 	},
 
 	update: async ({ request, locals }) => {
+		await ensureKeasramaanSchema();
 		if (!canManageKeasramaan(locals.user)) {
 			return fail(403, { fail: 'Anda tidak memiliki izin' });
 		}
@@ -181,6 +188,7 @@ export const actions = {
 	},
 
 	delete: async ({ request, locals }) => {
+		await ensureKeasramaanSchema();
 		if (!canManageKeasramaan(locals.user)) {
 			return fail(403, { fail: 'Anda tidak memiliki izin' });
 		}

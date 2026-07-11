@@ -1,11 +1,10 @@
-<script lang="ts">
+﻿<script lang="ts">
 	/* eslint-disable svelte/no-navigation-without-resolve -- layout contains many intentional href links for navigation */
 	import { page } from '$app/state';
 	import GlobalModal from '$lib/components/global-modal.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import Menu from '$lib/components/menu.svelte';
 	import Navbar from '$lib/components/navbar.svelte';
-	import Task from '$lib/components/tasks.svelte';
 	import Toast, { toast } from '$lib/components/toast.svelte';
 
 	import NavIndicator from '$lib/components/nav-indicator.svelte';
@@ -150,9 +149,6 @@
 								{@render children()}
 							</div>
 						</div>
-						<div class="sticky top-4 self-start">
-							<Task variant="sidebar" />
-						</div>
 					</div>
 				</div>
 			</div>
@@ -189,7 +185,9 @@
 <NavIndicator />
 
 <style>
-	:global(.is-readonly :is(button, input, select, textarea, a, [role='button']):not(.pointer-events-auto)) {
+	:global(
+		.is-readonly :is(button, input, select, textarea, a, [role='button']):not(.pointer-events-auto)
+	) {
 		opacity: var(--btn-disabled-opacity, 0.5) !important;
 		cursor: not-allowed !important;
 		pointer-events: none !important;

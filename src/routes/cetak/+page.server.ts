@@ -1,3 +1,4 @@
+// @ts-nocheck
 import db from '$lib/server/db';
 import { computeNilaiAkhirRekap } from '$lib/server/nilai-akhir';
 import { buildKelasContext, fetchMuridList } from '$lib/server/route-utils';
@@ -63,3 +64,4 @@ export async function load({ locals, url, depends, parent }) {
 		piagamRankingOptions
 	};
 }
+

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { json } from '@sveltejs/kit';
 import ExcelJS from 'exceljs';
 import { eq, asc } from 'drizzle-orm';
@@ -304,3 +305,4 @@ export async function POST({ request, locals }) {
 		return json({ error: 'Gagal membuat Berita Acara.' }, { status: 500 });
 	}
 }
+

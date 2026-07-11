@@ -59,6 +59,7 @@ async function resolveNama(docType: string, locals: App.Locals, url: URL): Promi
 export const POST = (async ({ locals, request }) => {
 	const body = await request.json();
 	const { docType, muridId, kelasId, tpMode, kriteria, template, bgLogo, raporPeriode } = body;
+	const variant = body.pdfVariant === 'sr' ? 'sr' : 'default';
 
 	const url = new URL('http://localhost');
 	url.searchParams.set('murid_id', String(muridId));
@@ -86,8 +87,10 @@ export const POST = (async ({ locals, request }) => {
 		template,
 		bgLogo,
 		raporPeriode,
+		variant,
 		slug
 	});
 
 	return json({ token, slug });
 }) satisfies RequestHandler;
+

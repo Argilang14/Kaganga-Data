@@ -1,4 +1,5 @@
-import db from '$lib/server/db';
+﻿import db from '$lib/server/db';
+import { ensureMataPelajaranSchema } from '$lib/server/db/ensure-mata-pelajaran';
 import { ensureAgamaMapelForClasses } from '$lib/server/mapel-agama';
 import {
 	tableMataPelajaran,
@@ -20,6 +21,7 @@ const PKS_PARENT_NAME = 'Pendalaman Kitab Suci';
 
 export async function load({ depends, url, parent }) {
 	depends('app:mapel');
+	await ensureMataPelajaranSchema();
 	const { kelasAktif, daftarKelas, user } = await parent();
 	const daftarKelasEntries = daftarKelas as Array<{ id: number }> | undefined;
 	const kelasIdsForEnsure = daftarKelasEntries?.map((kelas) => kelas.id) ?? [];

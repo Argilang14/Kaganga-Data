@@ -1,5 +1,7 @@
+import type { PageServerLoad } from './$types';
 import db from '$lib/server/db';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
+import { ensureDashboardSchema } from '$lib/server/db/ensure-dashboard-schema';
 import {
 	tableAsesmenEkstrakurikuler,
 	tableAsesmenSumatif,
@@ -35,7 +37,7 @@ const isAgamaSubject = (name: string | null | undefined) =>
 const calculatePercentage = (completed: number, total: number) =>
 	total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
 
-export async function load(event) {
+export const load: PageServerLoad = async (event) => {
 	const parentData = await event.parent();
 	const sekolahId = event.locals.sekolah?.id ?? null;
 
@@ -71,6 +73,8 @@ export async function load(event) {
 			statistikDashboard
 		};
 	}
+
+	await ensureDashboardSchema();
 
 	const academicContext = await resolveSekolahAcademicContext(sekolahId);
 	const activeSemesterId = academicContext?.activeSemesterId ?? null;
@@ -275,4 +279,4 @@ export async function load(event) {
 		...parentData,
 		statistikDashboard
 	};
-}
+};

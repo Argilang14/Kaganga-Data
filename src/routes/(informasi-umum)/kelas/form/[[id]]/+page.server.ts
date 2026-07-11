@@ -60,7 +60,6 @@ type KelasFormInput = {
 	rombel?: string;
 	fase?: string;
 	waliKelas?: Partial<Pick<Pegawai, 'nama' | 'nip'>>;
-	waliAsrama?: Partial<Pick<Pegawai, 'nama' | 'nip'>>;
 };
 
 type TahunAjaranOption = typeof tableTahunAjaran.$inferSelect & {
@@ -128,7 +127,6 @@ export async function load({ params, locals }) {
 	let kelas = null as
 		| (typeof tableKelas.$inferSelect & {
 				waliKelas: Pegawai | null;
-				waliAsrama: Pegawai | null;
 				semester?: typeof tableSemester.$inferSelect | null;
 				tahunAjaran?: typeof tableTahunAjaran.$inferSelect | null;
 		  })
@@ -137,7 +135,7 @@ export async function load({ params, locals }) {
 	if (params?.id) {
 		const kelasRow = await db.query.tableKelas.findFirst({
 			where: and(eq(tableKelas.id, +params.id), eq(tableKelas.sekolahId, sekolahId)),
-			with: { waliKelas: true, waliAsrama: true, semester: true, tahunAjaran: true }
+			with: { waliKelas: true, semester: true, tahunAjaran: true }
 		});
 		if (!kelasRow) error(404, `Data kelas tidak ditemukan`);
 		kelas = kelasRow;
@@ -184,12 +182,6 @@ export async function load({ params, locals }) {
 			nip: kelas.waliKelas.nip
 		};
 	}
-	if (kelas?.waliAsrama) {
-		formInit.waliAsrama = {
-			nama: kelas.waliAsrama.nama,
-			nip: kelas.waliAsrama.nip
-		};
-	}
 	return { meta, tingkatOptions, kelas, academicLock, formInit };
 }
 
@@ -204,8 +196,6 @@ export const actions = {
 		const fase = formData.fase?.trim() || null;
 		const waliNama = formData.waliKelas?.nama?.trim() || '';
 		const waliNip = formData.waliKelas?.nip?.trim() || '';
-		const waliAsramaNama = formData.waliAsrama?.nama?.trim() || '';
-		const waliAsramaNip = formData.waliAsrama?.nip?.trim() || '';
 
 		if (!rombel) {
 			return fail(400, { fail: `Nama rombel wajib diisi.` });
@@ -219,16 +209,8 @@ export const actions = {
 			});
 		}
 
-		// Validasi wali asrama: jika mengisi NIP asrama, harus mengisi nama asrama
-		if (!waliAsramaNama && waliAsramaNip) {
-			return fail(400, {
-				fail: `Jika mengisi NIP wali asrama, lengkapi juga nama wali asrama.`
-			});
-		}
-
 		// Consider there is a wali when a name is provided. NIP is optional.
 		const hasWali = Boolean(waliNama);
-		const hasWaliAsrama = Boolean(waliAsramaNama);
 
 		const timestamp = new Date().toISOString();
 		const sekolahId = locals.sekolah.id;
@@ -296,15 +278,13 @@ export const actions = {
 				const kelas = await tx.query.tableKelas.findFirst({
 					columns: {
 						id: true,
-						waliKelasId: true,
-						waliAsramaId: true
+						waliKelasId: true
 					},
 					where: and(eq(tableKelas.id, +params.id), eq(tableKelas.sekolahId, sekolahId))
 				});
 				if (!kelas) error(404, `Data kelas tidak ditemukan`);
 
 				let waliKelasId = kelas.waliKelasId ?? null;
-				let waliAsramaId = kelas.waliAsramaId ?? null;
 
 				if (hasWali) {
 					if (waliKelasId) {
@@ -323,23 +303,6 @@ export const actions = {
 					waliKelasId = null;
 				}
 
-				if (hasWaliAsrama) {
-					if (waliAsramaId) {
-						await tx
-							.update(tablePegawai)
-							.set({ nama: waliAsramaNama, nip: waliAsramaNip, updatedAt: timestamp })
-							.where(eq(tablePegawai.id, waliAsramaId));
-					} else {
-						const [pegawai] = await tx
-							.insert(tablePegawai)
-							.values({ nama: waliAsramaNama, nip: waliAsramaNip, updatedAt: timestamp })
-							.returning({ id: tablePegawai.id });
-						waliAsramaId = pegawai?.id ?? null;
-					}
-				} else {
-					waliAsramaId = null;
-				}
-
 				await tx
 					.update(tableKelas)
 					.set({
@@ -347,7 +310,7 @@ export const actions = {
 						fase,
 						sekolahId,
 						waliKelasId,
-						waliAsramaId,
+						waliAsramaId: null,
 						tahunAjaranId,
 						semesterId,
 						updatedAt: timestamp
@@ -355,7 +318,6 @@ export const actions = {
 					.where(eq(tableKelas.id, kelas.id));
 			} else {
 				let waliKelasId: number | null = null;
-				let waliAsramaId: number | null = null;
 
 				if (hasWali) {
 					const [pegawai] = await tx
@@ -365,14 +327,6 @@ export const actions = {
 					waliKelasId = pegawai?.id ?? null;
 				}
 
-				if (hasWaliAsrama) {
-					const [pegawai] = await tx
-						.insert(tablePegawai)
-						.values({ nama: waliAsramaNama, nip: waliAsramaNip, updatedAt: timestamp })
-						.returning({ id: tablePegawai.id });
-					waliAsramaId = pegawai?.id ?? null;
-				}
-
 				await tx.insert(tableKelas).values({
 					nama: rombel,
 					fase,
@@ -380,7 +334,7 @@ export const actions = {
 					tahunAjaranId,
 					semesterId,
 					waliKelasId,
-					waliAsramaId,
+					waliAsramaId: null,
 					updatedAt: timestamp
 				});
 			}

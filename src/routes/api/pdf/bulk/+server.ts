@@ -19,6 +19,7 @@ type BulkRequest = {
 	kelasLabel?: string;
 	bgLogo?: boolean;
 	raporPeriode?: string;
+	pdfVariant?: PdfVariant;
 };
 
 async function fetchStudentData(
@@ -75,10 +76,12 @@ export const POST = (async ({ locals, request }) => {
 		body.muridIds.map((muridId) => fetchStudentData(locals, body, muridId))
 	);
 
+	const variant: PdfVariant = body.pdfVariant === 'sr' ? 'sr' : 'default';
 	const items = allData.map((data) => ({
 		docType: body.docType,
 		data,
-		template: body.template
+		template: body.template,
+		variant
 	}));
 
 	const pdfBuffer = await generateBulkPDF(items);
@@ -93,3 +96,4 @@ export const POST = (async ({ locals, request }) => {
 		}
 	});
 }) satisfies RequestHandler;
+

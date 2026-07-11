@@ -1,4 +1,5 @@
-import db from '$lib/server/db/index.js';
+﻿import db from '$lib/server/db/index.js';
+import { ensureMataPelajaranSchema } from '$lib/server/db/ensure-mata-pelajaran';
 import { ensureAgamaMapelForClasses } from '$lib/server/mapel-agama.js';
 import { ensurePksMapelForClasses } from '$lib/server/mapel-pks.js';
 import {
@@ -34,6 +35,7 @@ function isXlsxMime(type: string | null | undefined) {
 }
 
 export async function load({ depends, params, parent }) {
+	await ensureMataPelajaranSchema();
 	// Check permission: admin, wali_kelas, wali_asuh, and users with rapor_manage can access
 	// Also allow 'user' type (guru mapel) since they're filtered server-side
 	const { user } = await parent();
@@ -444,6 +446,7 @@ export const actions = {
 	},
 
 	async delete({ request, locals }) {
+		await ensureMataPelajaranSchema();
 		// Allow admin, wali_kelas, wali_asuh, rapor_manage permission holders, and guru mapel
 		const userType = (locals.user as { type?: string } | null)?.type;
 		if (

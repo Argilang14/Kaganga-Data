@@ -5,7 +5,6 @@
 	import Icon from '$lib/components/icon.svelte';
 	import Menu from '$lib/components/menu.svelte';
 	import Navbar from '$lib/components/navbar.svelte';
-	import FavoriteMenusSidebar from '$lib/components/dashboard/favorite-menus-sidebar.svelte';
 	import Toast, { toast } from '$lib/components/toast.svelte';
 
 	import NavIndicator from '$lib/components/nav-indicator.svelte';
@@ -134,7 +133,7 @@
 {:else}
 	<main class="drawer lg:drawer-open">
 		<input id="my-drawer-2" type="checkbox" class="drawer-toggle" />
-		<div class="drawer-content flex min-h-screen flex-col">
+		<div class="drawer-content min-w-0 flex min-h-screen flex-col">
 			<Navbar {stopServer} {stoppingServer} {logout} {loggingOut} />
 
 			<div
@@ -154,9 +153,11 @@
 				</div>
 			</div>
 		</div>
-		<div class="drawer-side">
+		<div class="drawer-side z-40">
 			<label for="my-drawer-2" aria-label="close sidebar" class="drawer-overlay"></label>
-			<ul class="menu bg-base-100 text-base-content min-h-full w-70 p-4">
+			<ul
+				class="menu bg-base-100 text-base-content min-h-full w-72 max-w-[85vw] overflow-x-hidden p-4"
+			>
 				<div class="mt-16 flex items-center gap-2 pb-4 lg:mt-1">
 					{#if data.meta?.logoUrl}
 						<img class="h-8 rounded" src={data.meta.logoUrl} alt="Brand logo" />
@@ -165,7 +166,6 @@
 				</div>
 
 				<Menu />
-				<FavoriteMenusSidebar />
 
 				<div class="mt-4 flex flex-col gap-3">
 					<a href="/pengaturan" class="flex items-center gap-2">

@@ -215,6 +215,7 @@
 			filledSlots,
 			unknownCodes: [...unknownCodes],
 			jpIssues,
+			teacherConflicts,
 			visibleSlotTotal: visibleKelas.length * hariList.length * jumlahJam
 		};
 	});

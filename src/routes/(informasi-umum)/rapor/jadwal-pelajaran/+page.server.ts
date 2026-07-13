@@ -1,3 +1,4 @@
+import { loadJadwalJam } from '$lib/server/jadwal';
 import db from '$lib/server/db';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { ensureJadwalBellSchema } from '$lib/server/db/ensure-jadwal-bell';
@@ -101,6 +102,7 @@ export const load: PageServerLoad = async ({ locals, depends }) => {
 			};
 		});
 
+	const jadwalJam = await loadJadwalJam(sekolahId, null);
 	const kegiatanItems = kegiatanRows
 		.filter((kegiatan) => kegiatan.aktif && kegiatan.kode)
 		.map((kegiatan) => ({
@@ -116,6 +118,7 @@ export const load: PageServerLoad = async ({ locals, depends }) => {
 		bellSettings,
 		kegiatanCustom,
 		jadwalPelajaran,
+		jadwalJam,
 		daftarKelas,
 		daftarKodeMapel: [...kodeSet].sort(),
 		daftarKodeKokurikuler: [],

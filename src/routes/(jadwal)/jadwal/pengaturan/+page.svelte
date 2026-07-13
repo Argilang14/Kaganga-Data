@@ -40,13 +40,14 @@
 	let jamDialog = $state<HTMLDialogElement | null>(null);
 	let kegiatanDialog = $state<HTMLDialogElement | null>(null);
 	let selectedJamIds = $state<number[]>([]);
+	let activeHari = $state<JadwalHari>('senin');
 	const failMessage = $derived(typeof form?.fail === 'string' ? form.fail : '');
 	const successMessage = $derived(typeof form?.message === 'string' ? form.message : '');
 	const hariOrder: JadwalHari[] = ['senin', 'selasa', 'rabu', 'kamis', 'jumat'];
 	const selectedJenjangLabel = $derived(
 		data.jenjangOptions.find((option) => option.value === data.selectedJenjang)?.label ?? 'SRMA/SRT'
 	);
-	const visibleJamIds = $derived(data.jamList.map((jam) => jam.id));
+	const visibleJamIds = $derived(data.jamList.filter((jam) => jam.hari === activeHari).map((jam) => jam.id));
 	const selectedVisibleJamCount = $derived(
 		selectedJamIds.filter((id) => visibleJamIds.includes(id)).length
 	);
@@ -114,7 +115,7 @@
 				<Icon name="left" />
 				Jadwal
 			</a>
-			<a class="btn btn-soft btn-sm shadow-none" href={resolve('/jadwal/pelajaran')}>
+			<a class="btn btn-soft btn-sm shadow-none" href={resolve('/rapor/jadwal-pelajaran')}>
 				<Icon name="book" />
 				Jadwal Pelajaran
 			</a>
@@ -312,8 +313,21 @@
 				</div>
 			</div>
 
+				<div class="tabs tabs-box mb-3 w-fit max-w-full overflow-x-auto">
+					{#each hariOrder as hari (hari)}
+						<button
+							class="tab whitespace-nowrap"
+							class:tab-active={activeHari === hari}
+							type="button"
+							onclick={() => {
+								activeHari = hari;
+								selectedJamIds = [];
+							}}>{data.hariLabels[hari]}</button
+						>
+					{/each}
+				</div>
 			<div class="space-y-4">
-				{#each hariOrder as hari (hari)}
+				{#each [activeHari] as hari (hari)}
 					<div class="border-base-200 rounded-lg border">
 						<div class="bg-base-200/70 rounded-t-lg px-3 py-2 font-semibold">
 							{data.hariLabels[hari]}

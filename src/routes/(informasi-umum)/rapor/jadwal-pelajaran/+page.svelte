@@ -9,6 +9,7 @@
 
 	type Kelas = { id: number; nama: string; fase?: string | null };
 	type JadwalEntry = { hari: string; jamKe: number; kelasId: number; kodeKegiatan: string };
+	type JamSlot = { hari: string; jamKe: number; jenjang: JenjangFilter; pukulMulai: string; pukulSelesai: string; tipe: string; namaDefault: string | null; aktif: boolean };
 	type JenjangFilter = 'semua' | 'srd' | 'srmp' | 'srma';
 	type TableDensity = 'normal' | 'padat';
 	type PaletteItem = {
@@ -90,6 +91,7 @@
 		)
 	);
 	const savedJadwal = $derived((data.jadwalPelajaran ?? []) as JadwalEntry[]);
+	const jadwalJam = $derived((data.jadwalJam ?? []) as JamSlot[]);
 
 	let cells = $state<Record<string, string>>({});
 	let jumlahJam = $state(8);
@@ -201,7 +203,7 @@
 				if (item.jenjang !== 'semua' && item.jenjang !== jenjang) continue;
 				let actual = 0;
 				for (const hari of hariList) {
-					for (let jamKe = 1; jamKe <= jumlahJam; jamKe += 1) {
+					for (let jamKe = 1; jamKe <= jumlahJamFor(hari); jamKe += 1) {
 						if (cells[keyFor(hari, jamKe, kelas.id)] === item.kode) actual += 1;
 					}
 				}
@@ -216,7 +218,7 @@
 			unknownCodes: [...unknownCodes],
 			jpIssues,
 			teacherConflicts,
-			visibleSlotTotal: visibleKelas.length * hariList.length * jumlahJam
+			visibleSlotTotal: visibleKelas.length * hariList.reduce((total, hari) => total + jumlahJamFor(hari), 0)
 		};
 	});
 
@@ -236,6 +238,31 @@
 		durasiUpacara = data.bellSettings?.durasiUpacara ?? 70;
 		bellActive = Boolean(data.bellSettings?.isActive);
 	});
+
+	function configuredSlots(hari: string) {
+		return jadwalJam.filter(
+			(slot) => slot.aktif && slot.hari === hari && (activeJenjang === 'semua' || slot.jenjang === activeJenjang)
+		);
+	}
+
+	function jumlahJamFor(hari: string) {
+		const configured = configuredSlots(hari).map((slot) => slot.jamKe);
+		const scheduled = savedJadwal
+			.filter((entry) => entry.hari === hari && visibleKelas.some((kelas) => kelas.id === entry.kelasId))
+			.map((entry) => entry.jamKe);
+		return Math.max(...configured, ...scheduled, configured.length ? 0 : jumlahJam);
+	}
+
+	function waktuFor(hari: string, jamKe: number) {
+		const ranges = [
+			...new Set(
+				configuredSlots(hari)
+					.filter((slot) => slot.jamKe === jamKe)
+					.map((slot) => slot.pukulMulai + '-' + slot.pukulSelesai)
+			)
+		];
+		return ranges.length === 1 ? ranges[0] : ranges.length > 1 ? 'Berbeda' : '';
+	}
 
 	function keyFor(hari: string, jamKe: number, kelasId: number) {
 		return `${hari}|${jamKe}|${kelasId}`;
@@ -579,17 +606,22 @@
 						</thead>
 						<tbody>
 							{#each hariList as hari (hari)}
-								{#each Array.from({ length: jumlahJam }, (_, index) => index + 1) as jamKe (jamKe)}
+								{#each Array.from({ length: jumlahJamFor(hari) }, (_, index) => index + 1) as jamKe (jamKe)}
 									<tr>
 										{#if jamKe === 1}
 											<td
 												class="sticky-col sticky-col-day bg-base-100 align-top font-semibold"
-												rowspan={jumlahJam}>{hariLabel[hari]}</td
+												rowspan={jumlahJamFor(hari)}>{hariLabel[hari]}</td
 											>
 										{/if}
-										<td class="sticky-col sticky-col-jam bg-base-100 text-center font-semibold"
-											>{jamKe}</td
-										>
+										<td class="sticky-col sticky-col-jam bg-base-100 text-center">
+											<div class="font-semibold">{jamKe}</div>
+											{#if waktuFor(hari, jamKe)}
+												<div class="text-base-content/60 whitespace-nowrap text-[10px] font-normal">
+													{waktuFor(hari, jamKe)}
+												</div>
+											{/if}
+										</td>
 										{#each visibleKelas as kelas (kelas.id)}
 											{@const key = keyFor(hari, jamKe, kelas.id)}
 											{@const kode = cells[key]}

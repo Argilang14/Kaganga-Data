@@ -102,7 +102,7 @@
 	let bellActive = $state(false);
 	let activePalette = $state<'mapel' | 'kegiatan'>('mapel');
 	let activeJenjang = $state<JenjangFilter>('semua');
-	let tableDensity = $state<TableDensity>('normal');
+	let tableDensity = $state<TableDensity>('padat');
 	let paletteSearch = $state('');
 	let draggedItem = $state<PaletteItem | null>(null);
 	let pendingDrop = $state<PendingDrop | null>(null);
@@ -451,10 +451,6 @@
 <div class="grid grid-cols-1 gap-4">
 	<section class="bg-base-100 rounded-lg p-4 shadow-md">
 		<div class="flex flex-wrap items-center gap-2">
-			<a href="/rapor" class="btn btn-soft shadow-none">
-				<Icon name="left" />
-				Kembali
-			</a>
 			<div class="min-w-0 flex-1">
 				<h1 class="text-xl font-bold">Jadwal Pelajaran</h1>
 				<p class="text-base-content/70 text-sm">Kelola jadwal kelas dan kode kegiatan.</p>
@@ -476,12 +472,12 @@
 		</div>
 	</section>
 
-	<section class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+	<section class="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_240px]">
 		<div class="bg-base-100 flex min-h-0 flex-col rounded-lg p-4 shadow-md">
 			<div class="mb-3 flex flex-wrap items-end gap-2">
-				<label class="form-control w-40">
-					<span class="label-text text-xs">Jenjang</span>
-					<select class="select select-sm bg-base-200" bind:value={activeJenjang}>
+				<label class="flex items-center gap-2">
+					<span class="label-text text-sm font-semibold">Jenjang</span>
+					<select class="select select-sm bg-base-200 w-36" bind:value={activeJenjang}>
 						<option value="semua">Semua Jenjang</option>
 						<option value="srd">SRD</option>
 						<option value="srmp">SRMP</option>
@@ -577,7 +573,7 @@
 								<th class="schedule-head sticky-col sticky-col-day w-24">Hari</th>
 								<th class="schedule-head sticky-col sticky-col-jam w-16 text-center">Jam</th>
 								{#each visibleKelas as kelas (kelas.id)}
-									<th class="schedule-head min-w-40 text-center">{kelas.nama}</th>
+									<th class="schedule-head min-w-24 text-center">{kelas.nama}</th>
 								{/each}
 							</tr>
 						</thead>
@@ -629,13 +625,13 @@
 			{/if}
 		</div>
 
-		<aside class="space-y-4">
-			<div class="bg-base-100 rounded-lg p-4 shadow-md">
-				<div class="mb-3 flex items-center gap-2">
+		<aside class="space-y-3">
+			<div class="bg-base-100 rounded-lg p-3 shadow-md">
+				<div class="mb-2 flex items-center gap-2">
 					<h2 class="flex-1 font-bold">Item Jadwal</h2>
 					<span class="badge badge-soft">{visiblePaletteItems.length}</span>
 				</div>
-				<div class="join mb-3 grid grid-cols-2">
+				<div class="join mb-2 grid grid-cols-2">
 					<button
 						class="btn btn-sm join-item"
 						class:btn-primary={activePalette === 'mapel'}
@@ -649,11 +645,11 @@
 						onclick={() => (activePalette = 'kegiatan')}>Kegiatan</button
 					>
 				</div>
-				<label class="input input-sm bg-base-200 mb-3 flex items-center gap-2">
+				<label class="input input-sm bg-base-200 mb-2 flex items-center gap-2">
 					<Icon name="search" />
 					<input class="grow" placeholder="Cari kode" bind:value={paletteSearch} />
 				</label>
-				<div class="max-h-[560px] space-y-2 overflow-y-auto pr-1">
+				<div class="max-h-[calc(100vh-19rem)] space-y-1 overflow-y-auto pr-1">
 					{#each visiblePaletteItems as item (`${item.source}-${item.id}`)}
 						<button
 							class="palette-item"
@@ -670,7 +666,7 @@
 								<span class="block leading-tight font-bold">{item.kode}</span>
 								<span class="text-base-content/70 block truncate text-xs">{item.nama}</span>
 							</span>
-							{#if item.detail}<span class="badge badge-outline max-w-24 truncate"
+							{#if item.detail}<span class="badge badge-outline max-w-16 truncate text-[10px]"
 									>{item.detail}</span
 								>{/if}
 						</button>
@@ -818,12 +814,12 @@
 
 	.sticky-col-day {
 		left: 0;
-		min-width: 5.5rem;
+		min-width: 4rem;
 	}
 
 	.sticky-col-jam {
-		left: 5.5rem;
-		min-width: 3.75rem;
+		left: 4rem;
+		min-width: 2.75rem;
 	}
 
 	.schedule-head.sticky-col {
@@ -849,7 +845,7 @@
 	}
 
 	.compact-schedule .slot-name {
-		max-width: 5.75rem;
+		max-width: 4.25rem;
 		font-size: 0.58rem;
 	}
 
@@ -916,9 +912,9 @@
 		border: 1px solid hsl(var(--b3, 220 13% 91%));
 		border-radius: 0.5rem;
 		display: flex;
-		gap: 0.625rem;
-		min-height: 3.25rem;
-		padding: 0.55rem;
+		gap: 0.375rem;
+		min-height: 2.5rem;
+		padding: 0.35rem;
 		width: 100%;
 	}
 

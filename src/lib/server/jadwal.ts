@@ -27,6 +27,19 @@ export const JADWAL_JENJANG_LABELS = {
 	srma: 'SRMA/SRT'
 } satisfies Record<JadwalJenjang, string>;
 
+export const JADWAL_JENIS = ['persiapan', 'ganjil', 'genap'] as const;
+export type JadwalJenis = (typeof JADWAL_JENIS)[number];
+export const JADWAL_JENIS_LABELS = {
+	persiapan: 'Masa Persiapan',
+	ganjil: 'Semester Ganjil',
+	genap: 'Semester Genap'
+} satisfies Record<JadwalJenis, string>;
+
+export function normalizeJadwalJenis(value: FormDataEntryValue | string | null | undefined) {
+	const raw = value?.toString().toLowerCase();
+	return JADWAL_JENIS.includes(raw as JadwalJenis) ? (raw as JadwalJenis) : 'ganjil';
+}
+
 const TEMPLATE_JENJANG_MAP = {
 	srd: 'sd',
 	srmp: 'smp',
@@ -91,6 +104,28 @@ export function normalizeJadwalJenjang(value: FormDataEntryValue | string | null
 	return JADWAL_JENJANG.includes(raw as JadwalJenjang) ? (raw as JadwalJenjang) : 'srma';
 }
 
+export function selectJadwalContext(
+	academic: {
+		tahunAjaranList: Array<{ id: number; semester: Array<{ id: number; tipe: string }> }>;
+		activeTahunAjaranId: number | null;
+		activeSemesterTipe: 'ganjil' | 'genap' | null;
+	},
+	params: { tahunAjaranId?: string | null; jenis?: string | null }
+) {
+	const requestedYear = Number(params.tahunAjaranId);
+	const selectedYear =
+		academic.tahunAjaranList.find((item) => item.id === requestedYear) ??
+		academic.tahunAjaranList.find((item) => item.id === academic.activeTahunAjaranId) ??
+		academic.tahunAjaranList[0] ??
+		null;
+	const jenis = normalizeJadwalJenis(params.jenis ?? academic.activeSemesterTipe ?? 'ganjil');
+	const semesterId =
+		jenis === 'persiapan'
+			? null
+			: (selectedYear?.semester.find((semester) => semester.tipe === jenis)?.id ?? null);
+	return { tahunAjaranId: selectedYear?.id ?? null, jenis, semesterId };
+}
+
 export function canAccessJadwal(user?: Pick<AuthUser, 'type' | 'permissions'> | null) {
 	if (!user) return false;
 	if (user.type === 'admin' || user.type === 'wali_kelas') return true;
@@ -113,31 +148,49 @@ export function requireJadwalManageAccess(user?: Pick<AuthUser, 'type' | 'permis
 	if (!canManageJadwal(user)) throw error(403, 'Anda tidak memiliki izin mengelola jadwal.');
 }
 
-function templateNameForJenjang(jenjang: JadwalJenjang) {
-	return jenjang === 'srma'
-		? 'Jadwal Reguler Senin-Jumat'
-		: `Jadwal Reguler Senin-Jumat ${JADWAL_JENJANG_LABELS[jenjang]}`;
+type TemplateContext = {
+	tahunAjaranId?: number | null;
+	semesterId?: number | null;
+	jenis?: JadwalJenis | null;
+};
+
+function templateNameForJenjang(jenjang: JadwalJenjang, context: TemplateContext) {
+	const jenis = normalizeJadwalJenis(context.jenis);
+	return (
+		'Pengaturan ' +
+		JADWAL_JENIS_LABELS[jenis] +
+		' ' +
+		(context.tahunAjaranId ?? 'umum') +
+		' ' +
+		JADWAL_JENJANG_LABELS[jenjang]
+	);
 }
 
 async function ensureTemplateForJenjang(
 	sekolahId: number,
 	jenjang: JadwalJenjang,
-	params?: { tahunAjaranId?: number | null; semesterId?: number | null }
+	params: TemplateContext = {}
 ) {
 	const now = new Date().toISOString();
-	const nama = templateNameForJenjang(jenjang);
-	let template = await db.query.tableJadwalTemplate.findFirst({
-		where: and(eq(tableJadwalTemplate.sekolahId, sekolahId), eq(tableJadwalTemplate.nama, nama))
-	});
+	const jenis = normalizeJadwalJenis(params.jenis);
+	const nama = templateNameForJenjang(jenjang, params);
+	const filters = [
+		eq(tableJadwalTemplate.sekolahId, sekolahId),
+		eq(tableJadwalTemplate.nama, nama),
+		eq(tableJadwalTemplate.jenis, jenis)
+	];
+	if (params.tahunAjaranId)
+		filters.push(eq(tableJadwalTemplate.tahunAjaranId, params.tahunAjaranId));
+	let template = await db.query.tableJadwalTemplate.findFirst({ where: and(...filters) });
 	let created = false;
-
 	if (!template) {
 		const result = await db
 			.insert(tableJadwalTemplate)
 			.values({
 				sekolahId,
-				tahunAjaranId: params?.tahunAjaranId ?? null,
-				semesterId: params?.semesterId ?? null,
+				tahunAjaranId: params.tahunAjaranId ?? null,
+				semesterId: params.semesterId ?? null,
+				jenis,
 				nama,
 				jenjang: TEMPLATE_JENJANG_MAP[jenjang],
 				aktif: true,
@@ -148,8 +201,42 @@ async function ensureTemplateForJenjang(
 		template = result[0];
 		created = true;
 	}
-
 	return { template, created };
+}
+
+export async function ensureJadwalPelajaranTemplate(
+	sekolahId: number,
+	params: { tahunAjaranId: number; jenis: JadwalJenis; semesterId?: number | null }
+) {
+	await ensureJadwalKurikulumSchema();
+	const jenis = normalizeJadwalJenis(params.jenis);
+	const nama = 'Jadwal Pelajaran ' + JADWAL_JENIS_LABELS[jenis] + ' ' + params.tahunAjaranId;
+	let template = await db.query.tableJadwalTemplate.findFirst({
+		where: and(
+			eq(tableJadwalTemplate.sekolahId, sekolahId),
+			eq(tableJadwalTemplate.tahunAjaranId, params.tahunAjaranId),
+			eq(tableJadwalTemplate.jenis, jenis),
+			eq(tableJadwalTemplate.nama, nama)
+		)
+	});
+	if (!template) {
+		const rows = await db
+			.insert(tableJadwalTemplate)
+			.values({
+				sekolahId,
+				tahunAjaranId: params.tahunAjaranId,
+				semesterId: params.semesterId ?? null,
+				jenis,
+				nama,
+				jenjang: 'semua',
+				aktif: true,
+				createdAt: new Date().toISOString(),
+				updatedAt: new Date().toISOString()
+			})
+			.returning();
+		template = rows[0];
+	}
+	return template;
 }
 
 export async function ensureDefaultJadwalFoundation(
@@ -157,6 +244,7 @@ export async function ensureDefaultJadwalFoundation(
 	params?: {
 		tahunAjaranId?: number | null;
 		semesterId?: number | null;
+		jenis?: JadwalJenis | null;
 		jenjang?: JadwalJenjang | null;
 		restoreMissingJam?: boolean;
 	}
@@ -166,8 +254,7 @@ export async function ensureDefaultJadwalFoundation(
 		const now = new Date().toISOString();
 		const selectedJenjang = normalizeJadwalJenjang(params?.jenjang);
 		let selectedTemplate = null as
-			| Awaited<ReturnType<typeof ensureTemplateForJenjang>>['template']
-			| null;
+			Awaited<ReturnType<typeof ensureTemplateForJenjang>>['template'] | null;
 		let jamInserted = 0;
 
 		for (const jenjang of JADWAL_JENJANG) {
@@ -244,17 +331,21 @@ export async function ensureDefaultJadwalFoundation(
 		};
 	});
 }
-export async function loadJadwalJam(sekolahId: number, jenjang: JadwalJenjang | null = 'srma') {
+export async function loadJadwalJam(
+	sekolahId: number,
+	jenjang: JadwalJenjang | null = 'srma',
+	templateId?: number | null
+) {
 	await ensureJadwalKurikulumSchema();
-	return withSchemaReady('Jadwal', () =>
-		db.query.tableJadwalJam.findMany({
-			where:
-				jenjang === null
-					? eq(tableJadwalJam.sekolahId, sekolahId)
-					: and(eq(tableJadwalJam.sekolahId, sekolahId), eq(tableJadwalJam.jenjang, jenjang)),
+	return withSchemaReady('Jadwal', () => {
+		const filters = [eq(tableJadwalJam.sekolahId, sekolahId)];
+		if (jenjang) filters.push(eq(tableJadwalJam.jenjang, jenjang));
+		if (templateId) filters.push(eq(tableJadwalJam.templateId, templateId));
+		return db.query.tableJadwalJam.findMany({
+			where: and(...filters),
 			orderBy: [asc(tableJadwalJam.urutan), asc(tableJadwalJam.jamKe)]
-		})
-	);
+		});
+	});
 }
 
 export async function loadJadwalKegiatan(sekolahId: number) {
@@ -266,6 +357,3 @@ export async function loadJadwalKegiatan(sekolahId: number) {
 		})
 	);
 }
-
-
-

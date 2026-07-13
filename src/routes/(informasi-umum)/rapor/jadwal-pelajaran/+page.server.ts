@@ -1,18 +1,27 @@
-import { loadJadwalJam } from '$lib/server/jadwal';
+import {
+	ensureDefaultJadwalFoundation,
+	ensureJadwalPelajaranTemplate,
+	JADWAL_JENIS,
+	JADWAL_JENIS_LABELS,
+	JADWAL_JENJANG,
+	selectJadwalContext
+} from '$lib/server/jadwal';
 import db from '$lib/server/db';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { ensureJadwalBellSchema } from '$lib/server/db/ensure-jadwal-bell';
 import { ensureJadwalKurikulumSchema } from '$lib/server/db/ensure-jadwal-kurikulum';
 import {
 	tableBellSettings,
+	tableJadwalJam,
 	tableJadwalKegiatan,
 	tableJadwalMapel,
 	tableJadwalPelajaran,
+	tableJadwalTemplate,
 	tableKegiatanCustom,
 	tableKelas
 } from '$lib/server/db/schema';
 import { fail } from '@sveltejs/kit';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 
 const HARI_LIST = ['senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu'];
@@ -30,7 +39,7 @@ function normalizeKode(value: FormDataEntryValue | string | null | undefined) {
 	return value?.toString().trim().toUpperCase() ?? '';
 }
 
-export const load: PageServerLoad = async ({ locals, depends }) => {
+export const load: PageServerLoad = async ({ locals, depends, url }) => {
 	depends('app:jadwal-pelajaran');
 	const sekolahId = locals.sekolah?.id ?? null;
 	const meta = { title: 'Jadwal Pelajaran' };
@@ -49,11 +58,57 @@ export const load: PageServerLoad = async ({ locals, depends }) => {
 	await ensureJadwalBellSchema();
 	await ensureJadwalKurikulumSchema();
 	const academicContext = await resolveSekolahAcademicContext(sekolahId);
-	const activeSemesterId = academicContext?.activeSemesterId ?? null;
+	const context = selectJadwalContext(academicContext, {
+		tahunAjaranId: url.searchParams.get('tahunAjaranId'),
+		jenis: url.searchParams.get('jenis')
+	});
+	if (!context.tahunAjaranId) {
+		return {
+			meta,
+			jadwalPelajaran: [],
+			jadwalJam: [],
+			daftarKelas: [],
+			daftarMapelItems: [],
+			daftarKegiatanItems: [],
+			tahunAjaranList: [],
+			jenisOptions: JADWAL_JENIS.map((value) => ({ value, label: JADWAL_JENIS_LABELS[value] })),
+			selectedContext: context
+		};
+	}
+	const selectedYear = academicContext.tahunAjaranList.find(
+		(item) => item.id === context.tahunAjaranId
+	);
+	const classSemesterId =
+		context.semesterId ?? selectedYear?.semester.find((item) => item.tipe === 'ganjil')?.id ?? null;
+	const scheduleTemplate = await ensureJadwalPelajaranTemplate(sekolahId, context);
+	await Promise.all(
+		JADWAL_JENJANG.map((jenjang) =>
+			ensureDefaultJadwalFoundation(sekolahId, { ...context, jenjang })
+		)
+	);
+	const settingTemplates = await db.query.tableJadwalTemplate.findMany({
+		columns: { id: true },
+		where: and(
+			eq(tableJadwalTemplate.sekolahId, sekolahId),
+			eq(tableJadwalTemplate.tahunAjaranId, context.tahunAjaranId),
+			eq(tableJadwalTemplate.jenis, context.jenis)
+		)
+	});
+	if (
+		context.tahunAjaranId === academicContext.activeTahunAjaranId &&
+		context.jenis === (academicContext.activeSemesterTipe ?? 'ganjil')
+	) {
+		await db
+			.update(tableJadwalPelajaran)
+			.set({ templateId: scheduleTemplate.id, semesterId: context.semesterId })
+			.where(
+				and(eq(tableJadwalPelajaran.sekolahId, sekolahId), isNull(tableJadwalPelajaran.templateId))
+			);
+	}
 
 	const daftarKelas = await db.query.tableKelas.findMany({
-		where: activeSemesterId
-			? and(eq(tableKelas.sekolahId, sekolahId), eq(tableKelas.semesterId, activeSemesterId))
+		where: classSemesterId
+			? and(eq(tableKelas.sekolahId, sekolahId), eq(tableKelas.semesterId, classSemesterId))
 			: eq(tableKelas.sekolahId, sekolahId),
 		columns: { id: true, nama: true, fase: true },
 		orderBy: [asc(tableKelas.nama)]
@@ -69,7 +124,10 @@ export const load: PageServerLoad = async ({ locals, depends }) => {
 				orderBy: [asc(tableKegiatanCustom.kode)]
 			}),
 			db.query.tableJadwalPelajaran.findMany({
-				where: eq(tableJadwalPelajaran.sekolahId, sekolahId),
+				where: and(
+					eq(tableJadwalPelajaran.sekolahId, sekolahId),
+					eq(tableJadwalPelajaran.templateId, scheduleTemplate.id)
+				),
 				orderBy: [asc(tableJadwalPelajaran.hari), asc(tableJadwalPelajaran.jamKe)]
 			}),
 			db.query.tableJadwalMapel.findMany({
@@ -102,7 +160,16 @@ export const load: PageServerLoad = async ({ locals, depends }) => {
 			};
 		});
 
-	const jadwalJam = await loadJadwalJam(sekolahId, null);
+	const templateIds = settingTemplates.map((template) => template.id);
+	const jadwalJam = templateIds.length
+		? await db.query.tableJadwalJam.findMany({
+				where: and(
+					eq(tableJadwalJam.sekolahId, sekolahId),
+					inArray(tableJadwalJam.templateId, templateIds)
+				),
+				orderBy: [asc(tableJadwalJam.urutan), asc(tableJadwalJam.jamKe)]
+			})
+		: [];
 	const kegiatanItems = kegiatanRows
 		.filter((kegiatan) => kegiatan.aktif && kegiatan.kode)
 		.map((kegiatan) => ({
@@ -115,6 +182,12 @@ export const load: PageServerLoad = async ({ locals, depends }) => {
 
 	return {
 		meta,
+		tahunAjaranList: academicContext.tahunAjaranList.map((item) => ({
+			id: item.id,
+			nama: item.nama
+		})),
+		jenisOptions: JADWAL_JENIS.map((value) => ({ value, label: JADWAL_JENIS_LABELS[value] })),
+		selectedContext: context,
 		bellSettings,
 		kegiatanCustom,
 		jadwalPelajaran,
@@ -233,6 +306,13 @@ export const actions: Actions = {
 		}
 
 		const formData = await request.formData();
+		const academic = await resolveSekolahAcademicContext(sekolahId);
+		const context = selectJadwalContext(academic, {
+			tahunAjaranId: formData.get('tahunAjaranId')?.toString(),
+			jenis: formData.get('jenis')?.toString()
+		});
+		if (!context.tahunAjaranId) return fail(400, { fail: 'Tahun ajaran belum tersedia.' });
+		const scheduleTemplate = await ensureJadwalPelajaranTemplate(sekolahId, context);
 		const raw = formData.get('data')?.toString() ?? '';
 		let entries: Array<{ hari: string; jamKe: number; kelasId: number; kodeKegiatan: string }>;
 		try {
@@ -288,7 +368,7 @@ export const actions: Actions = {
 				jadwalMapelId: match?.id ?? null,
 				guruPegawaiId: guruId,
 				guruNama: guruId
-					? candidates.find((mapel) => mapel.guruPegawaiId === guruId)?.guru?.nama ?? 'Guru'
+					? (candidates.find((mapel) => mapel.guruPegawaiId === guruId)?.guru?.nama ?? 'Guru')
 					: null
 			};
 		});
@@ -306,18 +386,36 @@ export const actions: Actions = {
 			const first = group[0];
 			const classes = classIds.map((id) => kelasNama.get(id) ?? 'Kelas ' + id).join(', ');
 			return fail(400, {
-				fail: 'Bentrok guru ' + first.guruNama + ': ' + first.hari + ' jam ke-' + first.jamKe + ' di ' + classes + '.'
+				fail:
+					'Bentrok guru ' +
+					first.guruNama +
+					': ' +
+					first.hari +
+					' jam ke-' +
+					first.jamKe +
+					' di ' +
+					classes +
+					'.'
 			});
 		}
 
 		await ensureJadwalBellSchema();
 		await ensureJadwalKurikulumSchema();
 		await db.transaction(async (tx) => {
-			await tx.delete(tableJadwalPelajaran).where(eq(tableJadwalPelajaran.sekolahId, sekolahId));
+			await tx
+				.delete(tableJadwalPelajaran)
+				.where(
+					and(
+						eq(tableJadwalPelajaran.sekolahId, sekolahId),
+						eq(tableJadwalPelajaran.templateId, scheduleTemplate.id)
+					)
+				);
 			if (cleaned.length) {
 				await tx.insert(tableJadwalPelajaran).values(
 					resolved.map((entry) => ({
 						sekolahId,
+						templateId: scheduleTemplate.id,
+						semesterId: context.semesterId,
 						hari: entry.hari,
 						jamKe: entry.jamKe,
 						kelasId: entry.kelasId,

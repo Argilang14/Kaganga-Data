@@ -28,6 +28,7 @@ export async function ensureJadwalKurikulumSchema() {
 			"sekolah_id" integer NOT NULL,
 			"tahun_ajaran_id" integer,
 			"semester_id" integer,
+			"jenis" text DEFAULT 'ganjil' NOT NULL,
 			"nama" text NOT NULL,
 			"jenjang" text DEFAULT 'semua' NOT NULL,
 			"aktif" integer DEFAULT 1 NOT NULL,
@@ -101,7 +102,9 @@ export async function ensureJadwalKurikulumSchema() {
 		`CREATE INDEX IF NOT EXISTS "kalender_pendidikan_sekolah_tanggal_idx" ON "kalender_pendidikan" ("sekolah_id", "tanggal_mulai")`
 	]);
 
+	await addColumnIfMissing('jadwal_template', 'jenis', "text DEFAULT 'ganjil' NOT NULL");
 	await addColumnIfMissing('jadwal_pelajaran', 'semester_id', 'integer');
+	await addColumnIfMissing('jadwal_pelajaran', 'template_id', 'integer');
 	await addColumnIfMissing('jadwal_pelajaran', 'jam_id', 'integer');
 	await addColumnIfMissing('jadwal_pelajaran', 'tipe', "text DEFAULT 'pelajaran' NOT NULL");
 	await addColumnIfMissing('jadwal_pelajaran', 'jadwal_mapel_id', 'integer');

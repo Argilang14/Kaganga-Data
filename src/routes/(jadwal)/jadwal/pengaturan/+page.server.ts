@@ -7,12 +7,15 @@ import {
 	ensureDefaultJadwalFoundation,
 	JADWAL_HARI,
 	JADWAL_HARI_LABELS,
+	JADWAL_JENIS,
+	JADWAL_JENIS_LABELS,
 	JADWAL_JENJANG,
 	JADWAL_JENJANG_LABELS,
 	loadJadwalJam,
 	loadJadwalKegiatan,
 	normalizeJadwalJenjang,
-	requireJadwalManageAccess
+	requireJadwalManageAccess,
+	selectJadwalContext
 } from '$lib/server/jadwal';
 import { fail, redirect } from '@sveltejs/kit';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -37,6 +40,14 @@ function normalizeImportText(value: unknown) {
 function normalizeBoolean(value: unknown) {
 	const raw = normalizeImportText(value).toLowerCase();
 	return raw === 'aktif' || raw === 'true' || raw === 'ya' || raw === '1';
+}
+
+async function resolveFormContext(sekolahId: number, formData: FormData) {
+	const academic = await resolveSekolahAcademicContext(sekolahId);
+	return selectJadwalContext(academic, {
+		tahunAjaranId: formData.get('tahunAjaranId')?.toString(),
+		jenis: formData.get('jenis')?.toString()
+	});
 }
 function normalizeJadwalType(value: FormDataEntryValue | null) {
 	const raw = value?.toString();
@@ -74,19 +85,25 @@ export async function load({ locals, url }) {
 
 	const selectedJenjang = normalizeJadwalJenjang(url.searchParams.get('jenjang'));
 	const academic = await resolveSekolahAcademicContext(sekolahId);
+	const context = selectJadwalContext(academic, {
+		tahunAjaranId: url.searchParams.get('tahunAjaranId'),
+		jenis: url.searchParams.get('jenis')
+	});
 	const seedResult = await ensureDefaultJadwalFoundation(sekolahId, {
-		tahunAjaranId: academic.activeTahunAjaranId,
-		semesterId: academic.activeSemesterId,
+		...context,
 		jenjang: selectedJenjang
 	});
 
-	const jamList = await loadJadwalJam(sekolahId, selectedJenjang);
+	const jamList = await loadJadwalJam(sekolahId, selectedJenjang, seedResult.template.id);
 	const kegiatanList = await loadJadwalKegiatan(sekolahId);
 
 	return {
 		meta: { title: 'Pengaturan Jadwal' } satisfies PageMeta,
 		activeTahunAjaranId: academic.activeTahunAjaranId,
 		activeSemesterId: academic.activeSemesterId,
+		tahunAjaranList: academic.tahunAjaranList.map((item) => ({ id: item.id, nama: item.nama })),
+		jenisOptions: JADWAL_JENIS.map((value) => ({ value, label: JADWAL_JENIS_LABELS[value] })),
+		selectedContext: context,
 		selectedJenjang,
 		jenjangOptions: JADWAL_JENJANG.map((value) => ({ value, label: JADWAL_JENJANG_LABELS[value] })),
 		seedInfo: {
@@ -123,10 +140,9 @@ export const actions = {
 			return fail(400, { fail: 'Pukul selesai harus lebih besar dari pukul mulai.' });
 		}
 
-		const academic = await resolveSekolahAcademicContext(sekolahId);
+		const context = await resolveFormContext(sekolahId, formData);
 		const { template } = await ensureDefaultJadwalFoundation(sekolahId, {
-			tahunAjaranId: academic.activeTahunAjaranId,
-			semesterId: academic.activeSemesterId,
+			...context,
 			jenjang
 		});
 
@@ -235,7 +251,11 @@ export const actions = {
 		if (!slot) return fail(404, { fail: 'Jam jadwal tidak ditemukan.' });
 		if (await findUsedSlot(sekolahId, [slot])) {
 			return fail(400, {
-				fail: slot.hari + ' jam ke-' + slot.jamKe + ' masih dipakai pada Jadwal Pelajaran dan tidak dapat dihapus.'
+				fail:
+					slot.hari +
+					' jam ke-' +
+					slot.jamKe +
+					' masih dipakai pada Jadwal Pelajaran dan tidak dapat dihapus.'
 			});
 		}
 		await db
@@ -382,10 +402,9 @@ export const actions = {
 		if (!(file instanceof File) || file.size === 0) {
 			return fail(400, { fail: 'File Excel jam jadwal wajib dipilih.' });
 		}
-		const academic = await resolveSekolahAcademicContext(sekolahId);
+		const context = await resolveFormContext(sekolahId, formData);
 		const { template } = await ensureDefaultJadwalFoundation(sekolahId, {
-			tahunAjaranId: academic.activeTahunAjaranId,
-			semesterId: academic.activeSemesterId,
+			...context,
 			jenjang
 		});
 		const workbook = new ExcelJS.Workbook() as any;
@@ -465,10 +484,9 @@ export const actions = {
 
 		const formData = await request.formData();
 		const jenjang = normalizeJadwalJenjang(formData.get('jenjang'));
-		const academic = await resolveSekolahAcademicContext(sekolahId);
+		const context = await resolveFormContext(sekolahId, formData);
 		const result = await ensureDefaultJadwalFoundation(sekolahId, {
-			tahunAjaranId: academic.activeTahunAjaranId,
-			semesterId: academic.activeSemesterId,
+			...context,
 			jenjang,
 			restoreMissingJam: true
 		});

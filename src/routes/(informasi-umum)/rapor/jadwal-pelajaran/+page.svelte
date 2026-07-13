@@ -492,6 +492,8 @@
 			.filter((entry) => entry.kodeKegiatan);
 		const formData = new FormData();
 		formData.set('data', JSON.stringify(entries));
+		formData.set('tahunAjaranId', String(data.selectedContext?.tahunAjaranId ?? ''));
+		formData.set('jenis', data.selectedContext?.jenis ?? 'ganjil');
 		try {
 			await postAction('saveJadwal', formData);
 			toast('Jadwal pelajaran tersimpan', 'success');
@@ -515,6 +517,24 @@
 				<h1 class="text-xl font-bold">Jadwal Pelajaran</h1>
 				<p class="text-base-content/70 text-sm">Kelola jadwal kelas dan kode kegiatan.</p>
 			</div>
+			<form method="GET" class="flex flex-wrap items-center gap-2">
+				<label class="flex items-center gap-2 text-sm font-semibold">
+					<span>Tahun Ajaran</span>
+					<select class="select select-sm bg-base-200 w-36" name="tahunAjaranId" value={data.selectedContext?.tahunAjaranId ?? ''} onchange={(event) => (event.currentTarget as HTMLSelectElement).form?.requestSubmit()}>
+						{#each data.tahunAjaranList ?? [] as tahun (tahun.id)}
+							<option value={tahun.id}>{tahun.nama}</option>
+						{/each}
+					</select>
+				</label>
+				<label class="flex items-center gap-2 text-sm font-semibold">
+					<span>Jadwal</span>
+					<select class="select select-sm bg-base-200 w-44" name="jenis" value={data.selectedContext?.jenis ?? 'ganjil'} onchange={(event) => (event.currentTarget as HTMLSelectElement).form?.requestSubmit()}>
+						{#each data.jenisOptions ?? [] as option (option.value)}
+							<option value={option.value}>{option.label}</option>
+						{/each}
+					</select>
+				</label>
+			</form>
 			<button
 				class="btn btn-primary shadow-none"
 				type="button"

@@ -1014,6 +1014,9 @@ export const tableJadwalTemplate = sqliteTable(
 			.notNull(),
 		tahunAjaranId: int().references(() => tableTahunAjaran.id, { onDelete: 'cascade' }),
 		semesterId: int().references(() => tableSemester.id, { onDelete: 'cascade' }),
+		jenis: text({ enum: ['persiapan', 'ganjil', 'genap'] })
+			.default('ganjil')
+			.notNull(),
 		nama: text().notNull(),
 		jenjang: text({ enum: ['semua', 'sd', 'smp', 'sma'] })
 			.default('semua')
@@ -1122,6 +1125,7 @@ export const tableJadwalPelajaran = sqliteTable(
 			.references(() => tableSekolah.id, { onDelete: 'cascade' })
 			.notNull(),
 		semesterId: int().references(() => tableSemester.id, { onDelete: 'cascade' }),
+		templateId: int().references(() => tableJadwalTemplate.id, { onDelete: 'cascade' }),
 		kelasId: int()
 			.references(() => tableKelas.id, { onDelete: 'cascade' })
 			.notNull(),
@@ -1143,6 +1147,7 @@ export const tableJadwalPelajaran = sqliteTable(
 	(table) => [
 		index('jadwal_pelajaran_sekolah_idx').on(table.sekolahId),
 		index('jadwal_pelajaran_semester_idx').on(table.semesterId),
+		index('jadwal_pelajaran_template_idx').on(table.templateId),
 		index('jadwal_pelajaran_kelas_hari_idx').on(table.kelasId, table.hari),
 		index('jadwal_pelajaran_guru_idx').on(table.guruPegawaiId),
 		index('jadwal_pelajaran_mapel_idx').on(table.mataPelajaranId),
@@ -1263,6 +1268,10 @@ export const tableJadwalPelajaranRelations = relations(tableJadwalPelajaran, ({ 
 	sekolah: one(tableSekolah, {
 		fields: [tableJadwalPelajaran.sekolahId],
 		references: [tableSekolah.id]
+	}),
+	template: one(tableJadwalTemplate, {
+		fields: [tableJadwalPelajaran.templateId],
+		references: [tableJadwalTemplate.id]
 	}),
 	semester: one(tableSemester, {
 		fields: [tableJadwalPelajaran.semesterId],
@@ -1527,9 +1536,7 @@ export const tableKetidakhadiranRapor = sqliteTable(
 		alfa: int(),
 		...audit
 	},
-	(table) => [
-		unique('ketidakhadiran_rapor_murid_semester_idx').on(table.muridId, table.semesterId)
-	]
+	(table) => [unique('ketidakhadiran_rapor_murid_semester_idx').on(table.muridId, table.semesterId)]
 );
 
 export const tableKetidakhadiranRaporRelations = relations(tableKetidakhadiranRapor, ({ one }) => ({

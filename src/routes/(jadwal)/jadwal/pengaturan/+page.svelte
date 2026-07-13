@@ -4,6 +4,7 @@
 
 	type JadwalHari = 'senin' | 'selasa' | 'rabu' | 'kamis' | 'jumat';
 	type JadwalJenjang = 'srd' | 'srmp' | 'srma';
+	type JadwalJenis = 'persiapan' | 'ganjil' | 'genap';
 	type JamRow = {
 		id: number;
 		hari: JadwalHari;
@@ -27,6 +28,9 @@
 	type PageData = {
 		activeTahunAjaranId: number | null;
 		activeSemesterId: number | null;
+		tahunAjaranList: { id: number; nama: string }[];
+		jenisOptions: { value: JadwalJenis; label: string }[];
+		selectedContext: { tahunAjaranId: number | null; jenis: JadwalJenis; semesterId: number | null };
 		selectedJenjang: JadwalJenjang;
 		jenjangOptions: { value: JadwalJenjang; label: string }[];
 		seedInfo: { jamInserted: number; kegiatanInserted: number };
@@ -99,7 +103,7 @@
 </script>
 
 <div class="space-y-4">
-	<div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+	<div class="flex flex-col gap-3">
 		<div>
 			<h2 class="text-2xl font-bold">Pengaturan Jadwal</h2>
 			<p class="text-base-content/70 text-sm">
@@ -110,10 +114,22 @@
 					'-'}
 			</p>
 		</div>
-		<div class="flex flex-wrap items-center justify-end gap-2">
-			<form method="GET" class="flex items-center gap-2">
+		<div class="flex flex-wrap items-center gap-2">
+			<form method="GET" class="flex flex-wrap items-center gap-2">
+				<label class="text-sm font-semibold whitespace-nowrap" for="tahun-filter">Tahun Ajaran</label>
+				<select id="tahun-filter" class="select select-bordered select-sm w-36" name="tahunAjaranId" value={data.selectedContext.tahunAjaranId ?? ''} onchange={submitJenjangFilter}>
+					{#each data.tahunAjaranList as tahun (tahun.id)}
+						<option value={tahun.id}>{tahun.nama}</option>
+					{/each}
+				</select>
+				<label class="text-sm font-semibold whitespace-nowrap" for="jenis-filter">Jadwal</label>
+				<select id="jenis-filter" class="select select-bordered select-sm w-44" name="jenis" value={data.selectedContext.jenis} onchange={submitJenjangFilter}>
+					{#each data.jenisOptions as option (option.value)}
+						<option value={option.value}>{option.label}</option>
+					{/each}
+				</select>
 				<label class="text-sm font-semibold whitespace-nowrap" for="jenjang-filter">Jenjang</label>
-				<select id="jenjang-filter" class="select select-bordered select-sm w-40" name="jenjang" value={data.selectedJenjang} onchange={submitJenjangFilter}>
+				<select id="jenjang-filter" class="select select-bordered select-sm w-36" name="jenjang" value={data.selectedJenjang} onchange={submitJenjangFilter}>
 					{#each data.jenjangOptions as option (option.value)}
 						<option value={option.value}>{option.label}</option>
 					{/each}
@@ -159,8 +175,8 @@
 		</div>
 	{/if}
 
-	<div class="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)] xl:items-start">
-		<div class="card bg-base-100 border-base-200 rounded-lg border p-3 shadow-sm xl:sticky xl:top-4">
+	<div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px] xl:items-start">
+		<div class="card bg-base-100 border-base-200 rounded-lg border p-3 order-2 shadow-sm xl:sticky xl:top-4">
 		<div>
 			<div class="mb-2 flex items-center justify-between gap-2">
 				<div>
@@ -208,7 +224,7 @@
 		</div>
 	</div>
 
-	<div class="space-y-4">
+	<div class="order-1 space-y-4">
 		<div class="card bg-base-100 border-base-200 rounded-lg border p-4 shadow-sm">
 			<div class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 				<div>
@@ -225,6 +241,8 @@
 						onsubmit={confirmBulkJam}
 					>
 						<input type="hidden" name="jenjang" value={data.selectedJenjang} />
+						<input type="hidden" name="tahunAjaranId" value={data.selectedContext.tahunAjaranId ?? ''} />
+						<input type="hidden" name="jenis" value={data.selectedContext.jenis} />
 						{#each selectedJamIds as jamId (jamId)}
 							<input type="hidden" name="jamIds" value={jamId} />
 						{/each}
@@ -247,6 +265,8 @@
 					</form>
 					<form method="POST" action={`?/resetDefault&jenjang=${data.selectedJenjang}`}>
 						<input type="hidden" name="jenjang" value={data.selectedJenjang} />
+						<input type="hidden" name="tahunAjaranId" value={data.selectedContext.tahunAjaranId ?? ''} />
+						<input type="hidden" name="jenis" value={data.selectedContext.jenis} />
 						<button class="btn btn-soft btn-sm shadow-none" type="submit">
 							<Icon name="repeat" />
 							Cek Default
@@ -321,6 +341,8 @@
 												>
 													<input type="hidden" name="jamId" value={jam.id} />
 													<input type="hidden" name="jenjang" value={data.selectedJenjang} />
+						<input type="hidden" name="tahunAjaranId" value={data.selectedContext.tahunAjaranId ?? ''} />
+						<input type="hidden" name="jenis" value={data.selectedContext.jenis} />
 													<div class="join">
 														<input
 															class="input input-bordered input-xs join-item w-24"
@@ -401,6 +423,8 @@
 													>
 														<input type="hidden" name="jamId" value={jam.id} />
 														<input type="hidden" name="jenjang" value={data.selectedJenjang} />
+						<input type="hidden" name="tahunAjaranId" value={data.selectedContext.tahunAjaranId ?? ''} />
+						<input type="hidden" name="jenis" value={data.selectedContext.jenis} />
 														<button
 															class="btn btn-error btn-outline btn-xs shadow-none"
 															type="submit"
@@ -441,6 +465,8 @@
 				class="mt-5 grid gap-4 md:grid-cols-2"
 			>
 				<input type="hidden" name="jenjang" value={data.selectedJenjang} />
+						<input type="hidden" name="tahunAjaranId" value={data.selectedContext.tahunAjaranId ?? ''} />
+						<input type="hidden" name="jenis" value={data.selectedContext.jenis} />
 				<label class="form-control">
 					<span class="label-text mb-1">Hari</span>
 					<select class="select select-bordered" name="hari" required>
@@ -557,6 +583,8 @@
 				class="mt-4 space-y-4"
 			>
 				<input type="hidden" name="jenjang" value={data.selectedJenjang} />
+						<input type="hidden" name="tahunAjaranId" value={data.selectedContext.tahunAjaranId ?? ''} />
+						<input type="hidden" name="jenis" value={data.selectedContext.jenis} />
 				<input
 					class="file-input file-input-bordered w-full"
 					type="file"

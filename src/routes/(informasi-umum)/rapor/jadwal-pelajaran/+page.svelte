@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/icon.svelte';
 	import { toast } from '$lib/components/toast.svelte';
@@ -112,6 +113,9 @@
 	let editKode = $state('');
 	let dropDialog = $state<HTMLDialogElement | null>(null);
 	let cellDialog = $state<HTMLDialogElement | null>(null);
+	let panelCollapsed = $state(false);
+	let panelSide = $state<'left' | 'right'>('right');
+	let panelWidth = $state(240);
 
 	const kodeMeta = $derived.by(() => {
 		const map = new Map<string, PaletteItem>();
@@ -237,6 +241,35 @@
 		durasiIstirahat = data.bellSettings?.durasiIstirahat ?? 30;
 		durasiUpacara = data.bellSettings?.durasiUpacara ?? 70;
 		bellActive = Boolean(data.bellSettings?.isActive);
+	});
+
+	function savePanelPreference() {
+		localStorage.setItem('jadwal-item-panel', JSON.stringify({ panelCollapsed, panelSide, panelWidth }));
+	}
+
+	function panelStyle() {
+		return '--panel-width:' + (panelCollapsed ? 96 : panelWidth) + 'px';
+	}
+
+	function togglePanel() {
+		panelCollapsed = !panelCollapsed;
+		savePanelPreference();
+	}
+
+	function movePanel() {
+		panelSide = panelSide === 'right' ? 'left' : 'right';
+		savePanelPreference();
+	}
+
+	onMount(() => {
+		try {
+			const saved = JSON.parse(localStorage.getItem('jadwal-item-panel') ?? '{}');
+			panelCollapsed = Boolean(saved.panelCollapsed);
+			panelSide = saved.panelSide === 'left' ? 'left' : 'right';
+			panelWidth = Math.min(360, Math.max(200, Number(saved.panelWidth) || 240));
+		} catch {
+			// Gunakan preferensi panel default jika penyimpanan browser tidak valid.
+		}
 	});
 
 	function configuredSlots(hari: string) {
@@ -499,8 +532,8 @@
 		</div>
 	</section>
 
-	<section class="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_240px]">
-		<div class="bg-base-100 flex min-h-0 flex-col rounded-lg p-4 shadow-md">
+	<section class="schedule-workspace grid grid-cols-1 gap-3" class:panel-left={panelSide === 'left'} style={panelStyle()}>
+		<div class="schedule-main bg-base-100 flex min-h-0 flex-col rounded-lg p-4 shadow-md">
 			<div class="mb-3 flex flex-wrap items-end gap-2">
 				<label class="flex items-center gap-2">
 					<span class="label-text text-sm font-semibold">Jenjang</span>
@@ -657,12 +690,32 @@
 			{/if}
 		</div>
 
-		<aside class="space-y-3">
+		<aside class="schedule-panel space-y-3 xl:sticky xl:top-4 xl:self-start">
 			<div class="bg-base-100 rounded-lg p-3 shadow-md">
-				<div class="mb-2 flex items-center gap-2">
-					<h2 class="flex-1 font-bold">Item Jadwal</h2>
-					<span class="badge badge-soft">{visiblePaletteItems.length}</span>
+				<div class="flex items-center gap-1">
+					<h2 class="min-w-0 flex-1 truncate font-bold">{panelCollapsed ? 'Item' : 'Item Jadwal'}</h2>
+					{#if !panelCollapsed}<span class="badge badge-soft">{visiblePaletteItems.length}</span>{/if}
+					<button class="btn btn-ghost btn-xs" type="button" onclick={movePanel} title="Pindahkan panel">
+						<Icon name={panelSide === 'right' ? 'left' : 'right'} />
+					</button>
+					<button class="btn btn-ghost btn-xs" type="button" onclick={togglePanel} title={panelCollapsed ? 'Buka panel' : 'Ciutkan panel'}>
+						<Icon name={panelCollapsed ? 'right' : 'left'} />
+					</button>
 				</div>
+				{#if !panelCollapsed}
+					<label class="mt-2 mb-2 flex items-center gap-2 text-xs">
+						<span>Lebar</span>
+						<input
+							class="range range-xs flex-1"
+							type="range"
+							min="200"
+							max="360"
+							step="10"
+							bind:value={panelWidth}
+							onchange={savePanelPreference}
+						/>
+						<span class="w-12 text-right">{panelWidth}px</span>
+					</label>
 				<div class="join mb-2 grid grid-cols-2">
 					<button
 						class="btn btn-sm join-item"
@@ -708,6 +761,7 @@
 						</div>
 					{/each}
 				</div>
+				{/if}
 			</div>
 
 		</aside>
@@ -823,6 +877,23 @@
 </dialog>
 
 <style>
+	@media (min-width: 80rem) {
+		.schedule-workspace {
+			grid-template-columns: minmax(0, 1fr) var(--panel-width);
+		}
+
+		.schedule-workspace.panel-left {
+			grid-template-columns: var(--panel-width) minmax(0, 1fr);
+		}
+
+		.panel-left .schedule-main {
+			order: 2;
+		}
+
+		.panel-left .schedule-panel {
+			order: 1;
+		}
+	}
 	.schedule-table :global(th),
 	.schedule-table :global(td) {
 		border-color: hsl(var(--b3, 220 13% 91%));

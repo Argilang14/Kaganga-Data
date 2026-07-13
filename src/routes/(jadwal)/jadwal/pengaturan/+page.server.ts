@@ -52,6 +52,21 @@ function normalizeJadwalKategori(value: FormDataEntryValue | null) {
 		: null;
 }
 
+async function findUsedSlot(sekolahId: number, slots: Array<{ hari: string; jamKe: number }>) {
+	for (const slot of slots) {
+		const used = await db.query.tableJadwalPelajaran.findFirst({
+			columns: { id: true },
+			where: and(
+				eq(tableJadwalPelajaran.sekolahId, sekolahId),
+				eq(tableJadwalPelajaran.hari, slot.hari),
+				eq(tableJadwalPelajaran.jamKe, slot.jamKe)
+			)
+		});
+		if (used) return slot;
+	}
+	return null;
+}
+
 export async function load({ locals, url }) {
 	requireJadwalManageAccess(locals.user);
 	const sekolahId = locals.sekolah?.id;
@@ -161,13 +176,14 @@ export const actions = {
 		const tipe = normalizeJadwalType(formData.get('tipe'));
 		const label = formData.get('label')?.toString().trim() || null;
 		const namaDefault = formData.get('namaDefault')?.toString().trim() || null;
+		const aktif = formData.get('aktif') === 'on';
 
 		if (!jamId || !pukulMulai || !pukulSelesai || !tipe) {
 			return fail(400, { fail: 'Data jam belum lengkap.' });
 		}
 
 		const existing = await db.query.tableJadwalJam.findFirst({
-			columns: { id: true },
+			columns: { id: true, hari: true, jamKe: true, aktif: true },
 			where: and(
 				eq(tableJadwalJam.id, jamId),
 				eq(tableJadwalJam.sekolahId, sekolahId),
@@ -175,6 +191,15 @@ export const actions = {
 			)
 		});
 		if (!existing) return fail(404, { fail: 'Jam jadwal tidak ditemukan pada jenjang ini.' });
+		if (existing.aktif && !aktif && (await findUsedSlot(sekolahId, [existing]))) {
+			return fail(400, {
+				fail:
+					existing.hari +
+					' jam ke-' +
+					existing.jamKe +
+					' masih dipakai pada Jadwal Pelajaran dan tidak dapat dinonaktifkan.'
+			});
+		}
 
 		await db
 			.update(tableJadwalJam)
@@ -184,7 +209,7 @@ export const actions = {
 				pukulSelesai,
 				tipe,
 				namaDefault,
-				aktif: formData.get('aktif') === 'on',
+				aktif,
 				updatedAt: new Date().toISOString()
 			})
 			.where(eq(tableJadwalJam.id, jamId));
@@ -199,6 +224,20 @@ export const actions = {
 		const jenjang = normalizeJadwalJenjang(formData.get('jenjang'));
 		const jamId = parsePositiveInteger(formData.get('jamId'));
 		if (!jamId) return fail(400, { fail: 'Jam jadwal belum dipilih.' });
+		const slot = await db.query.tableJadwalJam.findFirst({
+			columns: { id: true, hari: true, jamKe: true },
+			where: and(
+				eq(tableJadwalJam.id, jamId),
+				eq(tableJadwalJam.sekolahId, sekolahId),
+				eq(tableJadwalJam.jenjang, jenjang)
+			)
+		});
+		if (!slot) return fail(404, { fail: 'Jam jadwal tidak ditemukan.' });
+		if (await findUsedSlot(sekolahId, [slot])) {
+			return fail(400, {
+				fail: slot.hari + ' jam ke-' + slot.jamKe + ' masih dipakai pada Jadwal Pelajaran dan tidak dapat dihapus.'
+			});
+		}
 		await db
 			.delete(tableJadwalJam)
 			.where(
@@ -223,6 +262,22 @@ export const actions = {
 			.filter((value) => Number.isInteger(value) && value > 0);
 		const bulkAction = formData.get('bulkAction')?.toString();
 		if (!ids.length) return fail(400, { fail: 'Pilih minimal satu jam pelajaran.' });
+		const selectedSlots = await db.query.tableJadwalJam.findMany({
+			columns: { id: true, hari: true, jamKe: true },
+			where: and(
+				eq(tableJadwalJam.sekolahId, sekolahId),
+				eq(tableJadwalJam.jenjang, jenjang),
+				inArray(tableJadwalJam.id, ids)
+			)
+		});
+		if (bulkAction === 'hapus' || bulkAction === 'nonaktif') {
+			const used = await findUsedSlot(sekolahId, selectedSlots);
+			if (used) {
+				return fail(400, {
+					fail: used.hari + ' jam ke-' + used.jamKe + ' masih dipakai pada Jadwal Pelajaran.'
+				});
+			}
+		}
 
 		if (bulkAction === 'hapus') {
 			await db

@@ -39,6 +39,10 @@ export const appMenuItems: MenuItem[] = [
 				path: '/rapor/jadwal-pelajaran'
 			},
 			{
+				title: 'Jurnal Mengajar',
+				path: '/jurnal-mengajar'
+			},
+			{
 				title: 'Pengaturan Jadwal',
 				path: '/jadwal/pengaturan'
 			},
@@ -115,10 +119,6 @@ export const appMenuItems: MenuItem[] = [
 			{
 				title: 'Absen',
 				path: '/absen'
-			},
-			{
-				title: 'Jurnal Mengajar',
-				path: '/jurnal-mengajar'
 			},
 			{
 				title: 'Catatan Wali Kelas',

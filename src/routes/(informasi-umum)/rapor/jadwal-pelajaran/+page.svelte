@@ -20,6 +20,8 @@
 		detail: string | null;
 		jenjang?: JenjangFilter;
 		jpPerMinggu?: number;
+		guruId?: number | null;
+		guru?: string | null;
 	};
 	type DropScope = 'cell' | 'jenjang' | 'row' | 'sameJamAllDays';
 	type PendingDrop = { item: PaletteItem; hari: string; jamKe: number; kelasId: number };
@@ -47,6 +49,7 @@
 				kategori: string;
 				warna: string | null;
 				jpPerMinggu: number;
+				guruId: number | null;
 				guru: string | null;
 			}>
 		).map((item) => ({
@@ -57,7 +60,9 @@
 			warna: item.warna ?? '#dbeafe',
 			detail: item.guru ?? String(item.jpPerMinggu ?? 0) + ' JP/minggu',
 			jenjang: item.jenjang as JenjangFilter,
-			jpPerMinggu: item.jpPerMinggu ?? 0
+			jpPerMinggu: item.jpPerMinggu ?? 0,
+			guruId: item.guruId,
+			guru: item.guru
 		}))
 	);
 	const kegiatanItems = $derived(
@@ -111,6 +116,42 @@
 		for (const item of paletteItems) map.set(item.kode, item);
 		return map;
 	});
+	const teacherByCode = $derived.by(() => {
+		const groups = new Map<string, PaletteItem[]>();
+		for (const item of mapelItems) {
+			const group = groups.get(item.kode) ?? [];
+			group.push(item);
+			groups.set(item.kode, group);
+		}
+		const result = new Map<string, { id: number; nama: string }>();
+		for (const [kode, group] of groups) {
+			const ids = [...new Set(group.map((item) => item.guruId).filter((id): id is number => !!id))];
+			if (ids.length !== 1) continue;
+			const teacher = group.find((item) => item.guruId === ids[0]);
+			result.set(kode, { id: ids[0], nama: teacher?.guru ?? 'Guru' });
+		}
+		return result;
+	});
+	const teacherConflicts = $derived.by(() => {
+		const slots = new Map<string, { guru: string; hari: string; jamKe: number; kelasIds: Set<number>; cellKeys: string[] }>();
+		for (const [cellKey, kode] of Object.entries(cells)) {
+			const teacher = teacherByCode.get(kode);
+			if (!teacher) continue;
+			const [hari, jamRaw, kelasRaw] = cellKey.split('|');
+			const jamKe = Number(jamRaw);
+			const kelasId = Number(kelasRaw);
+			const key = hari + '|' + jamKe + '|' + teacher.id;
+			const slot = slots.get(key) ?? { guru: teacher.nama, hari, jamKe, kelasIds: new Set<number>(), cellKeys: [] };
+			slot.kelasIds.add(kelasId);
+			slot.cellKeys.push(cellKey);
+			slots.set(key, slot);
+		}
+		return [...slots.values()].filter((slot) => slot.kelasIds.size > 1).map((slot) => ({
+			...slot,
+			kelas: [...slot.kelasIds].map((id) => daftarKelas.find((kelas) => kelas.id === id)?.nama ?? 'Kelas ' + id)
+		}));
+	});
+	const conflictCellKeys = $derived(new Set(teacherConflicts.flatMap((conflict) => conflict.cellKeys)));
 	const visiblePaletteItems = $derived.by(() => {
 		const query = paletteSearch.trim().toLowerCase();
 		return paletteItems.filter((item) => {
@@ -477,12 +518,16 @@
 			<div
 				class="alert mb-3 items-start gap-3"
 				class:alert-success={scheduleChecks.jpIssues.length === 0 &&
-					scheduleChecks.unknownCodes.length === 0}
+					scheduleChecks.unknownCodes.length === 0 &&
+					scheduleChecks.teacherConflicts.length === 0}
 				class:alert-warning={scheduleChecks.jpIssues.length > 0 ||
-					scheduleChecks.unknownCodes.length > 0}
+					scheduleChecks.unknownCodes.length > 0 ||
+					scheduleChecks.teacherConflicts.length > 0}
 			>
 				<Icon
-					name={scheduleChecks.jpIssues.length === 0 && scheduleChecks.unknownCodes.length === 0
+					name={scheduleChecks.jpIssues.length === 0 &&
+						scheduleChecks.unknownCodes.length === 0 &&
+						scheduleChecks.teacherConflicts.length === 0
 						? 'check'
 						: 'warning'}
 				/>
@@ -493,6 +538,11 @@
 					</div>
 					{#if scheduleChecks.unknownCodes.length}
 						<div class="mt-1">Kode belum dikenal: {scheduleChecks.unknownCodes.join(', ')}</div>
+					{/if}
+					{#if scheduleChecks.teacherConflicts.length}
+						{#each scheduleChecks.teacherConflicts.slice(0, 6) as conflict}
+							<div class='mt-1 font-semibold text-error'>Bentrok guru {conflict.guru}: {hariLabel[conflict.hari]} jam ke-{conflict.jamKe} di {conflict.kelas.join(', ')}.</div>
+						{/each}
 					{/if}
 					{#if scheduleChecks.jpIssues.length}
 						<div class="mt-1 grid gap-1 md:grid-cols-2">
@@ -549,6 +599,7 @@
 											<td class="schedule-cell">
 												<button
 													class={`slot-button ${kode ? 'has-value' : ''}`}
+													class:is-conflict={conflictCellKeys.has(key)}
 													type="button"
 													style={cellStyle(kode)}
 													ondragover={allowDrop}
@@ -823,6 +874,11 @@
 	.slot-button:not(:disabled):hover {
 		outline: 2px solid #60a5fa;
 		outline-offset: -2px;
+	}
+
+	.slot-button.is-conflict {
+		border-color: var(--color-error);
+		box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--color-error) 35%, transparent);
 	}
 
 	.slot-button.has-value {

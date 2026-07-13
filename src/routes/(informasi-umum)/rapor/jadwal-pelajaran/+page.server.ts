@@ -73,7 +73,7 @@ export const load: PageServerLoad = async ({ locals, depends }) => {
 			}),
 			db.query.tableJadwalMapel.findMany({
 				where: eq(tableJadwalMapel.sekolahId, sekolahId),
-				with: { guru: { columns: { nama: true } } },
+				with: { guru: { columns: { id: true, nama: true } } },
 				orderBy: [asc(tableJadwalMapel.jenjang), asc(tableJadwalMapel.nama)]
 			}),
 			db.query.tableJadwalKegiatan.findMany({
@@ -96,6 +96,7 @@ export const load: PageServerLoad = async ({ locals, depends }) => {
 				kategori: mapel.kategori,
 				warna: mapel.warna,
 				jpPerMinggu: mapel.jpPerMinggu ?? 0,
+				guruId: mapel.guru?.id ?? null,
 				guru: mapel.guru?.nama ?? null
 			};
 		});
@@ -237,11 +238,26 @@ export const actions: Actions = {
 			return fail(400, { fail: 'Format jadwal tidak valid' });
 		}
 
-		const kelasRows = await db.query.tableKelas.findMany({
-			where: eq(tableKelas.sekolahId, sekolahId),
-			columns: { id: true }
-		});
+		const [kelasRows, mapelRows] = await Promise.all([
+			db.query.tableKelas.findMany({
+				where: eq(tableKelas.sekolahId, sekolahId),
+				columns: { id: true, nama: true }
+			}),
+			db.query.tableJadwalMapel.findMany({
+				where: eq(tableJadwalMapel.sekolahId, sekolahId),
+				columns: { id: true, kode: true, nama: true, guruPegawaiId: true },
+				with: { guru: { columns: { nama: true } } }
+			})
+		]);
 		const kelasIds = new Set(kelasRows.map((row) => row.id));
+		const kelasNama = new Map(kelasRows.map((row) => [row.id, row.nama]));
+		const mapelByCode = new Map<string, typeof mapelRows>();
+		for (const mapel of mapelRows) {
+			const kode = AGAMA_MAPEL_NAMES.has(mapel.nama) ? 'PAPB' : normalizeKode(mapel.kode);
+			const group = mapelByCode.get(kode) ?? [];
+			group.push(mapel);
+			mapelByCode.set(kode, group);
+		}
 		const cleaned = entries
 			.map((entry) => ({
 				hari: entry.hari,
@@ -259,18 +275,52 @@ export const actions: Actions = {
 					entry.kodeKegiatan
 			);
 
+		const resolved = cleaned.map((entry) => {
+			const candidates = mapelByCode.get(entry.kodeKegiatan) ?? [];
+			const guruIds = [...new Set(candidates.map((mapel) => mapel.guruPegawaiId).filter(Boolean))];
+			const match = candidates.length === 1 ? candidates[0] : null;
+			const guruId = guruIds.length === 1 ? Number(guruIds[0]) : null;
+			return {
+				...entry,
+				jadwalMapelId: match?.id ?? null,
+				guruPegawaiId: guruId,
+				guruNama: guruId
+					? candidates.find((mapel) => mapel.guruPegawaiId === guruId)?.guru?.nama ?? 'Guru'
+					: null
+			};
+		});
+		const teacherSlots = new Map<string, typeof resolved>();
+		for (const entry of resolved) {
+			if (!entry.guruPegawaiId) continue;
+			const key = entry.hari + '|' + entry.jamKe + '|' + entry.guruPegawaiId;
+			const group = teacherSlots.get(key) ?? [];
+			group.push(entry);
+			teacherSlots.set(key, group);
+		}
+		for (const group of teacherSlots.values()) {
+			const classIds = [...new Set(group.map((entry) => entry.kelasId))];
+			if (classIds.length < 2) continue;
+			const first = group[0];
+			const classes = classIds.map((id) => kelasNama.get(id) ?? 'Kelas ' + id).join(', ');
+			return fail(400, {
+				fail: 'Bentrok guru ' + first.guruNama + ': ' + first.hari + ' jam ke-' + first.jamKe + ' di ' + classes + '.'
+			});
+		}
+
 		await ensureJadwalBellSchema();
 		await ensureJadwalKurikulumSchema();
 		await db.transaction(async (tx) => {
 			await tx.delete(tableJadwalPelajaran).where(eq(tableJadwalPelajaran.sekolahId, sekolahId));
 			if (cleaned.length) {
 				await tx.insert(tableJadwalPelajaran).values(
-					cleaned.map((entry) => ({
+					resolved.map((entry) => ({
 						sekolahId,
 						hari: entry.hari,
 						jamKe: entry.jamKe,
 						kelasId: entry.kelasId,
 						kodeKegiatan: entry.kodeKegiatan,
+						jadwalMapelId: entry.jadwalMapelId,
+						guruPegawaiId: entry.guruPegawaiId,
 						updatedAt: new Date().toISOString()
 					}))
 				);

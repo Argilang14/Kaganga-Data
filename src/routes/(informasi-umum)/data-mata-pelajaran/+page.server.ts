@@ -18,7 +18,13 @@ const KATEGORI_OPTIONS = [
 ] as const;
 type KategoriFilter = (typeof KATEGORI_OPTIONS)[number];
 type KategoriOption = Exclude<KategoriFilter, 'semua'>;
-type ExcelRowLike = { getCell(index: number): { value?: unknown; text?: string } };
+type ExcelColorLike = { argb?: string; rgb?: string; indexed?: number; theme?: number };
+type ExcelCellLike = {
+	value?: unknown;
+	text?: string;
+	fill?: { type?: string; pattern?: string; fgColor?: ExcelColorLike; bgColor?: ExcelColorLike };
+};
+type ExcelRowLike = { getCell(index: number): ExcelCellLike };
 
 function normalizeText(value: FormDataEntryValue | null) {
 	const raw = value?.toString().trim() ?? '';
@@ -46,6 +52,29 @@ function cellText(value: unknown) {
 	return String(value).trim();
 }
 
+function normalizeHexColor(value: unknown) {
+	const raw = cellText(value).replace(/^#/, '').toUpperCase();
+	if (/^[0-9A-F]{3}$/.test(raw)) return '#' + raw.replace(/./g, (digit) => digit + digit);
+	if (/^[0-9A-F]{6}$/.test(raw)) return '#' + raw;
+	if (/^[0-9A-F]{8}$/.test(raw)) return '#' + raw.slice(2);
+	return null;
+}
+
+function excelCellColor(cell: ExcelCellLike) {
+	const typedColor = normalizeHexColor(cell.value) ?? normalizeHexColor(cell.text);
+	if (typedColor) return typedColor;
+	const fill = cell.fill;
+	if (!fill || fill.pattern === 'none') return '#DBEAFE';
+	for (const color of [fill.fgColor, fill.bgColor]) {
+		const direct = normalizeHexColor(color?.argb ?? color?.rgb);
+		if (direct) return direct;
+		if (color?.indexed === 9) return '#FFFFFF';
+		if (color?.indexed === 10) return '#FF0000';
+		if (color?.indexed === 11) return '#00FF00';
+		if (color?.indexed === 12) return '#0000FF';
+	}
+	return '#DBEAFE';
+}
 function normalizeBoolean(value: unknown) {
 	const raw = cellText(value).toLowerCase();
 	return !['nonaktif', 'tidak', 'false', '0'].includes(raw);
@@ -93,7 +122,7 @@ async function parseMapelWorkbook(file: File) {
 			kategori: normalizeKategori(cellText(row.getCell(5).value)),
 			guruPegawaiId: Number.isInteger(guruPegawaiId) && guruPegawaiId > 0 ? guruPegawaiId : null,
 			jpPerMinggu: Number.isInteger(jpPerMinggu) && jpPerMinggu >= 0 ? jpPerMinggu : 0,
-			warna: cellText(row.getCell(8).value) || '#dbeafe',
+			warna: excelCellColor(row.getCell(8)),
 			aktif: normalizeBoolean(row.getCell(9).value),
 			catatan: cellText(row.getCell(10).value) || null
 		});
@@ -171,7 +200,7 @@ export const actions = {
 		const kategori = normalizeKategori(formData.get('kategori'));
 		const guruPegawaiId = parsePositiveInteger(formData.get('guruPegawaiId')) ?? null;
 		const jpPerMinggu = normalizeNonNegativeInteger(formData.get('jpPerMinggu'));
-		const warna = normalizeText(formData.get('warna'));
+		const warna = normalizeHexColor(formData.get('warna')) ?? '#DBEAFE';
 		const catatan = normalizeText(formData.get('catatan'));
 		const aktif = formData.get('aktif') === 'on';
 

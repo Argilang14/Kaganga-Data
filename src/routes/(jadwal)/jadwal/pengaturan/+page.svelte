@@ -110,19 +110,29 @@
 					'-'}
 			</p>
 		</div>
-		<div class="flex flex-wrap items-center gap-2 sm:flex-nowrap">
-			<a class="btn btn-soft btn-sm shadow-none" href={resolve('/jadwal')}>
-				<Icon name="left" />
-				Jadwal
-			</a>
-			<a class="btn btn-soft btn-sm shadow-none" href={resolve('/rapor/jadwal-pelajaran')}>
-				<Icon name="book" />
-				Jadwal Pelajaran
-			</a>
-			<a class="btn btn-soft btn-sm shadow-none" href={resolve('/jadwal/kalender')}>
-				<Icon name="calendar" />
-				Kaldik
-			</a>
+		<div class="flex flex-wrap items-center justify-end gap-2">
+			<form method="GET" class="flex items-center gap-2">
+				<label class="text-sm font-semibold whitespace-nowrap" for="jenjang-filter">Jenjang</label>
+				<select id="jenjang-filter" class="select select-bordered select-sm w-40" name="jenjang" value={data.selectedJenjang} onchange={submitJenjangFilter}>
+					{#each data.jenjangOptions as option (option.value)}
+						<option value={option.value}>{option.label}</option>
+					{/each}
+				</select>
+			</form>
+			<button class="btn btn-primary btn-sm shadow-none" type="button" onclick={() => jamDialog?.showModal()}>
+				<Icon name="plus" /> Tambah Jam
+			</button>
+			<button class="btn btn-primary btn-sm shadow-none" type="button" onclick={() => kegiatanDialog?.showModal()}>
+				<Icon name="plus" /> Tambah Kegiatan
+			</button>
+			<div class="dropdown dropdown-end">
+				<button type="button" tabindex="0" class="btn btn-soft btn-sm shadow-none"><Icon name="down" /> Data Excel</button>
+				<ul tabindex="-1" class="dropdown-content menu bg-base-100 rounded-box border-base-300 z-20 mt-2 w-56 border p-2 shadow-xl">
+					<li><a href={resolve('/api/jadwal/jam/template')}><Icon name="download" /> Template Import</a></li>
+					<li><button type="button" onclick={() => importDialog?.showModal()}><Icon name="import" /> Import Data</button></li>
+					<li><a href={resolve('/api/jadwal/jam/export')}><Icon name="export" /> Export Data</a></li>
+				</ul>
+			</div>
 		</div>
 	</div>
 
@@ -149,77 +159,9 @@
 		</div>
 	{/if}
 
-	<div class="card bg-base-100 border-base-200 rounded-lg border p-4 shadow-sm">
-		<div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-			<div class="min-w-0">
-				<h3 class="font-semibold">Pengaturan Slot Jadwal</h3>
-				<p class="text-base-content/60 text-sm">
-					Pilih jenjang, tambah slot jam, kelola data Excel, dan siapkan kegiatan non-mapel dari
-					panel ini.
-				</p>
-			</div>
-			<div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
-				<form method="GET" class="flex items-center gap-2">
-					<label class="text-sm font-semibold whitespace-nowrap" for="jenjang-filter">Jenjang</label
-					>
-					<select
-						id="jenjang-filter"
-						class="select select-bordered select-sm w-52"
-						name="jenjang"
-						value={data.selectedJenjang}
-						onchange={submitJenjangFilter}
-					>
-						{#each data.jenjangOptions as option (option.value)}
-							<option value={option.value}>{option.label}</option>
-						{/each}
-					</select>
-				</form>
-				<div class="flex flex-wrap items-center gap-2 sm:flex-nowrap">
-					<button
-						class="btn btn-primary btn-sm shadow-none"
-						type="button"
-						onclick={() => jamDialog?.showModal()}
-					>
-						<Icon name="plus" />
-						Tambah Jam
-					</button>
-					<button
-						class="btn btn-primary btn-sm shadow-none"
-						type="button"
-						onclick={() => kegiatanDialog?.showModal()}
-					>
-						<Icon name="plus" />
-						Tambah Kegiatan
-					</button>
-					<div class="dropdown dropdown-end">
-						<button type="button" tabindex="0" class="btn btn-soft btn-sm shadow-none">
-							<Icon name="down" />
-							Data Excel
-						</button>
-						<ul
-							tabindex="-1"
-							class="dropdown-content menu bg-base-100 rounded-box border-base-300 z-10 mt-2 w-56 border p-2 shadow-xl"
-						>
-							<li>
-								<a href={resolve('/api/jadwal/jam/template')}
-									><Icon name="download" /> Template Import</a
-								>
-							</li>
-							<li>
-								<button type="button" onclick={() => importDialog?.showModal()}>
-									<Icon name="import" /> Import Data
-								</button>
-							</li>
-							<li>
-								<a href={resolve('/api/jadwal/jam/export')}><Icon name="export" /> Export Data</a>
-							</li>
-						</ul>
-					</div>
-				</div>
-			</div>
-		</div>
-
-		<div class="border-base-200 mt-4 border-t pt-4">
+	<div class="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)] xl:items-start">
+		<div class="card bg-base-100 border-base-200 rounded-lg border p-3 shadow-sm xl:sticky xl:top-4">
+		<div>
 			<div class="mb-2 flex items-center justify-between gap-2">
 				<div>
 					<div class="text-sm font-semibold">Kegiatan Non-Mapel</div>
@@ -230,11 +172,11 @@
 				<div class="badge badge-soft">{data.kegiatanList.length} kegiatan</div>
 			</div>
 			<div
-				class="grid max-h-56 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
+			class="grid max-h-[calc(100vh-16rem)] gap-2 overflow-y-auto pr-1"
 			>
 				{#each data.kegiatanList as kegiatan (kegiatan.id)}
 					<div
-						class="border-base-200 grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-lg border p-3"
+						class="border-base-200 grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1 rounded-lg border p-2"
 					>
 						<div class="min-w-0">
 							<div class="flex items-center gap-2">
@@ -246,7 +188,7 @@
 							</div>
 							<div class="text-base-content/60 text-xs">{kegiatan.kode}</div>
 						</div>
-						<div class="badge badge-outline">{kegiatan.kategori}</div>
+						<div class="badge badge-outline max-w-20 truncate text-[10px]">{kegiatan.kategori}</div>
 						<form method="POST" action="?/deleteKegiatan">
 							<input type="hidden" name="kegiatanId" value={kegiatan.id} />
 							<button
@@ -484,6 +426,7 @@
 				{/each}
 			</div>
 		</div>
+	</div>
 	</div>
 
 	<dialog class="modal" bind:this={jamDialog}>

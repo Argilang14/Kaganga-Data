@@ -415,9 +415,7 @@
 			</a>
 			<div class="min-w-0 flex-1">
 				<h1 class="text-xl font-bold">Jadwal Pelajaran</h1>
-				<p class="text-base-content/70 text-sm">
-					Kelola jadwal kelas, kode kegiatan, dan pengaturan bell.
-				</p>
+				<p class="text-base-content/70 text-sm">Kelola jadwal kelas dan kode kegiatan.</p>
 			</div>
 			<button
 				class="btn btn-primary shadow-none"
@@ -437,19 +435,8 @@
 	</section>
 
 	<section class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-		<div class="bg-base-100 rounded-lg p-4 shadow-md">
+		<div class="bg-base-100 flex min-h-0 flex-col rounded-lg p-4 shadow-md">
 			<div class="mb-3 flex flex-wrap items-end gap-2">
-				<label class="form-control w-36">
-					<span class="label-text text-xs">Jumlah jam</span>
-					<input
-						class="input input-sm bg-base-200"
-						type="number"
-						min="1"
-						max="30"
-						bind:value={jumlahJam}
-						disabled={!canManage}
-					/>
-				</label>
 				<label class="form-control w-40">
 					<span class="label-text text-xs">Jenjang</span>
 					<select class="select select-sm bg-base-200" bind:value={activeJenjang}>
@@ -476,16 +463,6 @@
 						>
 					</div>
 				</div>
-				<select
-					class="select select-sm bg-base-200 w-52"
-					onchange={(event) => fillRow('senin', 1, event.currentTarget.value)}
-					disabled={!canManage}
-				>
-					<option value="">Isi Senin jam 1</option>
-					{#each paletteItems as item (`${item.source}-${item.id}`)}
-						<option value={item.kode}>{item.kode} - {item.nama}</option>
-					{/each}
-				</select>
 				<button
 					class="btn btn-sm btn-soft shadow-none"
 					type="button"
@@ -539,7 +516,7 @@
 			{:else if visibleKelas.length === 0}
 				<div class="alert alert-info">Tidak ada kelas pada filter jenjang ini.</div>
 			{:else}
-				<div class="border-base-300 max-h-[72vh] overflow-auto rounded-md border">
+				<div class="border-base-300 min-h-[32rem] flex-1 overflow-auto rounded-md border lg:min-h-[calc(100vh-22rem)]">
 					<table
 						class="table-sm schedule-table table"
 						class:compact-schedule={tableDensity === 'padat'}
@@ -653,68 +630,6 @@
 				</div>
 			</div>
 
-			<div class="bg-base-100 rounded-lg p-4 shadow-md">
-				<h2 class="mb-3 font-bold">Pengaturan Bell</h2>
-				<div class="grid grid-cols-2 gap-2">
-					<label class="form-control col-span-2">
-						<span class="label-text text-xs">Jam mulai</span>
-						<input
-							class="input input-sm bg-base-200"
-							type="time"
-							bind:value={jamMulai}
-							disabled={!canManage}
-						/>
-					</label>
-					<label class="form-control">
-						<span class="label-text text-xs">Menit/jam</span>
-						<input
-							class="input input-sm bg-base-200"
-							type="number"
-							min="1"
-							bind:value={jamPelajaranMenit}
-							disabled={!canManage}
-						/>
-					</label>
-					<label class="form-control">
-						<span class="label-text text-xs">Istirahat</span>
-						<input
-							class="input input-sm bg-base-200"
-							type="number"
-							min="1"
-							bind:value={durasiIstirahat}
-							disabled={!canManage}
-						/>
-					</label>
-					<label class="form-control">
-						<span class="label-text text-xs">Upacara</span>
-						<input
-							class="input input-sm bg-base-200"
-							type="number"
-							min="1"
-							bind:value={durasiUpacara}
-							disabled={!canManage}
-						/>
-					</label>
-					<label class="label cursor-pointer justify-start gap-2">
-						<input
-							class="toggle toggle-sm"
-							type="checkbox"
-							bind:checked={bellActive}
-							disabled={!canManage}
-						/>
-						<span class="label-text">Aktif</span>
-					</label>
-				</div>
-				<button
-					class="btn btn-sm btn-primary mt-3 w-full shadow-none"
-					type="button"
-					onclick={saveSettings}
-					disabled={!canManage || settingsSaving}
-				>
-					<Icon name="save" />
-					Simpan Pengaturan
-				</button>
-			</div>
 		</aside>
 	</section>
 </div>

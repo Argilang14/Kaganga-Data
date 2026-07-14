@@ -1,4 +1,5 @@
 import db from '$lib/server/db';
+import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { tableKelas } from '$lib/server/db/schema';
 import { error, redirect } from '@sveltejs/kit';
@@ -92,6 +93,7 @@ export async function loadAbsensiKelasOptions(
 	sekolahId: number,
 	user: Pick<AuthUser, 'id' | 'type' | 'pegawaiId' | 'permissions'>
 ) {
+	await ensureAbsensiDigitalSchema();
 	const academic = await resolveSekolahAcademicContext(sekolahId);
 	const activeSemesterId = academic.activeSemesterId;
 	const baseFilter = activeSemesterId

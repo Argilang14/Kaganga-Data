@@ -117,7 +117,7 @@ export const appMenuItems: MenuItem[] = [
 		icon: 'briefcase',
 		subMenu: [
 			{
-				title: 'Absen',
+				title: 'Absensi Rapor',
 				path: '/absen'
 			},
 			{
@@ -141,6 +141,33 @@ export const appMenuItems: MenuItem[] = [
 				path: '/keputusan',
 				tags: ['kenaikan', 'kelas', 'lulus', 'naik'],
 				condition: 'genap'
+			}
+		]
+	},
+	{
+		title: 'Absensi',
+		icon: 'activity',
+		tags: ['qr', 'absensi digital', 'scan'],
+		subMenu: [
+			{
+				title: 'Scan QR',
+				path: '/administrasi/absensi/scan'
+			},
+			{
+				title: 'Absensi Kegiatan',
+				path: '/administrasi/absensi/kegiatan'
+			},
+			{
+				title: 'Rekap Kegiatan',
+				path: '/administrasi/absensi/kegiatan/rekap'
+			},
+			{
+				title: 'Kartu Absensi',
+				path: '/administrasi/absensi/kartu-qr'
+			},
+			{
+				title: 'Pengaturan Kegiatan',
+				path: '/administrasi/absensi/kegiatan/pengaturan'
 			}
 		]
 	},

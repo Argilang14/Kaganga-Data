@@ -237,6 +237,9 @@ export const tableSekolahRelations = relations(tableSekolah, ({ one, many }) => 
 	}),
 	tahunAjaran: many(tableTahunAjaran),
 	tasks: many(tableTasks),
+	absensiHarian: many(tableAbsensiHarian),
+	kegiatanAbsensi: many(tableKegiatanAbsensi),
+	absensiKegiatan: many(tableAbsensiKegiatan),
 	featureUnlocks: many(tableFeatureUnlock)
 }));
 
@@ -322,6 +325,7 @@ export const tableKelasRelations = relations(tableKelas, ({ one, many }) => ({
 		references: [tablePegawai.id]
 	}),
 	// many-to-many: kelas bisa diakses oleh multiple guru
+	absensiKegiatan: many(tableAbsensiKegiatan),
 	authUsers: many(tableAuthUserKelas)
 }));
 
@@ -467,6 +471,9 @@ export const tableMuridRelations = relations(tableMurid, ({ one, many }) => ({
 		references: [tableKeputusanMurid.muridId]
 	}),
 	muridMataPelajaran: many(tableMuridMataPelajaran),
+	absensiHarian: many(tableAbsensiHarian),
+	absensiKegiatan: many(tableAbsensiKegiatan),
+	qrMurid: many(tableQrMurid),
 	absensi: many(tableAbsensi),
 	ketidakhadiranHarian: many(tableKetidakhadiranHarian)
 }));
@@ -506,6 +513,193 @@ export const tableCatatanWaliAsramaRelations = relations(tableCatatanWaliAsrama,
 export const tableKehadiranMuridRelations = relations(tableKehadiranMurid, ({ one }) => ({
 	murid: one(tableMurid, {
 		fields: [tableKehadiranMurid.muridId],
+		references: [tableMurid.id]
+	})
+}));
+
+export const tableAbsensiHarian = sqliteTable(
+	'absensi_harian',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		semesterId: int()
+			.references(() => tableSemester.id, { onDelete: 'cascade' })
+			.notNull(),
+		kelasId: int()
+			.references(() => tableKelas.id, { onDelete: 'cascade' })
+			.notNull(),
+		muridId: int()
+			.references(() => tableMurid.id, { onDelete: 'cascade' })
+			.notNull(),
+		tanggal: text().notNull(),
+		status: text({ enum: ['hadir', 'terlambat', 'sakit', 'izin', 'alfa'] }).notNull(),
+		waktuScan: text(),
+		metode: text({ enum: ['qr', 'manual'] }).notNull(),
+		petugasUserId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		catatan: text(),
+		...audit
+	},
+	(table) => [
+		unique().on(table.muridId, table.tanggal),
+		index('absensi_harian_sekolah_tanggal_idx').on(table.sekolahId, table.tanggal),
+		index('absensi_harian_kelas_tanggal_idx').on(table.kelasId, table.tanggal),
+		index('absensi_harian_semester_idx').on(table.semesterId),
+		index('absensi_harian_status_idx').on(table.status)
+	]
+);
+
+export const tableKegiatanAbsensi = sqliteTable(
+	'kegiatan_absensi',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		kode: text().notNull(),
+		nama: text().notNull(),
+		kategori: text({ enum: ['sekolah', 'asrama', 'makan', 'sholat'] }).notNull(),
+		urutan: int().default(0).notNull(),
+		jamMulai: text(),
+		batasTerlambat: text(),
+		jamSelesai: text(),
+		autoAlfa: int({ mode: 'boolean' }).default(true).notNull(),
+		masukRapor: int({ mode: 'boolean' }).default(false).notNull(),
+		aktif: int({ mode: 'boolean' }).default(true).notNull(),
+		aksesEdit: text({ enum: ['sekolah', 'asrama', 'semua'] })
+			.default('semua')
+			.notNull(),
+		...audit
+	},
+	(table) => [
+		unique().on(table.sekolahId, table.kode),
+		index('kegiatan_absensi_sekolah_idx').on(table.sekolahId),
+		index('kegiatan_absensi_kategori_idx').on(table.kategori),
+		index('kegiatan_absensi_aktif_idx').on(table.aktif)
+	]
+);
+
+export const tableAbsensiKegiatan = sqliteTable(
+	'absensi_kegiatan',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		semesterId: int()
+			.references(() => tableSemester.id, { onDelete: 'cascade' })
+			.notNull(),
+		kelasId: int()
+			.references(() => tableKelas.id, { onDelete: 'cascade' })
+			.notNull(),
+		muridId: int()
+			.references(() => tableMurid.id, { onDelete: 'cascade' })
+			.notNull(),
+		kegiatanId: int()
+			.references(() => tableKegiatanAbsensi.id, { onDelete: 'cascade' })
+			.notNull(),
+		tanggal: text().notNull(),
+		status: text({ enum: ['hadir', 'terlambat', 'sakit', 'izin', 'alfa', 'pulang'] }).notNull(),
+		waktuScan: text(),
+		metode: text({ enum: ['qr', 'manual', 'auto'] }).notNull(),
+		petugasUserId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		catatan: text(),
+		autoAlfa: int({ mode: 'boolean' }).default(false).notNull(),
+		...audit
+	},
+	(table) => [
+		unique().on(table.muridId, table.kegiatanId, table.tanggal),
+		index('absensi_kegiatan_sekolah_tanggal_idx').on(table.sekolahId, table.tanggal),
+		index('absensi_kegiatan_kelas_tanggal_idx').on(table.kelasId, table.tanggal),
+		index('absensi_kegiatan_semester_idx').on(table.semesterId),
+		index('absensi_kegiatan_kegiatan_tanggal_idx').on(table.kegiatanId, table.tanggal),
+		index('absensi_kegiatan_status_idx').on(table.status),
+		index('absensi_kegiatan_metode_idx').on(table.metode)
+	]
+);
+
+export const tableQrMurid = sqliteTable(
+	'qr_murid',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		muridId: int()
+			.references(() => tableMurid.id, { onDelete: 'cascade' })
+			.notNull(),
+		tokenHash: text().notNull(),
+		tokenVersion: int().default(1).notNull(),
+		issuedAt: text().notNull(),
+		revokedAt: text(),
+		...audit
+	},
+	(table) => [
+		unique().on(table.tokenHash),
+		index('qr_murid_murid_idx').on(table.muridId),
+		index('qr_murid_revoked_idx').on(table.revokedAt)
+	]
+);
+
+export const tableAbsensiHarianRelations = relations(tableAbsensiHarian, ({ one }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableAbsensiHarian.sekolahId],
+		references: [tableSekolah.id]
+	}),
+	semester: one(tableSemester, {
+		fields: [tableAbsensiHarian.semesterId],
+		references: [tableSemester.id]
+	}),
+	kelas: one(tableKelas, {
+		fields: [tableAbsensiHarian.kelasId],
+		references: [tableKelas.id]
+	}),
+	murid: one(tableMurid, {
+		fields: [tableAbsensiHarian.muridId],
+		references: [tableMurid.id]
+	}),
+	petugas: one(tableAuthUser, {
+		fields: [tableAbsensiHarian.petugasUserId],
+		references: [tableAuthUser.id]
+	})
+}));
+
+export const tableKegiatanAbsensiRelations = relations(tableKegiatanAbsensi, ({ one, many }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableKegiatanAbsensi.sekolahId],
+		references: [tableSekolah.id]
+	}),
+	absensi: many(tableAbsensiKegiatan)
+}));
+
+export const tableAbsensiKegiatanRelations = relations(tableAbsensiKegiatan, ({ one }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableAbsensiKegiatan.sekolahId],
+		references: [tableSekolah.id]
+	}),
+	semester: one(tableSemester, {
+		fields: [tableAbsensiKegiatan.semesterId],
+		references: [tableSemester.id]
+	}),
+	kelas: one(tableKelas, {
+		fields: [tableAbsensiKegiatan.kelasId],
+		references: [tableKelas.id]
+	}),
+	murid: one(tableMurid, {
+		fields: [tableAbsensiKegiatan.muridId],
+		references: [tableMurid.id]
+	}),
+	kegiatan: one(tableKegiatanAbsensi, {
+		fields: [tableAbsensiKegiatan.kegiatanId],
+		references: [tableKegiatanAbsensi.id]
+	}),
+	petugas: one(tableAuthUser, {
+		fields: [tableAbsensiKegiatan.petugasUserId],
+		references: [tableAuthUser.id]
+	})
+}));
+
+export const tableQrMuridRelations = relations(tableQrMurid, ({ one }) => ({
+	murid: one(tableMurid, {
+		fields: [tableQrMurid.muridId],
 		references: [tableMurid.id]
 	})
 }));

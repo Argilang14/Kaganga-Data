@@ -37,6 +37,10 @@ export const groupedUserPermissions = {
 			['pindah', 'Pindah dan akses kelas lain']
 		],
 		description: 'Data Kelas'
+	},
+	administrasi: {
+		values: [['absensi', 'Kelola Absensi Digital dan Kegiatan']],
+		description: 'Administrasi'
 	}
 } as const;
 

@@ -27,6 +27,23 @@ export const JADWAL_JENJANG_LABELS = {
 	srma: 'SRMA/SRT'
 } satisfies Record<JadwalJenjang, string>;
 
+export function inferKelasJadwalJenjang(kelas: {
+	nama: string;
+	fase?: string | null;
+}): JadwalJenjang {
+	const raw = `${kelas.fase ?? ''} ${kelas.nama}`.toLowerCase();
+	if (/\b(srd|fase\s*[abc])\b/.test(raw) || /\b(iv|v|vi)\b/i.test(kelas.nama)) return 'srd';
+	if (/\b(srmp|fase\s*d)\b/.test(raw) || /\b(vii|viii|ix)\b/i.test(kelas.nama)) return 'srmp';
+	return 'srma';
+}
+
+export function mapelSesuaiJenjang(
+	mapelJenjang: 'semua' | JadwalJenjang | string | null | undefined,
+	kelasJenjang: JadwalJenjang
+) {
+	return mapelJenjang === 'semua' || mapelJenjang === kelasJenjang;
+}
+
 export const JADWAL_JENIS = ['persiapan', 'ganjil', 'genap'] as const;
 export type JadwalJenis = (typeof JADWAL_JENIS)[number];
 export const JADWAL_JENIS_LABELS = {

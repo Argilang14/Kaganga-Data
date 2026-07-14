@@ -12,7 +12,9 @@ import {
 } from '$lib/server/db/schema';
 import {
 	ensureJadwalPelajaranTemplate,
+	inferKelasJadwalJenjang,
 	JADWAL_JENIS_LABELS,
+	mapelSesuaiJenjang,
 	selectJadwalContext,
 	type JadwalJenis,
 	type JadwalJenjang
@@ -58,10 +60,7 @@ function normalizeKode(value: unknown) {
 }
 
 export function inferJadwalJenjang(kelas: { nama: string; fase?: string | null }): JadwalJenjang {
-	const raw = `${kelas.fase ?? ''} ${kelas.nama}`.toLowerCase();
-	if (/\b(srd|fase\s*[abc])\b/.test(raw) || /\b(iv|v|vi)\b/i.test(kelas.nama)) return 'srd';
-	if (/\b(srmp|fase\s*d)\b/.test(raw) || /\b(vii|viii|ix)\b/i.test(kelas.nama)) return 'srmp';
-	return 'srma';
+	return inferKelasJadwalJenjang(kelas);
 }
 
 export async function loadJadwalExcelContext(
@@ -132,7 +131,8 @@ export async function loadJadwalExcelContext(
 				kode: AGAMA_MAPEL_NAMES.has(item.nama) ? 'PAPB' : normalizeKode(item.kode),
 				nama: item.nama,
 				tipe: 'Mata Pelajaran',
-				detail: item.guru?.nama ?? ''
+				detail: item.guru?.nama ?? '',
+				jenjang: item.jenjang
 			})),
 		...kegiatan
 			.filter((item) => item.aktif && item.kode)
@@ -140,7 +140,8 @@ export async function loadJadwalExcelContext(
 				kode: normalizeKode(item.kode),
 				nama: item.nama,
 				tipe: 'Kegiatan Non-Mapel',
-				detail: item.kategori
+				detail: item.kategori,
+				jenjang: 'semua' as const
 			}))
 	];
 	return {
@@ -271,7 +272,12 @@ export async function parseJadwalWorkbook(
 	if (!headerRow) throw new Error('Header Hari, Jam Ke, Kelas, dan Kode tidak ditemukan.');
 	const kelasByName = new Map(data.kelas.map((item) => [normalize(item.nama), item]));
 	const kelasById = new Map(data.kelas.map((item) => [String(item.id), item]));
-	const knownCodes = new Set(data.codes.map((item) => item.kode));
+	const codesByValue = new Map<string, typeof data.codes>();
+	for (const item of data.codes) {
+		const group = codesByValue.get(item.kode) ?? [];
+		group.push(item);
+		codesByValue.set(item.kode, group);
+	}
 	const seen = new Set<string>();
 	const validRows: JadwalExcelRow[] = [];
 	const invalidRows: Array<{
@@ -297,8 +303,21 @@ export async function parseJadwalWorkbook(
 		if (!hari) reason = 'Hari tidak dikenali';
 		else if (!Number.isInteger(jamKe) || jamKe < 1 || jamKe > 30) reason = 'Jam ke tidak valid';
 		else if (!kelas) reason = 'Kelas tidak ditemukan pada tahun/semester ini';
-		else if (!knownCodes.has(kode))
+		else if (!codesByValue.has(kode))
 			reason = 'Kode tidak ditemukan pada Data Mata Pelajaran atau Kegiatan Non-Mapel';
+		else if (
+			kelas &&
+			!codesByValue.get(kode)!.some((item) => mapelSesuaiJenjang(item.jenjang, kelas.jenjang))
+		)
+			reason = `Mata pelajaran ${kode} tidak tersedia untuk jenjang ${kelas.jenjang.toUpperCase()}`;
+		else if (
+			kelas &&
+			!data.jam.some(
+				(slot) =>
+					slot.aktif && slot.jenjang === kelas.jenjang && slot.hari === hari && slot.jamKe === jamKe
+			)
+		)
+			reason = `Jam ke-${jamKe} tidak aktif untuk jenjang ${kelas.jenjang.toUpperCase()}`;
 		const key = kelas ? `${hari}|${jamKe}|${kelas.id}` : '';
 		if (!reason && seen.has(key)) reason = 'Slot kelas duplikat dalam file';
 		if (reason || !kelas) {

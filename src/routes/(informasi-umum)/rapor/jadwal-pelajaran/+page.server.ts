@@ -1,9 +1,11 @@
 import {
 	ensureDefaultJadwalFoundation,
 	ensureJadwalPelajaranTemplate,
+	inferKelasJadwalJenjang,
 	JADWAL_JENIS,
 	JADWAL_JENIS_LABELS,
 	JADWAL_JENJANG,
+	mapelSesuaiJenjang,
 	selectJadwalContext
 } from '$lib/server/jadwal';
 import db from '$lib/server/db';
@@ -313,6 +315,16 @@ export const actions: Actions = {
 		});
 		if (!context.tahunAjaranId) return fail(400, { fail: 'Tahun ajaran belum tersedia.' });
 		const scheduleTemplate = await ensureJadwalPelajaranTemplate(sekolahId, context);
+		await ensureDefaultJadwalFoundation(sekolahId, { ...context, jenjang: 'srd' });
+		const settingTemplates = await db.query.tableJadwalTemplate.findMany({
+			columns: { id: true },
+			where: and(
+				eq(tableJadwalTemplate.sekolahId, sekolahId),
+				eq(tableJadwalTemplate.tahunAjaranId, context.tahunAjaranId),
+				eq(tableJadwalTemplate.jenis, context.jenis)
+			)
+		});
+		const settingTemplateIds = settingTemplates.map((template) => template.id);
 		const raw = formData.get('data')?.toString() ?? '';
 		let entries: Array<{ hari: string; jamKe: number; kelasId: number; kodeKegiatan: string }>;
 		try {
@@ -321,26 +333,51 @@ export const actions: Actions = {
 			return fail(400, { fail: 'Format jadwal tidak valid' });
 		}
 
-		const [kelasRows, mapelRows] = await Promise.all([
+		const [kelasRows, mapelRows, jamRows] = await Promise.all([
 			db.query.tableKelas.findMany({
 				where: eq(tableKelas.sekolahId, sekolahId),
-				columns: { id: true, nama: true }
+				columns: { id: true, nama: true, fase: true }
 			}),
 			db.query.tableJadwalMapel.findMany({
 				where: eq(tableJadwalMapel.sekolahId, sekolahId),
-				columns: { id: true, kode: true, nama: true, guruPegawaiId: true },
+				columns: {
+					id: true,
+					kode: true,
+					nama: true,
+					jenjang: true,
+					aktif: true,
+					guruPegawaiId: true
+				},
 				with: { guru: { columns: { nama: true } } }
-			})
+			}),
+			settingTemplateIds.length
+				? db.query.tableJadwalJam.findMany({
+						where: and(
+							eq(tableJadwalJam.sekolahId, sekolahId),
+							inArray(tableJadwalJam.templateId, settingTemplateIds)
+						)
+					})
+				: []
 		]);
 		const kelasIds = new Set(kelasRows.map((row) => row.id));
 		const kelasNama = new Map(kelasRows.map((row) => [row.id, row.nama]));
 		const mapelByCode = new Map<string, typeof mapelRows>();
 		for (const mapel of mapelRows) {
+			if (!mapel.aktif || !mapel.kode) continue;
 			const kode = AGAMA_MAPEL_NAMES.has(mapel.nama) ? 'PAPB' : normalizeKode(mapel.kode);
 			const group = mapelByCode.get(kode) ?? [];
 			group.push(mapel);
 			mapelByCode.set(kode, group);
 		}
+		const kelasById = new Map(
+			kelasRows.map((kelas) => [kelas.id, { ...kelas, jenjang: inferKelasJadwalJenjang(kelas) }])
+		);
+		const activeSlotKeys = new Set(
+			jamRows
+				.filter((slot) => slot.aktif)
+				.map((slot) => `${slot.jenjang}|${slot.hari}|${slot.jamKe}`)
+		);
+
 		const cleaned = entries
 			.map((entry) => ({
 				hari: entry.hari,
@@ -358,8 +395,30 @@ export const actions: Actions = {
 					entry.kodeKegiatan
 			);
 
-		const resolved = cleaned.map((entry) => {
+		for (const entry of cleaned) {
+			const kelas = kelasById.get(entry.kelasId);
+			if (!kelas) continue;
 			const candidates = mapelByCode.get(entry.kodeKegiatan) ?? [];
+			if (
+				candidates.length &&
+				!candidates.some((mapel) => mapelSesuaiJenjang(mapel.jenjang, kelas.jenjang))
+			) {
+				return fail(400, {
+					fail: `Mata pelajaran ${entry.kodeKegiatan} tidak tersedia untuk kelas ${kelas.nama} (${kelas.jenjang.toUpperCase()}).`
+				});
+			}
+			if (!activeSlotKeys.has(`${kelas.jenjang}|${entry.hari}|${entry.jamKe}`)) {
+				return fail(400, {
+					fail: `Jam ke-${entry.jamKe} pada ${entry.hari} tidak aktif untuk kelas ${kelas.nama} (${kelas.jenjang.toUpperCase()}).`
+				});
+			}
+		}
+
+		const resolved = cleaned.map((entry) => {
+			const kelas = kelasById.get(entry.kelasId)!;
+			const candidates = (mapelByCode.get(entry.kodeKegiatan) ?? []).filter((mapel) =>
+				mapelSesuaiJenjang(mapel.jenjang, kelas.jenjang)
+			);
 			const guruIds = [...new Set(candidates.map((mapel) => mapel.guruPegawaiId).filter(Boolean))];
 			const match = candidates.length === 1 ? candidates[0] : null;
 			const guruId = guruIds.length === 1 ? Number(guruIds[0]) : null;

@@ -10,7 +10,16 @@
 
 	type Kelas = { id: number; nama: string; fase?: string | null };
 	type JadwalEntry = { hari: string; jamKe: number; kelasId: number; kodeKegiatan: string };
-	type JamSlot = { hari: string; jamKe: number; jenjang: JenjangFilter; pukulMulai: string; pukulSelesai: string; tipe: string; namaDefault: string | null; aktif: boolean };
+	type JamSlot = {
+		hari: string;
+		jamKe: number;
+		jenjang: JenjangFilter;
+		pukulMulai: string;
+		pukulSelesai: string;
+		tipe: string;
+		namaDefault: string | null;
+		aktif: boolean;
+	};
 	type JenjangFilter = 'semua' | 'srd' | 'srmp' | 'srma';
 	type TableDensity = 'normal' | 'padat';
 	type PaletteItem = {
@@ -53,6 +62,7 @@
 		sabtu: 'Sabtu'
 	};
 	const jenjangLabel: Record<string, string> = { srd: 'SRD', srmp: 'SRMP', srma: 'SRMA/SRT' };
+	const jenjangOrder: Exclude<JenjangFilter, 'semua'>[] = ['srd', 'srmp', 'srma'];
 
 	const daftarKelas = $derived((data.daftarKelas ?? []) as Kelas[]);
 	const mapelItems = $derived(
@@ -109,7 +119,6 @@
 	const jadwalJam = $derived((data.jadwalJam ?? []) as JamSlot[]);
 
 	let cells = $state<Record<string, string>>({});
-	let jumlahJam = $state(8);
 	let saving = $state(false);
 	let settingsSaving = $state(false);
 	let jamMulai = $state('07:00');
@@ -141,6 +150,16 @@
 		for (const item of paletteItems) map.set(item.kode, item);
 		return map;
 	});
+	const mapelByCode = $derived.by(() => {
+		const groups = new Map<string, PaletteItem[]>();
+		for (const item of mapelItems) {
+			const group = groups.get(item.kode) ?? [];
+			group.push(item);
+			groups.set(item.kode, group);
+		}
+		return groups;
+	});
+	const kegiatanCodes = $derived(new Set(kegiatanItems.map((item) => item.kode)));
 	const teacherByCode = $derived.by(() => {
 		const groups = new Map<string, PaletteItem[]>();
 		for (const item of mapelItems) {
@@ -158,7 +177,10 @@
 		return result;
 	});
 	const teacherConflicts = $derived.by(() => {
-		const slots = new Map<string, { guru: string; hari: string; jamKe: number; kelasIds: Set<number>; cellKeys: string[] }>();
+		const slots = new Map<
+			string,
+			{ guru: string; hari: string; jamKe: number; kelasIds: Set<number>; cellKeys: string[] }
+		>();
 		for (const [cellKey, kode] of Object.entries(cells)) {
 			const teacher = teacherByCode.get(kode);
 			if (!teacher) continue;
@@ -166,21 +188,40 @@
 			const jamKe = Number(jamRaw);
 			const kelasId = Number(kelasRaw);
 			const key = hari + '|' + jamKe + '|' + teacher.id;
-			const slot = slots.get(key) ?? { guru: teacher.nama, hari, jamKe, kelasIds: new Set<number>(), cellKeys: [] };
+			const slot = slots.get(key) ?? {
+				guru: teacher.nama,
+				hari,
+				jamKe,
+				kelasIds: new Set<number>(),
+				cellKeys: []
+			};
 			slot.kelasIds.add(kelasId);
 			slot.cellKeys.push(cellKey);
 			slots.set(key, slot);
 		}
-		return [...slots.values()].filter((slot) => slot.kelasIds.size > 1).map((slot) => ({
-			...slot,
-			kelas: [...slot.kelasIds].map((id) => daftarKelas.find((kelas) => kelas.id === id)?.nama ?? 'Kelas ' + id)
-		}));
+		return [...slots.values()]
+			.filter((slot) => slot.kelasIds.size > 1)
+			.map((slot) => ({
+				...slot,
+				kelas: [...slot.kelasIds].map(
+					(id) => daftarKelas.find((kelas) => kelas.id === id)?.nama ?? 'Kelas ' + id
+				)
+			}));
 	});
-	const conflictCellKeys = $derived(new Set(teacherConflicts.flatMap((conflict) => conflict.cellKeys)));
+	const conflictCellKeys = $derived(
+		new Set(teacherConflicts.flatMap((conflict) => conflict.cellKeys))
+	);
 	const visiblePaletteItems = $derived.by(() => {
 		const query = paletteSearch.trim().toLowerCase();
 		return paletteItems.filter((item) => {
 			if (item.source !== activePalette) return false;
+			if (
+				item.source === 'mapel' &&
+				activeJenjang !== 'semua' &&
+				item.jenjang !== 'semua' &&
+				item.jenjang !== activeJenjang
+			)
+				return false;
 			if (!query) return true;
 			return `${item.kode} ${item.nama} ${item.detail ?? ''}`.toLowerCase().includes(query);
 		});
@@ -196,6 +237,18 @@
 		activeJenjang === 'semua'
 			? daftarKelas
 			: daftarKelas.filter((kelas) => kelasJenjang(kelas) === activeJenjang)
+	);
+	const visibleGroups = $derived.by(() =>
+		jenjangOrder
+			.filter((jenjang) => activeJenjang === 'semua' || activeJenjang === jenjang)
+			.map((jenjang) => ({
+				jenjang,
+				kelas: visibleKelas.filter((kelas) => kelasJenjang(kelas) === jenjang)
+			}))
+			.filter((group) => group.kelas.length > 0)
+	);
+	const selectedMapelItems = $derived(
+		selectedKelas ? mapelItems.filter((item) => itemSesuaiKelas(item, selectedKelas)) : mapelItems
 	);
 	const activeJenjangName = $derived(jenjangLabel[activeJenjang] ?? 'Semua Jenjang');
 	const scheduleChecks = $derived.by(() => {
@@ -220,14 +273,15 @@
 		}> = [];
 		for (const kelas of visibleKelas) {
 			const jenjang = kelasJenjang(kelas);
+			if (jenjang === 'semua') continue;
 			for (const item of mapelItems) {
 				const target = item.jpPerMinggu ?? 0;
 				if (target <= 0) continue;
 				if (item.jenjang !== 'semua' && item.jenjang !== jenjang) continue;
 				let actual = 0;
 				for (const hari of hariList) {
-					for (let jamKe = 1; jamKe <= jumlahJamFor(hari); jamKe += 1) {
-						if (cells[keyFor(hari, jamKe, kelas.id)] === item.kode) actual += 1;
+					for (const slot of slotsForJenjang(hari, jenjang)) {
+						if (cells[keyFor(hari, slot.jamKe, kelas.id)] === item.kode) actual += 1;
 					}
 				}
 				if (actual !== target) {
@@ -241,7 +295,16 @@
 			unknownCodes: [...unknownCodes],
 			jpIssues,
 			teacherConflicts,
-			visibleSlotTotal: visibleKelas.length * hariList.reduce((total, hari) => total + jumlahJamFor(hari), 0)
+			visibleSlotTotal: visibleGroups.reduce(
+				(total, group) =>
+					total +
+					group.kelas.length *
+						hariList.reduce(
+							(dayTotal, hari) => dayTotal + slotsForJenjang(hari, group.jenjang).length,
+							0
+						),
+				0
+			)
 		};
 	});
 
@@ -251,7 +314,6 @@
 			nextCells[`${entry.hari}|${entry.jamKe}|${entry.kelasId}`] = entry.kodeKegiatan;
 		}
 		cells = nextCells;
-		jumlahJam = Math.max(8, ...savedJadwal.map((entry) => entry.jamKe), 8);
 	});
 
 	$effect(() => {
@@ -263,7 +325,10 @@
 	});
 
 	function savePanelPreference() {
-		localStorage.setItem('jadwal-item-panel', JSON.stringify({ panelCollapsed, panelSide, panelWidth }));
+		localStorage.setItem(
+			'jadwal-item-panel',
+			JSON.stringify({ panelCollapsed, panelSide, panelWidth })
+		);
 	}
 
 	function panelStyle() {
@@ -291,36 +356,36 @@
 		}
 	});
 
-	function configuredSlots(hari: string) {
-		return jadwalJam.filter(
-			(slot) => slot.aktif && slot.hari === hari && (activeJenjang === 'semua' || slot.jenjang === activeJenjang)
+	function slotsForJenjang(hari: string, jenjang: Exclude<JenjangFilter, 'semua'>) {
+		const slots = jadwalJam.filter(
+			(slot) => slot.aktif && slot.hari === hari && slot.jenjang === jenjang
+		);
+		return [...new Map(slots.map((slot) => [slot.jamKe, slot])).values()].sort(
+			(a, b) => a.jamKe - b.jamKe
 		);
 	}
 
-	function jumlahJamFor(hari: string) {
-		const configured = configuredSlots(hari).map((slot) => slot.jamKe);
-		const scheduled = savedJadwal
-			.filter((entry) => entry.hari === hari && visibleKelas.some((kelas) => kelas.id === entry.kelasId))
-			.map((entry) => entry.jamKe);
-		return Math.max(...configured, ...scheduled, configured.length ? 0 : jumlahJam);
+	function slotAktif(hari: string, jamKe: number, jenjang: Exclude<JenjangFilter, 'semua'>) {
+		return slotsForJenjang(hari, jenjang).some((slot) => slot.jamKe === jamKe);
 	}
 
-	function waktuFor(hari: string, jamKe: number) {
-		const ranges = [
-			...new Set(
-				configuredSlots(hari)
-					.filter((slot) => slot.jamKe === jamKe)
-					.map((slot) => slot.pukulMulai + '-' + slot.pukulSelesai)
-			)
-		];
-		return ranges.length === 1 ? ranges[0] : ranges.length > 1 ? 'Berbeda' : '';
+	function jumlahJamFor(hari: string) {
+		const configured = visibleGroups.flatMap((group) =>
+			slotsForJenjang(hari, group.jenjang).map((slot) => slot.jamKe)
+		);
+		return Math.max(...configured, 0);
+	}
+
+	function waktuForJenjang(hari: string, jamKe: number, jenjang: Exclude<JenjangFilter, 'semua'>) {
+		const slot = slotsForJenjang(hari, jenjang).find((item) => item.jamKe === jamKe);
+		return slot ? `${slot.pukulMulai}-${slot.pukulSelesai}` : '';
 	}
 
 	function keyFor(hari: string, jamKe: number, kelasId: number) {
 		return `${hari}|${jamKe}|${kelasId}`;
 	}
 
-	function kelasJenjang(kelas: Kelas | null | undefined) {
+	function kelasJenjang(kelas: Kelas | null | undefined): JenjangFilter {
 		const raw = `${kelas?.fase ?? ''} ${kelas?.nama ?? ''}`.toLowerCase();
 		if (/\b(srd|fase\s*[abc])\b/.test(raw) || /\b(iv|v|vi)\b/i.test(kelas?.nama ?? ''))
 			return 'srd';
@@ -329,6 +394,22 @@
 		if (/\b(srma|srt|fase\s*[ef])\b/.test(raw) || /\b(x|xi|xii)\b/i.test(kelas?.nama ?? ''))
 			return 'srma';
 		return 'semua';
+	}
+
+	function itemSesuaiKelas(item: PaletteItem, kelas: Kelas) {
+		return (
+			item.source === 'kegiatan' || item.jenjang === 'semua' || item.jenjang === kelasJenjang(kelas)
+		);
+	}
+
+	function kodeSesuaiKelas(kode: string, kelas: Kelas) {
+		if (kegiatanCodes.has(kode)) return true;
+		return (mapelByCode.get(kode) ?? []).some((item) => itemSesuaiKelas(item, kelas));
+	}
+
+	function slotAktifUntukKelas(hari: string, jamKe: number, kelas: Kelas) {
+		const jenjang = kelasJenjang(kelas);
+		return jenjang !== 'semua' && slotAktif(hari, jamKe, jenjang);
 	}
 
 	function setCell(hari: string, jamKe: number, kelasId: number, kode: string) {
@@ -346,13 +427,6 @@
 			else delete next[key];
 		}
 		cells = next;
-	}
-
-	function fillRow(hari: string, jamKe: number, kode: string) {
-		setMany(
-			visibleKelas.map((kelas) => ({ hari, jamKe, kelasId: kelas.id })),
-			kode
-		);
 	}
 
 	function clearAll() {
@@ -464,7 +538,19 @@
 		if (!canManage) return;
 		event.preventDefault();
 		const item = readDraggedItem(event);
-		if (!item?.kode) return;
+		const kelas = daftarKelas.find((entry) => entry.id === kelasId);
+		if (!item?.kode || !kelas) return;
+		if (!slotAktifUntukKelas(hari, jamKe, kelas)) {
+			toast(`Jam ke-${jamKe} tidak aktif untuk kelas ${kelas.nama}.`, 'error');
+			return;
+		}
+		if (!itemSesuaiKelas(item, kelas)) {
+			toast(
+				`${item.kode} hanya tersedia untuk ${jenjangLabel[item.jenjang ?? ''] ?? item.jenjang}.`,
+				'error'
+			);
+			return;
+		}
 		pendingDrop = { item, hari, jamKe, kelasId };
 		draggedItem = null;
 		dropDialog?.showModal();
@@ -472,18 +558,29 @@
 
 	function targetsForDrop(scope: DropScope) {
 		if (!pendingDrop) return [];
-		const { hari, jamKe, kelasId } = pendingDrop;
-		if (scope === 'cell') return [{ hari, jamKe, kelasId }];
-		if (scope === 'row') return visibleKelas.map((kelas) => ({ hari, jamKe, kelasId: kelas.id }));
-		if (scope === 'sameJamAllDays') {
-			return hariList.flatMap((day) =>
+		const { hari, jamKe, kelasId, item } = pendingDrop;
+		let targets: Array<{ hari: string; jamKe: number; kelasId: number }>;
+		if (scope === 'cell') targets = [{ hari, jamKe, kelasId }];
+		else if (scope === 'row') {
+			targets = visibleKelas.map((kelas) => ({ hari, jamKe, kelasId: kelas.id }));
+		} else if (scope === 'sameJamAllDays') {
+			targets = hariList.flatMap((day) =>
 				visibleKelas.map((kelas) => ({ hari: day, jamKe, kelasId: kelas.id }))
 			);
+		} else {
+			const targetJenjang = pendingJenjang;
+			targets = visibleKelas
+				.filter((kelas) => kelasJenjang(kelas) === targetJenjang)
+				.map((kelas) => ({ hari, jamKe, kelasId: kelas.id }));
 		}
-		const targetJenjang = pendingJenjang;
-		return visibleKelas
-			.filter((kelas) => kelasJenjang(kelas) === targetJenjang)
-			.map((kelas) => ({ hari, jamKe, kelasId: kelas.id }));
+		return targets.filter((target) => {
+			const kelas = daftarKelas.find((entry) => entry.id === target.kelasId);
+			return (
+				kelas &&
+				itemSesuaiKelas(item, kelas) &&
+				slotAktifUntukKelas(target.hari, target.jamKe, kelas)
+			);
+		});
 	}
 
 	function overwriteCountForDrop(scope: DropScope) {
@@ -496,7 +593,12 @@
 	}
 	function applyPendingDrop(scope: DropScope) {
 		if (!pendingDrop) return;
-		setMany(targetsForDrop(scope), pendingDrop.item.kode);
+		const targets = targetsForDrop(scope);
+		if (!targets.length) {
+			toast('Tidak ada kelas dengan jenjang dan jam aktif yang sesuai.', 'error');
+			return;
+		}
+		setMany(targets, pendingDrop.item.kode);
 		pendingDrop = null;
 		dropDialog?.close();
 	}
@@ -510,6 +612,11 @@
 
 	function saveSelectedCell() {
 		if (!selectedCell) return;
+		const kelas = daftarKelas.find((entry) => entry.id === selectedCell?.kelasId);
+		if (editKode && kelas && !kodeSesuaiKelas(editKode, kelas)) {
+			toast(`Mata pelajaran ${editKode} tidak tersedia untuk kelas ${kelas.nama}.`, 'error');
+			return;
+		}
 		setCell(selectedCell.hari, selectedCell.jamKe, selectedCell.kelasId, editKode);
 		selectedCell = null;
 		cellDialog?.close();
@@ -595,7 +702,12 @@
 			<form method="GET" class="flex flex-wrap items-center gap-2">
 				<label class="flex items-center gap-2 text-sm font-semibold">
 					<span>Tahun Ajaran</span>
-					<select class="select select-sm bg-base-200 w-36" name="tahunAjaranId" value={data.selectedContext?.tahunAjaranId ?? ''} onchange={(event) => (event.currentTarget as HTMLSelectElement).form?.requestSubmit()}>
+					<select
+						class="select select-sm bg-base-200 w-36"
+						name="tahunAjaranId"
+						value={data.selectedContext?.tahunAjaranId ?? ''}
+						onchange={(event) => (event.currentTarget as HTMLSelectElement).form?.requestSubmit()}
+					>
 						{#each data.tahunAjaranList ?? [] as tahun (tahun.id)}
 							<option value={tahun.id}>{tahun.nama}</option>
 						{/each}
@@ -603,7 +715,12 @@
 				</label>
 				<label class="flex items-center gap-2 text-sm font-semibold">
 					<span>Jadwal</span>
-					<select class="select select-sm bg-base-200 w-44" name="jenis" value={data.selectedContext?.jenis ?? 'ganjil'} onchange={(event) => (event.currentTarget as HTMLSelectElement).form?.requestSubmit()}>
+					<select
+						class="select select-sm bg-base-200 w-44"
+						name="jenis"
+						value={data.selectedContext?.jenis ?? 'ganjil'}
+						onchange={(event) => (event.currentTarget as HTMLSelectElement).form?.requestSubmit()}
+					>
 						{#each data.jenisOptions ?? [] as option (option.value)}
 							<option value={option.value}>{option.label}</option>
 						{/each}
@@ -614,9 +731,16 @@
 				<button type="button" tabindex="0" class="btn btn-soft shadow-none">
 					<Icon name="down" /> Data Excel
 				</button>
-				<ul tabindex="-1" class="dropdown-content menu bg-base-100 border-base-300 z-30 mt-2 w-56 rounded-md border p-2 shadow-xl">
+				<ul
+					tabindex="-1"
+					class="dropdown-content menu bg-base-100 border-base-300 z-30 mt-2 w-56 rounded-md border p-2 shadow-xl"
+				>
 					<li><a href={excelHref('template')}><Icon name="download" /> Download Template</a></li>
-					<li><button type="button" onclick={openImportDialog}><Icon name="import" /> Import dan Pratinjau</button></li>
+					<li>
+						<button type="button" onclick={openImportDialog}
+							><Icon name="import" /> Import dan Pratinjau</button
+						>
+					</li>
 					<li><a href={excelHref('export')}><Icon name="export" /> Export Jadwal</a></li>
 				</ul>
 			</div>
@@ -637,7 +761,11 @@
 		</div>
 	</section>
 
-	<section class="schedule-workspace grid grid-cols-1 gap-3" class:panel-left={panelSide === 'left'} style={panelStyle()}>
+	<section
+		class="schedule-workspace grid grid-cols-1 gap-3"
+		class:panel-left={panelSide === 'left'}
+		style={panelStyle()}
+	>
 		<div class="schedule-main bg-base-100 flex min-h-0 flex-col rounded-lg p-4 shadow-md">
 			<div class="mb-3 flex flex-wrap items-end gap-2">
 				<label class="flex items-center gap-2">
@@ -688,8 +816,8 @@
 			>
 				<Icon
 					name={scheduleChecks.jpIssues.length === 0 &&
-						scheduleChecks.unknownCodes.length === 0 &&
-						scheduleChecks.teacherConflicts.length === 0
+					scheduleChecks.unknownCodes.length === 0 &&
+					scheduleChecks.teacherConflicts.length === 0
 						? 'check'
 						: 'warning'}
 				/>
@@ -703,7 +831,11 @@
 					{/if}
 					{#if scheduleChecks.teacherConflicts.length}
 						{#each scheduleChecks.teacherConflicts.slice(0, 6) as conflict}
-							<div class='mt-1 font-semibold text-error'>Bentrok guru {conflict.guru}: {hariLabel[conflict.hari]} jam ke-{conflict.jamKe} di {conflict.kelas.join(', ')}.</div>
+							<div class="mt-1 font-semibold text-error">
+								Bentrok guru {conflict.guru}: {hariLabel[conflict.hari]} jam ke-{conflict.jamKe} di {conflict.kelas.join(
+									', '
+								)}.
+							</div>
 						{/each}
 					{/if}
 					{#if scheduleChecks.jpIssues.length}
@@ -728,7 +860,9 @@
 			{:else if visibleKelas.length === 0}
 				<div class="alert alert-info">Tidak ada kelas pada filter jenjang ini.</div>
 			{:else}
-				<div class="border-base-300 min-h-[32rem] flex-1 overflow-auto rounded-md border lg:min-h-[calc(100vh-22rem)]">
+				<div
+					class="border-base-300 min-h-[32rem] flex-1 overflow-auto rounded-md border lg:min-h-[calc(100vh-22rem)]"
+				>
 					<table
 						class="table-sm schedule-table table"
 						class:compact-schedule={tableDensity === 'padat'}
@@ -736,9 +870,13 @@
 						<thead class="sticky top-0 z-10">
 							<tr>
 								<th class="schedule-head sticky-col sticky-col-day w-24">Hari</th>
-								<th class="schedule-head sticky-col sticky-col-jam w-16 text-center">Jam</th>
-								{#each visibleKelas as kelas (kelas.id)}
-									<th class="schedule-head min-w-24 text-center">{kelas.nama}</th>
+								{#each visibleGroups as group (group.jenjang)}
+									<th class="schedule-head group-jam-head min-w-20 text-center">
+										{activeJenjang === 'semua' ? `Jam ${jenjangLabel[group.jenjang]}` : 'Jam'}
+									</th>
+									{#each group.kelas as kelas (kelas.id)}
+										<th class="schedule-head min-w-24 text-center">{kelas.nama}</th>
+									{/each}
 								{/each}
 							</tr>
 						</thead>
@@ -752,39 +890,52 @@
 												rowspan={jumlahJamFor(hari)}>{hariLabel[hari]}</td
 											>
 										{/if}
-										<td class="sticky-col sticky-col-jam bg-base-100 text-center">
-											<div class="font-semibold">{jamKe}</div>
-											{#if waktuFor(hari, jamKe)}
-												<div class="text-base-content/60 whitespace-nowrap text-[10px] font-normal">
-													{waktuFor(hari, jamKe)}
-												</div>
-											{/if}
-										</td>
-										{#each visibleKelas as kelas (kelas.id)}
-											{@const key = keyFor(hari, jamKe, kelas.id)}
-											{@const kode = cells[key]}
-											<td class="schedule-cell">
-												<button
-													class={`slot-button ${kode ? 'has-value' : ''}`}
-													class:is-conflict={conflictCellKeys.has(key)}
-													type="button"
-													style={cellStyle(kode)}
-													ondragover={allowDrop}
-													ondrop={(event) => dropToCell(event, hari, jamKe, kelas.id)}
-													onclick={() => openCell(hari, jamKe, kelas.id, kode ?? '')}
-													disabled={!canManage}
-													title={kode ? `${kode} - ${textFor(kode)}` : 'Kosong'}
-												>
-													{#if kode}
-														<span class="slot-code">{kode}</span>
-														<span class="slot-name">{textFor(kode)}</span>
-														{#if detailFor(kode)}<span class="slot-detail">{detailFor(kode)}</span
-															>{/if}
-													{:else}
-														<span class="slot-empty">-</span>
-													{/if}
-												</button>
+										{#each visibleGroups as group (group.jenjang)}
+											{@const activeSlot = slotAktif(hari, jamKe, group.jenjang)}
+											<td class="group-jam-cell text-center" class:is-inactive={!activeSlot}>
+												{#if activeSlot}
+													<div class="font-semibold">{jamKe}</div>
+													<div
+														class="text-base-content/60 whitespace-nowrap text-[10px] font-normal"
+													>
+														{waktuForJenjang(hari, jamKe, group.jenjang)}
+													</div>
+												{:else}
+													<span class="text-base-content/30">-</span>
+												{/if}
 											</td>
+											{#each group.kelas as kelas (kelas.id)}
+												{@const key = keyFor(hari, jamKe, kelas.id)}
+												{@const kode = cells[key]}
+												<td class="schedule-cell" class:is-inactive={!activeSlot}>
+													<button
+														class={`slot-button ${kode && activeSlot ? 'has-value' : ''}`}
+														class:is-conflict={activeSlot && conflictCellKeys.has(key)}
+														type="button"
+														style={activeSlot ? cellStyle(kode) : ''}
+														ondragover={allowDrop}
+														ondrop={(event) => dropToCell(event, hari, jamKe, kelas.id)}
+														onclick={() => openCell(hari, jamKe, kelas.id, kode ?? '')}
+														disabled={!canManage || !activeSlot}
+														title={activeSlot
+															? kode
+																? `${kode} - ${textFor(kode)}`
+																: 'Kosong'
+															: `Jam tidak aktif untuk ${jenjangLabel[group.jenjang]}`}
+													>
+														{#if !activeSlot}
+															<span class="slot-inactive">Tidak aktif</span>
+														{:else if kode}
+															<span class="slot-code">{kode}</span>
+															<span class="slot-name">{textFor(kode)}</span>
+															{#if detailFor(kode)}<span class="slot-detail">{detailFor(kode)}</span
+																>{/if}
+														{:else}
+															<span class="slot-empty">-</span>
+														{/if}
+													</button>
+												</td>
+											{/each}
 										{/each}
 									</tr>
 								{/each}
@@ -798,12 +949,25 @@
 		<aside class="schedule-panel space-y-3 xl:sticky xl:top-4 xl:self-start">
 			<div class="bg-base-100 rounded-lg p-3 shadow-md">
 				<div class="flex items-center gap-1">
-					<h2 class="min-w-0 flex-1 truncate font-bold">{panelCollapsed ? 'Item' : 'Item Jadwal'}</h2>
-					{#if !panelCollapsed}<span class="badge badge-soft">{visiblePaletteItems.length}</span>{/if}
-					<button class="btn btn-ghost btn-xs" type="button" onclick={movePanel} title="Pindahkan panel">
+					<h2 class="min-w-0 flex-1 truncate font-bold">
+						{panelCollapsed ? 'Item' : 'Item Jadwal'}
+					</h2>
+					{#if !panelCollapsed}<span class="badge badge-soft">{visiblePaletteItems.length}</span
+						>{/if}
+					<button
+						class="btn btn-ghost btn-xs"
+						type="button"
+						onclick={movePanel}
+						title="Pindahkan panel"
+					>
 						<Icon name={panelSide === 'right' ? 'left' : 'right'} />
 					</button>
-					<button class="btn btn-ghost btn-xs" type="button" onclick={togglePanel} title={panelCollapsed ? 'Buka panel' : 'Ciutkan panel'}>
+					<button
+						class="btn btn-ghost btn-xs"
+						type="button"
+						onclick={togglePanel}
+						title={panelCollapsed ? 'Buka panel' : 'Ciutkan panel'}
+					>
 						<Icon name={panelCollapsed ? 'right' : 'left'} />
 					</button>
 				</div>
@@ -821,54 +985,53 @@
 						/>
 						<span class="w-12 text-right">{panelWidth}px</span>
 					</label>
-				<div class="join mb-2 grid grid-cols-2">
-					<button
-						class="btn btn-sm join-item"
-						class:btn-primary={activePalette === 'mapel'}
-						type="button"
-						onclick={() => (activePalette = 'mapel')}>Mata Pelajaran</button
-					>
-					<button
-						class="btn btn-sm join-item"
-						class:btn-primary={activePalette === 'kegiatan'}
-						type="button"
-						onclick={() => (activePalette = 'kegiatan')}>Kegiatan</button
-					>
-				</div>
-				<label class="input input-sm bg-base-200 mb-2 flex items-center gap-2">
-					<Icon name="search" />
-					<input class="grow" placeholder="Cari kode" bind:value={paletteSearch} />
-				</label>
-				<div class="max-h-[calc(100vh-19rem)] space-y-1 overflow-y-auto pr-1">
-					{#each visiblePaletteItems as item (`${item.source}-${item.id}`)}
+					<div class="join mb-2 grid grid-cols-2">
 						<button
-							class="palette-item"
+							class="btn btn-sm join-item"
+							class:btn-primary={activePalette === 'mapel'}
 							type="button"
-							draggable={canManage}
-							ondragstart={(event) => startDrag(event, item)}
-							disabled={!canManage}
+							onclick={() => (activePalette = 'mapel')}>Mata Pelajaran</button
 						>
-							<span
-								class="palette-swatch"
-								style={`background:${normalizeColor(item.warna, item.source === 'mapel' ? '#dbeafe' : '#dcfce7')}`}
-							></span>
-							<span class="min-w-0 flex-1 text-left">
-								<span class="block leading-tight font-bold">{item.kode}</span>
-								<span class="text-base-content/70 block truncate text-xs">{item.nama}</span>
-							</span>
-							{#if item.detail}<span class="badge badge-outline max-w-16 truncate text-[10px]"
-									>{item.detail}</span
-								>{/if}
-						</button>
-					{:else}
-						<div class="border-base-200 text-base-content/60 rounded-lg border p-3 text-sm">
-							Data belum tersedia.
-						</div>
-					{/each}
-				</div>
+						<button
+							class="btn btn-sm join-item"
+							class:btn-primary={activePalette === 'kegiatan'}
+							type="button"
+							onclick={() => (activePalette = 'kegiatan')}>Kegiatan</button
+						>
+					</div>
+					<label class="input input-sm bg-base-200 mb-2 flex items-center gap-2">
+						<Icon name="search" />
+						<input class="grow" placeholder="Cari kode" bind:value={paletteSearch} />
+					</label>
+					<div class="max-h-[calc(100vh-19rem)] space-y-1 overflow-y-auto pr-1">
+						{#each visiblePaletteItems as item (`${item.source}-${item.id}`)}
+							<button
+								class="palette-item"
+								type="button"
+								draggable={canManage}
+								ondragstart={(event) => startDrag(event, item)}
+								disabled={!canManage}
+							>
+								<span
+									class="palette-swatch"
+									style={`background:${normalizeColor(item.warna, item.source === 'mapel' ? '#dbeafe' : '#dcfce7')}`}
+								></span>
+								<span class="min-w-0 flex-1 text-left">
+									<span class="block leading-tight font-bold">{item.kode}</span>
+									<span class="text-base-content/70 block truncate text-xs">{item.nama}</span>
+								</span>
+								{#if item.detail}<span class="badge badge-outline max-w-16 truncate text-[10px]"
+										>{item.detail}</span
+									>{/if}
+							</button>
+						{:else}
+							<div class="border-base-200 text-base-content/60 rounded-lg border p-3 text-sm">
+								Data belum tersedia.
+							</div>
+						{/each}
+					</div>
 				{/if}
 			</div>
-
 		</aside>
 	</section>
 </div>
@@ -951,7 +1114,7 @@
 				<select class="select select-bordered" bind:value={editKode}>
 					<option value="">Kosong</option>
 					<optgroup label="Mata Pelajaran">
-						{#each mapelItems as item (`edit-mapel-${item.id}`)}
+						{#each selectedMapelItems as item (`edit-mapel-${item.id}`)}
 							<option value={item.kode}>{item.kode} - {item.nama}</option>
 						{/each}
 					</optgroup>
@@ -994,7 +1157,12 @@
 							: 'Semester Ganjil'} dan tidak langsung disimpan.
 				</p>
 			</div>
-			<button class="btn btn-ghost btn-sm btn-square" type="button" title="Tutup" onclick={() => importDialog?.close()}>
+			<button
+				class="btn btn-ghost btn-sm btn-square"
+				type="button"
+				title="Tutup"
+				onclick={() => importDialog?.close()}
+			>
 				<Icon name="close" />
 			</button>
 		</div>
@@ -1012,17 +1180,33 @@
 					}}
 				/>
 			</label>
-			<button class="btn btn-primary shadow-none" type="button" disabled={!importFile || importLoading} onclick={previewImport}>
-				{#if importLoading}<span class="loading loading-spinner loading-sm"></span>{:else}<Icon name="search" />{/if}
+			<button
+				class="btn btn-primary shadow-none"
+				type="button"
+				disabled={!importFile || importLoading}
+				onclick={previewImport}
+			>
+				{#if importLoading}<span class="loading loading-spinner loading-sm"></span>{:else}<Icon
+						name="search"
+					/>{/if}
 				Periksa File
 			</button>
 		</div>
 
 		{#if importPreview}
 			<div class="mt-5 grid grid-cols-3 gap-2">
-				<div class="bg-base-200 rounded-md p-3"><div class="text-xs">Total Terisi</div><div class="text-xl font-bold">{importPreview.total}</div></div>
-				<div class="bg-success/15 rounded-md p-3"><div class="text-xs">Valid</div><div class="text-success text-xl font-bold">{importPreview.validRows.length}</div></div>
-				<div class="bg-error/15 rounded-md p-3"><div class="text-xs">Ditolak</div><div class="text-error text-xl font-bold">{importPreview.invalidRows.length}</div></div>
+				<div class="bg-base-200 rounded-md p-3">
+					<div class="text-xs">Total Terisi</div>
+					<div class="text-xl font-bold">{importPreview.total}</div>
+				</div>
+				<div class="bg-success/15 rounded-md p-3">
+					<div class="text-xs">Valid</div>
+					<div class="text-success text-xl font-bold">{importPreview.validRows.length}</div>
+				</div>
+				<div class="bg-error/15 rounded-md p-3">
+					<div class="text-xs">Ditolak</div>
+					<div class="text-error text-xl font-bold">{importPreview.invalidRows.length}</div>
+				</div>
 			</div>
 
 			{#if importPreview.invalidRows.length}
@@ -1030,10 +1214,17 @@
 					<h4 class="text-error mb-2 font-semibold">Baris yang perlu diperbaiki</h4>
 					<div class="border-base-300 max-h-52 overflow-auto rounded-md border">
 						<table class="table table-sm">
-							<thead class="bg-base-200 sticky top-0"><tr><th>Baris</th><th>Hari/Jam</th><th>Kelas</th><th>Kode</th><th>Masalah</th></tr></thead>
+							<thead class="bg-base-200 sticky top-0"
+								><tr><th>Baris</th><th>Hari/Jam</th><th>Kelas</th><th>Kode</th><th>Masalah</th></tr
+								></thead
+							>
 							<tbody>
 								{#each importPreview.invalidRows as row (row.rowNumber)}
-									<tr><td>{row.rowNumber}</td><td>{row.hari} {row.jamKe}</td><td>{row.kelas}</td><td>{row.kode}</td><td class="text-error">{row.reason}</td></tr>
+									<tr
+										><td>{row.rowNumber}</td><td>{row.hari} {row.jamKe}</td><td>{row.kelas}</td><td
+											>{row.kode}</td
+										><td class="text-error">{row.reason}</td></tr
+									>
 								{/each}
 							</tbody>
 						</table>
@@ -1046,26 +1237,49 @@
 					<h4 class="mb-2 font-semibold">Pratinjau data valid</h4>
 					<div class="border-base-300 max-h-64 overflow-auto rounded-md border">
 						<table class="table table-sm">
-							<thead class="bg-base-200 sticky top-0"><tr><th>Hari</th><th>Jam</th><th>Kelas</th><th>Kode</th></tr></thead>
+							<thead class="bg-base-200 sticky top-0"
+								><tr><th>Hari</th><th>Jam</th><th>Kelas</th><th>Kode</th></tr></thead
+							>
 							<tbody>
 								{#each importPreview.validRows.slice(0, 100) as row (row.hari + '-' + row.jamKe + '-' + row.kelasId)}
-									<tr><td>{hariLabel[row.hari]}</td><td>{row.jamKe}</td><td>{row.kelas}</td><td class="font-semibold">{row.kode}</td></tr>
+									<tr
+										><td>{hariLabel[row.hari]}</td><td>{row.jamKe}</td><td>{row.kelas}</td><td
+											class="font-semibold">{row.kode}</td
+										></tr
+									>
 								{/each}
 							</tbody>
 						</table>
 					</div>
 					{#if importPreview.validRows.length > 100}
-						<p class="text-base-content/60 mt-1 text-xs">100 dari {importPreview.validRows.length} baris ditampilkan.</p>
+						<p class="text-base-content/60 mt-1 text-xs">
+							100 dari {importPreview.validRows.length} baris ditampilkan.
+						</p>
 					{/if}
 				</div>
 			{/if}
 
 			<div class="mt-5 flex flex-wrap items-center justify-between gap-3">
 				<div class="join">
-					<button class="btn btn-sm join-item" class:btn-primary={importMode === 'merge'} type="button" onclick={() => (importMode = 'merge')}>Gabungkan</button>
-					<button class="btn btn-sm join-item" class:btn-primary={importMode === 'replace'} type="button" onclick={() => (importMode = 'replace')}>Ganti Isi Tabel</button>
+					<button
+						class="btn btn-sm join-item"
+						class:btn-primary={importMode === 'merge'}
+						type="button"
+						onclick={() => (importMode = 'merge')}>Gabungkan</button
+					>
+					<button
+						class="btn btn-sm join-item"
+						class:btn-primary={importMode === 'replace'}
+						type="button"
+						onclick={() => (importMode = 'replace')}>Ganti Isi Tabel</button
+					>
 				</div>
-				<button class="btn btn-primary shadow-none" type="button" disabled={!importPreview.validRows.length} onclick={applyImportPreview}>
+				<button
+					class="btn btn-primary shadow-none"
+					type="button"
+					disabled={!importPreview.validRows.length}
+					onclick={applyImportPreview}
+				>
 					<Icon name="check" /> Terapkan ke Tabel
 				</button>
 			</div>
@@ -1073,6 +1287,7 @@
 	</div>
 	<form method="dialog" class="modal-backdrop"><button>Tutup</button></form>
 </dialog>
+
 <style>
 	@media (min-width: 80rem) {
 		.schedule-workspace {
@@ -1117,9 +1332,26 @@
 		min-width: 4rem;
 	}
 
-	.sticky-col-jam {
-		left: 4rem;
-		min-width: 2.75rem;
+	.group-jam-head,
+	.group-jam-cell {
+		border-left: 2px solid color-mix(in srgb, #2563eb 45%, transparent);
+		min-width: 5rem;
+	}
+
+	.group-jam-cell {
+		background: color-mix(in srgb, #dbeafe 45%, var(--color-base-100));
+		padding: 0.25rem;
+	}
+
+	.group-jam-cell.is-inactive,
+	.schedule-cell.is-inactive {
+		background: color-mix(in srgb, var(--color-base-300) 45%, var(--color-base-100));
+	}
+
+	.slot-button:disabled .slot-inactive {
+		color: color-mix(in srgb, currentColor 48%, transparent);
+		font-size: 0.62rem;
+		font-weight: 600;
 	}
 
 	.schedule-head.sticky-col {

@@ -1,11 +1,11 @@
 import { error } from '@sveltejs/kit';
-import { generateBulkPDF, type DocumentType } from '$lib/server/pdf/generate';
+import { generateBulkPDF, type DocumentType, type PdfVariant } from '$lib/server/pdf/generate';
 import { getRaporPreviewPayload } from '../../../cetak/rapor/preview-data';
 import { getCoverPreviewPayload } from '../../../cetak/cover/preview-data';
 import { getBiodataPreviewPayload } from '../../../cetak/biodata/preview-data';
 import { getKeasramaanPreviewPayload } from '../../../cetak/keasramaan/preview-data';
 import { getPiagamPreviewPayload } from '../../../cetak/piagam/preview-data';
-import { getLogoSrc } from '$lib/server/pdf/preview-utils';
+import { getKartuAbsensiPreviewPayload } from '../../../cetak/kartu-absensi/preview-data';
 
 import type { RequestHandler } from './$types';
 
@@ -16,11 +16,12 @@ type BulkRequest = {
 	tpMode?: string;
 	criteria?: { kritCukup: number; kritBaik: number };
 	template?: '1' | '2';
+	pdfVariant?: PdfVariant;
 	docLabel?: string;
 	kelasLabel?: string;
 	bgLogo?: boolean;
 	raporPeriode?: string;
-	pdfVariant?: PdfVariant;
+	parentSignature?: string;
 };
 
 async function fetchStudentData(
@@ -38,6 +39,13 @@ async function fetchStudentData(
 	}
 	if (body.bgLogo) url.searchParams.set('bg_logo', '1');
 	if (body.raporPeriode) url.searchParams.set('rapor_periode', body.raporPeriode);
+	if (
+		body.parentSignature === 'ayah' ||
+		body.parentSignature === 'ibu' ||
+		body.parentSignature === 'wali'
+	) {
+		url.searchParams.set('ttd_wali', body.parentSignature);
+	}
 
 	switch (body.docType) {
 		case 'rapor': {
@@ -61,6 +69,10 @@ async function fetchStudentData(
 			const p = await getPiagamPreviewPayload({ locals, url });
 			return p.piagamData as unknown as Record<string, unknown>;
 		}
+		case 'kartu-absensi': {
+			const p = await getKartuAbsensiPreviewPayload({ locals, url });
+			return p.kartuAbsensiData as unknown as Record<string, unknown>;
+		}
 		default:
 			throw error(400, `Unknown document type: ${body.docType}`);
 	}
@@ -68,16 +80,19 @@ async function fetchStudentData(
 
 export const POST = (async ({ locals, request }) => {
 	const body: BulkRequest = await request.json();
+	const variant: PdfVariant = body.pdfVariant === 'sr' ? 'sr' : 'default';
 
 	if (!body.docType || !body.muridIds?.length) {
 		throw error(400, 'Parameter docType dan muridIds wajib diisi.');
+	}
+	if (locals.user?.type === 'wali_asrama' && (body.docType !== 'keasramaan' || variant !== 'sr')) {
+		throw error(403, 'Wali asrama hanya dapat mencetak Dokumen SR Rapor Keasramaan.');
 	}
 
 	const allData = await Promise.all(
 		body.muridIds.map((muridId) => fetchStudentData(locals, body, muridId))
 	);
 
-	const variant: PdfVariant = body.pdfVariant === 'sr' ? 'sr' : 'default';
 	const items = allData.map((data) => ({
 		docType: body.docType,
 		data,
@@ -97,4 +112,3 @@ export const POST = (async ({ locals, request }) => {
 		}
 	});
 }) satisfies RequestHandler;
-

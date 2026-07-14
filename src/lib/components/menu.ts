@@ -152,7 +152,7 @@ export const appMenuItems: MenuItem[] = [
 	{
 		title: 'Cetak Dokumen SR',
 		icon: 'print',
-		path: '/cetak?sr=1'
+		path: '/cetak-sr'
 	}
 ];
 

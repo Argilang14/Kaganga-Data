@@ -1,10 +1,16 @@
 // Robust Parameter & Criteria Management for Rapor Preview
 
 export type RaporPeriode = 'rts' | 'ras';
+export type ParentSignatureChoice = 'auto' | 'ayah' | 'ibu' | 'wali';
 
 export function parseRaporPeriode(value: string | null): RaporPeriode {
 	if (value === 'rts' || value === 'ras') return value;
 	return 'ras';
+}
+
+export function parseParentSignatureChoice(value: string | null): ParentSignatureChoice {
+	if (value === 'ayah' || value === 'ibu' || value === 'wali') return value;
+	return 'auto';
 }
 
 export interface RaporCriteria {
@@ -62,6 +68,7 @@ export interface PreviewURLParams {
 	tpMode: TPMode;
 	criteria: RaporCriteria;
 	raporPeriode: RaporPeriode;
+	parentSignature: ParentSignatureChoice;
 }
 
 export function buildPreviewURLParams(url: URL): PreviewURLParams {
@@ -82,25 +89,30 @@ export function buildPreviewURLParams(url: URL): PreviewURLParams {
 	);
 
 	const raporPeriode = parseRaporPeriode(url.searchParams.get('rapor_periode'));
+	const parentSignature = parseParentSignatureChoice(url.searchParams.get('ttd_wali'));
 
 	return {
 		muridId: Number(muridIdStr),
 		kelasId,
 		tpMode,
 		criteria,
-		raporPeriode
+		raporPeriode,
+		parentSignature
 	};
 }
 
 export function createPreviewURLSearchParams(params: {
-	muridId: number;
+	muridId?: number;
 	kelasId?: number;
 	tpMode?: TPMode;
 	criteria?: RaporCriteria;
 	raporPeriode?: RaporPeriode;
+	parentSignature?: ParentSignatureChoice;
 }): URLSearchParams {
 	const searchParams = new URLSearchParams();
-	searchParams.set('murid_id', String(params.muridId));
+	if (params.muridId) {
+		searchParams.set('murid_id', String(params.muridId));
+	}
 
 	if (params.kelasId) {
 		searchParams.set('kelas_id', String(params.kelasId));
@@ -116,6 +128,10 @@ export function createPreviewURLSearchParams(params: {
 
 	if (params.raporPeriode && params.raporPeriode !== 'ras') {
 		searchParams.set('rapor_periode', params.raporPeriode);
+	}
+
+	if (params.parentSignature && params.parentSignature !== 'auto') {
+		searchParams.set('ttd_wali', params.parentSignature);
 	}
 
 	return searchParams;

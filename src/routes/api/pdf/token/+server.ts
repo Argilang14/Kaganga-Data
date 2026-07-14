@@ -1,10 +1,13 @@
-import { json } from '@sveltejs/kit';
+import { error, json } from '@sveltejs/kit';
 import { storePdfParams } from '$lib/server/pdf/token-store';
 import { getCoverPreviewPayload } from '../../../cetak/cover/preview-data';
 import { getRaporPreviewPayload } from '../../../cetak/rapor/preview-data';
 import { getBiodataPreviewPayload } from '../../../cetak/biodata/preview-data';
 import { getKeasramaanPreviewPayload } from '../../../cetak/keasramaan/preview-data';
 import { getPiagamPreviewPayload } from '../../../cetak/piagam/preview-data';
+import { getKartuAbsensiPreviewPayload } from '../../../cetak/kartu-absensi/preview-data';
+import { getJadwalPelajaranPreviewPayload } from '../../../cetak/jadwal-pelajaran/preview-data';
+import { getKalenderPendidikanPreviewPayload } from '../../../cetak/kalender-pendidikan/preview-data';
 import type { RequestHandler } from './$types';
 
 function slugify(text: string): string {
@@ -48,8 +51,33 @@ async function resolveNama(docType: string, locals: App.Locals, url: URL): Promi
 				preview = p.piagamData as unknown as PreviewData | null;
 				break;
 			}
+			case 'kartu-absensi': {
+				const p = await getKartuAbsensiPreviewPayload({ locals, url });
+				preview = p.kartuAbsensiData as unknown as PreviewData | null;
+				break;
+			}
+			case 'jadwal-pelajaran': {
+				const p = await getJadwalPelajaranPreviewPayload({ locals, url });
+				preview = p.jadwalPelajaranData as unknown as PreviewData | null;
+				nama = (preview?.jenjangLabel as string) || 'Jadwal Pelajaran';
+				break;
+			}
+			case 'kalender-pendidikan': {
+				const p = await getKalenderPendidikanPreviewPayload({ locals, url });
+				preview = p.kalenderPendidikanData as unknown as PreviewData | null;
+				nama =
+					(
+						preview?.periode as
+							| { label?: string; semester?: string; tahunPelajaran?: string }
+							| undefined
+					)?.label || 'Kalender Pendidikan';
+				break;
+			}
 		}
-		nama = ((preview?.murid as Record<string, unknown> | undefined)?.nama as string) || '';
+		const muridName = (preview?.murid as Record<string, unknown> | undefined)?.nama as
+			| string
+			| undefined;
+		if (muridName) nama = muridName;
 	} catch {
 		// fallback
 	}
@@ -58,11 +86,33 @@ async function resolveNama(docType: string, locals: App.Locals, url: URL): Promi
 
 export const POST = (async ({ locals, request }) => {
 	const body = await request.json();
-	const { docType, muridId, kelasId, tpMode, kriteria, template, bgLogo, raporPeriode } = body;
+	const {
+		docType,
+		muridId,
+		kelasId,
+		tpMode,
+		kriteria,
+		template,
+		bgLogo,
+		raporPeriode,
+		orientation,
+		jenjang,
+		periodeMode
+	} = body;
+	const parentSignature =
+		body.parentSignature === 'ayah' ||
+		body.parentSignature === 'ibu' ||
+		body.parentSignature === 'wali'
+			? body.parentSignature
+			: undefined;
 	const variant = body.pdfVariant === 'sr' ? 'sr' : 'default';
 
+	if (locals.user?.type === 'wali_asrama' && (docType !== 'keasramaan' || variant !== 'sr')) {
+		throw error(403, 'Wali asrama hanya dapat mencetak Dokumen SR Rapor Keasramaan.');
+	}
+
 	const url = new URL('http://localhost');
-	url.searchParams.set('murid_id', String(muridId));
+	if (muridId) url.searchParams.set('murid_id', String(muridId));
 	if (kelasId) url.searchParams.set('kelas_id', String(kelasId));
 	if (tpMode === 'full-desc') url.searchParams.set('full_tp', 'desc');
 	if (kriteria) {
@@ -72,6 +122,10 @@ export const POST = (async ({ locals, request }) => {
 	if (template) url.searchParams.set('template', template);
 	if (bgLogo) url.searchParams.set('bg_logo', '1');
 	if (raporPeriode) url.searchParams.set('rapor_periode', raporPeriode);
+	if (parentSignature) url.searchParams.set('ttd_wali', parentSignature);
+	if (orientation) url.searchParams.set('orientation', orientation);
+	if (jenjang) url.searchParams.set('jenjang', jenjang);
+	if (periodeMode) url.searchParams.set('periode_mode', periodeMode);
 
 	const docLabel = body.docLabel || docType;
 	const nama = await resolveNama(docType, locals, url);
@@ -85,12 +139,15 @@ export const POST = (async ({ locals, request }) => {
 		kritCukup: kriteria?.kritCukup,
 		kritBaik: kriteria?.kritBaik,
 		template,
+		variant,
 		bgLogo,
 		raporPeriode,
-		variant,
+		parentSignature,
+		orientation,
+		jenjang,
+		periodeMode,
 		slug
 	});
 
 	return json({ token, slug });
 }) satisfies RequestHandler;
-

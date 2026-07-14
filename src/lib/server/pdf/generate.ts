@@ -8,6 +8,9 @@ import { renderRaporHTML } from './templates/rapor';
 import { renderBiodataHTML } from './templates/biodata';
 import { renderKeasramaanHTML } from './templates/keasramaan';
 import { renderPiagamHTML } from './templates/piagam';
+import { renderKartuAbsensiHTML, renderKartuAbsensiSheetHTML } from './templates/kartu-absensi';
+import { renderJadwalPelajaranHTML } from './templates/jadwal-pelajaran';
+import { renderKalenderPendidikanHTML } from './templates/kalender-pendidikan';
 import {
 	renderSRBiodataHTML,
 	renderSRCoverHTML,
@@ -15,7 +18,15 @@ import {
 	renderSRRaporHTML
 } from './templates/sr';
 
-export type DocumentType = 'cover' | 'rapor' | 'biodata' | 'keasramaan' | 'piagam';
+export type DocumentType =
+	| 'cover'
+	| 'rapor'
+	| 'biodata'
+	| 'keasramaan'
+	| 'piagam'
+	| 'kartu-absensi'
+	| 'jadwal-pelajaran'
+	| 'kalender-pendidikan';
 export type PdfVariant = 'default' | 'sr';
 
 export function renderHTML(
@@ -36,6 +47,12 @@ export function renderHTML(
 				return renderSRKeasramaanHTML(data as never);
 			case 'piagam':
 				return renderPiagamHTML(data as never, template ?? '1');
+			case 'kartu-absensi':
+				return renderKartuAbsensiHTML(data as never);
+			case 'jadwal-pelajaran':
+				return renderJadwalPelajaranHTML(data as never);
+			case 'kalender-pendidikan':
+				return renderKalenderPendidikanHTML(data as never);
 			default:
 				throw new Error(`Unknown document type: ${docType}`);
 		}
@@ -52,6 +69,12 @@ export function renderHTML(
 			return renderKeasramaanHTML(data as never);
 		case 'piagam':
 			return renderPiagamHTML(data as never, template ?? '1');
+		case 'kartu-absensi':
+			return renderKartuAbsensiHTML(data as never);
+		case 'jadwal-pelajaran':
+			return renderJadwalPelajaranHTML(data as never);
+		case 'kalender-pendidikan':
+			return renderKalenderPendidikanHTML(data as never);
 		default:
 			throw new Error(`Unknown document type: ${docType}`);
 	}
@@ -84,7 +107,12 @@ async function generateAllPDFs(items: BulkItem[], tmpDir: string): Promise<strin
 	async function worker(): Promise<void> {
 		while (index < items.length) {
 			const i = index++;
-			const pdf = await generatePDF(items[i].docType, items[i].data, items[i].template, items[i].variant ?? 'default');
+			const pdf = await generatePDF(
+				items[i].docType,
+				items[i].data,
+				items[i].template,
+				items[i].variant ?? 'default'
+			);
 			const filePath = join(tmpDir, `${i}.pdf`);
 			await writeFile(filePath, pdf);
 			filePaths[i] = filePath;
@@ -112,7 +140,17 @@ async function mergeTwoPDFs(aPath: string, bPath: string, outPath: string): Prom
 
 export async function generateBulkPDF(items: BulkItem[]): Promise<Uint8Array> {
 	if (!items.length) throw new Error('No items to generate PDF for.');
-	if (items.length === 1) return generatePDF(items[0].docType, items[0].data, items[0].template, items[0].variant ?? 'default');
+	if (items.every((item) => item.docType === 'kartu-absensi')) {
+		return renderPDF(renderKartuAbsensiSheetHTML(items.map((item) => item.data as never)));
+	}
+	if (items.length === 1) {
+		return generatePDF(
+			items[0].docType,
+			items[0].data,
+			items[0].template,
+			items[0].variant ?? 'default'
+		);
+	}
 
 	const tmpDir = await mkdtemp(join(tmpdir(), 'rapkumer-bulk-'));
 
@@ -151,4 +189,3 @@ export async function generateBulkPDF(items: BulkItem[]): Promise<Uint8Array> {
 		await rm(tmpDir, { recursive: true, force: true });
 	}
 }
-

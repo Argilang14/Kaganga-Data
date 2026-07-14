@@ -28,6 +28,20 @@
 	type DropScope = 'cell' | 'jenjang' | 'row' | 'sameJamAllDays';
 	type PendingDrop = { item: PaletteItem; hari: string; jamKe: number; kelasId: number };
 	type SelectedCell = { hari: string; jamKe: number; kelasId: number; kode: string };
+	type JadwalExcelRow = { hari: string; jamKe: number; kelasId: number; kode: string };
+	type ImportPreview = {
+		validRows: Array<JadwalExcelRow & { kelas: string }>;
+		invalidRows: Array<{
+			rowNumber: number;
+			hari: string;
+			jamKe: string;
+			kelas: string;
+			kode: string;
+			reason: string;
+		}>;
+		total: number;
+		context: { tahunAjaran: string; jenisLabel: string };
+	};
 
 	const hariList = ['senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu'];
 	const hariLabel: Record<string, string> = {
@@ -113,6 +127,11 @@
 	let editKode = $state('');
 	let dropDialog = $state<HTMLDialogElement | null>(null);
 	let cellDialog = $state<HTMLDialogElement | null>(null);
+	let importDialog = $state<HTMLDialogElement | null>(null);
+	let importFile = $state<File | null>(null);
+	let importPreview = $state<ImportPreview | null>(null);
+	let importLoading = $state(false);
+	let importMode = $state<'merge' | 'replace'>('merge');
 	let panelCollapsed = $state(false);
 	let panelSide = $state<'left' | 'right'>('right');
 	let panelWidth = $state(240);
@@ -340,6 +359,61 @@
 		cells = {};
 	}
 
+	function excelHref(kind: 'template' | 'export') {
+		const query = new URLSearchParams({
+			tahunAjaranId: String(data.selectedContext?.tahunAjaranId ?? ''),
+			jenis: data.selectedContext?.jenis ?? 'ganjil'
+		});
+		return '/api/jadwal/pelajaran/' + kind + '?' + query;
+	}
+
+	function openImportDialog() {
+		importFile = null;
+		importPreview = null;
+		importMode = 'merge';
+		importDialog?.showModal();
+	}
+
+	async function previewImport() {
+		if (!importFile || importLoading) return;
+		importLoading = true;
+		importPreview = null;
+		const query = new URLSearchParams({
+			tahunAjaranId: String(data.selectedContext?.tahunAjaranId ?? ''),
+			jenis: data.selectedContext?.jenis ?? 'ganjil'
+		});
+		const formData = new FormData();
+		formData.set('file', importFile);
+		try {
+			const response = await fetch('/api/jadwal/pelajaran/import-preview?' + query, {
+				method: 'POST',
+				body: formData
+			});
+			const payload = await response.json();
+			if (!response.ok) throw new Error(payload?.message ?? 'File Excel tidak dapat dibaca');
+			importPreview = payload as ImportPreview;
+		} catch (error) {
+			toast(error instanceof Error ? error.message : 'Gagal membaca file Excel', 'error');
+		} finally {
+			importLoading = false;
+		}
+	}
+
+	function applyImportPreview() {
+		if (!importPreview?.validRows.length) return;
+		const next: Record<string, string> = importMode === 'replace' ? {} : { ...cells };
+		for (const row of importPreview.validRows) {
+			next[keyFor(row.hari, row.jamKe, row.kelasId)] = row.kode;
+		}
+		cells = next;
+		importDialog?.close();
+		toast(
+			importPreview.validRows.length +
+				' baris diterapkan ke tabel. Tekan Simpan Jadwal untuk menyimpan.',
+			'success'
+		);
+	}
+
 	function normalizeColor(value: string | null | undefined, fallback: string) {
 		return /^#[0-9a-fA-F]{6}$/.test(value ?? '') ? value! : fallback;
 	}
@@ -414,9 +488,10 @@
 
 	function overwriteCountForDrop(scope: DropScope) {
 		if (!pendingDrop) return 0;
+		const pendingKode = pendingDrop.item.kode;
 		return targetsForDrop(scope).filter((target) => {
 			const existing = cells[keyFor(target.hari, target.jamKe, target.kelasId)];
-			return existing && existing !== pendingDrop.item.kode;
+			return existing && existing !== pendingKode;
 		}).length;
 	}
 	function applyPendingDrop(scope: DropScope) {
@@ -535,6 +610,16 @@
 					</select>
 				</label>
 			</form>
+			<div class="dropdown dropdown-end">
+				<button type="button" tabindex="0" class="btn btn-soft shadow-none">
+					<Icon name="down" /> Data Excel
+				</button>
+				<ul tabindex="-1" class="dropdown-content menu bg-base-100 border-base-300 z-30 mt-2 w-56 rounded-md border p-2 shadow-xl">
+					<li><a href={excelHref('template')}><Icon name="download" /> Download Template</a></li>
+					<li><button type="button" onclick={openImportDialog}><Icon name="import" /> Import dan Pratinjau</button></li>
+					<li><a href={excelHref('export')}><Icon name="export" /> Export Jadwal</a></li>
+				</ul>
+			</div>
 			<button
 				class="btn btn-primary shadow-none"
 				type="button"
@@ -896,6 +981,98 @@
 	<form method="dialog" class="modal-backdrop"><button>Batal</button></form>
 </dialog>
 
+<dialog class="modal" bind:this={importDialog}>
+	<div class="modal-box w-11/12 max-w-5xl rounded-lg">
+		<div class="flex items-start justify-between gap-3">
+			<div>
+				<h3 class="text-lg font-bold">Import Jadwal Pelajaran</h3>
+				<p class="text-base-content/70 mt-1 text-sm">
+					Data diperiksa untuk {data.selectedContext?.jenis === 'persiapan'
+						? 'Masa Persiapan'
+						: data.selectedContext?.jenis === 'genap'
+							? 'Semester Genap'
+							: 'Semester Ganjil'} dan tidak langsung disimpan.
+				</p>
+			</div>
+			<button class="btn btn-ghost btn-sm btn-square" type="button" title="Tutup" onclick={() => importDialog?.close()}>
+				<Icon name="close" />
+			</button>
+		</div>
+
+		<div class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end">
+			<label class="form-control min-w-0 flex-1">
+				<span class="label-text mb-1 font-semibold">File Excel</span>
+				<input
+					class="file-input file-input-bordered w-full"
+					type="file"
+					accept=".xlsx"
+					onchange={(event) => {
+						importFile = (event.currentTarget as HTMLInputElement).files?.[0] ?? null;
+						importPreview = null;
+					}}
+				/>
+			</label>
+			<button class="btn btn-primary shadow-none" type="button" disabled={!importFile || importLoading} onclick={previewImport}>
+				{#if importLoading}<span class="loading loading-spinner loading-sm"></span>{:else}<Icon name="search" />{/if}
+				Periksa File
+			</button>
+		</div>
+
+		{#if importPreview}
+			<div class="mt-5 grid grid-cols-3 gap-2">
+				<div class="bg-base-200 rounded-md p-3"><div class="text-xs">Total Terisi</div><div class="text-xl font-bold">{importPreview.total}</div></div>
+				<div class="bg-success/15 rounded-md p-3"><div class="text-xs">Valid</div><div class="text-success text-xl font-bold">{importPreview.validRows.length}</div></div>
+				<div class="bg-error/15 rounded-md p-3"><div class="text-xs">Ditolak</div><div class="text-error text-xl font-bold">{importPreview.invalidRows.length}</div></div>
+			</div>
+
+			{#if importPreview.invalidRows.length}
+				<div class="mt-4">
+					<h4 class="text-error mb-2 font-semibold">Baris yang perlu diperbaiki</h4>
+					<div class="border-base-300 max-h-52 overflow-auto rounded-md border">
+						<table class="table table-sm">
+							<thead class="bg-base-200 sticky top-0"><tr><th>Baris</th><th>Hari/Jam</th><th>Kelas</th><th>Kode</th><th>Masalah</th></tr></thead>
+							<tbody>
+								{#each importPreview.invalidRows as row (row.rowNumber)}
+									<tr><td>{row.rowNumber}</td><td>{row.hari} {row.jamKe}</td><td>{row.kelas}</td><td>{row.kode}</td><td class="text-error">{row.reason}</td></tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			{/if}
+
+			{#if importPreview.validRows.length}
+				<div class="mt-4">
+					<h4 class="mb-2 font-semibold">Pratinjau data valid</h4>
+					<div class="border-base-300 max-h-64 overflow-auto rounded-md border">
+						<table class="table table-sm">
+							<thead class="bg-base-200 sticky top-0"><tr><th>Hari</th><th>Jam</th><th>Kelas</th><th>Kode</th></tr></thead>
+							<tbody>
+								{#each importPreview.validRows.slice(0, 100) as row (row.hari + '-' + row.jamKe + '-' + row.kelasId)}
+									<tr><td>{hariLabel[row.hari]}</td><td>{row.jamKe}</td><td>{row.kelas}</td><td class="font-semibold">{row.kode}</td></tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+					{#if importPreview.validRows.length > 100}
+						<p class="text-base-content/60 mt-1 text-xs">100 dari {importPreview.validRows.length} baris ditampilkan.</p>
+					{/if}
+				</div>
+			{/if}
+
+			<div class="mt-5 flex flex-wrap items-center justify-between gap-3">
+				<div class="join">
+					<button class="btn btn-sm join-item" class:btn-primary={importMode === 'merge'} type="button" onclick={() => (importMode = 'merge')}>Gabungkan</button>
+					<button class="btn btn-sm join-item" class:btn-primary={importMode === 'replace'} type="button" onclick={() => (importMode = 'replace')}>Ganti Isi Tabel</button>
+				</div>
+				<button class="btn btn-primary shadow-none" type="button" disabled={!importPreview.validRows.length} onclick={applyImportPreview}>
+					<Icon name="check" /> Terapkan ke Tabel
+				</button>
+			</div>
+		{/if}
+	</div>
+	<form method="dialog" class="modal-backdrop"><button>Tutup</button></form>
+</dialog>
 <style>
 	@media (min-width: 80rem) {
 		.schedule-workspace {

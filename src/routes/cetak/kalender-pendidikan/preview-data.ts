@@ -8,7 +8,12 @@ import {
 	resolveKelasId
 } from '$lib/server/absensi-digital';
 import { requireJadwalAccess } from '$lib/server/jadwal';
-import { fallbackTempat, formatTanggal } from '$lib/server/pdf/preview-utils';
+import {
+	fallbackTempat,
+	formatTanggal,
+	getLogoDinasSrc,
+	getLogoSrc
+} from '$lib/server/pdf/preview-utils';
 import { and, asc, eq, gte, inArray, isNull, lte, or } from 'drizzle-orm';
 
 type KalenderJenis =
@@ -316,12 +321,18 @@ export async function getKalenderPendidikanPreviewPayload({
 				: selectedJenjang === 'srmp'
 					? 'SRMP'
 					: 'SRMA';
+	const [logoUrl, logoDinasUrl] = await Promise.all([
+		getLogoSrc(sekolahId),
+		getLogoDinasSrc(sekolahId)
+	]);
 
 	return {
 		meta: { title: `Kalender Pendidikan - ${periodeRange.label}` },
 		kalenderPendidikanData: {
 			sekolah: {
 				nama: sekolah.nama,
+				logoUrl,
+				logoDinasUrl,
 				kepalaSekolah: sekolah.kepalaSekolah
 					? { nama: sekolah.kepalaSekolah.nama, nip: sekolah.kepalaSekolah.nip ?? '' }
 					: null

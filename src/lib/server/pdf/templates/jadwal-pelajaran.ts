@@ -198,7 +198,7 @@ export function renderJadwalPelajaranHTML(data: JadwalPelajaranPrintData): strin
 		orientation +
 		';margin:7mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
 		'body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#111827;background:#fff;font-size:8px}' +
-		'.header{text-align:center;margin-bottom:4mm;text-transform:uppercase}.header h1{margin:0;font-size:15px}.header .school{margin-top:2px;font-size:12px;font-weight:700}.header .meta{margin-top:2px;font-size:9px;color:#475569}' +
+		'.document-header{display:grid;grid-template-columns:24mm minmax(0,1fr) 24mm;align-items:center;gap:3mm;margin-bottom:4mm}.header-logo{display:flex;width:24mm;height:22mm;align-items:center;justify-content:center}.header-logo img{display:block;max-width:20mm;max-height:20mm;object-fit:contain}.header{text-align:center;text-transform:uppercase}.header h1{margin:0;font-size:15px}.header .school{margin-top:2px;font-size:12px;font-weight:700}.header .meta{margin-top:2px;font-size:9px;color:#475569}' +
 		'table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:.55px solid #cbd5e1;padding:2px;vertical-align:middle}' +
 		'.schedule thead th{height:10mm;background:#155bb7;color:#fff;text-align:center}.day-head{width:12mm}.time-head{width:18mm}.class-head span,.class-head small{display:block}.class-head small{margin-top:1px;font-size:5.5px;color:#dbeafe}' +
 		'.day-cell{background:#dbeafe;color:#0f172a;text-align:center;text-transform:uppercase}.time-cell{background:#eff6ff;text-align:center}.time-cell strong,.time-cell span{display:block}.time-cell span{margin-top:1px;font-size:5.5px;white-space:nowrap}' +
@@ -208,7 +208,11 @@ export function renderJadwalPelajaranHTML(data: JadwalPelajaranPrintData): strin
 		'.subject{background:#e0f2fe}.activity{background:#dcfce7}.break{background:#fef3c7}.empty{background:#fff;color:#94a3b8}.inactive{background:#f3f4f6!important;color:#9ca3af;border-color:#e5e7eb!important}.empty-table{padding:8mm;text-align:center;color:#64748b}' +
 		'.after-table{margin-top:4mm;break-inside:avoid}.legend h2{margin:0 0 2mm;font-size:9px}.legend table{table-layout:auto;font-size:7px}.legend th{background:#e5e7eb;color:#111827;text-align:left}.legend th,.legend td{padding:2px 3px;border-color:#94a3b8}.legend-code{width:18mm;text-align:center!important;font-weight:700}' +
 		'.signature{margin:5mm 0 0 auto;width:58mm;min-height:32mm;text-align:left;line-height:1.35;font-size:8px;break-inside:avoid}.signature-space{height:18mm}.signature-name{font-weight:700;text-decoration:underline}.footer{margin-top:3mm;display:flex;justify-content:space-between;color:#64748b;font-size:7px}' +
-		'</style></head><body><section class="sheet"><div class="header"><h1>Jadwal Pelajaran</h1><div class="school">' +
+		'</style></head><body><section class="sheet"><div class="document-header"><div class="header-logo">' +
+		(data.sekolah.logoDinasUrl
+			? '<img src="' + escapeHtml(data.sekolah.logoDinasUrl) + '" alt="Logo pemda atau kementerian" />'
+			: '') +
+		'</div><div class="header"><h1>Jadwal Pelajaran</h1><div class="school">' +
 		escapeHtml(data.sekolah.nama) +
 		'</div><div class="meta">' +
 		escapeHtml(data.jenjangLabel) +
@@ -216,6 +220,10 @@ export function renderJadwalPelajaranHTML(data: JadwalPelajaranPrintData): strin
 		escapeHtml(data.jenisLabel) +
 		' - Tahun Ajaran ' +
 		escapeHtml(data.periode.tahunPelajaran) +
+		'</div></div><div class="header-logo">' +
+		(data.sekolah.logoUrl
+			? '<img src="' + escapeHtml(data.sekolah.logoUrl) + '" alt="Logo sekolah" />'
+			: '') +
 		'</div></div>' +
 		renderSchedule(data) +
 		'<div class="after-table">' +

@@ -24,7 +24,7 @@ import {
 	selectJadwalContext,
 	type JadwalJenjang
 } from '$lib/server/jadwal';
-import { formatTanggal } from '$lib/server/pdf/preview-utils';
+import { formatTanggal, getLogoDinasSrc, getLogoSrc } from '$lib/server/pdf/preview-utils';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 
 type JenjangFilter = 'semua' | JadwalJenjang;
@@ -220,6 +220,10 @@ export async function getJadwalPelajaranPreviewPayload({
 
 	const jenjangLabel =
 		selectedJenjang === 'semua' ? 'Semua Jenjang' : JADWAL_JENJANG_LABELS[selectedJenjang];
+	const [logoUrl, logoDinasUrl] = await Promise.all([
+		getLogoSrc(sekolahId),
+		getLogoDinasSrc(sekolahId)
+	]);
 
 	return {
 		meta: { title: 'Jadwal Pelajaran - ' + jenjangLabel },
@@ -227,6 +231,8 @@ export async function getJadwalPelajaranPreviewPayload({
 			sekolah: {
 				nama: sekolah?.nama ?? locals.sekolah?.nama ?? 'Sekolah',
 				lokasiTandaTangan: sekolah?.lokasiTandaTangan ?? '',
+				logoUrl,
+				logoDinasUrl,
 				kepalaSekolah: {
 					nama: sekolah?.kepalaSekolah?.nama ?? '',
 					nip: sekolah?.kepalaSekolah?.nip ?? '',

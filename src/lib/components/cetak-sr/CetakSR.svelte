@@ -652,7 +652,12 @@
 	/>
 
 	{#if selectedDocument === 'jadwal-pelajaran' || selectedDocument === 'kalender-pendidikan'}
-		<div class="border-base-300 bg-base-200/30 mt-3 grid gap-3 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-3">
+		<div
+			class="border-base-300 bg-base-200/30 mt-3 grid gap-3 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-3 {selectedDocument ===
+			'jadwal-pelajaran'
+				? 'xl:grid-cols-5'
+				: 'xl:grid-cols-6'}"
+		>
 			<label class="form-control">
 				<span class="label-text mb-1">Tahun Ajaran</span>
 				<select class="select select-bordered bg-base-100" bind:value={selectedPrintTahunAjaranId}>
@@ -708,7 +713,7 @@
 				</label>
 			{/if}
 			<div class="flex items-end">
-				<a class="btn btn-outline btn-sm w-full" href={selectedDocument === 'jadwal-pelajaran' ? jadwalSourceHref : kalenderSourceHref}>
+				<a class="btn btn-outline h-12 min-h-12 w-full" href={selectedDocument === 'jadwal-pelajaran' ? jadwalSourceHref : kalenderSourceHref}>
 					Buka sumber di Akademik
 				</a>
 			</div>

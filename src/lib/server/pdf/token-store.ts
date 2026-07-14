@@ -11,6 +11,13 @@ type PdfParams = {
 	bgLogo?: boolean;
 	raporPeriode?: string;
 	variant?: 'default' | 'sr';
+    parentSignature?: 'ayah' | 'ibu' | 'wali';
+    orientation?: 'landscape' | 'portrait';
+    jenjang?: string;
+    periodeMode?: string;
+    tahunAjaranId?: number;
+    jenisJadwal?: string;
+    semesterId?: number;
 	slug: string;
 };
 

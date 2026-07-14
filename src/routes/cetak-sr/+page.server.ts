@@ -2,7 +2,7 @@ import { computeNilaiAkhirRekap } from '$lib/server/nilai-akhir';
 import { buildKelasContext, fetchMuridList } from '$lib/server/route-utils';
 
 export async function load({ locals, url, depends, parent }) {
-	depends('app:cetak');
+	depends('app:cetak-sr');
 
 	const parentData = await parent();
 	const { sekolahId, kelasId, kelasIds, academicContext } = await buildKelasContext(
@@ -10,13 +10,34 @@ export async function load({ locals, url, depends, parent }) {
 		parentData,
 		url
 	);
+	const tahunAjaranList = (academicContext?.tahunAjaranList ?? []).map((tahun) => ({
+		id: tahun.id,
+		nama: tahun.nama,
+		semester: tahun.semester.map((semester) => ({
+			id: semester.id,
+			nama: semester.nama,
+			tipe: semester.tipe
+		}))
+	}));
+	const printContext = {
+		tahunAjaranList,
+		activeTahunAjaranId: academicContext?.activeTahunAjaranId ?? null,
+		activeSemesterId: academicContext?.activeSemesterId ?? null,
+		activeSemesterTipe: academicContext?.activeSemesterTipe ?? null
+	};
 
 	if (!sekolahId || !kelasIds.length) {
-		return { academicContext, kelasId, daftarMurid: [], muridCount: 0 };
+		return {
+			academicContext,
+			kelasId,
+			daftarMurid: [],
+			muridCount: 0,
+			piagamRankingOptions: [],
+			...printContext
+		};
 	}
 
 	const daftarMurid = await fetchMuridList(sekolahId, kelasId, kelasIds);
-
 	let piagamRankingOptions: Array<{
 		muridId: number;
 		peringkat: number;
@@ -43,6 +64,7 @@ export async function load({ locals, url, depends, parent }) {
 		kelasId,
 		daftarMurid,
 		muridCount: daftarMurid.length,
-		piagamRankingOptions
+		piagamRankingOptions,
+		...printContext
 	};
 }

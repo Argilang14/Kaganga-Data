@@ -1,72 +1,55 @@
-﻿import { error, redirect } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import db from '$lib/server/db';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import {
-	tableJadwalPelajaran,
+	tableJadwalJam,
+	tableJadwalKegiatan,
 	tableJadwalMapel,
-	tableKokurikuler,
+	tableJadwalPelajaran,
+	tableJadwalTemplate,
+	tableKelas,
 	tablePegawai,
 	tableSekolah
 } from '$lib/server/db/schema';
-import { loadAbsensiKelasOptions } from '$lib/server/absensi-digital';
 import {
 	ensureDefaultJadwalFoundation,
+	ensureJadwalPelajaranTemplate,
+	inferKelasJadwalJenjang,
 	JADWAL_HARI_LABELS,
-	loadJadwalJam,
-	loadJadwalKegiatan,
-	requireJadwalAccess
+	JADWAL_JENIS_LABELS,
+	JADWAL_JENJANG,
+	JADWAL_JENJANG_LABELS,
+	mapelSesuaiJenjang,
+	requireJadwalAccess,
+	selectJadwalContext,
+	type JadwalJenjang
 } from '$lib/server/jadwal';
+import { formatTanggal } from '$lib/server/pdf/preview-utils';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 
-type JenjangFilter = 'semua' | 'srd' | 'srmp' | 'srma';
+type JenjangFilter = 'semua' | JadwalJenjang;
 type Orientation = 'landscape' | 'portrait';
 
-const JENJANG_OPTIONS = ['semua', 'srd', 'srmp', 'srma'] as const;
+const AGAMA_MAPEL_NAMES = new Set([
+	'Pendidikan Agama dan Budi Pekerti',
+	'Pendidikan Agama Islam dan Budi Pekerti',
+	'Pendidikan Agama Kristen dan Budi Pekerti',
+	'Pendidikan Agama Katolik dan Budi Pekerti',
+	'Pendidikan Agama Buddha dan Budi Pekerti',
+	'Pendidikan Agama Hindu dan Budi Pekerti',
+	'Pendidikan Agama Konghuchu dan Budi Pekerti'
+]);
 
-function parseJenjangFilter(value: string | null): JenjangFilter {
-	return JENJANG_OPTIONS.includes(value as JenjangFilter) ? (value as JenjangFilter) : 'semua';
+function parseJenjang(value: string | null): JenjangFilter {
+	return value === 'srd' || value === 'srmp' || value === 'srma' ? value : 'semua';
 }
 
 function parseOrientation(value: string | null): Orientation {
 	return value === 'portrait' ? 'portrait' : 'landscape';
 }
 
-function inferJenjangKelas(nama: string, fase?: string | null): Exclude<JenjangFilter, 'semua'> {
-	const normalizedFase = (fase ?? '')
-		.trim()
-		.toLowerCase()
-		.replace(/^fase\s+/, '');
-	if (normalizedFase === 'a' || normalizedFase === 'b' || normalizedFase === 'c') return 'srd';
-	if (normalizedFase === 'd') return 'srmp';
-	if (normalizedFase === 'e' || normalizedFase === 'f') return 'srma';
-
-	const match = nama.match(/\d+/);
-	const tingkat = match ? Number.parseInt(match[0], 10) : null;
-	if (tingkat && tingkat >= 1 && tingkat <= 6) return 'srd';
-	if (tingkat && tingkat >= 7 && tingkat <= 9) return 'srmp';
-	return 'srma';
-}
-
-function formatTahunSemester(academic: Awaited<ReturnType<typeof resolveSekolahAcademicContext>>) {
-	const tahun = academic.tahunAjaranList.find((item) => item.id === academic.activeTahunAjaranId);
-	const semester = tahun?.semester.find((item) => item.id === academic.activeSemesterId);
-	return {
-		tahunPelajaran: tahun?.nama ?? '',
-		semester: semester?.nama ?? semester?.tipe ?? ''
-	};
-}
-
-function displayKokurikuler(tujuan: string) {
-	return tujuan.length > 24 ? tujuan.slice(0, 24).trimEnd() + '...' : tujuan;
-}
-
-function formatTanggalCetak(date = new Date()) {
-	return new Intl.DateTimeFormat('id-ID', {
-		day: '2-digit',
-		month: 'long',
-		year: 'numeric',
-		timeZone: 'Asia/Jakarta'
-	}).format(date);
+function normalizeKode(value?: string | null) {
+	return value?.trim().toUpperCase() ?? '';
 }
 
 export type JadwalPelajaranPrintData = Awaited<
@@ -85,146 +68,161 @@ export async function getJadwalPelajaranPreviewPayload({
 	if (!sekolahId || !locals.user) throw redirect(303, '/login');
 
 	const academic = await resolveSekolahAcademicContext(sekolahId);
-	if (!academic.activeSemesterId) throw error(400, 'Semester aktif belum tersedia.');
-	await ensureDefaultJadwalFoundation(sekolahId, {
-		tahunAjaranId: academic.activeTahunAjaranId,
-		semesterId: academic.activeSemesterId
+	const context = selectJadwalContext(academic, {
+		tahunAjaranId: url.searchParams.get('tahun_ajaran_id'),
+		jenis: url.searchParams.get('jenis')
 	});
+	if (!context.tahunAjaranId) throw error(400, 'Tahun ajaran belum tersedia.');
 
-	const selectedJenjang = parseJenjangFilter(url.searchParams.get('jenjang'));
+	const selectedJenjang = parseJenjang(url.searchParams.get('jenjang'));
 	const orientation = parseOrientation(url.searchParams.get('orientation'));
-	const { kelasList } = await loadAbsensiKelasOptions(sekolahId, locals.user);
-	const kelasListWithJenjang = kelasList.map((kelas) => ({
-		...kelas,
-		jenjang: inferJenjangKelas(kelas.nama, kelas.fase)
-	}));
-	const selectedKelasList =
-		selectedJenjang === 'semua'
-			? kelasListWithJenjang
-			: kelasListWithJenjang.filter((kelas) => kelas.jenjang === selectedJenjang);
-	const kelasIds = selectedKelasList.map((kelas) => kelas.id);
-	const visibleJenjangList = Array.from(new Set(selectedKelasList.map((kelas) => kelas.jenjang)));
-	const jamJenjangFilter = selectedJenjang === 'semua' ? null : selectedJenjang;
+	const selectedYear = academic.tahunAjaranList.find((item) => item.id === context.tahunAjaranId);
+	const classSemesterId =
+		context.semesterId ?? selectedYear?.semester.find((item) => item.tipe === 'ganjil')?.id ?? null;
+	const scheduleTemplate = await ensureJadwalPelajaranTemplate(sekolahId, context);
 
-	const [sekolah, jamListRaw, jadwalList, mapelList, kokurikulerList, kegiatanList, guruList] =
+	await Promise.all(
+		JADWAL_JENJANG.map((jenjang) =>
+			ensureDefaultJadwalFoundation(sekolahId, { ...context, jenjang })
+		)
+	);
+
+	const settingTemplates = await db.query.tableJadwalTemplate.findMany({
+		columns: { id: true },
+		where: and(
+			eq(tableJadwalTemplate.sekolahId, sekolahId),
+			eq(tableJadwalTemplate.tahunAjaranId, context.tahunAjaranId),
+			eq(tableJadwalTemplate.jenis, context.jenis)
+		)
+	});
+	const templateIds = settingTemplates.map((item) => item.id);
+
+	const [sekolah, kelasRows, jadwalRows, jamRows, mapelRows, kegiatanRows, guruRows] =
 		await Promise.all([
 			db.query.tableSekolah.findFirst({
 				where: eq(tableSekolah.id, sekolahId),
 				columns: {
-					id: true,
 					nama: true,
 					lokasiTandaTangan: true,
 					statusKepalaSekolah: true
 				},
-				with: {
-					kepalaSekolah: {
-						columns: { nama: true, nip: true }
-					}
-				}
+				with: { kepalaSekolah: { columns: { nama: true, nip: true } } }
 			}),
-			loadJadwalJam(sekolahId, jamJenjangFilter),
-			kelasIds.length
-				? db.query.tableJadwalPelajaran.findMany({
+			db.query.tableKelas.findMany({
+				where: classSemesterId
+					? and(eq(tableKelas.sekolahId, sekolahId), eq(tableKelas.semesterId, classSemesterId))
+					: eq(tableKelas.sekolahId, sekolahId),
+				columns: { id: true, nama: true, fase: true },
+				orderBy: [asc(tableKelas.nama)]
+			}),
+			db.query.tableJadwalPelajaran.findMany({
+				where: and(
+					eq(tableJadwalPelajaran.sekolahId, sekolahId),
+					eq(tableJadwalPelajaran.templateId, scheduleTemplate.id)
+				),
+				orderBy: [asc(tableJadwalPelajaran.hari), asc(tableJadwalPelajaran.jamKe)]
+			}),
+			templateIds.length
+				? db.query.tableJadwalJam.findMany({
 						where: and(
-							eq(tableJadwalPelajaran.sekolahId, sekolahId),
-							eq(tableJadwalPelajaran.semesterId, academic.activeSemesterId),
-							inArray(tableJadwalPelajaran.kelasId, kelasIds)
-						)
+							eq(tableJadwalJam.sekolahId, sekolahId),
+							inArray(tableJadwalJam.templateId, templateIds)
+						),
+						orderBy: [asc(tableJadwalJam.urutan), asc(tableJadwalJam.jamKe)]
 					})
 				: [],
 			db.query.tableJadwalMapel.findMany({
-				columns: { id: true, nama: true, kode: true, jenjang: true, guruPegawaiId: true },
-				where: and(
-					eq(tableJadwalMapel.sekolahId, sekolahId),
-					selectedJenjang === 'semua'
-						? inArray(tableJadwalMapel.jenjang, ['semua', 'srd', 'srmp', 'srma'])
-						: inArray(tableJadwalMapel.jenjang, ['semua', selectedJenjang])
-				),
-				orderBy: asc(tableJadwalMapel.nama)
+				where: eq(tableJadwalMapel.sekolahId, sekolahId),
+				orderBy: [asc(tableJadwalMapel.nama)]
 			}),
-			kelasIds.length
-				? db.query.tableKokurikuler.findMany({
-						columns: { id: true, kelasId: true, kode: true, tujuan: true },
-						where: inArray(tableKokurikuler.kelasId, kelasIds),
-						orderBy: asc(tableKokurikuler.kode)
-					})
-				: [],
-			loadJadwalKegiatan(sekolahId),
+			db.query.tableJadwalKegiatan.findMany({
+				where: eq(tableJadwalKegiatan.sekolahId, sekolahId),
+				orderBy: [asc(tableJadwalKegiatan.nama)]
+			}),
 			db.query.tablePegawai.findMany({
 				columns: { id: true, nama: true },
-				where: eq(tablePegawai.sekolahId, sekolahId),
-				orderBy: asc(tablePegawai.nama)
+				where: eq(tablePegawai.sekolahId, sekolahId)
 			})
 		]);
 
-	const mapelById = new Map(mapelList.map((item) => [item.id, item]));
-	const kokurikulerById = new Map(kokurikulerList.map((item) => [item.id, item]));
-	const kegiatanById = new Map(kegiatanList.map((item) => [item.id, item]));
-	const guruById = new Map(guruList.map((item) => [item.id, item]));
-	const jadwalBySlot = new Map(jadwalList.map((item) => [`${item.kelasId}:${item.jamId}`, item]));
-	const jamList = jamListRaw
-		.filter(
-			(jam) =>
-				jam.aktif && (selectedJenjang !== 'semua' || visibleJenjangList.includes(jam.jenjang))
-		)
-		.map((jam) => ({
-			id: jam.id,
-			hari: jam.hari,
-			jamKe: jam.jamKe,
-			label: jam.label,
-			jenjang: jam.jenjang,
-			pukulMulai: jam.pukulMulai,
-			pukulSelesai: jam.pukulSelesai,
-			tipe: jam.tipe,
-			namaDefault: jam.namaDefault
-		}));
-	const cells = selectedKelasList.flatMap((kelas) =>
+	const kelasList = kelasRows
+		.map((kelas) => ({ ...kelas, jenjang: inferKelasJadwalJenjang(kelas) }))
+		.filter((kelas) => selectedJenjang === 'semua' || kelas.jenjang === selectedJenjang);
+	const kelasIds = new Set(kelasList.map((kelas) => kelas.id));
+	const visibleJenjang = new Set(kelasList.map((kelas) => kelas.jenjang));
+	const jadwalList = jadwalRows.filter((item) => kelasIds.has(item.kelasId));
+	const jadwalBySlot = new Map(
+		jadwalList.map((item) => [item.kelasId + '|' + item.hari + '|' + item.jamKe, item])
+	);
+	const guruById = new Map(guruRows.map((item) => [item.id, item.nama]));
+	const kegiatanByKode = new Map(
+		kegiatanRows.filter((item) => item.aktif).map((item) => [normalizeKode(item.kode), item])
+	);
+	const mapelByKode = new Map<string, typeof mapelRows>();
+	for (const mapel of mapelRows) {
+		if (!mapel.aktif || !mapel.kode) continue;
+		const kode = AGAMA_MAPEL_NAMES.has(mapel.nama) ? 'PAPB' : normalizeKode(mapel.kode);
+		const group = mapelByKode.get(kode) ?? [];
+		group.push(mapel);
+		mapelByKode.set(kode, group);
+	}
+
+	const jamMap = new Map<string, (typeof jamRows)[number]>();
+	for (const jam of jamRows) {
+		if (!jam.aktif || !visibleJenjang.has(jam.jenjang)) continue;
+		const key = jam.jenjang + '|' + jam.hari + '|' + jam.jamKe;
+		if (!jamMap.has(key)) jamMap.set(key, jam);
+	}
+	const jamList = Array.from(jamMap.values()).sort(
+		(a, b) =>
+			Object.keys(JADWAL_HARI_LABELS).indexOf(a.hari) -
+				Object.keys(JADWAL_HARI_LABELS).indexOf(b.hari) ||
+			a.jamKe - b.jamKe ||
+			a.jenjang.localeCompare(b.jenjang)
+	);
+
+	const cells = kelasList.flatMap((kelas) =>
 		jamList
 			.filter((jam) => jam.jenjang === kelas.jenjang)
 			.map((jam) => {
-				const jadwal = jadwalBySlot.get(`${kelas.id}:${jam.id}`);
-				const mapel = jadwal?.jadwalMapelId ? mapelById.get(jadwal.jadwalMapelId) : null;
-				const kokurikuler = jadwal?.kokurikulerId
-					? kokurikulerById.get(jadwal.kokurikulerId)
-					: null;
-				const kegiatan = jadwal?.kegiatanId ? kegiatanById.get(jadwal.kegiatanId) : null;
+				const jadwal = jadwalBySlot.get(kelas.id + '|' + jam.hari + '|' + jam.jamKe);
+				const kode = normalizeKode(jadwal?.kodeKegiatan);
+				const mapelCandidates = (mapelByKode.get(kode) ?? []).filter((item) =>
+					mapelSesuaiJenjang(item.jenjang, kelas.jenjang)
+				);
+				const mapel =
+					mapelCandidates.find((item) => item.id === jadwal?.jadwalMapelId) ??
+					(mapelCandidates.length === 1 ? mapelCandidates[0] : null);
+				const kegiatan = kegiatanByKode.get(kode);
 				const guruId = jadwal?.guruPegawaiId ?? mapel?.guruPegawaiId ?? null;
-				const guru = guruId ? guruById.get(guruId) : null;
-				const label =
-					mapel?.kode ||
-					mapel?.nama ||
-					kokurikuler?.kode ||
-					(kokurikuler ? displayKokurikuler(kokurikuler.tujuan) : '') ||
-					kegiatan?.nama ||
-					jam.namaDefault ||
-					jadwal?.catatan ||
-					'';
-
+				const tipe = mapel
+					? 'pelajaran'
+					: kegiatan?.kategori === 'istirahat'
+						? 'istirahat'
+						: kegiatan
+							? 'kegiatan'
+							: jam.tipe;
 				return {
 					kelasId: kelas.id,
 					jamId: jam.id,
+					jamKe: jam.jamKe,
 					hari: jam.hari,
-					tipe: jadwal?.tipe ?? jam.tipe,
-					label,
-					mapelKode: mapel?.kode ?? '',
+					tipe,
+					label: kode || jam.namaDefault || '',
+					mapelKode: mapel ? kode : '',
 					mapelNama: mapel?.nama ?? '',
-					guru: guru?.nama ?? '',
-					catatan: jadwal?.catatan ?? ''
+					guru: guruId ? guruById.get(guruId) ?? '' : '',
+					catatan: jadwal?.catatan ?? '',
+					warna: mapel?.warna ?? kegiatan?.warna ?? null
 				};
 			})
 	);
-	const period = formatTahunSemester(academic);
+
 	const jenjangLabel =
-		selectedJenjang === 'semua'
-			? 'Semua Jenjang'
-			: selectedJenjang === 'srd'
-				? 'SRD'
-				: selectedJenjang === 'srmp'
-					? 'SRMP'
-					: 'SRMA';
+		selectedJenjang === 'semua' ? 'Semua Jenjang' : JADWAL_JENJANG_LABELS[selectedJenjang];
 
 	return {
-		meta: { title: `Jadwal Pelajaran - ${jenjangLabel}` },
+		meta: { title: 'Jadwal Pelajaran - ' + jenjangLabel },
 		jadwalPelajaranData: {
 			sekolah: {
 				nama: sekolah?.nama ?? locals.sekolah?.nama ?? 'Sekolah',
@@ -235,18 +233,21 @@ export async function getJadwalPelajaranPreviewPayload({
 					status: sekolah?.statusKepalaSekolah ?? 'definitif'
 				}
 			},
-			periode: period,
-			tanggalCetak: formatTanggalCetak(),
+			periode: {
+				tahunPelajaran: selectedYear?.nama ?? '',
+				semester:
+					context.jenis === 'persiapan'
+						? JADWAL_JENIS_LABELS.persiapan
+						: JADWAL_JENIS_LABELS[context.jenis]
+			},
+			jenisJadwal: context.jenis,
+			jenisLabel: JADWAL_JENIS_LABELS[context.jenis],
+			tanggalCetak: formatTanggal(new Date()),
 			orientation,
 			selectedJenjang,
 			jenjangLabel,
 			hariLabels: JADWAL_HARI_LABELS,
-			kelasList: selectedKelasList.map((kelas) => ({
-				id: kelas.id,
-				nama: kelas.nama,
-				fase: kelas.fase,
-				jenjang: kelas.jenjang
-			})),
+			kelasList,
 			jamList,
 			cells
 		}

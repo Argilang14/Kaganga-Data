@@ -97,7 +97,10 @@ export const POST = (async ({ locals, request }) => {
 		raporPeriode,
 		orientation,
 		jenjang,
-		periodeMode
+		periodeMode,
+        tahunAjaranId,
+        jenisJadwal,
+        semesterId
 	} = body;
 	const parentSignature =
 		body.parentSignature === 'ayah' ||
@@ -126,6 +129,9 @@ export const POST = (async ({ locals, request }) => {
 	if (orientation) url.searchParams.set('orientation', orientation);
 	if (jenjang) url.searchParams.set('jenjang', jenjang);
 	if (periodeMode) url.searchParams.set('periode_mode', periodeMode);
+    if (tahunAjaranId) url.searchParams.set('tahun_ajaran_id', String(tahunAjaranId));
+    if (jenisJadwal) url.searchParams.set('jenis', jenisJadwal);
+    if (semesterId) url.searchParams.set('semester_id', String(semesterId));
 
 	const docLabel = body.docLabel || docType;
 	const nama = await resolveNama(docType, locals, url);
@@ -146,6 +152,9 @@ export const POST = (async ({ locals, request }) => {
 		orientation,
 		jenjang,
 		periodeMode,
+        tahunAjaranId,
+        jenisJadwal,
+        semesterId,
 		slug
 	});
 

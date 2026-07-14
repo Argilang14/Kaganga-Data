@@ -31,6 +31,9 @@ export const GET = (async ({ locals, params }) => {
 	if (stored.orientation) url.searchParams.set('orientation', stored.orientation);
 	if (stored.jenjang) url.searchParams.set('jenjang', stored.jenjang);
 	if (stored.periodeMode) url.searchParams.set('periode_mode', stored.periodeMode);
+    if (stored.tahunAjaranId) url.searchParams.set('tahun_ajaran_id', String(stored.tahunAjaranId));
+    if (stored.jenisJadwal) url.searchParams.set('jenis', stored.jenisJadwal);
+    if (stored.semesterId) url.searchParams.set('semester_id', String(stored.semesterId));
 
 	const docType = stored.docType as DocumentType;
 

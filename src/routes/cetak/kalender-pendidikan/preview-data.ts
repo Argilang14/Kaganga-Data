@@ -26,11 +26,6 @@ type PeriodeMode = 'tahun_kalender' | 'tahun_ajaran' | 'semester_ganjil' | 'seme
 type Orientation = 'landscape' | 'portrait';
 
 const JENJANG_OPTIONS = ['semua', 'srd', 'srmp', 'srma'] as const;
-const LEGACY_JENJANG: Record<Exclude<CanonicalJenjang, 'semua'>, 'sd' | 'smp' | 'sma'> = {
-	srd: 'sd',
-	srmp: 'smp',
-	srma: 'sma'
-};
 const monthLabels = [
 	'Januari',
 	'Februari',
@@ -132,7 +127,7 @@ function dateValue(value: string) {
 
 function calendarWeeks(year: number, month: number) {
 	const totalDays = new Date(year, month + 1, 0).getDate();
-	const firstDay = new Date(year, month, 1).getDay();
+	const firstDay = (new Date(year, month, 1).getDay() + 6) % 7;
 	const cells: Array<number | null> = [];
 	for (let i = 0; i < firstDay; i += 1) cells.push(null);
 	for (let day = 1; day <= totalDays; day += 1) cells.push(day);
@@ -277,11 +272,7 @@ export async function getKalenderPendidikanPreviewPayload({
 		whereParts.push(eq(tableKalenderPendidikan.jenjang, 'semua'));
 	} else {
 		whereParts.push(
-			inArray(tableKalenderPendidikan.jenjang, [
-				'semua',
-				selectedJenjang,
-				LEGACY_JENJANG[selectedJenjang]
-			])
+			inArray(tableKalenderPendidikan.jenjang, ['semua', selectedJenjang])
 		);
 	}
 

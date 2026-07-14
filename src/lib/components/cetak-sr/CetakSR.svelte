@@ -24,6 +24,14 @@
 		data: {
 			academicContext?: unknown;
 			kelasId?: number | string | null;
+			tahunAjaranList?: Array<{
+				id: number;
+				nama: string;
+				semester: Array<{ id: number; nama: string; tipe: string }>;
+			}>;
+			activeTahunAjaranId?: number | null;
+			activeSemesterId?: number | null;
+			activeSemesterTipe?: string | null;
 			daftarMurid?: Array<{ id: number; nama: string; nis?: string | null; nisn?: string | null }>;
 			piagamRankingOptions?: Array<{
 				muridId: number;
@@ -83,6 +91,37 @@
 	let selectedKalenderPeriode = $state<
 		'tahun_kalender' | 'tahun_ajaran' | 'semester_ganjil' | 'semester_genap'
 	>('tahun_ajaran');
+	const tahunAjaranList = $derived(data.tahunAjaranList ?? []);
+	function initialPrintContext() {
+		return {
+			tahunAjaranId: data.activeTahunAjaranId ?? data.tahunAjaranList?.[0]?.id ?? null,
+			jenis: data.activeSemesterTipe === 'genap' ? ('genap' as const) : ('ganjil' as const),
+			semesterId: data.activeSemesterId ?? null
+		};
+	}
+	const printContext = initialPrintContext();
+	let selectedPrintTahunAjaranId = $state<number | null>(printContext.tahunAjaranId);
+	let selectedJadwalJenis = $state<'persiapan' | 'ganjil' | 'genap'>(printContext.jenis);
+	let selectedKalenderSemesterId = $state<number | null>(printContext.semesterId);
+	const selectedPrintTahun = $derived(
+		tahunAjaranList.find((tahun) => tahun.id === selectedPrintTahunAjaranId) ?? null
+	);
+	const kalenderSemesterOptions = $derived(selectedPrintTahun?.semester ?? []);
+	const jadwalSourceHref = $derived(
+		`/rapor/jadwal-pelajaran?tahunAjaranId=${selectedPrintTahunAjaranId ?? ''}&jenis=${selectedJadwalJenis}`
+	);
+	const kalenderSourceHref = $derived(
+		`/jadwal/kalender?tahun_ajaran_id=${selectedPrintTahunAjaranId ?? ''}&semester_id=${selectedKalenderSemesterId ?? ''}&jenjang=${selectedJadwalJenjang}`
+	);
+
+	$effect(() => {
+		if (
+			selectedKalenderSemesterId &&
+			!kalenderSemesterOptions.some((semester) => semester.id === selectedKalenderSemesterId)
+		) {
+			selectedKalenderSemesterId = kalenderSemesterOptions[0]?.id ?? null;
+		}
+	});
 
 	let pdfViewerUrl = $state('');
 	let pdfViewerTitle = $state('');
@@ -363,7 +402,14 @@
 						documentType === 'jadwal-pelajaran' || documentType === 'kalender-pendidikan'
 							? selectedJadwalJenjang
 							: undefined,
-					periodeMode: documentType === 'kalender-pendidikan' ? selectedKalenderPeriode : undefined
+					periodeMode: documentType === 'kalender-pendidikan' ? selectedKalenderPeriode : undefined,
+					tahunAjaranId:
+						documentType === 'jadwal-pelajaran' || documentType === 'kalender-pendidikan'
+							? selectedPrintTahunAjaranId
+							: undefined,
+					jenisJadwal: documentType === 'jadwal-pelajaran' ? selectedJadwalJenis : undefined,
+					semesterId:
+						documentType === 'kalender-pendidikan' ? selectedKalenderSemesterId : undefined
 				})
 			});
 			if (!res.ok) throw new Error('Gagal mendapatkan token');
@@ -606,16 +652,35 @@
 	/>
 
 	{#if selectedDocument === 'jadwal-pelajaran' || selectedDocument === 'kalender-pendidikan'}
-		<div
-			class={`border-base-300 bg-base-200/30 mt-3 grid gap-3 rounded-lg border p-3 sm:grid-cols-2 ${selectedDocument === 'kalender-pendidikan' ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}
-		>
+		<div class="border-base-300 bg-base-200/30 mt-3 grid gap-3 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-3">
 			<label class="form-control">
-				<span class="label-text mb-1">Orientasi A4</span>
-				<select class="select select-bordered bg-base-100" bind:value={selectedJadwalOrientation}>
-					<option value="landscape">Landscape</option>
-					<option value="portrait">Portrait</option>
+				<span class="label-text mb-1">Tahun Ajaran</span>
+				<select class="select select-bordered bg-base-100" bind:value={selectedPrintTahunAjaranId}>
+					{#each tahunAjaranList as tahun}
+						<option value={tahun.id}>{tahun.nama}</option>
+					{/each}
 				</select>
 			</label>
+			{#if selectedDocument === 'jadwal-pelajaran'}
+				<label class="form-control">
+					<span class="label-text mb-1">Jenis Jadwal</span>
+					<select class="select select-bordered bg-base-100" bind:value={selectedJadwalJenis}>
+						<option value="persiapan">Masa Persiapan</option>
+						<option value="ganjil">Semester Ganjil</option>
+						<option value="genap">Semester Genap</option>
+					</select>
+				</label>
+			{:else}
+				<label class="form-control">
+					<span class="label-text mb-1">Semester</span>
+					<select class="select select-bordered bg-base-100" bind:value={selectedKalenderSemesterId}>
+						<option value={null}>Semua Semester</option>
+						{#each kalenderSemesterOptions as semester}
+							<option value={semester.id}>{semester.nama}</option>
+						{/each}
+					</select>
+				</label>
+			{/if}
 			<label class="form-control">
 				<span class="label-text mb-1">Jenjang</span>
 				<select class="select select-bordered bg-base-100" bind:value={selectedJadwalJenjang}>
@@ -623,6 +688,13 @@
 					<option value="srd">SRD</option>
 					<option value="srmp">SRMP</option>
 					<option value="srma">SRMA</option>
+				</select>
+			</label>
+			<label class="form-control">
+				<span class="label-text mb-1">Orientasi A4</span>
+				<select class="select select-bordered bg-base-100" bind:value={selectedJadwalOrientation}>
+					<option value="landscape">Landscape</option>
+					<option value="portrait">Portrait</option>
 				</select>
 			</label>
 			{#if selectedDocument === 'kalender-pendidikan'}
@@ -635,6 +707,11 @@
 					</select>
 				</label>
 			{/if}
+			<div class="flex items-end">
+				<a class="btn btn-outline btn-sm w-full" href={selectedDocument === 'jadwal-pelajaran' ? jadwalSourceHref : kalenderSourceHref}>
+					Buka sumber di Akademik
+				</a>
+			</div>
 		</div>
 	{/if}
 

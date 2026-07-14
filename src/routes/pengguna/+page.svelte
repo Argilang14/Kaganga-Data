@@ -209,6 +209,7 @@
 						<th>Nama</th>
 						<th>Role</th>
 						<th>Username</th>
+						<th>Status</th>
 						<th>Password</th>
 						<td>Aksi</td>
 					</tr>
@@ -305,6 +306,9 @@
 					kelasId: null,
 					kelasName: null,
 					passwordUpdatedAt: serverUser?.passwordUpdatedAt ?? new Date().toISOString(),
+					isOnline: false,
+					activeSessionCount: 0,
+					lastSeenAt: null,
 					// determine isNew based on whether server actually returned a real id
 					isNew: body.__server_user_returned ? false : true
 				} as LocalUser;

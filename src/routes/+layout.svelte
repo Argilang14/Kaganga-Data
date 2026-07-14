@@ -13,7 +13,7 @@
 
 	let { data, children } = $props();
 
-	const appName = 'Rapkumer';
+	const appName = 'Kaganga';
 	let stoppingServer = $state(false);
 	let loggingOut = $state(false);
 	const isLoginPage = $derived(page.url.pathname === '/login');
@@ -45,7 +45,7 @@
 		const showSuccess = () =>
 			toast({
 				message:
-					'Server dihentikan. Tutup jendela Rapkumer ini lalu jalankan ulang bila diperlukan.',
+					'Server dihentikan. Tutup jendela Kaganga ini lalu jalankan ulang bila diperlukan.',
 				type: 'info',
 				persist: true
 			});

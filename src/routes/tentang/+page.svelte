@@ -16,13 +16,13 @@
 	>
 		<div class="space-y-6">
 			<span class="badge badge-outline bg-base-100/70 text-primary shadow"
-				>Tentang Rapkumer v{appVersion}</span
+				>Tentang Kaganga v{appVersion}</span
 			>
 			<h1 class="text-base-content text-3xl font-bold md:text-4xl">
-				Rapkumer — Aplikasi Administrasi Guru Terpadu
+				Kaganga — Kawasan Gerbang Administrasi dan Informasi Data Sekolah
 			</h1>
 			<p class="text-base-content/90 text-base md:text-lg">
-				Rapkumer membantu guru dan operator sekolah menyelesaikan administrasi rutin secara efisien
+				Kaganga membantu guru dan operator sekolah menyelesaikan administrasi rutin secara efisien
 				dan siap cetak sesuai kurikulum terbaru.
 			</p>
 
@@ -67,15 +67,15 @@
 	<section class="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
 		<div class="rounded-box border-base-200/80 bg-base-100/95 border p-6 shadow-md">
 			<div class="space-y-4">
-				<h2 class="text-base-content text-2xl font-semibold">Mengapa kami membangun Rapkumer?</h2>
+				<h2 class="text-base-content text-2xl font-semibold">Mengapa kami membangun Kaganga?</h2>
 				<p class="text-base-content/90">
-					Aplikasi Rapkumer ini kami kembangkan sebagai aplikasi terpadu untuk membantu tugas-tugas
+					Aplikasi Kaganga ini kami kembangkan sebagai aplikasi terpadu untuk membantu tugas-tugas
 					administrasi guru seperti: presensi harian murid, jurnal mengajar, nilai harian, nilai
 					STS, dan nilai SAS yang dihitung otomatis untuk dijadikan nilai rapor yang bisa langsung
 					dicetak maupun di-export menjadi file excel yang bisa di-import ke e-rapor kemdikdas.
 				</p>
 				<p class="text-base-content/90">
-					Selain itu, Rapkumer juga memiliki fitur tambahan seperti jadwal pembelajaran dan bell
+					Selain itu, Kaganga juga memiliki fitur tambahan seperti jadwal pembelajaran dan bell
 					otomatis.
 				</p>
 				<p class="text-base-content/90">

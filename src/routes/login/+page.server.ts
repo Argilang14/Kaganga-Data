@@ -22,7 +22,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	const meta: PageMeta = {
 		title: 'Masuk',
-		description: 'Masuk ke Rapkumer untuk mengelola data administrasi guru.'
+		description: 'Masuk ke Kaganga untuk mengelola data sekolah Anda.'
 	};
 
 	return { meta };

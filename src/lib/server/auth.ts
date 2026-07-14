@@ -8,6 +8,7 @@ import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypt
 
 const SESSION_TTL_SECONDS = 60 * 60 * 12; // 12 hours
 const SESSION_REFRESH_THRESHOLD_SECONDS = 60 * 60 * 2; // refresh token when less than 2 hours remain
+const SESSION_TOUCH_THRESHOLD_SECONDS = 60; // avoid writing on every single request
 const PASSWORD_KEY_LENGTH = 64;
 const PASSWORD_SALT_BYTES = 16;
 
@@ -145,6 +146,15 @@ async function refreshSession(sessionId: number) {
 	return expiresAt;
 }
 
+async function touchSession(sessionId: number) {
+	const touchedAt = nowIso();
+	await db
+		.update(tableAuthSession)
+		.set({ updatedAt: touchedAt })
+		.where(eq(tableAuthSession.id, sessionId));
+	return touchedAt;
+}
+
 export async function resolveSession(token: string): Promise<SessionResolution | null> {
 	const tokenHash = hashToken(token);
 	const record = await db.query.tableAuthSession.findFirst({
@@ -165,13 +175,23 @@ export async function resolveSession(token: string): Promise<SessionResolution |
 	const secondsRemaining = Math.floor((expiresAtValue - Date.now()) / 1000);
 	let refreshed = false;
 	let expiresAt = record.expiresAt;
+	let updatedAt = record.updatedAt ?? record.createdAt ?? nowIso();
 	if (secondsRemaining < SESSION_REFRESH_THRESHOLD_SECONDS) {
 		expiresAt = await refreshSession(record.id);
+		updatedAt = nowIso();
 		refreshed = true;
+	} else {
+		const lastSeen = new Date(updatedAt).getTime();
+		if (
+			!Number.isFinite(lastSeen) ||
+			Date.now() - lastSeen > SESSION_TOUCH_THRESHOLD_SECONDS * 1000
+		) {
+			updatedAt = await touchSession(record.id);
+		}
 	}
 
 	const { user, ...sessionData } = record;
-	const session: AuthSession = { ...sessionData, expiresAt };
+	const session: AuthSession = { ...sessionData, expiresAt, updatedAt };
 	return {
 		session,
 		user,

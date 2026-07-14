@@ -11,6 +11,20 @@
 	} = $props();
 
 	let showPassword = $state(false);
+
+	function formatLastSeen(value: string | null | undefined) {
+		if (!value) return 'Belum ada aktivitas';
+		const time = new Date(value).getTime();
+		if (!Number.isFinite(time)) return 'Belum ada aktivitas';
+		const diffMs = Date.now() - time;
+		if (diffMs < 60_000) return 'Baru saja';
+		const minutes = Math.floor(diffMs / 60_000);
+		if (minutes < 60) return `${minutes} menit lalu`;
+		const hours = Math.floor(minutes / 60);
+		if (hours < 24) return `${hours} jam lalu`;
+		const days = Math.floor(hours / 24);
+		return `${days} hari lalu`;
+	}
 </script>
 
 <td>{u.pegawaiName ?? u.username}</td>
@@ -19,6 +33,8 @@
 		Wali {u.kelasName ?? (u.kelasId ? `Kelas ${u.kelasId}` : '-')}
 	{:else if u.type === 'wali_asuh'}
 		Wali Asuh {u.kelasName ?? (u.kelasId ? `Kelas ${u.kelasId}` : '-')}
+	{:else if u.type === 'wali_asrama'}
+		Wali Asrama
 	{:else if u.type === 'admin'}
 		Admin
 	{:else}
@@ -34,6 +50,22 @@
 	{:else}
 		{u.username ? u.username : '-'}
 	{/if}
+</td>
+<td>
+	<div class="flex flex-col gap-1">
+		<div class={`badge ${u.isOnline ? 'badge-success' : 'badge-ghost'} badge-sm gap-1`}>
+			<span
+				class={`h-2 w-2 rounded-full ${u.isOnline ? 'bg-success-content' : 'bg-base-content/40'}`}
+			></span>
+			{u.isOnline ? 'Online' : 'Offline'}
+		</div>
+		<div class="text-base-content/60 text-xs">
+			{formatLastSeen(u.lastSeenAt)}
+			{#if u.activeSessionCount > 1}
+				· {u.activeSessionCount} sesi
+			{/if}
+		</div>
+	</div>
 </td>
 <td>
 	{#if editingId === u.id}

@@ -8,7 +8,8 @@ import {
 	tableAuthUserMataPelajaran,
 	tableAuthUserKelas,
 	tableMurid,
-	tableSemester
+	tableSemester,
+	tableAuthSession
 } from '$lib/server/db/schema';
 import { tableSekolah } from '$lib/server/db/schema';
 import { sql, eq, and, inArray, desc } from 'drizzle-orm';
@@ -453,7 +454,55 @@ export async function load({ url }) {
 		}
 
 		console.debug('[pengguna] after dedup, users count:', map.size);
-		return Array.from(map.values());
+		const rows = Array.from(map.values());
+		const userIds = rows.map((row) => row.id);
+		const now = new Date();
+		const onlineThresholdMs = 5 * 60 * 1000;
+		const activeSessions = userIds.length
+			? await db
+					.select({
+						userId: tableAuthSession.userId,
+						updatedAt: tableAuthSession.updatedAt,
+						expiresAt: tableAuthSession.expiresAt
+					})
+					.from(tableAuthSession)
+					.where(
+						and(
+							inArray(tableAuthSession.userId, userIds),
+							sql`${tableAuthSession.expiresAt} > ${now.toISOString()}`
+						)
+					)
+			: [];
+		const sessionByUser = new Map<
+			number,
+			{ activeSessionCount: number; lastSeenAt: string | null }
+		>();
+
+		for (const session of activeSessions) {
+			const current = sessionByUser.get(session.userId) ?? {
+				activeSessionCount: 0,
+				lastSeenAt: null
+			};
+			current.activeSessionCount += 1;
+			const currentTime = current.lastSeenAt ? new Date(current.lastSeenAt).getTime() : 0;
+			const sessionTime = session.updatedAt ? new Date(session.updatedAt).getTime() : 0;
+			if (Number.isFinite(sessionTime) && sessionTime >= currentTime) {
+				current.lastSeenAt = session.updatedAt;
+			}
+			sessionByUser.set(session.userId, current);
+		}
+
+		return rows.map((row) => {
+			const session = sessionByUser.get(row.id);
+			const lastSeenAt = session?.lastSeenAt ?? null;
+			const lastSeenTime = lastSeenAt ? new Date(lastSeenAt).getTime() : 0;
+			return {
+				...row,
+				activeSessionCount: session?.activeSessionCount ?? 0,
+				lastSeenAt,
+				isOnline: Number.isFinite(lastSeenTime) && now.getTime() - lastSeenTime <= onlineThresholdMs
+			};
+		});
 	})();
 
 	// fetch mata pelajaran to populate select in the inline-add row

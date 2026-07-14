@@ -8,7 +8,7 @@
 <section class="card bg-base-100 w-full max-w-md shadow-xl">
 	<div class="card-body space-y-6">
 		<header class="mb-2 space-y-2 text-center">
-			<h1 class="text-2xl font-bold">Masuk ke Rapkumer</h1>
+			<h1 class="text-2xl font-bold">Masuk ke Kaganga</h1>
 			<p class="text-base-content/70 text-sm">
 				Masukkan nama pengguna dan sandi untuk mulai mengelola administrasi guru.
 			</p>

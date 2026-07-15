@@ -30,7 +30,12 @@
 <td>{u.pegawaiName ?? u.username}</td>
 <td>
 	{#if u.type === 'wali_kelas'}
-		Wali Kelas {u.kelasName ?? (u.kelasId ? `Kelas ${u.kelasId}` : '-')}
+		<div class="flex flex-col items-start gap-1">
+			<span>Wali Kelas {u.kelasName ?? (u.kelasId ? `Kelas ${u.kelasId}` : '-')}</span>
+			<span class="badge badge-warning badge-xs" title="Akun lama yang tetap didukung">
+				Akun lama
+			</span>
+		</div>
 	{:else if u.type === 'wali_asuh'}
 		Wali Asuh {u.kelasName ?? (u.kelasId ? `Kelas ${u.kelasId}` : '-')}
 	{:else if u.type === 'wali_asrama'}

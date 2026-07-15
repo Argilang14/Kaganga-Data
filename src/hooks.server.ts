@@ -15,6 +15,7 @@ import {
 import { ensureJadwalBellSchema } from '$lib/server/db/ensure-jadwal-bell';
 import { ensurePresensiSettingsSchema } from '$lib/server/db/ensure-presensi-settings';
 import { startBellScheduler } from '$lib/server/bell-scheduler';
+import { canLegacyWaliKelasAccess, isLegacyWaliKelas } from '$lib/server/legacy-wali-kelas';
 
 setTimeout(() => {
 	startBellScheduler().catch((e) => {
@@ -162,6 +163,7 @@ const authGuard: Handle = async ({ event, resolve }) => {
 				type: resolved.user.type,
 				kelasId: resolved.user.kelasId,
 				pegawaiId: resolved.user.pegawaiId,
+				sekolahId: resolved.user.sekolahId,
 				// preferred/assigned mata pelajaran for 'user' accounts (may be undefined)
 				mataPelajaranId:
 					(resolved.user as unknown as { mataPelajaranId?: number }).mataPelajaranId ?? null
@@ -187,26 +189,20 @@ const authGuard: Handle = async ({ event, resolve }) => {
 		event.locals.session = undefined;
 	}
 
-	// Additional server-side guard: if request includes kelas_id param and the user
-	// is a wali_kelas, ensure they either own that kelas or have the 'kelas_pindah'
-	// permission (which grants both pindah + akses ke kelas lain). This prevents
-	// bypass via direct URL.
+	// Akun Wali Kelas lama mengikuti penugasan pegawai pada Data Kelas.
+	// Guard ini mencegah kelas lain dibuka melalui perubahan URL langsung.
 	if (event.locals.user) {
 		const kelasIdParam = event.url.searchParams.get('kelas_id');
 		if (kelasIdParam != null) {
 			const kelasIdNumber = Number(kelasIdParam);
 			if (Number.isInteger(kelasIdNumber)) {
-				const u = event.locals.user as { type?: string; kelasId?: number; permissions?: string[] };
-				if (u.type === 'wali_kelas' && Number.isInteger(Number(u.kelasId))) {
-					const allowed = Number(u.kelasId);
-					if (kelasIdNumber !== allowed) {
-						const hasAccessOther = Array.isArray(u.permissions)
-							? u.permissions.includes('kelas_pindah')
-							: false;
-						if (!hasAccessOther) {
-							throw redirect(303, `/forbidden?required=kelas_id`);
-						}
-					}
+				const u = event.locals.user;
+				if (isLegacyWaliKelas(u)) {
+					const sekolahId = Number(u.sekolahId);
+					const hasAccess =
+						Number.isInteger(sekolahId) &&
+						(await canLegacyWaliKelasAccess(u, sekolahId, kelasIdNumber));
+					if (!hasAccess) throw redirect(303, `/forbidden?required=kelas_id`);
 				} else if (u.type === 'wali_asuh') {
 					// Wali_asuh is per-student, not per-class — allow access to any class
 				}

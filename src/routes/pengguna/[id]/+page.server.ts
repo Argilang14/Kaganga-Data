@@ -1,13 +1,17 @@
 import db from '$lib/server/db/index.js';
+import { ensurePenggunaIdentitySchema } from '$lib/server/db/ensure-pengguna';
 import { tableAuthUser } from '$lib/server/db/schema';
 import { error } from '@sveltejs/kit';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+import { userPermissions } from '../permissions';
 import { authority } from '../utils.server.js';
 
 const u = tableAuthUser;
 
-export async function load({ params }) {
+export async function load({ params, locals }) {
 	authority('user_detail');
+	await ensurePenggunaIdentitySchema();
+	if (!locals.sekolah?.id) error(400, 'Sekolah aktif tidak ditemukan');
 
 	const [userDetail] = await db
 		.select({
@@ -18,19 +22,26 @@ export async function load({ params }) {
 			createdAt: u.createdAt
 		})
 		.from(u)
-		.where(eq(u.id, +params.id));
-	if (!userDetail) error(404, `Data pengguna tidak ditemukan`);
+		.where(and(eq(u.id, +params.id), eq(u.sekolahId, locals.sekolah.id)));
+	if (!userDetail) error(404, 'Data pengguna tidak ditemukan');
 
 	return { meta: { title: 'Pengaturan Izin Pengguna' }, userDetail };
 }
 
 export const actions = {
-	set_permissions: async ({ params, request }) => {
+	set_permissions: async ({ params, request, locals }) => {
 		authority('user_set_permissions');
+		await ensurePenggunaIdentitySchema();
+		if (!locals.sekolah?.id) error(400, 'Sekolah aktif tidak ditemukan');
 
-		const permissions = <UserPermission[]>Array.from((await request.formData()).keys());
-		await db.update(u).set({ permissions }).where(eq(u.id, +params.id));
-		// Return the updated permissions so the client can update UI without a full reload
-		return { message: `Izin pengguna berhasil diperbarui`, permissions };
+		const submitted = new Set(Array.from((await request.formData()).keys()));
+		const permissions = userPermissions.filter((permission) => submitted.has(permission));
+		const [updated] = await db
+			.update(u)
+			.set({ permissions, updatedAt: new Date().toISOString() })
+			.where(and(eq(u.id, +params.id), eq(u.sekolahId, locals.sekolah.id)))
+			.returning({ id: u.id });
+		if (!updated) error(404, 'Data pengguna tidak ditemukan');
+		return { message: 'Izin pengguna berhasil diperbarui', permissions };
 	}
 };

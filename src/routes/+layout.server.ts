@@ -49,33 +49,41 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 						),
 				orderBy: asc(tableKelas.nama)
 			});
-		} else if (userWithType?.type === 'wali_asuh' && userWithType.pegawaiId) {
-			// Wali_asuh: only show classes that have their assigned students
-			const peg = await db.query.tablePegawai.findFirst({
+		} else if (
+			(userWithType?.type === 'wali_asuh' || userWithType?.type === 'wali_asrama') &&
+			userWithType.pegawaiId
+		) {
+			const pegawai = await db.query.tablePegawai.findFirst({
 				columns: { nama: true },
-				where: eq(tablePegawai.id, userWithType.pegawaiId)
+				where: and(
+					eq(tablePegawai.id, userWithType.pegawaiId),
+					eq(tablePegawai.sekolahId, sekolah.id)
+				)
 			});
-			if (peg?.nama) {
-				const pegNamaLower = peg.nama.trim().toLowerCase();
-				// Find distinct kelasIds from murid where waliAsuhNama matches
+			if (pegawai?.nama) {
+				const waliColumn =
+					userWithType.type === 'wali_asrama' ? tableMurid.waliAsramaNama : tableMurid.waliAsuhNama;
 				const rows = await db
 					.selectDistinct({ kelasId: tableMurid.kelasId })
 					.from(tableMurid)
 					.where(
-						sql`LOWER(trim(${tableMurid.waliAsuhNama})) = ${pegNamaLower} AND ${tableMurid.kelasId} IS NOT NULL`
+						and(
+							eq(tableMurid.sekolahId, sekolah.id),
+							sql`LOWER(trim(${waliColumn})) = ${pegawai.nama.trim().toLowerCase()}`
+						)
 					);
-
-				const kelasIds = rows.map((r) => r.kelasId).filter((id): id is number => id != null);
-				if (kelasIds.length > 0) {
+				const kelasIds = rows.map((row) => row.kelasId);
+				if (kelasIds.length) {
 					daftarKelas = await db.query.tableKelas.findMany({
 						columns: { id: true, nama: true, fase: true },
 						with: { waliKelas: { columns: { id: true, nama: true } } },
-						where: academicContext?.activeSemesterId
-							? and(
-									inArray(tableKelas.id, kelasIds),
-									eq(tableKelas.semesterId, academicContext.activeSemesterId)
-								)
-							: inArray(tableKelas.id, kelasIds),
+						where: and(
+							inArray(tableKelas.id, kelasIds),
+							eq(tableKelas.sekolahId, sekolah.id),
+							academicContext?.activeSemesterId
+								? eq(tableKelas.semesterId, academicContext.activeSemesterId)
+								: undefined
+						),
 						orderBy: asc(tableKelas.nama)
 					});
 				}
@@ -245,7 +253,7 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 		// - 'user' (guru mapel) CAN manage mata pelajaran (they are filtered server-side)
 		// - Other account types retain full access
 		const userType = (user as { type?: string }).type;
-		const canManageMapel = userType !== 'wali_asuh';
+		const canManageMapel = userType !== 'wali_asuh' && userType !== 'wali_asrama';
 
 		if (user.pegawaiId) {
 			const pegawaiRecord = await db.query.tablePegawai.findFirst({

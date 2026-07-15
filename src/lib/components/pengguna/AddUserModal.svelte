@@ -1,365 +1,272 @@
 <script lang="ts">
+	import { deserialize } from '$app/forms';
 	import { createEventDispatcher } from 'svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import { toast } from '$lib/components/toast.svelte';
 
-	let {
-		open = $bindable(false),
-		mataPelajaran = [],
-		sekolahList = [],
-		kelasList = []
-	} = $props<{
-		open?: boolean;
-		mataPelajaran?: { id: number; nama: string }[];
-		sekolahList?: { id: number; nama: string }[];
-		kelasList?: { id: number; nama: string; fase?: string | null; sekolahId: number }[];
-	}>();
+	type Role = 'user' | 'wali_asuh' | 'wali_asrama';
+	type PegawaiOption = {
+		id: number;
+		nama: string;
+		nip: string;
+		jenis: string;
+		jabatan: string | null;
+		status: string;
+	};
+	type MapelOption = { id: number; nama: string };
+	type KelasOption = { id: number; nama: string; fase: string | null };
+	type CreateUserBody = {
+		message?: string;
+		displayName?: string;
+		user?: { id?: number };
+		[key: string]: unknown;
+	};
 
+	let { open = $bindable(false) } = $props<{ open?: boolean }>();
 	const dispatch = createEventDispatcher();
 
-	let nama = $state('');
 	let username = $state('');
 	let password = $state('');
-	let type = $state('user');
-	// Multi-mapel: simpan sebagai Set of checked mata pelajaran IDs
+	let type = $state<Role>('user');
+	let pegawaiId = $state('');
 	let mataPelajaranIds = $state(new Set<number>());
-	// Multi-kelas: simpan sebagai Set of checked kelas IDs
 	let kelasIds = $state(new Set<number>());
-	let sekolahId = $state<string | number | null>('');
+	let pegawaiList = $state<PegawaiOption[]>([]);
+	let mataPelajaran = $state<MapelOption[]>([]);
+	let kelasList = $state<KelasOption[]>([]);
 	let initialized = $state(false);
+	let loadingOptions = $state(false);
+	let optionsError = $state('');
 	let showPassword = $state(false);
-	let selectAllKelas = $state(false);
 
-	// Derived state
-	let uniqueMataPelajaran = $derived.by(() => uniqueByNama(mataPelajaran ?? []));
-	let filteredMataPelajaran = $derived.by(() => {
-		return uniqueMataPelajaran.filter((m) => {
-			const name = (m.nama ?? '').toString().trim().toLowerCase();
-			// exclude the exact combined parent subject
-			if (name === 'pendidikan agama dan budi pekerti') return false;
-			// exclude the exact combined parent subject for Pendalaman Kitab Suci
-			if (name === 'pendalaman kitab suci') return false;
-			return true;
-		});
-	});
-
-	let filteredKelasList = $derived.by(() => {
-		if (!sekolahId) return kelasList ?? [];
-		const sId = Number(sekolahId);
-		return (kelasList ?? []).filter((k: { sekolahId?: number | null }) => k.sekolahId === sId);
-	});
-
-	// Validasi: semua field wajib terisi
-	let isValid = $derived.by(() => {
-		const hasNama = nama.trim().length > 0;
-		const hasUsername = username.trim().length > 0;
-		const hasPassword = password.trim().length > 0;
-		const hasMapel = mataPelajaranIds.size > 0;
-		return hasNama && hasUsername && hasPassword && hasMapel;
-	});
-
-	function uniqueByNama(list: { id: number; nama: string }[]) {
-		const map = new Map<string, { id: number; nama: string }>();
-		for (const m of list) {
-			// keep the first occurrence for a given nama
-			if (!map.has(m.nama)) map.set(m.nama, m);
+	const allowedJenis: Record<Role, string[]> = {
+		user: ['guru', 'kepala_sekolah'],
+		wali_asuh: ['wali_asuh'],
+		wali_asrama: ['wali_asrama']
+	};
+	let filteredPegawai = $derived(
+		pegawaiList.filter(
+			(pegawai) => pegawai.status === 'aktif' && allowedJenis[type].includes(pegawai.jenis)
+		)
+	);
+	let selectedPegawai = $derived(
+		filteredPegawai.find((pegawai) => pegawai.id === Number(pegawaiId)) ?? null
+	);
+	let uniqueMataPelajaran = $derived.by(() => {
+		const unique = new Map<string, MapelOption>();
+		for (const mapel of mataPelajaran) {
+			const key = mapel.nama.trim().toLowerCase();
+			if (!unique.has(key)) unique.set(key, mapel);
 		}
-		return Array.from(map.values());
-	}
+		return [...unique.values()];
+	});
+	let isValid = $derived(
+		!!selectedPegawai &&
+			username.trim().length > 0 &&
+			password.trim().length > 0 &&
+			(type !== 'user' || mataPelajaranIds.size > 0)
+	);
 
-	// initialize defaults only once when the modal opens (prevent clearing while open)
 	$effect(() => {
 		if (open && !initialized) {
-			nama = '';
-			username = '';
-			password = '';
-			type = 'user';
-			// Clear multi-mapel selection
-			mataPelajaranIds = new Set<number>();
-			// Clear multi-kelas selection
-			kelasIds = new Set<number>();
-			sekolahId = '';
 			initialized = true;
+			resetForm();
+			void loadOptions();
 		}
+		if (!open) initialized = false;
 	});
 
-	// if modal is closed, allow re-initialization next time it opens
 	$effect(() => {
-		if (!open) {
-			initialized = false;
-			selectAllKelas = false;
-			kelasIds.clear();
+		if (pegawaiId && !filteredPegawai.some((pegawai) => String(pegawai.id) === pegawaiId)) {
+			pegawaiId = '';
+		}
+		if (type !== 'user') {
+			mataPelajaranIds = new Set<number>();
+			kelasIds = new Set<number>();
 		}
 	});
 
-	function toggleSelectAllKelas() {
-		selectAllKelas = !selectAllKelas;
-		if (selectAllKelas) {
-			// Select all visible kelas
-			for (const k of filteredKelasList) {
-				kelasIds.add(k.id);
-			}
-		} else {
-			// Deselect all kelas
-			kelasIds.clear();
+	function resetForm() {
+		username = '';
+		password = '';
+		type = 'user';
+		pegawaiId = '';
+		mataPelajaranIds = new Set<number>();
+		kelasIds = new Set<number>();
+		showPassword = false;
+	}
+
+	async function loadOptions() {
+		loadingOptions = true;
+		optionsError = '';
+		try {
+			const response = await fetch('/api/pengguna/options');
+			const body = await response.json().catch(() => ({}));
+			if (!response.ok) throw new Error(body.message || 'Gagal memuat data');
+			pegawaiList = body.pegawaiList ?? [];
+			mataPelajaran = body.mataPelajaran ?? [];
+			kelasList = body.kelasList ?? [];
+		} catch (error) {
+			optionsError = error instanceof Error ? error.message : 'Gagal memuat data';
+		} finally {
+			loadingOptions = false;
 		}
-		kelasIds = new Set(kelasIds);
+	}
+
+	function toggle(set: Set<number>, id: number) {
+		const next = new Set(set);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		return next;
 	}
 
 	function close() {
-		// reset initialized so next open will reinitialize fields
-		initialized = false;
 		open = false;
 		dispatch('cancel');
 	}
 
-	function toggleMapel(id: number) {
-		if (mataPelajaranIds.has(id)) {
-			mataPelajaranIds.delete(id);
-		} else {
-			mataPelajaranIds.add(id);
-		}
-		// Trigger reactivity
-		mataPelajaranIds = mataPelajaranIds;
-	}
-
-	function toggleKelas(id: number) {
-		if (kelasIds.has(id)) {
-			kelasIds.delete(id);
-		} else {
-			kelasIds.add(id);
-		}
-		// Trigger reactivity
-		kelasIds = kelasIds;
-	}
-
 	async function save() {
+		if (!isValid || !selectedPegawai) return;
 		const form = new FormData();
-		form.set('username', username || '');
-		form.set('password', password || '');
-		form.set('nama', nama || '');
-		form.set('type', type || 'user');
-		// Send multiple mapel as JSON array
-		form.set('mataPelajaranIds', JSON.stringify(Array.from(mataPelajaranIds)));
-		// Send multiple kelas as JSON array
-		form.set('kelasIds', JSON.stringify(Array.from(kelasIds)));
-		// include sekolahId when provided. Server may use this to resolve a default
-		// mataPelajaran within the chosen sekolah so users are linked to a sekolah.
-		form.set('sekolahId', String(sekolahId ?? ''));
+		form.set('username', username.trim());
+		form.set('password', password);
+		form.set('type', type);
+		form.set('pegawaiId', pegawaiId);
+		form.set('mataPelajaranIds', JSON.stringify([...mataPelajaranIds]));
+		form.set('kelasIds', JSON.stringify([...kelasIds]));
+
 		try {
-			const res = await fetch('?/create_user', { method: 'POST', body: form });
-			if (res.ok) {
-				const body = await res.json().catch(() => ({}));
-				// merge local form values so the UI can update immediately even if server
-				// response omits some fields. Do NOT include the raw password in the event.
-				const mergedBody = {
-					...body,
-					username: body.user?.username ?? username,
-					displayName: body.displayName ?? nama,
-					mataPelajaranIds: body.mataPelajaranIds ?? Array.from(mataPelajaranIds),
-					kelasIds: body.kelasIds ?? Array.from(kelasIds),
-					// ensure there's a `user` object for the parent to consume
-					user: body.user ?? {
-						id: Date.now(),
-						username: body.user?.username ?? username,
-						createdAt: new Date().toISOString(),
-						type: body.user?.type ?? type,
-						passwordUpdatedAt: body.user?.passwordUpdatedAt ?? new Date().toISOString()
-					},
-					// indicate whether server actually returned the user object (so parent can detect fallback)
-					__server_user_returned: Boolean(body.user && typeof body.user.id !== 'undefined')
-				};
-				toast({ message: 'Pengguna dibuat', type: 'success' });
-				dispatch('saved', { body: mergedBody });
-				open = false;
-			} else {
-				// try to parse a JSON error payload from the action
-				let msg = 'Gagal membuat pengguna';
-				try {
-					const parsed = await res.json().catch(() => null);
-					if (parsed) {
-						if (typeof parsed.message === 'string' && parsed.message.trim()) msg = parsed.message;
-						else if (parsed.error && typeof parsed.error.message === 'string')
-							msg = parsed.error.message;
-						else msg = JSON.stringify(parsed);
-					} else {
-						msg = await res.text().catch(() => msg);
-					}
-				} catch {
-					msg = (await res.text().catch(() => msg)) as string;
-				}
-				toast({ message: `Gagal membuat: ${msg}`, type: 'error' });
+			const response = await fetch('?/create_user', { method: 'POST', body: form });
+			const result = deserialize(await response.text());
+			const body = (result.data ?? {}) as CreateUserBody;
+			if (result.type !== 'success') {
+				const errorMessage =
+					result.type === 'error' && result.error instanceof Error
+						? result.error.message
+						: String(body.message ?? 'Gagal membuat pengguna');
+				throw new Error(errorMessage);
 			}
-		} catch {
-			toast({ message: 'Gagal membuat pengguna', type: 'error' });
+			dispatch('saved', {
+				body: {
+					...body,
+					displayName: body.displayName ?? selectedPegawai.nama,
+					__server_user_returned: Boolean(body.user?.id)
+				}
+			});
+			toast({ message: 'Pengguna dibuat', type: 'success' });
+			open = false;
+		} catch (error) {
+			toast({
+				message: error instanceof Error ? error.message : 'Gagal membuat pengguna',
+				type: 'error'
+			});
 		}
 	}
 </script>
 
 {#if open}
 	<div class="modal modal-open">
-		<div class="modal-box flex max-h-[90vh] max-w-lg flex-col p-4">
+		<div class="modal-box flex max-h-[90vh] max-w-2xl flex-col p-4">
 			<h3 class="mb-3 text-lg font-bold">Tambah Pengguna</h3>
 			<div class="flex-1 space-y-3 overflow-y-auto px-1">
-				<!-- Sekolah -->
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Sekolah</legend>
-					<select
-						id="add-user-sekolah"
-						class="select dark:bg-base-200 w-full truncate dark:border-none"
-						bind:value={sekolahId}
-						onchange={() => {
-							kelasIds.clear();
-							selectAllKelas = false;
-						}}
-					>
-						<option disabled selected={sekolahId === ''} value="">Pilih Sekolah</option>
-						{#if sekolahList && sekolahList.length}
-							{#each sekolahList as s (s.id)}
-								<option value={s.id}>{s.nama}</option>
+				{#if optionsError}
+					<div class="alert alert-error text-sm">
+						<span>{optionsError}</span>
+						<button class="btn btn-sm" type="button" onclick={loadOptions}>Muat ulang</button>
+					</div>
+				{/if}
+
+				<div class="grid gap-3 md:grid-cols-2">
+					<fieldset class="fieldset">
+						<legend class="fieldset-legend">Role</legend>
+						<select class="select dark:bg-base-200 w-full dark:border-none" bind:value={type}>
+							<option value="user">Guru Mapel</option>
+							<option value="wali_asuh">Wali Asuh</option>
+							<option value="wali_asrama">Wali Asrama</option>
+						</select>
+					</fieldset>
+
+					<fieldset class="fieldset">
+						<legend class="fieldset-legend">Pegawai</legend>
+						<select
+							id="add-user-pegawai"
+							class="select dark:bg-base-200 w-full dark:border-none"
+							bind:value={pegawaiId}
+							disabled={loadingOptions}
+						>
+							<option value="">{loadingOptions ? 'Memuat pegawai...' : 'Pilih pegawai'}</option>
+							{#each filteredPegawai as pegawai (pegawai.id)}
+								<option value={String(pegawai.id)}>
+									{pegawai.nama}{pegawai.nip ? ` - ${pegawai.nip}` : ''}
+								</option>
 							{/each}
-						{:else}
-							<option disabled>- tidak ada sekolah -</option>
-						{/if}
-					</select>
-					<p class="label text-wrap">
-						Opsional: kaitkan pengguna ke sekolah tertentu sehingga saat login sekolah aktif bisa
-						disesuaikan.
-					</p>
-				</fieldset>
-
-				<!-- Mata Pelajaran Collapse -->
-				<div tabindex="0" role="button" class="bg-base-200 border-base-300 collapse-arrow collapse">
-					<div class="collapse-title font-semibold">
-						Mata Pelajaran {#if mataPelajaranIds.size > 0}
-							<span class="badge badge-sm badge-primary">{mataPelajaranIds.size}</span>
-						{/if}
-					</div>
-					<div class="collapse-content text-sm">
-						<div class="space-y-3">
-							<p class="text-xs opacity-75">Pilih satu atau lebih mata pelajaran yang diajari</p>
-							{#if filteredMataPelajaran.length > 0}
-								<div class="space-y-2">
-									{#each filteredMataPelajaran as m (m.id)}
-										<label class="flex cursor-pointer gap-2">
-											<input
-												type="checkbox"
-												class="checkbox checkbox-sm"
-												checked={mataPelajaranIds.has(m.id)}
-												onchange={() => toggleMapel(m.id)}
-											/>
-											<span class="text-sm">{m.nama}</span>
-										</label>
-									{/each}
-								</div>
-							{:else}
-								<p class="text-xs opacity-75">- tidak ada mata pelajaran -</p>
-							{/if}
-						</div>
-					</div>
+						</select>
+					</fieldset>
 				</div>
 
-				<!-- Kelas -->
-				<div tabindex="0" role="button" class="bg-base-200 border-base-300 collapse-arrow collapse">
-					<div class="collapse-title font-semibold">
-						Kelas {#if kelasIds.size > 0}
-							<span class="badge badge-sm badge-secondary">{kelasIds.size}</span>
-						{/if}
-					</div>
-					<div class="collapse-content text-sm">
-						<div class="space-y-3">
-							<p class="text-xs opacity-75">Pilih satu atau lebih kelas yang bisa diakses</p>
-							{#if filteredKelasList.length > 0}
-								<div class="space-y-2">
-									<label class="bg-base-300 flex cursor-pointer gap-2 rounded p-2 font-semibold">
-										<input
-											type="checkbox"
-											class="checkbox checkbox-sm"
-											checked={selectAllKelas}
-											onchange={toggleSelectAllKelas}
-										/>
-										<span class="text-sm">Pilih Semua</span>
-									</label>
-									{#each filteredKelasList as k (k.id)}
-										<label class="flex cursor-pointer gap-2">
-											<input
-												type="checkbox"
-												class="checkbox checkbox-sm"
-												checked={kelasIds.has(k.id)}
-												onchange={() => toggleKelas(k.id)}
-											/>
-											<span class="text-sm"
-												>{k.nama}
-												{#if k.fase}({k.fase}){/if}</span
-											>
+				{#if type === 'user'}
+					<div class="grid gap-3 md:grid-cols-2">
+						<fieldset class="fieldset">
+							<legend class="fieldset-legend">Mata Pelajaran</legend>
+							<details class="dropdown w-full">
+								<summary class="select dark:bg-base-200 flex w-full cursor-pointer items-center dark:border-none">
+									{mataPelajaranIds.size ? `${mataPelajaranIds.size} dipilih` : 'Pilih mata pelajaran'}
+								</summary>
+								<div class="dropdown-content bg-base-100 border-base-300 rounded-box z-50 mt-1 max-h-64 w-full overflow-y-auto border p-2 shadow">
+									{#each uniqueMataPelajaran as mapel (mapel.id)}
+										<label class="hover:bg-base-200 flex cursor-pointer items-center gap-2 rounded p-2">
+											<input class="checkbox checkbox-sm" type="checkbox" checked={mataPelajaranIds.has(mapel.id)} onchange={() => (mataPelajaranIds = toggle(mataPelajaranIds, mapel.id))} />
+											<span>{mapel.nama}</span>
 										</label>
+									{:else}
+										<p class="p-2 text-sm opacity-60">Belum ada mata pelajaran</p>
 									{/each}
 								</div>
-							{:else}
-								<p class="text-xs opacity-75">- tidak ada kelas -</p>
-							{/if}
-						</div>
-					</div>
-				</div>
+							</details>
+						</fieldset>
 
-				<!-- Nama -->
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Nama</legend>
-					<input
-						id="add-user-nama"
-						required
-						class="input dark:bg-base-200 w-full dark:border-none"
-						bind:value={nama}
-						placeholder="Contoh: Bruce Wayne, Bat."
-					/>
-					<p class="label text-wrap">Nama lengkap pengguna dan gelar (tampil pada daftar)</p>
-				</fieldset>
+						<fieldset class="fieldset">
+							<legend class="fieldset-legend">Kelas</legend>
+							<details class="dropdown w-full">
+								<summary class="select dark:bg-base-200 flex w-full cursor-pointer items-center dark:border-none">
+									{kelasIds.size ? `${kelasIds.size} dipilih` : 'Pilih kelas'}
+								</summary>
+								<div class="dropdown-content bg-base-100 border-base-300 rounded-box z-50 mt-1 max-h-64 w-full overflow-y-auto border p-2 shadow">
+									{#each kelasList as kelas (kelas.id)}
+										<label class="hover:bg-base-200 flex cursor-pointer items-center gap-2 rounded p-2">
+											<input class="checkbox checkbox-sm" type="checkbox" checked={kelasIds.has(kelas.id)} onchange={() => (kelasIds = toggle(kelasIds, kelas.id))} />
+											<span>{kelas.nama}{kelas.fase ? ` (${kelas.fase})` : ''}</span>
+										</label>
+									{:else}
+										<p class="p-2 text-sm opacity-60">Belum ada kelas</p>
+									{/each}
+								</div>
+							</details>
+						</fieldset>
+					</div>
+				{/if}
 
 				<fieldset class="fieldset">
 					<legend class="fieldset-legend">Akun</legend>
 					<div class="flex flex-col gap-2 sm:flex-row">
-						<label class="input validator dark:bg-base-200 w-full dark:border-none">
+						<label class="input dark:bg-base-200 w-full dark:border-none">
 							<Icon name="user" />
-							<input
-								id="add-user-username"
-								type="text"
-								required
-								placeholder="Username"
-								title="Only letters, numbers or dash"
-								bind:value={username}
-							/>
+							<input id="add-user-username" required placeholder="Username" bind:value={username} />
 						</label>
-						<label class="input validator dark:bg-base-200 w-full dark:border-none">
+						<label class="input dark:bg-base-200 w-full dark:border-none">
 							<Icon name="lock" />
-							<input
-								id="add-user-password"
-								type={showPassword ? 'text' : 'password'}
-								required
-								placeholder="Password"
-								bind:value={password}
-							/>
-							<button
-								type="button"
-								class="cursor-pointer"
-								onclick={() => (showPassword = !showPassword)}
-								aria-label="Toggle password visibility"
-							>
+							<input id="add-user-password" type={showPassword ? 'text' : 'password'} required placeholder="Password" bind:value={password} />
+							<button type="button" class="cursor-pointer" onclick={() => (showPassword = !showPassword)} title={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}>
 								<Icon name={showPassword ? 'eye-off' : 'eye'} />
 							</button>
 						</label>
 					</div>
-					<p class="validator-hint hidden">Isi username dan password dulu!</p>
-					<p class="label">Username dan password untuk login</p>
 				</fieldset>
 			</div>
 
 			<div class="modal-action sticky bottom-0 z-10">
-				<button class="btn btn-soft shadow-none" type="button" onclick={close}
-					><Icon name="close" /> Batal</button
-				>
-				<button class="btn btn-primary shadow-none" type="button" onclick={save} disabled={!isValid}
-					><Icon name="save" /> Simpan</button
-				>
+				<button class="btn btn-soft shadow-none" type="button" onclick={close}><Icon name="close" /> Batal</button>
+				<button class="btn btn-primary shadow-none" type="button" onclick={save} disabled={!isValid || loadingOptions}><Icon name="save" /> Simpan</button>
 			</div>
 		</div>
 	</div>

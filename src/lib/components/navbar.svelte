@@ -1,4 +1,4 @@
-﻿<script lang="ts">
+<script lang="ts">
 	/* eslint-disable svelte/no-navigation-without-resolve */
 	import { page } from '$app/state';
 	import DarkMode from '$lib/components/dark-mode.svelte';
@@ -20,7 +20,7 @@
 		pegawaiName?: string;
 		username?: string;
 		permissions?: string[];
-		type?: 'admin' | 'user' | 'wali_asuh';
+		type?: 'admin' | 'user' | 'wali_kelas' | 'wali_asuh' | 'wali_asrama';
 	};
 
 	let {
@@ -69,7 +69,7 @@
 	}
 
 	function hasPindahPermission() {
-		if (user?.type === 'wali_asuh') return true;
+		if (user?.type === 'wali_asuh' || user?.type === 'wali_asrama') return true;
 		const perms = user?.permissions ?? [];
 		return perms.includes('kelas_pindah');
 	}
@@ -239,6 +239,16 @@
 								<span>
 									<strong>{displayUserName}</strong> - Wali Asuh
 								</span>
+							</div>
+						{:else if user?.type === 'wali_asrama'}
+							<div role="alert" class="alert alert-info mb-4">
+								<Icon name="info" />
+								<span><strong>{displayUserName}</strong> - Wali Asrama</span>
+							</div>
+						{:else if user?.type === 'wali_kelas'}
+							<div role="alert" class="alert alert-info mb-4">
+								<Icon name="info" />
+								<span><strong>{displayUserName}</strong> - Wali Kelas</span>
 							</div>
 						{/if}
 

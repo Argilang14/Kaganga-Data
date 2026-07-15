@@ -14,10 +14,9 @@
 </td>
 <td class="overflow-hidden">
 	<select class="select select-sm w-full truncate" bind:value={newValues[id].type}>
-		<option value="admin">Admin</option>
-		<option value="wali_kelas">Wali Kelas</option>
+		<option value="user">Guru Mapel</option>
 		<option value="wali_asuh">Wali Asuh</option>
-		<option value="user">User</option>
+		<option value="wali_asrama">Wali Asrama</option>
 	</select>
 </td>
 <td class="overflow-hidden">

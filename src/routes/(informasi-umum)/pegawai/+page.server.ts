@@ -1,6 +1,13 @@
-﻿import db from '$lib/server/db';
+import db from '$lib/server/db';
 import { ensurePegawaiSchema } from '$lib/server/db/ensure-pegawai';
-import { tableAuthUser, tableKelas, tablePegawai, tableSekolah } from '$lib/server/db/schema';
+import {
+	tableAuthUser,
+	tableJadwalMapel,
+	tableJadwalPelajaran,
+	tableKelas,
+	tablePegawai,
+	tableSekolah
+} from '$lib/server/db/schema';
 import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, eq, inArray, like, or, sql } from 'drizzle-orm';
 import { authority } from '../../pengguna/utils.server';
@@ -62,35 +69,71 @@ async function safeCountReferences(
 }
 
 async function countReferences(pegawaiId: number, sekolahId: number) {
-	const [sekolahRefs, waliKelasRefs, userRefs] = await Promise.all([
-		safeCountReferences(
-			'sekolah',
-			db
-				.select({ total: sql<number>`count(*)` })
-				.from(tableSekolah)
-				.where(and(eq(tableSekolah.kepalaSekolahId, pegawaiId), eq(tableSekolah.id, sekolahId)))
-		),
-		safeCountReferences(
-			'kelas wali kelas',
-			db
-				.select({ total: sql<number>`count(*)` })
-				.from(tableKelas)
-				.where(and(eq(tableKelas.waliKelasId, pegawaiId), eq(tableKelas.sekolahId, sekolahId)))
-		),
-		safeCountReferences(
-			'pengguna',
-			db
-				.select({ total: sql<number>`count(*)` })
-				.from(tableAuthUser)
-				.where(and(eq(tableAuthUser.pegawaiId, pegawaiId), eq(tableAuthUser.sekolahId, sekolahId)))
-		)
-	]);
+	const [sekolahRefs, waliKelasRefs, userRefs, jadwalMapelRefs, jadwalPelajaranRefs] =
+		await Promise.all([
+			safeCountReferences(
+				'sekolah',
+				db
+					.select({ total: sql<number>`count(*)` })
+					.from(tableSekolah)
+					.where(and(eq(tableSekolah.kepalaSekolahId, pegawaiId), eq(tableSekolah.id, sekolahId)))
+			),
+			safeCountReferences(
+				'kelas wali kelas',
+				db
+					.select({ total: sql<number>`count(*)` })
+					.from(tableKelas)
+					.where(
+						and(
+							eq(tableKelas.sekolahId, sekolahId),
+							or(
+								eq(tableKelas.waliKelasId, pegawaiId),
+								eq(tableKelas.waliAsramaId, pegawaiId),
+								eq(tableKelas.waliAsuhId, pegawaiId)
+							)
+						)
+					)
+			),
+			safeCountReferences(
+				'pengguna',
+				db
+					.select({ total: sql<number>`count(*)` })
+					.from(tableAuthUser)
+					.where(
+						and(eq(tableAuthUser.pegawaiId, pegawaiId), eq(tableAuthUser.sekolahId, sekolahId))
+					)
+			),
+			safeCountReferences(
+				'pengaturan mata pelajaran',
+				db
+					.select({ total: sql<number>`count(*)` })
+					.from(tableJadwalMapel)
+					.where(
+						and(
+							eq(tableJadwalMapel.guruPegawaiId, pegawaiId),
+							eq(tableJadwalMapel.sekolahId, sekolahId)
+						)
+					)
+			),
+			safeCountReferences(
+				'jadwal pelajaran',
+				db
+					.select({ total: sql<number>`count(*)` })
+					.from(tableJadwalPelajaran)
+					.where(
+						and(
+							eq(tableJadwalPelajaran.guruPegawaiId, pegawaiId),
+							eq(tableJadwalPelajaran.sekolahId, sekolahId)
+						)
+					)
+			)
+		]);
 
 	return {
 		sekolah: sekolahRefs[0]?.total ?? 0,
 		kelas: waliKelasRefs[0]?.total ?? 0,
 		pengguna: userRefs[0]?.total ?? 0,
-		jadwal: 0
+		jadwal: (jadwalMapelRefs[0]?.total ?? 0) + (jadwalPelajaranRefs[0]?.total ?? 0)
 	};
 }
 function referenceTotal(refs: Awaited<ReturnType<typeof countReferences>>) {
@@ -286,7 +329,7 @@ export const actions: Actions = {
 		if (referenceTotal(refs) > 0) {
 			const detail = [
 				refs.sekolah ? `${refs.sekolah} data sekolah` : null,
-				refs.kelas ? `${refs.kelas} data kelas/wali kelas` : null,
+				refs.kelas ? `${refs.kelas} penugasan wali kelas/asrama/asuh` : null,
 				refs.pengguna ? `${refs.pengguna} akun pengguna` : null,
 				refs.jadwal ? `${refs.jadwal} jadwal pelajaran` : null
 			]

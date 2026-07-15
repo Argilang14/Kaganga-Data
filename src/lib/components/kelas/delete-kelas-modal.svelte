@@ -132,7 +132,8 @@
 											<li>Seluruh murid dalam kelas</li>
 											<li>Semua mata pelajaran termasuk Pendidikan Agama dan Budi Pekerti</li>
 											<li>Tujuan pembelajaran, ekstrakurikuler, dan kokurikuler</li>
-											<li>Wali kelas (pegawai) jika tidak digunakan di kelas atau sekolah lain</li>
+											<li>Penugasan kelas pada akun pengguna akan dilepas</li>
+											<li>Data Pegawai dan akun pengguna tetap tersimpan</li>
 											<li>
 												Data orang tua/wali murid beserta alamat yang hanya dimiliki kelas ini
 											</li>
@@ -154,8 +155,8 @@
 									</div>
 								{:else}
 									<p class="text-base-content/70 text-sm">
-										Tindakan ini akan menghapus data kelas secara permanen, termasuk wali kelas,
-										data orang tua/wali murid, serta alamat yang hanya dimiliki kelas ini.
+										Tindakan ini hanya menghapus kelas. Data Pegawai dan akun pengguna tetap
+										tersimpan.
 									</p>
 								{/if}
 							</div>

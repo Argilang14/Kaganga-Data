@@ -1,5 +1,8 @@
 import db from '$lib/server/db';
 import { ensurePenggunaIdentitySchema } from '$lib/server/db/ensure-pengguna';
+import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
+import { ensureKesehatanMuridSchema } from '$lib/server/db/ensure-kesehatan-murid';
+import { ensureJurnalMengajarSchema } from '$lib/server/db/ensure-jurnal-mengajar';
 import {
 	tableAuthUser,
 	tablePegawai,
@@ -8,7 +11,12 @@ import {
 	tableAuthUserMataPelajaran,
 	tableAuthUserKelas,
 	tableMurid,
-	tableAuthSession
+	tableAuthSession,
+	tableAbsensiHarian,
+	tableAbsensiKegiatan,
+	tableKesehatanMurid,
+	tableUserFavorites,
+	tableJurnalMengajar
 } from '$lib/server/db/schema';
 import { sql, eq, and, inArray } from 'drizzle-orm';
 import { authority } from './utils.server';
@@ -388,6 +396,11 @@ export const actions = {
 	delete_users: async ({ request, locals }) => {
 		authority('user_delete');
 		await ensurePenggunaIdentitySchema();
+		await Promise.all([
+			ensureAbsensiDigitalSchema(),
+			ensureKesehatanMuridSchema(),
+			ensureJurnalMengajarSchema()
+		]);
 
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(400, { message: 'Sekolah aktif tidak ditemukan' });
@@ -424,7 +437,31 @@ export const actions = {
 			const scopedIds = candidates.map((candidate) => candidate.id);
 			if (!scopedIds.length) return fail(404, { message: 'Pengguna tidak ditemukan' });
 
+			const [journalReference] = await db
+				.select({ total: sql<number>`count(*)` })
+				.from(tableJurnalMengajar)
+				.where(inArray(tableJurnalMengajar.authUserId, scopedIds));
+			if ((journalReference?.total ?? 0) > 0) {
+				return fail(409, {
+					message:
+						'Akun masih memiliki Jurnal Mengajar. Pertahankan akun agar riwayat administrasi tidak terhapus.'
+				});
+			}
+
 			await db.transaction(async (tx) => {
+				await tx
+					.update(tableAbsensiHarian)
+					.set({ petugasUserId: null })
+					.where(inArray(tableAbsensiHarian.petugasUserId, scopedIds));
+				await tx
+					.update(tableAbsensiKegiatan)
+					.set({ petugasUserId: null })
+					.where(inArray(tableAbsensiKegiatan.petugasUserId, scopedIds));
+				await tx
+					.update(tableKesehatanMurid)
+					.set({ petugasUserId: null })
+					.where(inArray(tableKesehatanMurid.petugasUserId, scopedIds));
+				await tx.delete(tableUserFavorites).where(inArray(tableUserFavorites.userId, scopedIds));
 				await tx
 					.delete(tableAuthUserMataPelajaran)
 					.where(inArray(tableAuthUserMataPelajaran.authUserId, scopedIds));

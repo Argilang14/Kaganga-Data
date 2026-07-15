@@ -56,7 +56,7 @@
 	function openDeleteModalForIds(ids: number[]) {
 		showModal({
 			title: 'Hapus pengguna',
-			body: `Yakin ingin menghapus ${ids.length} akun? Data Pegawai dan Data Kelas tetap tersimpan.`,
+			body: `Yakin ingin menghapus ${ids.length} akun? Data Pegawai dan Data Kelas tetap tersimpan. Akun yang masih memiliki Jurnal Mengajar akan ditolak.`,
 			onPositive: {
 				label: 'Hapus',
 				icon: 'del',

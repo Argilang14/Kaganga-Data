@@ -3,6 +3,9 @@ import db from '$lib/server/db';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import {
 	tableAlamat,
+	tableAuthUser,
+	tableAuthUserKelas,
+	tableAuthUserMataPelajaran,
 	tableEkstrakurikuler,
 	tableEkstrakurikulerTujuan,
 	tableKelas,
@@ -19,6 +22,7 @@ import {
 import { fail } from '@sveltejs/kit';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
+import { authority } from '../../pengguna/utils.server';
 
 export const load: PageServerLoad = async ({ depends, locals }) => {
 	await ensureKelasDependenciesSchema();
@@ -110,6 +114,7 @@ export const load: PageServerLoad = async ({ depends, locals }) => {
 
 export const actions: Actions = {
 	async delete({ request, locals }) {
+		authority('kelas_manage');
 		await ensureKelasDependenciesSchema();
 		const formData = await request.formData();
 		const kelasId = formData.get('id')?.toString();
@@ -179,6 +184,13 @@ export const actions: Actions = {
 
 		try {
 			await db.transaction(async (tx) => {
+				// Kelas boleh dihapus, tetapi akun pengguna harus tetap utuh.
+				await tx
+					.update(tableAuthUser)
+					.set({ kelasId: null, updatedAt: new Date().toISOString() })
+					.where(eq(tableAuthUser.kelasId, kelasIdNumber));
+				await tx.delete(tableAuthUserKelas).where(eq(tableAuthUserKelas.kelasId, kelasIdNumber));
+
 				const muridDetails = await tx
 					.select({
 						alamatId: tableMurid.alamatId,
@@ -213,6 +225,13 @@ export const actions: Actions = {
 				const mapelIds = mataPelajaranIds.map((row) => row.id);
 
 				if (mapelIds.length) {
+					await tx
+						.update(tableAuthUser)
+						.set({ mataPelajaranId: null, updatedAt: new Date().toISOString() })
+						.where(inArray(tableAuthUser.mataPelajaranId, mapelIds));
+					await tx
+						.delete(tableAuthUserMataPelajaran)
+						.where(inArray(tableAuthUserMataPelajaran.mataPelajaranId, mapelIds));
 					await tx
 						.delete(tableTujuanPembelajaran)
 						.where(inArray(tableTujuanPembelajaran.mataPelajaranId, mapelIds));

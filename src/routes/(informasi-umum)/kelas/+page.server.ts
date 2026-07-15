@@ -16,7 +16,6 @@ import {
 	tableTujuanPembelajaran,
 	tableWaliMurid
 } from '$lib/server/db/schema.js';
-import { tableAuthUser } from '$lib/server/db/schema.js';
 import { fail } from '@sveltejs/kit';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
@@ -138,8 +137,6 @@ export const actions: Actions = {
 		}
 
 		const forceDelete = formData.get('forceDelete') === 'true';
-		const hasWaliPegawai = Boolean(kelas.waliKelasId);
-
 		const [muridRows, mapelRows, ekstrakRows, kokurikulerRows] = await Promise.all([
 			db
 				.select({ total: sql<number>`count(*)` })
@@ -165,18 +162,13 @@ export const actions: Actions = {
 		const totalKokurikuler = kokurikulerRows[0]?.total ?? 0;
 
 		const masihAdaRelasi =
-			totalMurid > 0 ||
-			totalMapel > 0 ||
-			totalEkstrak > 0 ||
-			totalKokurikuler > 0 ||
-			hasWaliPegawai;
+			totalMurid > 0 || totalMapel > 0 || totalEkstrak > 0 || totalKokurikuler > 0;
 
 		const dependencyList: string[] = [];
 		if (totalMurid > 0) dependencyList.push(`${totalMurid} murid`);
 		if (totalMapel > 0) dependencyList.push(`${totalMapel} mata pelajaran`);
 		if (totalEkstrak > 0) dependencyList.push(`${totalEkstrak} ekstrakurikuler`);
 		if (totalKokurikuler > 0) dependencyList.push(`${totalKokurikuler} kokurikuler`);
-		if (hasWaliPegawai) dependencyList.push('wali kelas yang terhubung');
 		const dependencyText = dependencyList.join(', ');
 
 		if (!forceDelete && masihAdaRelasi) {
@@ -242,10 +234,6 @@ export const actions: Actions = {
 
 				await tx.delete(tableKokurikuler).where(eq(tableKokurikuler.kelasId, kelasIdNumber));
 				await tx.delete(tableMurid).where(eq(tableMurid.kelasId, kelasIdNumber));
-
-				// Hapus akun pengguna yang terkait langsung ke kelas (mis. wali_kelas users)
-				await tx.delete(tableAuthUser).where(eq(tableAuthUser.kelasId, kelasIdNumber));
-
 				await tx.delete(tableKelas).where(eq(tableKelas.id, kelasIdNumber));
 
 				const waliIdsArray = Array.from(waliMuridIds);
@@ -275,31 +263,6 @@ export const actions: Actions = {
 					const parentIdsToDelete = waliIdsArray.filter((id) => !stillReferencedParents.has(id));
 					if (parentIdsToDelete.length) {
 						await tx.delete(tableWaliMurid).where(inArray(tableWaliMurid.id, parentIdsToDelete));
-					}
-				}
-
-				if (kelas.waliKelasId) {
-					const pegawaiCandidate = kelas.waliKelasId;
-					// Hapus akun auth yang terhubung ke pegawai lebih awal agar tidak menghalangi operasi
-					await tx.delete(tableAuthUser).where(eq(tableAuthUser.pegawaiId, pegawaiCandidate));
-
-					const pegawaiStillUsed = new Set<number>();
-					const kepalaRefs = await tx
-						.selectDistinct({ id: tableSekolah.kepalaSekolahId })
-						.from(tableSekolah)
-						.where(inArray(tableSekolah.kepalaSekolahId, [pegawaiCandidate]));
-					for (const row of kepalaRefs) {
-						if (row.id) pegawaiStillUsed.add(row.id);
-					}
-					const waliRefs = await tx
-						.selectDistinct({ id: tableKelas.waliKelasId })
-						.from(tableKelas)
-						.where(inArray(tableKelas.waliKelasId, [pegawaiCandidate]));
-					for (const row of waliRefs) {
-						if (row.id) pegawaiStillUsed.add(row.id);
-					}
-					if (!pegawaiStillUsed.has(pegawaiCandidate)) {
-						await tx.delete(tablePegawai).where(eq(tablePegawai.id, pegawaiCandidate));
 					}
 				}
 

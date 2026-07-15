@@ -80,26 +80,20 @@
 				</div>
 
 				<!-- Wali Kelas -->
-				<div class="fieldset">
+				<div class="fieldset md:col-span-2">
 					<legend class="fieldset-legend">Wali Kelas</legend>
-					<input
-						type="text"
-						class="input validator bg-base-200 dark:bg-base-300 w-full dark:border-none"
-						placeholder="Contoh: Damian Wayne, Bat"
-						name="waliKelas.nama"
-					/>
-				</div>
-
-				<!-- NIP Wali Kelas -->
-				<div class="fieldset">
-					<legend class="fieldset-legend">NIP Wali Kelas</legend>
-					<input
-						type="text"
-						class="input bg-base-200 dark:bg-base-300 w-full dark:border-none"
-						placeholder="Contoh: NIP 19940505 201803 1 008"
-						name="waliKelas.nip"
-					/>
-					<span> Biarkan kosong jika wali kelas tidak memiliki NIP. </span>
+					<select
+						class="select bg-base-200 dark:bg-base-300 w-full dark:border-none"
+						name="waliKelasId"
+						title="Pilih wali kelas dari Data Pegawai"
+					>
+						<option value="">Tanpa wali kelas</option>
+						{#each data.pegawaiOptions ?? [] as pegawai (pegawai.id)}
+							<option value={String(pegawai.id)}>
+								{pegawai.nama}{pegawai.nip ? ` - ${pegawai.nip}` : ''}
+							</option>
+						{/each}
+					</select>
 				</div>
 			</div>
 			<div class="mt-6 flex justify-between gap-2">

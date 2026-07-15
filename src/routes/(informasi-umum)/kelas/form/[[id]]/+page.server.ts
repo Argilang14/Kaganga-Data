@@ -1,4 +1,5 @@
 import db from '$lib/server/db';
+import { ensurePegawaiSchema } from '$lib/server/db/ensure-pegawai';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import type { AcademicContext } from '$lib/server/db/academic';
 import {
@@ -9,7 +10,7 @@ import {
 } from '$lib/server/db/schema.js';
 import { unflattenFormData } from '$lib/utils.js';
 import { error, fail } from '@sveltejs/kit';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq, or } from 'drizzle-orm';
 import { authority } from '../../../../pengguna/utils.server';
 
 type TingkatOption = { fase: string; label: string };
@@ -59,7 +60,7 @@ const tingkatOptionsByJenjang: Record<
 type KelasFormInput = {
 	rombel?: string;
 	fase?: string;
-	waliKelas?: Partial<Pick<Pegawai, 'nama' | 'nip'>>;
+	waliKelasId?: string;
 };
 
 type TahunAjaranOption = typeof tableTahunAjaran.$inferSelect & {
@@ -111,6 +112,7 @@ function resolveEffectiveSemesterId(
 
 export async function load({ params, locals }) {
 	authority('kelas_manage');
+	await ensurePegawaiSchema();
 
 	const meta: PageMeta = { title: 'Form Kelas' };
 	const jenjang = locals.sekolah?.jenjangPendidikan as
@@ -140,6 +142,15 @@ export async function load({ params, locals }) {
 		kelas = kelasRow;
 	}
 
+	const statusFilter = kelas?.waliKelasId
+		? or(eq(tablePegawai.status, 'aktif'), eq(tablePegawai.id, kelas.waliKelasId))
+		: eq(tablePegawai.status, 'aktif');
+	const pegawaiFilter = and(eq(tablePegawai.sekolahId, sekolahId), statusFilter);
+	const pegawaiOptions = await db.query.tablePegawai.findMany({
+		columns: { id: true, nama: true, nip: true, jenis: true, status: true },
+		where: pegawaiFilter,
+		orderBy: [asc(tablePegawai.nama)]
+	});
 	const defaultTahunAjaranId = resolveEffectiveTahunAjaranId(
 		kelas?.tahunAjaranId,
 		academicContext,
@@ -173,44 +184,31 @@ export async function load({ params, locals }) {
 
 	const formInit: Record<string, unknown> = {
 		rombel: kelas?.nama ?? '',
-		fase: kelas?.fase ?? ''
+		fase: kelas?.fase ?? '',
+		waliKelasId: kelas?.waliKelasId ? String(kelas.waliKelasId) : ''
 	};
-	if (kelas?.waliKelas) {
-		formInit.waliKelas = {
-			nama: kelas.waliKelas.nama,
-			nip: kelas.waliKelas.nip
-		};
-	}
-	return { meta, tingkatOptions, kelas, academicLock, formInit };
+	return { meta, tingkatOptions, pegawaiOptions, kelas, academicLock, formInit };
 }
 
 export const actions = {
 	async save({ request, params, locals }) {
 		authority('kelas_manage');
+		await ensurePegawaiSchema();
 
 		if (!locals.sekolah?.id) error(400, `Sekolah aktif tidak ditemukan`);
 
 		const formData = unflattenFormData<KelasFormInput>(await request.formData());
 		const rombel = formData.rombel?.trim();
 		const fase = formData.fase?.trim() || null;
-		const waliNama = formData.waliKelas?.nama?.trim() || '';
-		const waliNip = formData.waliKelas?.nip?.trim() || '';
+		const waliKelasRaw = formData.waliKelasId?.trim() ?? '';
+		const waliKelasId = waliKelasRaw ? Number(waliKelasRaw) : null;
 
 		if (!rombel) {
 			return fail(400, { fail: `Nama rombel wajib diisi.` });
 		}
-
-		// Allow saving when NIP is empty but name is provided.
-		// However, if NIP is provided it must be accompanied by a name.
-		if (!waliNama && waliNip) {
-			return fail(400, {
-				fail: `Jika mengisi NIP, lengkapi juga Nama wali kelas.`
-			});
+		if (waliKelasRaw && (!waliKelasId || !Number.isInteger(waliKelasId) || waliKelasId <= 0)) {
+			return fail(400, { fail: `Wali kelas tidak valid.` });
 		}
-
-		// Consider there is a wali when a name is provided. NIP is optional.
-		const hasWali = Boolean(waliNama);
-
 		const timestamp = new Date().toISOString();
 		const sekolahId = locals.sekolah.id;
 
@@ -238,6 +236,18 @@ export const actions = {
 			if (!existingKelas) error(404, `Data kelas tidak ditemukan`);
 		}
 
+		if (waliKelasId) {
+			const pegawai = await db.query.tablePegawai.findFirst({
+				columns: { id: true, status: true },
+				where: and(eq(tablePegawai.id, waliKelasId), eq(tablePegawai.sekolahId, sekolahId))
+			});
+			const isCurrentWali = existingKelas?.waliKelasId === waliKelasId;
+			if (!pegawai || (pegawai.status !== 'aktif' && !isCurrentWali)) {
+				return fail(400, {
+					fail: `Pilih wali kelas aktif dari Data Pegawai sekolah ini.`
+				});
+			}
+		}
 		const tahunAjaranId = resolveEffectiveTahunAjaranId(
 			existingKelas?.tahunAjaranId,
 			academicContext,
@@ -273,35 +283,7 @@ export const actions = {
 		}
 
 		await db.transaction(async (tx) => {
-			if (params.id) {
-				const kelas = await tx.query.tableKelas.findFirst({
-					columns: {
-						id: true,
-						waliKelasId: true
-					},
-					where: and(eq(tableKelas.id, +params.id), eq(tableKelas.sekolahId, sekolahId))
-				});
-				if (!kelas) error(404, `Data kelas tidak ditemukan`);
-
-				let waliKelasId = kelas.waliKelasId ?? null;
-
-				if (hasWali) {
-					if (waliKelasId) {
-						await tx
-							.update(tablePegawai)
-							.set({ nama: waliNama, nip: waliNip, updatedAt: timestamp })
-							.where(eq(tablePegawai.id, waliKelasId));
-					} else {
-						const [pegawai] = await tx
-							.insert(tablePegawai)
-							.values({ nama: waliNama, nip: waliNip, updatedAt: timestamp })
-							.returning({ id: tablePegawai.id });
-						waliKelasId = pegawai?.id ?? null;
-					}
-				} else {
-					waliKelasId = null;
-				}
-
+			if (existingKelas) {
 				await tx
 					.update(tableKelas)
 					.set({
@@ -314,29 +296,20 @@ export const actions = {
 						semesterId,
 						updatedAt: timestamp
 					})
-					.where(eq(tableKelas.id, kelas.id));
-			} else {
-				let waliKelasId: number | null = null;
-
-				if (hasWali) {
-					const [pegawai] = await tx
-						.insert(tablePegawai)
-						.values({ nama: waliNama, nip: waliNip, updatedAt: timestamp })
-						.returning({ id: tablePegawai.id });
-					waliKelasId = pegawai?.id ?? null;
-				}
-
-				await tx.insert(tableKelas).values({
-					nama: rombel,
-					fase,
-					sekolahId,
-					tahunAjaranId,
-					semesterId,
-					waliKelasId,
-					waliAsramaId: null,
-					updatedAt: timestamp
-				});
+					.where(and(eq(tableKelas.id, existingKelas.id), eq(tableKelas.sekolahId, sekolahId)));
+				return;
 			}
+
+			await tx.insert(tableKelas).values({
+				nama: rombel,
+				fase,
+				sekolahId,
+				tahunAjaranId,
+				semesterId,
+				waliKelasId,
+				waliAsramaId: null,
+				updatedAt: timestamp
+			});
 		});
 		return { message: `Data kelas berhasil disimpan` };
 	}

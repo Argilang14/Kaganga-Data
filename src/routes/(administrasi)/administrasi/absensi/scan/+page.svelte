@@ -146,7 +146,12 @@
 					status: statusOverride || null
 				})
 			});
-			result = { ...((await response.json()) as ScanResult), mode: scanMode };
+			const payload = (await response.json()) as ScanResult;
+			result = {
+				...payload,
+				mode: scanMode,
+				waktuScan: payload.waktuScan ?? new Date().toISOString()
+			};
 			if (result.murid) studentInfo = result;
 			if (result.murid || result.code !== 'invalid_token') {
 				scanHistory = [result, ...scanHistory].slice(0, 8);
@@ -225,6 +230,35 @@
 		if (status === 'alfa') return 'badge-error';
 		if (status === 'pulang') return 'badge-secondary';
 		return 'badge-ghost';
+	}
+
+	function statusLabel(status: string | undefined) {
+		const labels: Record<string, string> = {
+			hadir: 'Hadir',
+			terlambat: 'Terlambat',
+			sakit: 'Sakit',
+			izin: 'Izin',
+			alfa: 'Alfa',
+			pulang: 'Pulang'
+		};
+		return status ? (labels[status] ?? status) : 'Tidak tercatat';
+	}
+
+	function activityLabel(item: ScanResult) {
+		return (
+			item.kegiatan?.nama ?? (item.mode === 'sekolah' ? 'Absensi Sekolah' : 'Absensi Kegiatan')
+		);
+	}
+
+	function resultLabel(item: ScanResult) {
+		if (item.status) return statusLabel(item.status);
+		const labels: Record<string, string> = {
+			success: 'Berhasil',
+			already_present: 'Sudah tercatat',
+			revoked_token: 'QR dicabut',
+			invalid_activity: 'Kegiatan invalid'
+		};
+		return labels[item.code] ?? 'Gagal';
 	}
 
 	function formatScanTime(value: string | null | undefined) {
@@ -333,7 +367,7 @@
 							Dekatkan QR ke kotak tengah, pastikan kartu terang dan tidak miring.
 						</div>
 					</div>
-					<label class="form-control min-w-56">
+					<label class="form-control w-full min-w-0 sm:w-auto sm:min-w-56">
 						<span class="label-text mb-1">Kamera</span>
 						<select
 							class="select select-sm select-bordered"
@@ -359,9 +393,9 @@
 						</div>
 					{/if}
 				</div>
-				<div class="flex gap-2">
+				<div class="flex w-full gap-2 sm:w-auto">
 					<button
-						class="btn btn-primary btn-sm shadow-none"
+						class="btn btn-primary btn-sm flex-1 shadow-none sm:flex-none"
 						type="button"
 						onclick={startScanner}
 						disabled={!canStartScan}
@@ -370,7 +404,7 @@
 						Mulai Scan
 					</button>
 					<button
-						class="btn btn-soft btn-sm shadow-none"
+						class="btn btn-soft btn-sm flex-1 shadow-none sm:flex-none"
 						type="button"
 						onclick={stopScanner}
 						disabled={!scannerActive}
@@ -382,12 +416,12 @@
 		</div>
 
 		<div class="min-w-0 space-y-4">
-			<div class="card bg-base-100 border-base-200 rounded-lg border p-4 shadow-sm">
+			<div class="card bg-base-100 border-base-200 rounded-lg border p-4 shadow-sm" aria-live="polite">
 				<div class="mb-3 flex items-center justify-between gap-2">
 					<h3 class="font-semibold">Informasi Siswa</h3>
 					{#if studentInfo?.status}
 						<span class={`badge ${statusBadge(studentInfo.status)} badge-sm`}>
-							{studentInfo.status}
+							{statusLabel(studentInfo.status)}
 						</span>
 					{/if}
 				</div>
@@ -420,13 +454,16 @@
 						<div>
 							<dt class="text-base-content/60">Keterangan Absensi</dt>
 							<dd class="font-medium">
-								{studentInfo.kegiatan?.nama ??
-									(studentInfo.mode === 'sekolah' ? 'Absensi Sekolah' : '-')}
+								{activityLabel(studentInfo)}
 							</dd>
 						</div>
 						<div>
 							<dt class="text-base-content/60">Waktu Scan</dt>
 							<dd class="font-medium">{formatScanTime(studentInfo.waktuScan)}</dd>
+						</div>
+						<div>
+							<dt class="text-base-content/60">Hasil Scan</dt>
+							<dd class="font-medium">{studentInfo.message}</dd>
 						</div>
 					</dl>
 				{:else}
@@ -467,12 +504,12 @@
 								<div class="min-w-0 flex-1">
 									<div class="truncate font-semibold">{item.murid?.nama ?? item.message}</div>
 									<div class="text-base-content/60 truncate text-xs">
-										{item.murid?.kelas ?? '-'} · {item.kegiatan?.nama ?? 'Absensi'} ·
+										{item.murid?.kelas ?? '-'} · {activityLabel(item)} ·
 										{formatScanTime(item.waktuScan)}
 									</div>
 								</div>
 								<div class={`badge ${statusBadge(item.status)} badge-sm`}>
-									{item.status ?? item.code}
+									{resultLabel(item)}
 								</div>
 							</div>
 						{/each}
@@ -497,7 +534,7 @@
 	{/if}
 
 	{#if result}
-		<div class={`alert ${resultClass(result.code)}`}>
+		<div class={`alert ${resultClass(result.code)}`} aria-live="polite">
 			<Icon name={result.ok ? 'success' : 'error'} />
 			<div>
 				<div class="font-semibold">{result.message}</div>
@@ -505,7 +542,7 @@
 					<div class="text-sm">
 						{result.murid.nama} · {result.murid.kelas}
 						{result.kegiatan ? ` · ${result.kegiatan.nama}` : ''}
-						{result.status ? ` · ${result.status}` : ''}
+						{result.status ? ` · ${statusLabel(result.status)}` : ''}
 					</div>
 				{/if}
 			</div>

@@ -92,12 +92,6 @@ export async function POST({ request, locals }) {
 			{ status: 404 }
 		);
 	}
-	if (qr.revokedAt) {
-		return json(
-			{ ok: false, code: 'revoked_token', message: 'Token QR sudah dicabut.' },
-			{ status: 410 }
-		);
-	}
 	if (!qr.murid) {
 		return json(
 			{ ok: false, code: 'student_not_found', message: 'Data siswa tidak ditemukan.' },
@@ -110,7 +104,17 @@ export async function POST({ request, locals }) {
 			{ status: 404 }
 		);
 	}
-
+	if (qr.revokedAt) {
+		return json(
+			{
+				ok: false,
+				code: 'revoked_token',
+				message: 'Token QR sudah dicabut.',
+				murid: muridPayload(qr.murid)
+			},
+			{ status: 410 }
+		);
+	}
 	if (mode === 'kegiatan') {
 		const kegiatanId =
 			typeof body?.kegiatanId === 'number'

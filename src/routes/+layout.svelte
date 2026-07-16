@@ -28,7 +28,7 @@
 		'/asesmen-keasramaan',
 		'/absen',
 		'/catatan-wali-kelas',
-		'/keputusan',
+		'/status-akhir',
 		'/cetak'
 	];
 

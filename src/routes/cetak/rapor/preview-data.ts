@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { asc, and, eq } from 'drizzle-orm';
 import db from '$lib/server/db';
+import { ensureCatatanWaliSchema } from '$lib/server/db/ensure-catatan-wali';
 import {
 	tableAsesmenEkstrakurikuler,
 	tableAsesmenKokurikuler,
@@ -136,6 +137,8 @@ export async function getRaporPreviewPayload({ locals, url }: RaporContext) {
 		throw error(404, 'Sekolah tidak ditemukan.');
 	}
 
+	await ensureCatatanWaliSchema();
+
 	const muridId = requireInteger('murid_id', url.searchParams.get('murid_id'));
 	const kelasId = optionalInteger('kelas_id', url.searchParams.get('kelas_id'));
 
@@ -160,6 +163,7 @@ export async function getRaporPreviewPayload({ locals, url }: RaporContext) {
 			},
 			semester: true,
 			catatanWali: true,
+			statusAkhirRapor: true,
 			keputusan: {
 				columns: {
 					naik: true
@@ -602,6 +606,11 @@ export async function getRaporPreviewPayload({ locals, url }: RaporContext) {
 			tanpaKeterangan: computedKehadiran.alfa
 		},
 		catatanWali: murid.catatanWali?.catatan?.trim() ?? '',
+		statusAkhirRapor: {
+			status: murid.statusAkhirRapor?.status?.trim() ?? '',
+			tanggalPenetapan: formatTanggal(murid.statusAkhirRapor?.tanggalPenetapan),
+			catatan: murid.statusAkhirRapor?.catatan?.trim() ?? ''
+		},
 		tanggapanOrangTua: '',
 		naik: murid.keputusan?.naik ?? true,
 		ttd: {

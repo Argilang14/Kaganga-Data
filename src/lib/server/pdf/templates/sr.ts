@@ -1411,16 +1411,27 @@ export function renderSRRaporHTML(data: RaporPrintData): string {
 
 	const kepalaStatus =
 		data.kepalaSekolah.statusKepalaSekolah === 'plt' ? 'Plt. Kepala Sekolah' : 'Kepala Sekolah';
-	const keputusanLabel =
-		data.raporPeriode === 'rts'
-			? 'Status'
-			: data.periode.semester.toLowerCase().includes('genap')
-				? 'Status'
-				: 'Status';
+	const isSemesterGenap = data.periode.semester.toLowerCase().includes('genap');
+	const showStatusAkhir = data.raporPeriode === 'ras' && isSemesterGenap;
 	const statusAkhir = data.statusAkhirRapor ?? {};
-	const keputusanStatus = statusAkhir.status ?? '';
-	const keputusanTanggal = statusAkhir.tanggalPenetapan ?? '';
-	const keputusanCatatan = statusAkhir.catatan ?? '';
+	const keputusanHtml = showStatusAkhir
+		? `
+<div class="sr-decision-title">KEPUTUSAN KENAIKAN KELAS/KELULUSAN</div>
+<table class="sr-decision-table">
+	<tr>
+		<td class="sr-decision-label">Status Akhir</td>
+		<td>${blankIfEmpty(statusAkhir.status ?? '')}</td>
+	</tr>
+	<tr>
+		<td class="sr-decision-label">Tanggal Penetapan</td>
+		<td>${blankIfEmpty(statusAkhir.tanggalPenetapan ?? '')}</td>
+	</tr>
+	<tr>
+		<td class="sr-decision-label">Catatan Tambahan</td>
+		<td>${blankIfEmpty(statusAkhir.catatan ?? '')}</td>
+	</tr>
+</table>`
+		: '';
 
 	return `<!DOCTYPE html>
 <html lang="id">
@@ -1453,23 +1464,8 @@ ${renderSRNonAcademicBlock(data)}
 </div>
 
 <div class="sr-section-block keep-together">
-	<div class="sr-decision-title">KEPUTUSAN KENAIKAN KELAS/KELULUSAN</div>
-	<table class="sr-decision-table">
-		<tr>
-			<td class="sr-decision-label">${keputusanLabel}</td>
-			<td>${blankIfEmpty(keputusanStatus)}</td>
-		</tr>
-		<tr>
-			<td class="sr-decision-label">Tanggal Penetapan</td>
-			<td>${blankIfEmpty(keputusanTanggal)}</td>
-		</tr>
-		<tr>
-			<td class="sr-decision-label">Catatan Tambahan</td>
-			<td>${blankIfEmpty(keputusanCatatan)}</td>
-		</tr>
-	</table>
-
-	<div class="sr-signatures">
+	${keputusanHtml}
+<div class="sr-signatures">
 		<div class="sr-sign-date">${formatValue(data.ttd.tempat)}, ${formatValue(data.ttd.tanggal)}</div>
 		<div class="sr-sign-box sr-sign-parent">
 			<div class="sr-sign-role">Orang Tua/Wali</div>

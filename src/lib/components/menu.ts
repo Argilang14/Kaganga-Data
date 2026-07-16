@@ -137,10 +137,9 @@ export const appMenuItems: MenuItem[] = [
 				path: '/rekap-nilai-asrama'
 			},
 			{
-				title: 'Keputusan',
-				path: '/keputusan',
-				tags: ['kenaikan', 'kelas', 'lulus', 'naik'],
-				condition: 'genap'
+				title: 'Status Akhir',
+				path: '/status-akhir',
+				tags: ['kenaikan', 'kelulusan', 'rapor', 'semester genap']
 			}
 		]
 	},

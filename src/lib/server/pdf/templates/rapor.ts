@@ -5,6 +5,7 @@ export interface RaporPrintData {
 	sekolah: {
 		nama: string;
 		alamat: string;
+		logoSrc?: string | null;
 		bgLogoSrc?: string | null;
 		jenjangVariant?: string | null;
 	};
@@ -26,6 +27,9 @@ export interface RaporPrintData {
 		nama: string;
 		nip?: string | null;
 	};
+	orangTuaWali?: {
+		nama?: string | null;
+	};
 	kepalaSekolah: {
 		nama: string;
 		nip?: string | null;
@@ -45,13 +49,19 @@ export interface RaporPrintData {
 		deskripsi: string;
 	}>;
 	ketidakhadiran: {
+		hadir?: number;
 		sakit: number;
 		izin: number;
 		tanpaKeterangan: number;
 	};
 	catatanWali: string;
+	statusAkhirRapor?: {
+		status?: string | null;
+		tanggalPenetapan?: string | null;
+		catatan?: string | null;
+	};
 	tanggapanOrangTua: string;
-	naik: boolean;
+	naik?: boolean;
 	ttd: {
 		tempat: string;
 		tanggal: string;
@@ -92,7 +102,12 @@ export function renderRaporHTML(data: RaporPrintData): string {
 	const kepalaStatus =
 		data.kepalaSekolah.statusKepalaSekolah === 'plt' ? 'Plt. Kepala Sekolah' : 'Kepala Sekolah';
 
-	const hasKeputusan = isGenap && data.raporPeriode !== 'rts';
+	const hasKeputusan = isGenap && data.raporPeriode === 'ras';
+	const statusAkhir = data.statusAkhirRapor?.status?.trim() ?? '';
+	const statusPositif = isGraduating ? 'Lulus' : 'Naik Kelas';
+	const statusNegatif = isGraduating ? 'Tidak Lulus' : 'Tinggal Kelas';
+	const positifTerpilih = statusAkhir ? statusAkhir === statusPositif : data.naik === true;
+	const negatifTerpilih = statusAkhir ? statusAkhir === statusNegatif : data.naik === false;
 
 	function renderDeskripsi(deskripsi: string): string {
 		return formatValue(deskripsi)
@@ -465,12 +480,12 @@ ${
 						<div class="text-left">Berdasarkan capaian seluruh kompetensi, ananda ${formatValue(data.murid.nama)} dinyatakan:</div>
 						<div class="check-group">
 							<div class="check-row">
-								<span>${isGraduating ? 'Lulus' : 'Naik Kelas'}</span>
-								<span class="check-mark">${data.naik ? '☑' : '☐'}</span>
+								<span>${statusPositif}</span>
+								<span class="check-mark">${positifTerpilih ? '☑' : '☐'}</span>
 							</div>
 							<div class="check-row">
-								<span>${isGraduating ? 'Tidak Lulus' : 'Tidak Naik Kelas'}</span>
-								<span class="check-mark">${data.naik ? '☐' : '☑'}</span>
+								<span>${statusNegatif}</span>
+								<span class="check-mark">${negatifTerpilih ? '☑' : '☐'}</span>
 							</div>
 						</div>
 					</td>

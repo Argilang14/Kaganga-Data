@@ -404,6 +404,20 @@ export const tableCatatanWaliAsrama = sqliteTable(
 	},
 	(table) => [unique().on(table.muridId), index('catatan_wali_asrama_murid_idx').on(table.muridId)]
 );
+export const tableStatusAkhirRapor = sqliteTable(
+	'status_akhir_rapor',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		muridId: int()
+			.references(() => tableMurid.id, { onDelete: 'cascade' })
+			.notNull(),
+		status: text(),
+		tanggalPenetapan: text(),
+		catatan: text(),
+		...audit
+	},
+	(table) => [unique().on(table.muridId), index('status_akhir_rapor_murid_idx').on(table.muridId)]
+);
 export const tableKesehatanMurid = sqliteTable(
 	'kesehatan_murid',
 	{
@@ -467,6 +481,10 @@ export const tableMuridRelations = relations(tableMurid, ({ one, many }) => ({
 		fields: [tableMurid.id],
 		references: [tableCatatanWaliKelas.muridId]
 	}),
+	statusAkhirRapor: one(tableStatusAkhirRapor, {
+		fields: [tableMurid.id],
+		references: [tableStatusAkhirRapor.muridId]
+	}),
 	keputusan: one(tableKeputusanMurid, {
 		fields: [tableMurid.id],
 		references: [tableKeputusanMurid.muridId]
@@ -511,6 +529,12 @@ export const tableCatatanWaliAsramaRelations = relations(tableCatatanWaliAsrama,
 	})
 }));
 
+export const tableStatusAkhirRaporRelations = relations(tableStatusAkhirRapor, ({ one }) => ({
+	murid: one(tableMurid, {
+		fields: [tableStatusAkhirRapor.muridId],
+		references: [tableMurid.id]
+	})
+}));
 export const tableKehadiranMuridRelations = relations(tableKehadiranMurid, ({ one }) => ({
 	murid: one(tableMurid, {
 		fields: [tableKehadiranMurid.muridId],

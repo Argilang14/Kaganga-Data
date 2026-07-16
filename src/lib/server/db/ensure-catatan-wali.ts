@@ -1,4 +1,24 @@
+import db from '$lib/server/db';
 import { ensureSchema } from './ensure-helper';
+let legacyMigrated = false;
+
+async function migrateLegacyKeputusan() {
+	if (legacyMigrated) return;
+	const legacyTable = await db.$client.execute(
+		`SELECT name FROM sqlite_master WHERE type='table' AND name='keputusan_murid'`
+	);
+	if (legacyTable.rows.length) {
+		await db.$client.execute(`
+			INSERT OR IGNORE INTO "status_akhir_rapor"
+				("murid_id", "status", "tanggal_penetapan", "catatan", "created_at", "updated_at")
+			SELECT "murid_id",
+				CASE WHEN "naik" = 1 THEN 'Naik Kelas' ELSE 'Tinggal Kelas' END,
+				'', '', COALESCE("created_at", datetime('now')), "updated_at"
+			FROM "keputusan_murid"
+		`);
+	}
+	legacyMigrated = true;
+}
 
 export async function ensureCatatanWaliSchema() {
 	await ensureSchema('catatan_wali_kelas', [
@@ -39,4 +59,6 @@ export async function ensureCatatanWaliSchema() {
 		`CREATE UNIQUE INDEX IF NOT EXISTS "status_akhir_rapor_murid_unique" ON "status_akhir_rapor" ("murid_id")`,
 		`CREATE INDEX IF NOT EXISTS "status_akhir_rapor_murid_idx" ON "status_akhir_rapor" ("murid_id")`
 	]);
+
+	await migrateLegacyKeputusan();
 }

@@ -4,6 +4,7 @@ import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { ensureDashboardSchema } from '$lib/server/db/ensure-dashboard-schema';
 import {
 	tableAsesmenEkstrakurikuler,
+	tableAsesmenKeasramaan,
 	tableAsesmenSumatif,
 	tableAsesmenKokurikuler,
 	tableBellSettings,
@@ -13,8 +14,12 @@ import {
 	tableKegiatanCustom,
 	tableKelas,
 	tableJadwalPelajaran,
+	tableKeasramaan,
+	tableKeasramaanIndikator,
+	tableKeasramaanTujuan,
 	tableMataPelajaran,
 	tableMurid,
+	tablePegawai,
 	tablePresensiSettings,
 	tableUserFavorites
 } from '$lib/server/db/schema';
@@ -54,6 +59,9 @@ export const load: PageServerLoad = async (event) => {
 		murid: {
 			total: 0
 		},
+		pegawai: {
+			total: 0
+		},
 		mapel: {
 			total: 0,
 			wajib: 0,
@@ -64,11 +72,15 @@ export const load: PageServerLoad = async (event) => {
 		ekstrakurikuler: {
 			total: 0
 		},
+		keasramaan: {
+			total: 0
+		},
 		progress: {
 			akademik: { percentage: 0, completed: 0, total: 0 },
 			absensi: { percentage: 0, completed: 0, total: 0 },
 			ekstrakurikuler: { percentage: 0, completed: 0, total: 0 },
-			kokurikuler: { percentage: 0, completed: 0, total: 0 }
+			kokurikuler: { percentage: 0, completed: 0, total: 0 },
+			keasramaan: { percentage: 0, completed: 0, total: 0 }
 		}
 	};
 
@@ -120,6 +132,13 @@ export const load: PageServerLoad = async (event) => {
 
 	statistikDashboard.murid.total = muridCountRows[0]?.totalMurid ?? 0;
 
+	const pegawaiCountRows = await db
+		.select({ totalPegawai: sql<number>`count(*)` })
+		.from(tablePegawai)
+		.where(eq(tablePegawai.sekolahId, sekolahId));
+
+	statistikDashboard.pegawai.total = pegawaiCountRows[0]?.totalPegawai ?? 0;
+
 	const kelasAktifId = (parentData.kelasAktif ?? null)?.id ?? null;
 
 	if (kelasAktifId) {
@@ -167,6 +186,12 @@ export const load: PageServerLoad = async (event) => {
 			where: eq(tableEkstrakurikuler.kelasId, kelasAktifId)
 		});
 		statistikDashboard.ekstrakurikuler.total = ekstrakurikulerRows.length;
+
+		const keasramaanRows = await db.query.tableKeasramaan.findMany({
+			columns: { id: true },
+			where: eq(tableKeasramaan.kelasId, kelasAktifId)
+		});
+		statistikDashboard.keasramaan.total = keasramaanRows.length;
 
 		// kokurikuler (separate table) — tampilkan jumlahnya di bagian Intrakurikuler
 		const kokurikulerRows = await db.query.tableKokurikuler.findMany({
@@ -256,6 +281,40 @@ export const load: PageServerLoad = async (event) => {
 			kokurCompleted = kokurSet.size;
 		}
 
+		const keasramaanIds = keasramaanRows.map((item) => item.id);
+		let keasramaanCompleted = 0;
+		let expectedKeasramaan = 0;
+		if (totalStudents > 0 && keasramaanIds.length > 0) {
+			const tujuanRows = await db
+				.select({ id: tableKeasramaanTujuan.id })
+				.from(tableKeasramaanTujuan)
+				.innerJoin(
+					tableKeasramaanIndikator,
+					eq(tableKeasramaanTujuan.indikatorId, tableKeasramaanIndikator.id)
+				)
+				.where(inArray(tableKeasramaanIndikator.keasramaanId, keasramaanIds));
+			const tujuanIds = tujuanRows.map((item) => item.id);
+			expectedKeasramaan = totalStudents * tujuanIds.length;
+
+			if (tujuanIds.length > 0) {
+				const asesmenRows = await db
+					.select({
+						muridId: tableAsesmenKeasramaan.muridId,
+						tujuanId: tableAsesmenKeasramaan.tujuanId
+					})
+					.from(tableAsesmenKeasramaan)
+					.where(
+						and(
+							inArray(tableAsesmenKeasramaan.muridId, muridIds),
+							inArray(tableAsesmenKeasramaan.keasramaanId, keasramaanIds),
+							inArray(tableAsesmenKeasramaan.tujuanId, tujuanIds)
+						)
+					);
+				keasramaanCompleted = new Set(asesmenRows.map((item) => item.muridId + ':' + item.tujuanId))
+					.size;
+			}
+		}
+
 		statistikDashboard.progress = {
 			akademik: {
 				completed: akademikCompleted,
@@ -276,6 +335,11 @@ export const load: PageServerLoad = async (event) => {
 				completed: kokurCompleted,
 				total: totalStudents,
 				percentage: calculatePercentage(kokurCompleted, totalStudents)
+			},
+			keasramaan: {
+				completed: keasramaanCompleted,
+				total: expectedKeasramaan,
+				percentage: calculatePercentage(keasramaanCompleted, expectedKeasramaan)
 			}
 		};
 	}

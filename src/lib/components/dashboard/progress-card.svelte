@@ -12,6 +12,7 @@
 			akademik: ProgressItem;
 			ekstrakurikuler: ProgressItem;
 			kokurikuler: ProgressItem;
+			keasramaan: ProgressItem;
 		};
 	}>();
 </script>
@@ -56,6 +57,22 @@
 			></progress>
 			<p class="text-base-content/70 mt-1 text-xs">
 				{progress.ekstrakurikuler.completed} dari {progress.ekstrakurikuler.total} murid sudah dinilai.
+			</p>
+		</div>
+
+		<div>
+			<label class="label" for="progress-keasramaan">
+				<span class="label-text">Nilai Keasramaan</span>
+				<span class="label-text-alt font-semibold">{progress.keasramaan.percentage}%</span>
+			</label>
+			<progress
+				id="progress-keasramaan"
+				class="progress progress-info w-full"
+				value={progress.keasramaan.percentage}
+				max="100"
+			></progress>
+			<p class="text-base-content/70 mt-1 text-xs">
+				{progress.keasramaan.completed} dari {progress.keasramaan.total} penilaian sudah diinput.
 			</p>
 		</div>
 

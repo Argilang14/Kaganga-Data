@@ -3,15 +3,16 @@
 
 	type DashboardStatistik = App.DashboardStatistik;
 
-	let { rombel, murid } = $props<{
+	let { rombel, murid, pegawai } = $props<{
 		rombel: DashboardStatistik['rombel'];
 		murid: DashboardStatistik['murid'];
+		pegawai: DashboardStatistik['pegawai'];
 	}>();
 
 	const rombelBadges = $derived.by(() => rombel.perFase);
 </script>
 
-<div class="stats stats-vertical lg:stats-horizontal bg-base-100 rounded-box w-full shadow-md">
+<div class="stats stats-vertical xl:stats-horizontal bg-base-100 rounded-box w-full shadow-md">
 	<div class="stat justify-center">
 		<div class="stat-figure">
 			<span class="text-accent text-3xl">
@@ -43,5 +44,16 @@
 		<div class="stat-title">Jumlah Total Murid</div>
 		<div class="stat-value">{murid.total}</div>
 		<div class="stat-desc">{murid.total ? 'Aktif' : 'Belum ada data'}</div>
+	</div>
+
+	<div class="stat">
+		<div class="stat-figure text-primary">
+			<span class="text-3xl">
+				<Icon name="briefcase" />
+			</span>
+		</div>
+		<div class="stat-title">Jumlah Total Pegawai</div>
+		<div class="stat-value">{pegawai.total}</div>
+		<div class="stat-desc">{pegawai.total ? 'Terdaftar di sekolah' : 'Belum ada data'}</div>
 	</div>
 </div>

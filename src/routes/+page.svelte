@@ -13,12 +13,15 @@
 		data.statistikDashboard ?? {
 			rombel: { total: 0, perFase: [] },
 			murid: { total: 0 },
+			pegawai: { total: 0 },
 			mapel: { total: 0, wajib: 0, mulok: 0, kokurikuler: 0, lainnya: 0 },
 			ekstrakurikuler: { total: 0 },
+			keasramaan: { total: 0 },
 			progress: {
 				akademik: { percentage: 0, completed: 0, total: 0 },
 				ekstrakurikuler: { percentage: 0, completed: 0, total: 0 },
-				kokurikuler: { percentage: 0, completed: 0, total: 0 }
+				kokurikuler: { percentage: 0, completed: 0, total: 0 },
+				keasramaan: { percentage: 0, completed: 0, total: 0 }
 			}
 		}
 	);
@@ -29,10 +32,12 @@
 		statistikDashboard.progress ?? {
 			akademik: { percentage: 0, completed: 0, total: 0 },
 			ekstrakurikuler: { percentage: 0, completed: 0, total: 0 },
-			kokurikuler: { percentage: 0, completed: 0, total: 0 }
+			kokurikuler: { percentage: 0, completed: 0, total: 0 },
+			keasramaan: { percentage: 0, completed: 0, total: 0 }
 		}
 	);
 	const ekstrakurikulerStats = $derived(statistikDashboard.ekstrakurikuler ?? { total: 0 });
+	const keasramaanStats = $derived(statistikDashboard.keasramaan ?? { total: 0 });
 	const bellActive = $derived(data.bellActive ?? false);
 	const hariSekolah = $derived((data.hariSekolah as number) ?? 6);
 	const liburNasional = $derived((data.liburNasional as string[]) ?? []);
@@ -247,8 +252,16 @@
 	<!-- Kolom 1: Data Utama & Statistik -->
 	<div class="flex flex-col gap-4">
 		<SekolahOverviewCard {sekolah} />
-		<RombelMuridStats rombel={statistikDashboard.rombel} murid={statistikDashboard.murid} />
-		<MapelEkstrakurikulerStats mapel={mapelStats} ekstrakurikuler={ekstrakurikulerStats} />
+		<RombelMuridStats
+			rombel={statistikDashboard.rombel}
+			murid={statistikDashboard.murid}
+			pegawai={statistikDashboard.pegawai}
+		/>
+		<MapelEkstrakurikulerStats
+			mapel={mapelStats}
+			ekstrakurikuler={ekstrakurikulerStats}
+			keasramaan={keasramaanStats}
+		/>
 	</div>
 
 	<!-- Kolom 2: Progress & Aksi -->

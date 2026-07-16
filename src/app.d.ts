@@ -10,6 +10,9 @@ declare global {
 			murid: {
 				total: number;
 			};
+			pegawai: {
+				total: number;
+			};
 		};
 		// interface Error {}
 		interface Locals {

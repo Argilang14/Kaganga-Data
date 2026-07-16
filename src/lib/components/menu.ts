@@ -9,7 +9,7 @@ export const appMenuItems: MenuItem[] = [
 			},
 			{
 				title: 'Data Rapor',
-				path: '/rapor'
+				path: '/akademik'
 			},
 			{
 				title: 'Data Pegawai',

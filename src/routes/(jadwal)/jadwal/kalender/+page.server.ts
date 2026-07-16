@@ -132,13 +132,32 @@ function academicYears(tahunAjaranNama?: string | null) {
 	return { start: current, end: current + 1 };
 }
 
-function calendarYearRange(tahunAjaranNama?: string | null) {
+function calendarPeriodRange(
+	tahunAjaranNama?: string | null,
+	semesterTipe?: 'ganjil' | 'genap' | null
+) {
 	const years = academicYears(tahunAjaranNama);
+	if (semesterTipe === 'ganjil') {
+		return {
+			start: years.start + '-07-01',
+			end: years.start + '-12-31',
+			year: years.start,
+			label: 'Semester Ganjil ' + years.start + '/' + years.end
+		};
+	}
+	if (semesterTipe === 'genap') {
+		return {
+			start: years.end + '-01-01',
+			end: years.end + '-06-30',
+			year: years.end,
+			label: 'Semester Genap ' + years.start + '/' + years.end
+		};
+	}
 	return {
-		start: `${years.start}-07-01`,
-		end: `${years.end}-06-30`,
+		start: years.start + '-07-01',
+		end: years.end + '-06-30',
 		year: years.start,
-		label: `${years.start}/${years.end}`
+		label: years.start + '/' + years.end
 	};
 }
 
@@ -154,7 +173,6 @@ export async function load({ locals, url }) {
 	const requestedTahunAjaranId = nullablePositiveInteger(url.searchParams.get('tahun_ajaran_id'));
 	const requestedSemesterId = nullablePositiveInteger(url.searchParams.get('semester_id'));
 	const selectedTahunAjaranId = requestedTahunAjaranId ?? academic.activeTahunAjaranId;
-	const selectedSemesterId = requestedSemesterId;
 	const selectedKelasId = resolveKelasId(
 		kelasList,
 		nullablePositiveInteger(url.searchParams.get('kelas_id'))
@@ -172,7 +190,18 @@ export async function load({ locals, url }) {
 				)
 			})
 		: null;
-	const calendarRange = calendarYearRange(selectedTahunAjaran?.nama);
+	const selectedSemester =
+		requestedSemesterId && selectedTahunAjaranId
+			? await db.query.tableSemester.findFirst({
+					columns: { id: true, tipe: true },
+					where: and(
+						eq(tableSemester.id, requestedSemesterId),
+						eq(tableSemester.tahunAjaranId, selectedTahunAjaranId)
+					)
+				})
+			: null;
+	const selectedSemesterId = selectedSemester?.id ?? null;
+	const calendarRange = calendarPeriodRange(selectedTahunAjaran?.nama, selectedSemester?.tipe);
 
 	const whereParts = [eq(tableKalenderPendidikan.sekolahId, sekolahId)];
 	whereParts.push(
@@ -185,6 +214,12 @@ export async function load({ locals, url }) {
 				gte(tableKalenderPendidikan.tanggalSelesai, calendarRange.start)
 			)
 		)!
+	);
+	whereParts.push(
+		and(
+			lte(tableKalenderPendidikan.tanggalMulai, calendarRange.end),
+			gte(tableKalenderPendidikan.tanggalSelesai, calendarRange.start)
+		)
 	);
 	if (selectedSemesterId)
 		whereParts.push(
@@ -547,6 +582,3 @@ export const actions = {
 		return { message: `${ids.length} agenda kalender berhasil dihapus.` };
 	}
 };
-
-
-

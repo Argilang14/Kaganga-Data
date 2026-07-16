@@ -100,12 +100,21 @@
 		data.semesterList.find((item) => item.id === data.selectedSemesterId) ?? null
 	);
 	const previewSemesterTipe = $derived(resolveSemesterTipe(selectedSemester));
+	const previewPeriodeMode = $derived(
+		selectedSemester
+			? previewSemesterTipe === 'genap'
+				? 'semester_genap'
+				: 'semester_ganjil'
+			: 'tahun_ajaran'
+	);
 	const previewPeriodeLabel = $derived.by(() =>
 		selectedSemester
 			? `Semester ${previewSemesterTipe === 'ganjil' ? 'Ganjil' : 'Genap'} Tahun Ajaran ${selectedTahunAjaran?.nama ?? '-'}`
 			: `Tahun Ajaran ${selectedTahunAjaran?.nama ?? '-'}`
 	);
-	const previewMonths = $derived.by(() => buildAcademicYearMonths(selectedTahunAjaran?.nama));
+	const previewMonths = $derived.by(() =>
+		buildAcademicPeriodMonths(selectedTahunAjaran?.nama, selectedSemester)
+	);
 	const previewHariEfektif = $derived.by(() => countHariEfektif(previewMonths));
 	const previewMingguEfektif = $derived(Math.ceil(previewHariEfektif / 5));
 	const dayLabels = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
@@ -155,7 +164,7 @@
 		return queryHref('/api/jadwal/kalender/template', {
 			tahun_ajaran_id: data.selectedTahunAjaranId,
 			semester_id: data.selectedSemesterId,
-			periode_mode: 'tahun_kalender'
+			periode_mode: previewPeriodeMode
 		});
 	}
 
@@ -163,7 +172,7 @@
 		return queryHref('/api/jadwal/kalender/export', {
 			tahun_ajaran_id: data.selectedTahunAjaranId,
 			semester_id: data.selectedSemesterId,
-			periode_mode: 'tahun_kalender',
+			periode_mode: previewPeriodeMode,
 			kelas_id: data.selectedKelasId,
 			jenis: data.selectedJenis,
 			jenjang: data.selectedJenjang
@@ -212,8 +221,21 @@
 		}));
 	}
 
-	function buildAcademicYearMonths(tahunAjaranNama?: string | null) {
+	function buildAcademicPeriodMonths(
+		tahunAjaranNama?: string | null,
+		semester: Semester | null = null
+	) {
 		const years = academicYears(tahunAjaranNama);
+		if (semester && resolveSemesterTipe(semester) === 'ganjil') {
+			return buildMonthItems(
+				Array.from({ length: 6 }, (_, index) => ({ year: years.start, month: index + 6 }))
+			);
+		}
+		if (semester && resolveSemesterTipe(semester) === 'genap') {
+			return buildMonthItems(
+				Array.from({ length: 6 }, (_, index) => ({ year: years.end, month: index }))
+			);
+		}
 		return buildMonthItems([
 			...Array.from({ length: 6 }, (_, index) => ({ year: years.start, month: index + 6 })),
 			...Array.from({ length: 6 }, (_, index) => ({ year: years.end, month: index }))
@@ -313,7 +335,7 @@
 		);
 	}
 
-	function countHariEfektif(months: ReturnType<typeof buildAcademicYearMonths>) {
+	function countHariEfektif(months: ReturnType<typeof buildAcademicPeriodMonths>) {
 		let total = 0;
 		for (const item of months) {
 			const days = new Date(item.year, item.month + 1, 0).getDate();

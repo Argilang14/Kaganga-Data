@@ -35,12 +35,12 @@ export const appMenuItems: MenuItem[] = [
 		tags: ['jadwal', 'bell', 'akademik', 'jadwal pelajaran'],
 		subMenu: [
 			{
-				title: 'Jadwal Pelajaran',
-				path: '/rapor/jadwal-pelajaran'
+				title: 'Data Mata Pelajaran',
+				path: '/data-mata-pelajaran'
 			},
 			{
-				title: 'Jurnal Mengajar',
-				path: '/jurnal-mengajar'
+				title: 'Jadwal Pelajaran',
+				path: '/rapor/jadwal-pelajaran'
 			},
 			{
 				title: 'Pengaturan Jadwal',
@@ -51,8 +51,8 @@ export const appMenuItems: MenuItem[] = [
 				path: '/jadwal/kalender'
 			},
 			{
-				title: 'Data Mata Pelajaran',
-				path: '/data-mata-pelajaran'
+				title: 'Jurnal Mengajar',
+				path: '/jurnal-mengajar'
 			}
 		]
 	},
@@ -182,4 +182,3 @@ export const appMenuItems: MenuItem[] = [
 		path: '/cetak-sr'
 	}
 ];
-

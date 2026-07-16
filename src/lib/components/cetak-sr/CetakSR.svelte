@@ -107,6 +107,9 @@
 		tahunAjaranList.find((tahun) => tahun.id === selectedPrintTahunAjaranId) ?? null
 	);
 	const kalenderSemesterOptions = $derived(selectedPrintTahun?.semester ?? []);
+	const selectedKalenderSemester = $derived(
+		kalenderSemesterOptions.find((semester) => semester.id === selectedKalenderSemesterId) ?? null
+	);
 	const jadwalSourceHref = $derived(
 		`/rapor/jadwal-pelajaran?tahunAjaranId=${selectedPrintTahunAjaranId ?? ''}&jenis=${selectedJadwalJenis}`
 	);
@@ -121,6 +124,15 @@
 		) {
 			selectedKalenderSemesterId = kalenderSemesterOptions[0]?.id ?? null;
 		}
+	});
+
+	$effect(() => {
+		const semester = selectedKalenderSemester;
+		selectedKalenderPeriode = semester
+			? semester.tipe === 'genap'
+				? 'semester_genap'
+				: 'semester_ganjil'
+			: 'tahun_ajaran';
 	});
 
 	let pdfViewerUrl = $state('');

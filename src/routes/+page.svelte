@@ -248,7 +248,7 @@
 <BellStatus {bellActive} {hariIni} {nextEventMessage} class="alert alert-info alert-soft mb-4" />
 
 <!-- Kontainer Utama Grid -->
-<div class="grid w-full grid-cols-1 gap-4 md:grid-cols-2">
+<div class="grid w-full grid-cols-1 gap-4 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
 	<!-- Kolom 1: Data Utama & Statistik -->
 	<div class="flex flex-col gap-4">
 		<SekolahOverviewCard {sekolah} />

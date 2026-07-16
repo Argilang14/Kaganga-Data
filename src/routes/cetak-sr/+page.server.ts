@@ -1,4 +1,7 @@
+import db from '$lib/server/db';
+import { tableSemester, tableTahunAjaran } from '$lib/server/db/schema';
 import { computeNilaiAkhirRekap } from '$lib/server/nilai-akhir';
+import { and, eq } from 'drizzle-orm';
 import { buildKelasContext, fetchMuridList } from '$lib/server/route-utils';
 
 export async function load({ locals, url, depends, parent }) {
@@ -25,6 +28,24 @@ export async function load({ locals, url, depends, parent }) {
 		activeSemesterId: academicContext?.activeSemesterId ?? null,
 		activeSemesterTipe: academicContext?.activeSemesterTipe ?? null
 	};
+	const activeSemester = sekolahId
+		? await db
+				.select({
+					tanggalMasuk: tableSemester.tanggalMasuk,
+					tanggalMulai: tableSemester.tanggalMulai,
+					tanggalBagiRaport: tableSemester.tanggalBagiRaport,
+					tanggalSelesai: tableSemester.tanggalSelesai
+				})
+				.from(tableSemester)
+				.innerJoin(tableTahunAjaran, eq(tableSemester.tahunAjaranId, tableTahunAjaran.id))
+				.where(and(eq(tableTahunAjaran.sekolahId, sekolahId), eq(tableSemester.isAktif, true)))
+				.limit(1)
+				.then((rows) => rows[0])
+		: null;
+	const jurnalPeriod = {
+		tanggalMasuk: activeSemester?.tanggalMasuk ?? activeSemester?.tanggalMulai ?? '',
+		tanggalBagiRaport: activeSemester?.tanggalBagiRaport ?? activeSemester?.tanggalSelesai ?? ''
+	};
 
 	if (!sekolahId || !kelasIds.length) {
 		return {
@@ -33,7 +54,8 @@ export async function load({ locals, url, depends, parent }) {
 			daftarMurid: [],
 			muridCount: 0,
 			piagamRankingOptions: [],
-			...printContext
+			...printContext,
+			...jurnalPeriod
 		};
 	}
 
@@ -65,6 +87,7 @@ export async function load({ locals, url, depends, parent }) {
 		daftarMurid,
 		muridCount: daftarMurid.length,
 		piagamRankingOptions,
-		...printContext
+		...printContext,
+		...jurnalPeriod
 	};
 }

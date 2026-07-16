@@ -32,6 +32,8 @@
 			activeTahunAjaranId?: number | null;
 			activeSemesterId?: number | null;
 			activeSemesterTipe?: string | null;
+			tanggalMasuk?: string;
+			tanggalBagiRaport?: string;
 			daftarMurid?: Array<{ id: number; nama: string; nis?: string | null; nisn?: string | null }>;
 			piagamRankingOptions?: Array<{
 				muridId: number;
@@ -57,7 +59,8 @@
 		{ value: 'keasramaan', label: 'Rapor Keasramaan' },
 		{ value: 'kartu-absensi', label: 'Kartu Absensi Murid' },
 		{ value: 'jadwal-pelajaran', label: 'Jadwal Pelajaran' },
-		{ value: 'kalender-pendidikan', label: 'Kalender Pendidikan' }
+		{ value: 'kalender-pendidikan', label: 'Kalender Pendidikan' },
+		{ value: 'jurnal-mengajar', label: 'Jurnal Mengajar' }
 	];
 	const currentUserType = $derived((page.data.user as { type?: string } | null | undefined)?.type);
 	const visibleDocumentOptions = $derived.by(() => {
@@ -86,6 +89,8 @@
 	let previewError = $state<string | null>(null);
 	let showBgLogo = $state(true);
 	let downloadLoading = $state(false);
+	let jurnalTanggalMulai = $state('');
+	let jurnalTanggalSelesai = $state('');
 	let selectedJadwalOrientation = $state<'landscape' | 'portrait'>('landscape');
 	let selectedJadwalJenjang = $state<'semua' | 'srd' | 'srmp' | 'srma'>('semua');
 	let selectedKalenderPeriode = $state<
@@ -151,6 +156,8 @@
 	// Load persisted criteria from localStorage (if available)
 	// Load persisted criteria from server (if available). Falls back to defaults.
 	onMount(async () => {
+		jurnalTanggalMulai = data.tanggalMasuk ?? '';
+		jurnalTanggalSelesai = data.tanggalBagiRaport ?? '';
 		try {
 			const res = await fetch('/api/sekolah/rapor-kriteria');
 			if (res.ok) {
@@ -202,8 +209,17 @@
 	const isPiagamSelected = $derived.by(() => selectedDocument === 'piagam');
 	const isJadwalSelected = $derived.by(() => selectedDocument === 'jadwal-pelajaran');
 	const isKalenderSelected = $derived.by(() => selectedDocument === 'kalender-pendidikan');
+	const isJurnalSelected = $derived.by(() => selectedDocument === 'jurnal-mengajar');
+	const hasValidJurnalPeriod = $derived.by(
+		() =>
+			Boolean(jurnalTanggalMulai && jurnalTanggalSelesai) &&
+			jurnalTanggalMulai <= jurnalTanggalSelesai
+	);
 	const documentNeedsMurid = $derived.by(
-		() => selectedDocument !== 'jadwal-pelajaran' && selectedDocument !== 'kalender-pendidikan'
+		() =>
+			selectedDocument !== 'jadwal-pelajaran' &&
+			selectedDocument !== 'kalender-pendidikan' &&
+			selectedDocument !== 'jurnal-mengajar'
 	);
 	const navigationMuridIds = $derived.by(() => {
 		if (isPiagamSelected) {
@@ -221,6 +237,7 @@
 	);
 	const hasSelectionOptions = $derived.by(() => {
 		if (isJadwalSelected || isKalenderSelected) return true;
+		if (isJurnalSelected) return hasValidJurnalPeriod;
 		return isPiagamSelected ? hasPiagamRankingOptions : hasMurid;
 	});
 	const canNavigateMurid = $derived.by(() => {
@@ -319,6 +336,11 @@
 		if (downloadLoading) return 'Sedang membuat PDF...';
 		if (isJadwalSelected) return 'Preview PDF Jadwal Pelajaran';
 		if (isKalenderSelected) return 'Preview PDF Kalender Pendidikan';
+		if (isJurnalSelected) {
+			return hasValidJurnalPeriod
+				? 'Preview PDF Jurnal Mengajar'
+				: 'Pilih rentang tanggal jurnal yang valid';
+		}
 		return `Download PDF ${selectedDocumentEntry?.label ?? 'dokumen'} untuk ${selectedMurid?.nama ?? ''}`;
 	});
 
@@ -357,14 +379,20 @@
 		}
 		if (!hasSelectionOptions) {
 			const message =
-				documentType === 'piagam'
-					? 'Tidak ada data peringkat piagam untuk kelas ini.'
-					: 'Tidak ada murid di kelas ini.';
+				documentType === 'jurnal-mengajar'
+					? 'Pilih rentang tanggal jurnal yang valid.'
+					: documentType === 'piagam'
+						? 'Tidak ada data peringkat piagam untuk kelas ini.'
+						: 'Tidak ada murid di kelas ini.';
 			toast(message, 'warning');
 			return;
 		}
 		const murid = selectedMurid;
-		if (documentType === 'jadwal-pelajaran' || documentType === 'kalender-pendidikan') {
+		if (
+			documentType === 'jadwal-pelajaran' ||
+			documentType === 'kalender-pendidikan' ||
+			documentType === 'jurnal-mengajar'
+		) {
 			await loadPdf(null);
 			return;
 		}
@@ -390,6 +418,22 @@
 		if (!documentType) return;
 		downloadLoading = true;
 		try {
+			if (documentType === 'jurnal-mengajar') {
+				const params = new URLSearchParams({
+					tanggal_mulai: jurnalTanggalMulai,
+					tanggal_selesai: jurnalTanggalSelesai
+				});
+				const pdfRes = await fetch(`/api/pdf/jurnal-mengajar?${params}`);
+				if (!pdfRes.ok) throw new Error('Gagal memuat PDF Jurnal Mengajar');
+				const blob = await pdfRes.blob();
+				if (pdfViewerUrl) URL.revokeObjectURL(pdfViewerUrl);
+				pdfViewerUrl = URL.createObjectURL(blob);
+				pdfViewerTitle = `Jurnal Mengajar ${jurnalTanggalMulai} - ${jurnalTanggalSelesai}`;
+				await scrollToViewer();
+				toast('PDF Jurnal Mengajar berhasil dimuat', 'success');
+				return;
+			}
+
 			const res = await fetch('/api/pdf/token', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -469,6 +513,10 @@
 
 	async function handleDownloadBulk() {
 		const documentType = selectedDocument;
+		if (documentType === 'jurnal-mengajar') {
+			toast('Jurnal Mengajar dicetak berdasarkan akun guru, bukan per murid.', 'warning');
+			return;
+		}
 		if (!documentType) {
 			toast('Pilih dokumen terlebih dahulu', 'warning');
 			return;
@@ -732,6 +780,21 @@
 		</div>
 	{/if}
 
+	{#if selectedDocument === 'jurnal-mengajar'}
+		<div class="border-base-300 bg-base-200/30 mt-3 grid gap-3 rounded-lg border p-3 md:grid-cols-[1fr_1fr_auto]">
+			<label class="form-control">
+				<span class="label-text mb-1">Tanggal Mulai</span>
+				<input class="input input-bordered bg-base-100 w-full" type="date" bind:value={jurnalTanggalMulai} />
+			</label>
+			<label class="form-control">
+				<span class="label-text mb-1">Tanggal Selesai</span>
+				<input class="input input-bordered bg-base-100 w-full" type="date" bind:value={jurnalTanggalSelesai} />
+			</label>
+			<div class="flex items-end">
+				<a class="btn btn-outline h-12 min-h-12 w-full md:w-auto" href="/jurnal-mengajar">Buka sumber di Kurikulum</a>
+			</div>
+		</div>
+	{/if}
 	<PreviewFooter
 		{hasMurid}
 		{muridCount}

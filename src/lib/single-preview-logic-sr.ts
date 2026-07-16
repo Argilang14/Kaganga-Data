@@ -24,7 +24,8 @@ export type DocumentType =
 	| 'keasramaan'
 	| 'kartu-absensi'
 	| 'jadwal-pelajaran'
-	| 'kalender-pendidikan';
+	| 'kalender-pendidikan'
+	| 'jurnal-mengajar';
 
 export type { PreviewPayload } from '$lib/preview-types-sr';
 
@@ -57,7 +58,8 @@ const DOCUMENT_PATHS: Record<DocumentType, string> = {
 	keasramaan: '/cetak/keasramaan',
 	'kartu-absensi': '/cetak/kartu-absensi',
 	'jadwal-pelajaran': '/cetak/jadwal-pelajaran',
-	'kalender-pendidikan': '/cetak/kalender-pendidikan'
+	'kalender-pendidikan': '/cetak/kalender-pendidikan',
+	'jurnal-mengajar': '/api/pdf/jurnal-mengajar'
 };
 
 const DOCUMENT_LABELS: Record<DocumentType, string> = {
@@ -68,7 +70,8 @@ const DOCUMENT_LABELS: Record<DocumentType, string> = {
 	keasramaan: 'Rapor Keasramaan',
 	'kartu-absensi': 'Kartu Absensi Murid',
 	'jadwal-pelajaran': 'Jadwal Pelajaran',
-	'kalender-pendidikan': 'Kalender Pendidikan'
+	'kalender-pendidikan': 'Kalender Pendidikan',
+	'jurnal-mengajar': 'Jurnal Mengajar'
 };
 
 export async function loadSinglePreview(
@@ -130,7 +133,8 @@ export function isPreviewableDocument(value: DocumentType | ''): value is Docume
 		value === 'keasramaan' ||
 		value === 'kartu-absensi' ||
 		value === 'jadwal-pelajaran' ||
-		value === 'kalender-pendidikan'
+		value === 'kalender-pendidikan' ||
+		value === 'jurnal-mengajar'
 	);
 }
 

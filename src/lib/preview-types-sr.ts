@@ -1,4 +1,4 @@
-﻿// Shared Types for Preview System
+// Shared Types for Preview System
 
 export type DocumentType =
 	| 'cover'
@@ -8,7 +8,8 @@ export type DocumentType =
 	| 'keasramaan'
 	| 'kartu-absensi'
 	| 'jadwal-pelajaran'
-	| 'kalender-pendidikan';
+	| 'kalender-pendidikan'
+	| 'jurnal-mengajar';
 
 export type MuridData = {
 	id: number;

@@ -43,7 +43,8 @@ const DOCUMENT_PATHS: Record<DocumentType, string> = {
 	keasramaan: '/cetak/keasramaan',
 	'kartu-absensi': '/cetak/kartu-absensi',
 	'jadwal-pelajaran': '/cetak/jadwal-pelajaran',
-	'kalender-pendidikan': '/cetak/kalender-pendidikan'
+	'kalender-pendidikan': '/cetak/kalender-pendidikan',
+	'jurnal-mengajar': '/api/pdf/jurnal-mengajar'
 };
 
 /**

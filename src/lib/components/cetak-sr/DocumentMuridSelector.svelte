@@ -9,7 +9,8 @@
 		| 'keasramaan'
 		| 'kartu-absensi'
 		| 'jadwal-pelajaran'
-		| 'kalender-pendidikan';
+		| 'kalender-pendidikan'
+	| 'jurnal-mengajar';
 	type RaporPeriode = 'rts' | 'ras';
 
 	type MuridData = {
@@ -41,7 +42,8 @@
 			{ value: 'keasramaan', label: 'Rapor Keasramaan' },
 			{ value: 'kartu-absensi', label: 'Kartu Absensi Murid' },
 			{ value: 'jadwal-pelajaran', label: 'Jadwal Pelajaran' },
-			{ value: 'kalender-pendidikan', label: 'Kalender Pendidikan' }
+			{ value: 'kalender-pendidikan', label: 'Kalender Pendidikan' },
+			{ value: 'jurnal-mengajar', label: 'Jurnal Mengajar' }
 		],
 		onDownload,
 		onBulkDownload,
@@ -67,6 +69,7 @@
 	const isKartuAbsensiSelected = $derived.by(() => selectedDocument === 'kartu-absensi');
 	const isJadwalSelected = $derived.by(() => selectedDocument === 'jadwal-pelajaran');
 	const isKalenderSelected = $derived.by(() => selectedDocument === 'kalender-pendidikan');
+	const isJurnalSelected = $derived.by(() => selectedDocument === 'jurnal-mengajar');
 	const hasMurid = $derived.by(() => daftarMurid.length > 0);
 	const hasPiagamRankingOptions = $derived.by(() => piagamRankingOptions.length > 0);
 
@@ -90,7 +93,7 @@
 	);
 
 	const hasSelectionOptions = $derived.by(() => {
-		if (isJadwalSelected || isKalenderSelected) return true;
+		if (isJadwalSelected || isKalenderSelected || isJurnalSelected) return true;
 		return isPiagamSelected ? hasPiagamRankingOptions : hasMurid;
 	});
 </script>
@@ -139,7 +142,7 @@
 				<option value={option.value}>{option.label}</option>
 			{/each}
 		</select>
-	{:else if !isJadwalSelected && !isKalenderSelected}
+	{:else if !isJadwalSelected && !isKalenderSelected && !isJurnalSelected}
 		<select
 			class="select bg-base-200 w-full dark:border-none"
 			bind:value={selectedMuridId}
@@ -195,7 +198,8 @@
 						disabled={!selectedDocument ||
 							!hasSelectionOptions ||
 							isJadwalSelected ||
-							isKalenderSelected}
+							isKalenderSelected ||
+							isJurnalSelected}
 					>
 						{isKartuAbsensiSelected ? 'Cetak Tabel Kartu' : 'Semua Murid'}
 					</button>

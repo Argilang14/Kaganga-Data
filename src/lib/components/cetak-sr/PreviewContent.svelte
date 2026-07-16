@@ -9,7 +9,8 @@
 		| 'keasramaan'
 		| 'kartu-absensi'
 		| 'jadwal-pelajaran'
-		| 'kalender-pendidikan';
+		| 'kalender-pendidikan'
+	| 'jurnal-mengajar';
 
 	type PreviewPayload = {
 		meta?: { title?: string | null } | null;

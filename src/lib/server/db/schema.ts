@@ -1787,6 +1787,7 @@ export const tableJurnalMengajar = sqliteTable(
 		tujuanPembelajaranId: int().references(() => tableTujuanPembelajaran.id, {
 			onDelete: 'set null'
 		}),
+		tujuanPembelajaranManual: text(),
 		catatan: text(),
 		...audit
 	},

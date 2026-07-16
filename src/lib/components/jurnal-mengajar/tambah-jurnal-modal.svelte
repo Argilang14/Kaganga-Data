@@ -21,6 +21,7 @@
 		mataPelajaranId: number;
 		lingkupMateri: string;
 		tujuanPembelajaranId: number | null;
+		tujuanPembelajaranManual: string;
 		catatan: string;
 	}
 
@@ -44,41 +45,49 @@
 		mapelId,
 		mataPelajaranList,
 		tujuanPembelajaranList,
-		lingkupMateriList,
-		userType,
 		onAction,
 		onSuccess
 	}: Props = $props();
 
+	type TujuanMode = 'data' | 'manual';
+
 	const defaultKelasId = $derived(editData?.kelasId ?? kelasId ?? 0);
 	const defaultMapelId = $derived(editData?.mataPelajaranId ?? mapelId ?? 0);
 
-	// Form state
 	let formKelasId = $state(defaultKelasId);
 	let formMapelId = $state(defaultMapelId);
 	let formLingkupMateri = $state(editData?.lingkupMateri ?? '');
 	let formTujuanPembelajaranId = $state(editData?.tujuanPembelajaranId ?? null);
+	let formTujuanPembelajaranManual = $state(editData?.tujuanPembelajaranManual ?? '');
 	let formCatatan = $state(editData?.catatan ?? '');
+	let tujuanMode = $state<TujuanMode>(editData?.tujuanPembelajaranManual ? 'manual' : 'data');
 
 	const formId = 'tambah-jurnal-form';
 
 	const filteredLingkupMateri = $derived.by(() => {
-		const set = new Set<string>();
+		const values = new Set<string>();
 		for (const tp of tujuanPembelajaranList) {
 			if (formMapelId && tp.mataPelajaranId === formMapelId && tp.lingkupMateri) {
-				set.add(tp.lingkupMateri);
+				values.add(tp.lingkupMateri);
 			}
 		}
-		return Array.from(set).sort();
+		return Array.from(values).sort();
 	});
 
-	const filteredTujuanPembelajaran = $derived.by(() => {
-		return tujuanPembelajaranList.filter(
-			(tp) =>
-				tp.lingkupMateri === formLingkupMateri &&
-				(formMapelId === 0 || tp.mataPelajaranId === formMapelId)
-		);
-	});
+	const filteredTujuanPembelajaran = $derived.by(() =>
+		tujuanPembelajaranList.filter(
+			(tp) => tp.lingkupMateri === formLingkupMateri && tp.mataPelajaranId === formMapelId
+		)
+	);
+
+	function setTujuanMode(mode: TujuanMode) {
+		tujuanMode = mode;
+		if (mode === 'data') {
+			formTujuanPembelajaranManual = '';
+		} else {
+			formTujuanPembelajaranId = null;
+		}
+	}
 
 	function handleSuccess({ data }: { form: HTMLFormElement; data?: Record<string, unknown> }) {
 		void onSuccess?.({ data });
@@ -90,21 +99,10 @@
 		});
 	});
 
-	// When mapel changes, reset lingkupMateri if current selection is invalid
 	$effect(() => {
-		if (formLingkupMateri && !filteredLingkupMateri.includes(formLingkupMateri)) {
-			formLingkupMateri = '';
-			formTujuanPembelajaranId = null;
-		}
-	});
-
-	// When lingkup materi changes, reset TP if current TP doesn't belong to the new lingkup
-	$effect(() => {
-		if (formLingkupMateri && formTujuanPembelajaranId) {
+		if (tujuanMode === 'data' && formTujuanPembelajaranId) {
 			const valid = filteredTujuanPembelajaran.some((tp) => tp.id === formTujuanPembelajaranId);
-			if (!valid) {
-				formTujuanPembelajaranId = null;
-			}
+			if (!valid) formTujuanPembelajaranId = null;
 		}
 	});
 </script>
@@ -119,12 +117,16 @@
 			<fieldset class="fieldset">
 				<legend class="fieldset-legend">Mata Pelajaran</legend>
 				<select
-					class="select w-full dark:border-none dark:bg-base-300 bg-base-200"
+					class="select bg-base-200 dark:bg-base-300 w-full dark:border-none"
 					name="mataPelajaranId"
 					value={formMapelId}
 					onchange={(e) => {
-						formMapelId = Number((e.currentTarget as HTMLSelectElement).value);
+						formMapelId = Number(e.currentTarget.value);
+						formLingkupMateri = '';
+						formTujuanPembelajaranId = null;
+						formTujuanPembelajaranManual = '';
 					}}
+					required
 				>
 					<option value="" disabled>Pilih Mata Pelajaran</option>
 					{#each mataPelajaranList as mp}
@@ -136,56 +138,81 @@
 
 		<fieldset class="fieldset">
 			<legend class="fieldset-legend">Lingkup Materi</legend>
-			<select
-				class="select w-full dark:border-none dark:bg-base-300 bg-base-200"
+			<input
+				class="input bg-base-200 dark:bg-base-300 w-full dark:border-none"
 				name="lingkupMateri"
+				list="lingkup-materi-options"
 				value={formLingkupMateri}
-				onchange={(e) => {
-					formLingkupMateri = (e.currentTarget as HTMLSelectElement).value;
+				oninput={(e) => {
+					formLingkupMateri = e.currentTarget.value;
 				}}
+				maxlength="500"
+				placeholder="Pilih atau tulis lingkup materi"
 				required
-			>
-				<option value="" disabled>Pilih Lingkup Materi</option>
-				{#each filteredLingkupMateri as lm}
-					<option value={lm}>{lm}</option>
+			/>
+			<datalist id="lingkup-materi-options">
+				{#each filteredLingkupMateri as lingkupMateri}
+					<option value={lingkupMateri}></option>
 				{/each}
-			</select>
+			</datalist>
 		</fieldset>
 
 		<fieldset class="fieldset">
 			<legend class="fieldset-legend">Tujuan Pembelajaran</legend>
-			<select
-				class="select w-full dark:border-none dark:bg-base-300 bg-base-200"
-				name="tujuanPembelajaranId"
-				value={formTujuanPembelajaranId ?? ''}
-				onchange={(e) => {
-					const val = (e.currentTarget as HTMLSelectElement).value;
-					formTujuanPembelajaranId = val ? Number(val) : null;
-				}}
-			>
-				<option value="">Pilih Tujuan Pembelajaran</option>
-				{#each filteredTujuanPembelajaran as tp}
-					<option value={tp.id}>{tp.deskripsi}</option>
-				{/each}
-			</select>
-			{#if !formLingkupMateri}
-				<p class="label">Pilih lingkup materi terlebih dahulu</p>
+			<div class="join mb-2 w-full" role="group" aria-label="Sumber tujuan pembelajaran">
+				<button type="button" class="btn join-item flex-1 shadow-none" class:btn-active={tujuanMode === 'data'} onclick={() => setTujuanMode('data')}>Pilih Data</button>
+				<button type="button" class="btn join-item flex-1 shadow-none" class:btn-active={tujuanMode === 'manual'} onclick={() => setTujuanMode('manual')}>Isi Manual</button>
+			</div>
+
+			{#if tujuanMode === 'data'}
+				<select
+					class="select bg-base-200 dark:bg-base-300 w-full dark:border-none"
+					name="tujuanPembelajaranId"
+					value={formTujuanPembelajaranId ?? ''}
+					onchange={(e) => {
+						const value = e.currentTarget.value;
+						formTujuanPembelajaranId = value ? Number(value) : null;
+					}}
+				>
+					<option value="">Tanpa tujuan pembelajaran</option>
+					{#each filteredTujuanPembelajaran as tp}
+						<option value={tp.id}>{tp.deskripsi}</option>
+					{/each}
+				</select>
+				{#if !formLingkupMateri}
+					<p class="label">Isi lingkup materi terlebih dahulu</p>
+				{/if}
+			{:else}
+				<textarea
+					class="textarea bg-base-200 dark:bg-base-300 w-full dark:border-none"
+					name="tujuanPembelajaranManual"
+					rows="3"
+					maxlength="500"
+					value={formTujuanPembelajaranManual}
+					oninput={(e) => {
+						formTujuanPembelajaranManual = e.currentTarget.value;
+					}}
+					placeholder="Tuliskan tujuan pembelajaran"
+					spellcheck="false"
+				></textarea>
+				<p class="label">{formTujuanPembelajaranManual.length}/500 karakter</p>
 			{/if}
 		</fieldset>
 
 		<fieldset class="fieldset">
 			<legend class="fieldset-legend">Catatan</legend>
 			<textarea
-				class="textarea w-full dark:border-none dark:bg-base-300 bg-base-200"
+				class="textarea bg-base-200 dark:bg-base-300 w-full dark:border-none"
 				name="catatan"
 				rows="3"
 				maxlength="300"
 				value={formCatatan}
 				oninput={(e) => {
-					formCatatan = (e.currentTarget as HTMLTextAreaElement).value;
+					formCatatan = e.currentTarget.value;
 				}}
 				placeholder="Tuliskan catatan (maksimal 300 karakter)"
-				spellcheck="false"></textarea>
+				spellcheck="false"
+			></textarea>
 			<p class="label">{formCatatan.length}/300 karakter</p>
 		</fieldset>
 	{/snippet}

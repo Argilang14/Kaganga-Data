@@ -113,6 +113,7 @@
 		mataPelajaranId: number;
 		lingkupMateri: string;
 		tujuanPembelajaranId: number | null;
+		tujuanPembelajaranManual: string;
 		catatan: string;
 	}) {
 		let actions: { submit: () => void };
@@ -265,6 +266,7 @@
 											mataPelajaranId: item.mataPelajaranId,
 											lingkupMateri: item.lingkupMateri,
 											tujuanPembelajaranId: item.tpId,
+											tujuanPembelajaranManual: item.tujuanPembelajaranManual,
 											catatan: item.catatan
 										})}
 									disabled={!canEdit}

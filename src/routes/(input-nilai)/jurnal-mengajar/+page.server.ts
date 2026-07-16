@@ -338,6 +338,7 @@ export async function load({ locals, url, depends, parent }) {
 			tanggal: tableJurnalMengajar.tanggal,
 			jamPelajaran: tableJurnalMengajar.jamPelajaran,
 			lingkupMateri: tableJurnalMengajar.lingkupMateri,
+			tujuanPembelajaranManual: tableJurnalMengajar.tujuanPembelajaranManual,
 			catatan: tableJurnalMengajar.catatan,
 			mataPelajaranId: tableJurnalMengajar.mataPelajaranId,
 			kelasNama: tableKelas.nama,
@@ -368,8 +369,9 @@ export async function load({ locals, url, depends, parent }) {
 		mataPelajaranId: row.mataPelajaranId,
 		kelasNama: row.kelasNama ?? '',
 		mapelNama: row.mapelNama ?? '',
-		tpDeskripsi: row.tpDeskripsi ?? '',
+		tpDeskripsi: row.tpDeskripsi ?? row.tujuanPembelajaranManual ?? '',
 		tpId: row.tpId,
+		tujuanPembelajaranManual: row.tujuanPembelajaranManual ?? '',
 		kelasId: row.kelasId,
 		updatedAt: row.updatedAt,
 		no: offset + index + 1
@@ -418,9 +420,12 @@ export const actions = {
 		const idRaw = formData.get('id');
 		const kelasIdRaw = formData.get('kelasId');
 		const mataPelajaranIdRaw = formData.get('mataPelajaranId');
-		const lingkupMateri = formData.get('lingkupMateri') as string | null;
+		const lingkupMateri = ((formData.get('lingkupMateri') as string | null) ?? '').trim();
 		const tujuanPembelajaranIdRaw = formData.get('tujuanPembelajaranId');
-		const catatan = (formData.get('catatan') as string | null) ?? '';
+		const tujuanPembelajaranManual = (
+			(formData.get('tujuanPembelajaranManual') as string | null) ?? ''
+		).trim();
+		const catatan = ((formData.get('catatan') as string | null) ?? '').trim();
 		const tanggal = (formData.get('tanggal') as string | null) ?? '';
 
 		const kelasId = Number(kelasIdRaw);
@@ -429,6 +434,21 @@ export const actions = {
 
 		if (!lingkupMateri) {
 			return fail(400, { fail: 'Lingkup materi harus diisi' });
+		}
+		if (lingkupMateri.length > 500) {
+			return fail(400, { fail: 'Lingkup materi maksimal 500 karakter' });
+		}
+		if (
+			tujuanPembelajaranIdRaw &&
+			(!Number.isInteger(tujuanPembelajaranId) || Number(tujuanPembelajaranId) <= 0)
+		) {
+			return fail(400, { fail: 'Tujuan pembelajaran tidak valid' });
+		}
+		if (tujuanPembelajaranManual.length > 500) {
+			return fail(400, { fail: 'Tujuan pembelajaran maksimal 500 karakter' });
+		}
+		if (tujuanPembelajaranId && tujuanPembelajaranManual) {
+			return fail(400, { fail: 'Pilih tujuan pembelajaran dari data atau isi manual' });
 		}
 
 		if (catatan.length > 300) {
@@ -447,6 +467,20 @@ export const actions = {
 		}
 		if (!Number.isInteger(mataPelajaranId) || mataPelajaranId <= 0) {
 			return fail(400, { fail: 'Mata pelajaran tidak valid' });
+		}
+
+		if (tujuanPembelajaranId) {
+			const tujuanPembelajaran = await db.query.tableTujuanPembelajaran.findFirst({
+				columns: { mataPelajaranId: true, lingkupMateri: true },
+				where: eq(tableTujuanPembelajaran.id, tujuanPembelajaranId)
+			});
+			if (
+				!tujuanPembelajaran ||
+				tujuanPembelajaran.mataPelajaranId !== mataPelajaranId ||
+				tujuanPembelajaran.lingkupMateri !== lingkupMateri
+			) {
+				return fail(400, { fail: 'Tujuan pembelajaran tidak sesuai mata pelajaran dan materi' });
+			}
 		}
 
 		const now = new Date().toISOString();
@@ -472,6 +506,7 @@ export const actions = {
 					mataPelajaranId,
 					lingkupMateri,
 					tujuanPembelajaranId,
+					tujuanPembelajaranManual: tujuanPembelajaranManual || null,
 					catatan: catatan || null,
 					updatedAt: now
 				})
@@ -546,6 +581,7 @@ export const actions = {
 				jamPelajaran,
 				lingkupMateri,
 				tujuanPembelajaranId,
+				tujuanPembelajaranManual: tujuanPembelajaranManual || null,
 				catatan: catatan || null,
 				updatedAt: now
 			});

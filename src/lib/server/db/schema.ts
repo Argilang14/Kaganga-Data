@@ -443,6 +443,7 @@ export const tableKehadiranMurid = sqliteTable(
 		muridId: int()
 			.references(() => tableMurid.id, { onDelete: 'cascade' })
 			.notNull(),
+		hadir: int().default(0).notNull(),
 		sakit: int().default(0).notNull(),
 		izin: int().default(0).notNull(),
 		alfa: int().default(0).notNull(),

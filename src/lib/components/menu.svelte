@@ -55,15 +55,30 @@
 			: appMenuItems.filter((item) => filterByCondition(item, activeSemesterTipe))
 	);
 
+	function collectLeafMenuPaths(items: MenuItem[]): string[] {
+		return items.flatMap((item) =>
+			item.subMenu
+				? collectLeafMenuPaths(item.subMenu)
+				: item.path
+					? [item.path.replace(/\/+$/, '')]
+					: []
+		);
+	}
+
+	const leafMenuPaths = collectLeafMenuPaths(appMenuItems);
+
 	function isMenuActive(currentPath: string, menuPath?: string) {
 		if (!menuPath) return false;
 
-		// match to sub paths
 		const normalizedPath = currentPath.replace(/\/+$/, '');
 		const normalizedItemPath = menuPath.replace(/\/+$/, '');
-		const active =
-			normalizedPath === normalizedItemPath || normalizedPath.startsWith(normalizedItemPath + '/');
-		return active;
+		const bestMatch = leafMenuPaths
+			.filter(
+				(path) => normalizedPath === path || normalizedPath.startsWith(path + '/')
+			)
+			.sort((a, b) => b.length - a.length)[0];
+
+		return bestMatch === normalizedItemPath;
 	}
 </script>
 

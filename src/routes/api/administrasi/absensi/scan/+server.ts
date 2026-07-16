@@ -27,6 +27,7 @@ import { and, eq } from 'drizzle-orm';
 function muridPayload(murid: {
 	id: number;
 	nama: string;
+	waliAsuhNama?: string | null;
 	kelas?: { nama: string | null; fase: string | null } | null;
 }) {
 	return {
@@ -35,6 +36,7 @@ function muridPayload(murid: {
 		kelas: murid.kelas?.fase
 			? `${murid.kelas.nama ?? '-'} - ${murid.kelas.fase}`
 			: (murid.kelas?.nama ?? '-'),
+		waliAsuh: murid.waliAsuhNama ?? null,
 		fotoUrl: `/api/murid-photo/${murid.id}`
 	};
 }
@@ -71,7 +73,14 @@ export async function POST({ request, locals }) {
 		where: eq(tableQrMurid.tokenHash, tokenHash),
 		with: {
 			murid: {
-				columns: { id: true, nama: true, sekolahId: true, semesterId: true, kelasId: true },
+				columns: {
+					id: true,
+					nama: true,
+					waliAsuhNama: true,
+					sekolahId: true,
+					semesterId: true,
+					kelasId: true
+				},
 				with: { kelas: { columns: { id: true, nama: true, fase: true } } }
 			}
 		}

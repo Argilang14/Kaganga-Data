@@ -9,8 +9,15 @@
 		message: string;
 		status?: string;
 		waktuScan?: string | null;
+		mode?: 'sekolah' | 'kegiatan';
 		kegiatan?: { id: number; nama: string };
-		murid?: { id: number; nama: string; kelas: string; fotoUrl?: string };
+		murid?: {
+			id: number;
+			nama: string;
+			kelas: string;
+			waliAsuh?: string | null;
+			fotoUrl?: string;
+		};
 	};
 	type Kegiatan = {
 		id: number;
@@ -30,6 +37,7 @@
 	let scannerActive = $state(false);
 	let loading = $state(false);
 	let result = $state<ScanResult | null>(null);
+	let studentInfo = $state<ScanResult | null>(null);
 	let scanHistory = $state<ScanResult[]>([]);
 	let errorMessage = $state('');
 	let lastToken = '';
@@ -138,7 +146,8 @@
 					status: statusOverride || null
 				})
 			});
-			result = (await response.json()) as ScanResult;
+			result = { ...((await response.json()) as ScanResult), mode: scanMode };
+			if (result.murid) studentInfo = result;
 			if (result.murid || result.code !== 'invalid_token') {
 				scanHistory = [result, ...scanHistory].slice(0, 8);
 			}
@@ -229,7 +238,7 @@
 	});
 </script>
 
-<div class="mx-auto max-w-5xl space-y-4">
+<div class="w-full min-w-0 space-y-4">
 	<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 		<div>
 			<h2 class="text-2xl font-bold">Scan QR Absensi</h2>
@@ -372,48 +381,104 @@
 			</div>
 		</div>
 
-		<div class="card bg-base-100 border-base-200 rounded-lg border p-4 shadow-sm">
-			<div class="mb-3 flex items-center justify-between gap-2">
-				<h3 class="font-semibold">Riwayat Scan</h3>
-				<span class="badge badge-soft">{scanHistory.length}</span>
-			</div>
-			{#if !scanHistory.length}
-				<div class="alert alert-info">
-					<Icon name="info" />
-					<span>Belum ada siswa yang terbaca pada sesi ini.</span>
+		<div class="min-w-0 space-y-4">
+			<div class="card bg-base-100 border-base-200 rounded-lg border p-4 shadow-sm">
+				<div class="mb-3 flex items-center justify-between gap-2">
+					<h3 class="font-semibold">Informasi Siswa</h3>
+					{#if studentInfo?.status}
+						<span class={`badge ${statusBadge(studentInfo.status)} badge-sm`}>
+							{studentInfo.status}
+						</span>
+					{/if}
 				</div>
-			{:else}
-				<div class="space-y-2">
-					{#each scanHistory as item, index (`${item.murid?.id ?? item.code}-${item.waktuScan ?? index}`)}
-						<div class="border-base-200 flex items-center gap-3 rounded-lg border p-2">
-							<div class="avatar placeholder">
-								<div class="bg-base-200 text-base-content/50 h-12 w-12 rounded-lg">
-									{#if item.murid?.fotoUrl}
-										<img
-											src={item.murid.fotoUrl}
-											alt={item.murid.nama}
-											onerror={(event) => {
-												(event.currentTarget as HTMLImageElement).style.display = 'none';
-											}}
-										/>
-									{/if}
-									<span>{item.murid?.nama?.slice(0, 1) ?? '?'}</span>
-								</div>
-							</div>
-							<div class="min-w-0 flex-1">
-								<div class="truncate font-semibold">{item.murid?.nama ?? item.message}</div>
-								<div class="text-base-content/60 truncate text-xs">
-									{item.murid?.kelas ?? '-'} · {item.kegiatan?.nama ?? 'Absensi'} ·
-									{formatScanTime(item.waktuScan)}
-								</div>
-							</div>
-							<div class={`badge ${statusBadge(item.status)} badge-sm`}>
-								{item.status ?? item.code}
+				{#if studentInfo?.murid}
+					<div class="flex items-start gap-3">
+						<div class="avatar placeholder shrink-0">
+							<div class="bg-base-200 text-base-content/50 h-16 w-16 rounded-lg">
+								{#if studentInfo.murid.fotoUrl}
+									<img
+										src={studentInfo.murid.fotoUrl}
+										alt={studentInfo.murid.nama}
+										onerror={(event) => {
+											(event.currentTarget as HTMLImageElement).style.display = 'none';
+										}}
+									/>
+								{/if}
+								<span class="text-lg font-semibold">{studentInfo.murid.nama.slice(0, 1)}</span>
 							</div>
 						</div>
-					{/each}
+						<div class="min-w-0 flex-1">
+							<div class="truncate text-lg font-bold">{studentInfo.murid.nama}</div>
+							<div class="text-base-content/70 text-sm">{studentInfo.murid.kelas}</div>
+						</div>
+					</div>
+					<dl class="border-base-200 mt-4 grid gap-3 border-t pt-3 text-sm">
+						<div>
+							<dt class="text-base-content/60">Wali Asuh</dt>
+							<dd class="font-medium">{studentInfo.murid.waliAsuh || 'Belum ditetapkan'}</dd>
+						</div>
+						<div>
+							<dt class="text-base-content/60">Keterangan Absensi</dt>
+							<dd class="font-medium">
+								{studentInfo.kegiatan?.nama ??
+									(studentInfo.mode === 'sekolah' ? 'Absensi Sekolah' : '-')}
+							</dd>
+						</div>
+						<div>
+							<dt class="text-base-content/60">Waktu Scan</dt>
+							<dd class="font-medium">{formatScanTime(studentInfo.waktuScan)}</dd>
+						</div>
+					</dl>
+				{:else}
+					<div class="alert alert-info">
+						<Icon name="info" />
+						<span>Informasi siswa akan tampil setelah QR berhasil dipindai.</span>
+					</div>
+				{/if}
+			</div>
+			<div class="card bg-base-100 border-base-200 rounded-lg border p-4 shadow-sm">
+				<div class="mb-3 flex items-center justify-between gap-2">
+					<h3 class="font-semibold">Riwayat Scan</h3>
+					<span class="badge badge-soft">{scanHistory.length}</span>
 				</div>
-			{/if}
+				{#if !scanHistory.length}
+					<div class="alert alert-info">
+						<Icon name="info" />
+						<span>Belum ada siswa yang terbaca pada sesi ini.</span>
+					</div>
+				{:else}
+					<div class="space-y-2">
+						{#each scanHistory as item, index (`${item.murid?.id ?? item.code}-${item.waktuScan ?? index}`)}
+							<div class="border-base-200 flex items-center gap-3 rounded-lg border p-2">
+								<div class="avatar placeholder">
+									<div class="bg-base-200 text-base-content/50 h-12 w-12 rounded-lg">
+										{#if item.murid?.fotoUrl}
+											<img
+												src={item.murid.fotoUrl}
+												alt={item.murid.nama}
+												onerror={(event) => {
+													(event.currentTarget as HTMLImageElement).style.display = 'none';
+												}}
+											/>
+										{/if}
+										<span>{item.murid?.nama?.slice(0, 1) ?? '?'}</span>
+									</div>
+								</div>
+								<div class="min-w-0 flex-1">
+									<div class="truncate font-semibold">{item.murid?.nama ?? item.message}</div>
+									<div class="text-base-content/60 truncate text-xs">
+										{item.murid?.kelas ?? '-'} · {item.kegiatan?.nama ?? 'Absensi'} ·
+										{formatScanTime(item.waktuScan)}
+									</div>
+								</div>
+								<div class={`badge ${statusBadge(item.status)} badge-sm`}>
+									{item.status ?? item.code}
+								</div>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
 		</div>
 	</div>
 

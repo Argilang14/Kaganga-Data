@@ -3,9 +3,13 @@
 
 	type Props = {
 		setUploader?: (fn: () => File | null) => void;
+		description?: string;
 	};
 
-	let { setUploader }: Props = $props();
+	let {
+		setUploader,
+		description = 'Pilih file Excel (.xlsx) sesuai format "Download Template"'
+	}: Props = $props();
 
 	let fileInput: HTMLInputElement | undefined;
 	let selectedFile: File | undefined;
@@ -43,7 +47,7 @@
 				onchange={onFileChange}
 				aria-label="Pilih file Excel"
 			/>
-			<p class="label">Pilih file Excel (.xlsx) sesuai format "Download Template"</p>
+			<p class="label">{description}</p>
 		</fieldset>
 	</div>
 </div>

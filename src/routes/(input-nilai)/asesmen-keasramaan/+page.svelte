@@ -14,7 +14,12 @@
 	import ImportModalBody from '$lib/components/asesmen-keasramaan/import-modal-body.svelte';
 	import { capitalizeSentence, buildNilaiLink } from '$lib/components/asesmen-keasramaan/utils';
 	import SvelteURLSearchParams from '$lib/svelte-helpers/url-search-params';
-	import { downloadTemplate, importNilai } from '$lib/components/asesmen-keasramaan/api';
+	import {
+		downloadTemplate,
+		downloadTemplateMassal,
+		importNilai,
+		importNilaiMassal
+	} from '$lib/components/asesmen-keasramaan/api';
 	import type { PageData } from '$lib/components/asesmen-keasramaan/types';
 
 	let { data }: { data: PageData } = $props();
@@ -34,6 +39,8 @@
 	let searchTimer: ReturnType<typeof setTimeout> | undefined;
 	let isDownloadingTemplate = $state(false);
 	let isImportingFile = $state(false);
+	let isDownloadingMassal = $state(false);
+	let isImportingMassal = $state(false);
 
 	const kelasAktif = $derived(page.data.kelasAktif ?? null);
 	const kelasAktifLabel = $derived.by(() => {
@@ -128,6 +135,26 @@
 		}
 	}
 
+	async function handleDownloadTemplateMassal() {
+		if (!kelasAktif?.id || !hasKeasramaan) {
+			toast('Pastikan kelas aktif dan mata evaluasi keasramaan sudah tersedia', 'error');
+			return;
+		}
+
+		isDownloadingMassal = true;
+		try {
+			const success = await downloadTemplateMassal(kelasAktif.id);
+			toast(
+				success ? 'Template massal berhasil diunduh' : 'Gagal mengunduh template massal',
+				success ? 'success' : 'error'
+			);
+		} catch (err) {
+			console.error(err);
+			toast('Terjadi kesalahan saat mengunduh template massal', 'error');
+		} finally {
+			isDownloadingMassal = false;
+		}
+	}
 	function openImportModal() {
 		if (!selectedKeasramaanValue || !selectedKeasraamHasTujuan || !kelasAktif?.id) {
 			toast('Pilih Matev dan pastikan memiliki tujuan pembelajaran terlebih dahulu', 'error');
@@ -182,6 +209,53 @@
 		});
 	}
 
+	function openImportMassalModal() {
+		if (!kelasAktif?.id || !hasKeasramaan) {
+			toast('Pastikan kelas aktif dan mata evaluasi keasramaan sudah tersedia', 'error');
+			return;
+		}
+
+		let uploader: () => File | null = () => null;
+		showModal({
+			title: 'Import Nilai Keasramaan Massal',
+			body: ImportModalBody,
+			bodyProps: {
+				description:
+					'Gunakan template massal atau file Excel format penilaian Sekolah Rakyat/Kemensos.',
+				setUploader: (fn: () => File | null) => (uploader = fn)
+			},
+			onPositive: {
+				label: 'Import massal',
+				icon: 'import',
+				action: async ({ close }: { close: () => void }) => {
+					const file = uploader();
+					if (!file) {
+						toast('Pilih file terlebih dahulu.', 'error');
+						return;
+					}
+
+					isImportingMassal = true;
+					try {
+						const result = await importNilaiMassal(file, kelasAktif.id);
+						if (!result.success) {
+							toast(result.message || 'Gagal import nilai massal', 'error');
+							return;
+						}
+						toast(result.message || 'Nilai massal berhasil diimport', 'success');
+						close();
+						await invalidate('app:asesmen-keasramaan');
+					} catch (err) {
+						console.error(err);
+						toast('Terjadi kesalahan saat import massal', 'error');
+					} finally {
+						isImportingMassal = false;
+					}
+				}
+			},
+			onNegative: { label: 'Batal', icon: 'close' },
+			dismissible: true
+		});
+	}
 	async function handleFileImport() {
 		openImportModal();
 	}
@@ -237,9 +311,14 @@
 	<ActionButtons
 		isDownloading={isDownloadingTemplate}
 		isImporting={isImportingFile}
+		{isDownloadingMassal}
+		{isImportingMassal}
 		disabled={!selectedKeasraamHasTujuan}
+		massalDisabled={!kelasAktif?.id || !hasKeasramaan}
 		onDownload={handleDownloadTemplate}
 		onImport={handleFileImport}
+		onDownloadMassal={handleDownloadTemplateMassal}
+		onImportMassal={openImportMassalModal}
 	/>
 
 	<div class="flex flex-col items-center gap-2 sm:flex-row">

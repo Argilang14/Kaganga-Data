@@ -24,7 +24,13 @@ import {
 	selectJadwalContext,
 	type JadwalJenjang
 } from '$lib/server/jadwal';
-import { formatTanggal, getLogoDinasSrc, getLogoSrc } from '$lib/server/pdf/preview-utils';
+import {
+	formatTanggal,
+	getLogoDinasSrc,
+	getLogoSrc,
+	optionalInteger,
+	resolveWakaKurikulumSignature
+} from '$lib/server/pdf/preview-utils';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 
 type JenjangFilter = 'semua' | JadwalJenjang;
@@ -76,6 +82,10 @@ export async function getJadwalPelajaranPreviewPayload({
 
 	const selectedJenjang = parseJenjang(url.searchParams.get('jenjang'));
 	const orientation = parseOrientation(url.searchParams.get('orientation'));
+	const wakaKurikulumPegawaiId = optionalInteger(
+		'waka_kurikulum_pegawai_id',
+		url.searchParams.get('waka_kurikulum_pegawai_id')
+	);
 	const selectedYear = academic.tahunAjaranList.find((item) => item.id === context.tahunAjaranId);
 	const classSemesterId =
 		context.semesterId ?? selectedYear?.semester.find((item) => item.tipe === 'ganjil')?.id ?? null;
@@ -220,9 +230,10 @@ export async function getJadwalPelajaranPreviewPayload({
 
 	const jenjangLabel =
 		selectedJenjang === 'semua' ? 'Semua Jenjang' : JADWAL_JENJANG_LABELS[selectedJenjang];
-	const [logoUrl, logoDinasUrl] = await Promise.all([
+	const [logoUrl, logoDinasUrl, wakaKurikulum] = await Promise.all([
 		getLogoSrc(sekolahId),
-		getLogoDinasSrc(sekolahId)
+		getLogoDinasSrc(sekolahId),
+		resolveWakaKurikulumSignature(sekolahId, wakaKurikulumPegawaiId)
 	]);
 
 	return {
@@ -233,6 +244,7 @@ export async function getJadwalPelajaranPreviewPayload({
 				lokasiTandaTangan: sekolah?.lokasiTandaTangan ?? '',
 				logoUrl,
 				logoDinasUrl,
+				wakaKurikulum,
 				kepalaSekolah: {
 					nama: sekolah?.kepalaSekolah?.nama ?? '',
 					nip: sekolah?.kepalaSekolah?.nip ?? '',

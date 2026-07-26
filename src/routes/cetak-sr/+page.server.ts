@@ -1,7 +1,7 @@
 import db from '$lib/server/db';
-import { tableSemester, tableTahunAjaran } from '$lib/server/db/schema';
+import { tablePegawai, tableSemester, tableTahunAjaran } from '$lib/server/db/schema';
 import { computeNilaiAkhirRekap } from '$lib/server/nilai-akhir';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { buildKelasContext, fetchMuridList } from '$lib/server/route-utils';
 
 export async function load({ locals, url, depends, parent }) {
@@ -46,6 +46,17 @@ export async function load({ locals, url, depends, parent }) {
 		tanggalMasuk: activeSemester?.tanggalMasuk ?? activeSemester?.tanggalMulai ?? '',
 		tanggalBagiRaport: activeSemester?.tanggalBagiRaport ?? activeSemester?.tanggalSelesai ?? ''
 	};
+	const pegawaiGuruList = sekolahId
+		? await db.query.tablePegawai.findMany({
+				columns: { id: true, nama: true, nip: true, jabatan: true },
+				where: and(
+					eq(tablePegawai.sekolahId, sekolahId),
+					eq(tablePegawai.jenis, 'guru'),
+					eq(tablePegawai.status, 'aktif')
+				),
+				orderBy: [asc(tablePegawai.nama)]
+			})
+		: [];
 
 	if (!sekolahId || !kelasIds.length) {
 		return {
@@ -54,6 +65,7 @@ export async function load({ locals, url, depends, parent }) {
 			daftarMurid: [],
 			muridCount: 0,
 			piagamRankingOptions: [],
+			pegawaiGuruList,
 			...printContext,
 			...jurnalPeriod
 		};
@@ -87,6 +99,7 @@ export async function load({ locals, url, depends, parent }) {
 		daftarMurid,
 		muridCount: daftarMurid.length,
 		piagamRankingOptions,
+		pegawaiGuruList,
 		...printContext,
 		...jurnalPeriod
 	};

@@ -141,6 +141,7 @@ function renderMonth(
 export function renderKalenderPendidikanHTML(data: KalenderPendidikanPrintData): string {
 	const portrait = data.orientation === 'portrait';
 	const kepala = data.sekolah.kepalaSekolah;
+	const waka = data.sekolah.wakaKurikulum;
 	return (
 		'<!doctype html><html lang="id"><head><meta charset="utf-8" /><title>Kalender Pendidikan</title><style>' +
 		'@page{size:A4 ' +
@@ -158,7 +159,7 @@ export function renderKalenderPendidikanHTML(data: KalenderPendidikanPrintData):
 		(portrait ? '6.5mm' : '6.8mm') +
 		';font-size:7px}.day{background:#fff}.day.sunday,.day.holiday{background:#fee2e2;color:#991b1b}.day.saturday{background:#fff;color:#111827}.day.empty{background:#fff}.day strong{display:block}.dots{display:flex;align-items:center;justify-content:center;gap:1px;margin-top:1px}.dots i{display:block;width:4px;height:4px;border-radius:50%}.dots small{font-size:5px;line-height:1}' +
 		'.agenda-list{margin-top:2.5mm;min-height:14mm}.agenda-item{display:grid;grid-template-columns:24px 7px 1fr;align-items:center;gap:3px;margin-bottom:1.1mm;line-height:1.15}.agenda-item i{width:6px;height:6px;border-radius:50%}.agenda-date{font-weight:700}.empty-agenda{padding-top:3mm;color:#94a3b8;text-align:center}' +
-		'.summary{display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin-top:4mm}.summary div{border:.7px solid #e2e8f0;border-radius:5px;padding:3mm;font-size:9px}.summary strong{font-weight:700}.signature{margin:8mm 2mm 0 auto;width:58mm;text-align:center;break-inside:avoid;font-size:9px}.signature-space{height:18mm}.signature-name{font-weight:700;text-decoration:underline}' +
+		'.summary{display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin-top:4mm}.summary div{border:.7px solid #e2e8f0;border-radius:5px;padding:3mm;font-size:9px}.summary strong{font-weight:700}.signatures{margin-top:8mm;break-inside:avoid;font-size:9px}.signature-date{margin-left:auto;width:58mm;text-align:left}.signature-grid{display:grid;grid-template-columns:58mm 58mm;justify-content:space-between;margin-top:1mm}.signature-block{text-align:left}.signature-space{height:18mm}.signature-name{font-weight:700;text-decoration:underline}' +
 		'</style></head><body><section><div class="document-header"><div class="header-logo">' +
 		(data.sekolah.logoDinasUrl
 			? '<img src="' + escapeHtml(data.sekolah.logoDinasUrl) + '" alt="Logo pemda atau kementerian" />'
@@ -179,14 +180,20 @@ export function renderKalenderPendidikanHTML(data: KalenderPendidikanPrintData):
 		data.summary.totalHariEfektif +
 		' Hari</div><div><strong>Minggu Efektif</strong> = ' +
 		data.summary.totalMingguEfektif +
-		' Minggu</div></div><div class="signature"><div>' +
+		' Minggu</div></div><div class="signatures"><div class="signature-date">' +
 		escapeHtml(data.ttd.tempat) +
 		(data.ttd.tempat && data.ttd.tanggal ? ', ' : '') +
 		escapeHtml(data.ttd.tanggal) +
-		'</div><div>Kepala Sekolah</div><div class="signature-space"></div><div class="signature-name">' +
-		escapeHtml(kepala?.nama || '') +
+		'</div><div class="signature-grid"><div class="signature-block"><div>Kepala Sekolah</div>' +
+		'<div class="signature-space"></div><div class="signature-name">' +
+		escapeHtml(kepala?.nama || '................................') +
 		'</div><div>NIP. ' +
 		escapeHtml(kepala?.nip || '-') +
-		'</div></div></section></body></html>'
+		'</div></div><div class="signature-block"><div>Waka Kurikulum</div>' +
+		'<div class="signature-space"></div><div class="signature-name">' +
+		escapeHtml(waka?.nama || '................................') +
+		'</div><div>NIP. ' +
+		escapeHtml(waka?.nip || '-') +
+		'</div></div></div></div></section></body></html>'
 	);
 }

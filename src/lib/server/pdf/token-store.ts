@@ -18,6 +18,7 @@ type PdfParams = {
     tahunAjaranId?: number;
     jenisJadwal?: string;
     semesterId?: number;
+    wakaKurikulumPegawaiId?: number;
 	slug: string;
 };
 

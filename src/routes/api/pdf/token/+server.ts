@@ -100,8 +100,13 @@ export const POST = (async ({ locals, request }) => {
 		periodeMode,
         tahunAjaranId,
         jenisJadwal,
-        semesterId
+        semesterId,
+        wakaKurikulumPegawaiId: wakaKurikulumPegawaiIdRaw
 	} = body;
+	const wakaKurikulumPegawaiId =
+		Number.isInteger(Number(wakaKurikulumPegawaiIdRaw)) && Number(wakaKurikulumPegawaiIdRaw) > 0
+			? Number(wakaKurikulumPegawaiIdRaw)
+			: undefined;
 	const parentSignature =
 		body.parentSignature === 'ayah' ||
 		body.parentSignature === 'ibu' ||
@@ -132,6 +137,9 @@ export const POST = (async ({ locals, request }) => {
     if (tahunAjaranId) url.searchParams.set('tahun_ajaran_id', String(tahunAjaranId));
     if (jenisJadwal) url.searchParams.set('jenis', jenisJadwal);
     if (semesterId) url.searchParams.set('semester_id', String(semesterId));
+	if (wakaKurikulumPegawaiId) {
+		url.searchParams.set('waka_kurikulum_pegawai_id', String(wakaKurikulumPegawaiId));
+	}
 
 	const docLabel = body.docLabel || docType;
 	const nama = await resolveNama(docType, locals, url);
@@ -155,6 +163,7 @@ export const POST = (async ({ locals, request }) => {
         tahunAjaranId,
         jenisJadwal,
         semesterId,
+		wakaKurikulumPegawaiId,
 		slug
 	});
 

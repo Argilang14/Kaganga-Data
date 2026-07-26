@@ -51,19 +51,25 @@ function renderLegend(data: JadwalPelajaranPrintData) {
 
 function renderSignature(data: JadwalPelajaranPrintData) {
 	const kepala = data.sekolah.kepalaSekolah;
+	const waka = data.sekolah.wakaKurikulum;
 	const jabatan = kepala.status === 'plt' ? 'Plt. Kepala Sekolah' : 'Kepala Sekolah';
 	return (
-		'<section class="signature"><div>' +
+		'<section class="signatures"><div class="signature-date">' +
 		escapeHtml(data.sekolah.lokasiTandaTangan || '') +
 		(data.sekolah.lokasiTandaTangan ? ', ' : '') +
 		escapeHtml(data.tanggalCetak) +
-		'</div><div>' +
+		'</div><div class="signature-grid"><div class="signature-block"><div>' +
 		escapeHtml(jabatan) +
 		'</div><div class="signature-space"></div><div class="signature-name">' +
 		escapeHtml(kepala.nama || '................................') +
 		'</div><div>NIP. ' +
 		escapeHtml(kepala.nip || '-') +
-		'</div></section>'
+		'</div></div><div class="signature-block"><div>Waka Kurikulum</div>' +
+		'<div class="signature-space"></div><div class="signature-name">' +
+		escapeHtml(waka?.nama || '................................') +
+		'</div><div>NIP. ' +
+		escapeHtml(waka?.nip || '-') +
+		'</div></div></div></section>'
 	);
 }
 
@@ -207,7 +213,7 @@ export function renderJadwalPelajaranHTML(data: JadwalPelajaranPrintData): strin
 		';line-height:1.15;overflow-wrap:anywhere}.schedule-cell small{display:block;margin-top:1px;font-size:5px;line-height:1.05;color:#475569;overflow-wrap:anywhere}' +
 		'.subject{background:#e0f2fe}.activity{background:#dcfce7}.break{background:#fef3c7}.empty{background:#fff;color:#94a3b8}.inactive{background:#f3f4f6!important;color:#9ca3af;border-color:#e5e7eb!important}.empty-table{padding:8mm;text-align:center;color:#64748b}' +
 		'.after-table{margin-top:4mm;break-inside:avoid}.legend h2{margin:0 0 2mm;font-size:9px}.legend table{table-layout:auto;font-size:7px}.legend th{background:#e5e7eb;color:#111827;text-align:left}.legend th,.legend td{padding:2px 3px;border-color:#94a3b8}.legend-code{width:18mm;text-align:center!important;font-weight:700}' +
-		'.signature{margin:5mm 0 0 auto;width:58mm;min-height:32mm;text-align:left;line-height:1.35;font-size:8px;break-inside:avoid}.signature-space{height:18mm}.signature-name{font-weight:700;text-decoration:underline}.footer{margin-top:3mm;display:flex;justify-content:space-between;color:#64748b;font-size:7px}' +
+		'.signatures{margin-top:5mm;min-height:32mm;line-height:1.35;font-size:8px;break-inside:avoid}.signature-date{margin-left:auto;width:58mm;text-align:left}.signature-grid{display:grid;grid-template-columns:58mm 58mm;justify-content:space-between;margin-top:1mm}.signature-block{text-align:left}.signature-space{height:18mm}.signature-name{font-weight:700;text-decoration:underline}.footer{margin-top:3mm;display:flex;justify-content:space-between;color:#64748b;font-size:7px}' +
 		'</style></head><body><section class="sheet"><div class="document-header"><div class="header-logo">' +
 		(data.sekolah.logoDinasUrl
 			? '<img src="' + escapeHtml(data.sekolah.logoDinasUrl) + '" alt="Logo pemda atau kementerian" />'

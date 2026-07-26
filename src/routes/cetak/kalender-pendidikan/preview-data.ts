@@ -12,7 +12,9 @@ import {
 	fallbackTempat,
 	formatTanggal,
 	getLogoDinasSrc,
-	getLogoSrc
+	getLogoSrc,
+	optionalInteger,
+	resolveWakaKurikulumSignature
 } from '$lib/server/pdf/preview-utils';
 import { and, asc, eq, gte, inArray, isNull, lte, or } from 'drizzle-orm';
 
@@ -224,6 +226,10 @@ export async function getKalenderPendidikanPreviewPayload({
 	const selectedJenjang = parseJenjang(url.searchParams.get('jenjang'));
 	const periodeMode = parsePeriodeMode(url.searchParams.get('periode_mode'));
 	const orientation = parseOrientation(url.searchParams.get('orientation'));
+	const wakaKurikulumPegawaiId = optionalInteger(
+		'waka_kurikulum_pegawai_id',
+		url.searchParams.get('waka_kurikulum_pegawai_id')
+	);
 
 	const selectedTahunAjaran = selectedTahunAjaranId
 		? await db.query.tableTahunAjaran.findFirst({
@@ -321,9 +327,10 @@ export async function getKalenderPendidikanPreviewPayload({
 				: selectedJenjang === 'srmp'
 					? 'SRMP'
 					: 'SRMA';
-	const [logoUrl, logoDinasUrl] = await Promise.all([
+	const [logoUrl, logoDinasUrl, wakaKurikulum] = await Promise.all([
 		getLogoSrc(sekolahId),
-		getLogoDinasSrc(sekolahId)
+		getLogoDinasSrc(sekolahId),
+		resolveWakaKurikulumSignature(sekolahId, wakaKurikulumPegawaiId)
 	]);
 
 	return {
@@ -333,6 +340,7 @@ export async function getKalenderPendidikanPreviewPayload({
 				nama: sekolah.nama,
 				logoUrl,
 				logoDinasUrl,
+				wakaKurikulum,
 				kepalaSekolah: sekolah.kepalaSekolah
 					? { nama: sekolah.kepalaSekolah.nama, nip: sekolah.kepalaSekolah.nip ?? '' }
 					: null

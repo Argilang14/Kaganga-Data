@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import db from '$lib/server/db';
-import { tableSekolah } from '$lib/server/db/schema';
+import { tablePegawai, tableSekolah } from '$lib/server/db/schema';
 
 export function requireInteger(paramName: string, value: string | null): number {
 	if (!value) {
@@ -73,4 +73,21 @@ export function composeAlamat(sekolah: NonNullable<App.Locals['sekolah']>): stri
 		.map((part) => (part ?? '').trim())
 		.filter(Boolean);
 	return parts.join(', ');
+}
+
+export async function resolveWakaKurikulumSignature(sekolahId: number, pegawaiId: number | null) {
+	if (!pegawaiId) return null;
+	const pegawai = await db.query.tablePegawai.findFirst({
+		columns: { nama: true, nip: true },
+		where: and(
+			eq(tablePegawai.id, pegawaiId),
+			eq(tablePegawai.sekolahId, sekolahId),
+			eq(tablePegawai.jenis, 'guru'),
+			eq(tablePegawai.status, 'aktif')
+		)
+	});
+	if (!pegawai) {
+		throw error(400, 'Pegawai Waka Kurikulum harus dipilih dari guru aktif sekolah ini.');
+	}
+	return pegawai;
 }

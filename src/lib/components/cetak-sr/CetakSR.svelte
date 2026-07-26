@@ -34,6 +34,12 @@
 			activeSemesterTipe?: string | null;
 			tanggalMasuk?: string;
 			tanggalBagiRaport?: string;
+			pegawaiGuruList?: Array<{
+				id: number;
+				nama: string;
+				nip: string;
+				jabatan: string | null;
+			}>;
 			daftarMurid?: Array<{ id: number; nama: string; nis?: string | null; nisn?: string | null }>;
 			piagamRankingOptions?: Array<{
 				muridId: number;
@@ -97,6 +103,15 @@
 		'tahun_kalender' | 'tahun_ajaran' | 'semester_ganjil' | 'semester_genap'
 	>('tahun_ajaran');
 	const tahunAjaranList = $derived(data.tahunAjaranList ?? []);
+	const pegawaiGuruList = $derived(data.pegawaiGuruList ?? []);
+	function initialWakaKurikulumId() {
+		return (
+			data.pegawaiGuruList?.find((pegawai) =>
+				pegawai.jabatan?.toLocaleLowerCase('id-ID').includes('kurikulum')
+			)?.id ?? null
+		);
+	}
+	let selectedWakaKurikulumId = $state<number | null>(initialWakaKurikulumId());
 	function initialPrintContext() {
 		return {
 			tahunAjaranId: data.activeTahunAjaranId ?? data.tahunAjaranList?.[0]?.id ?? null,
@@ -465,7 +480,11 @@
 							: undefined,
 					jenisJadwal: documentType === 'jadwal-pelajaran' ? selectedJadwalJenis : undefined,
 					semesterId:
-						documentType === 'kalender-pendidikan' ? selectedKalenderSemesterId : undefined
+						documentType === 'kalender-pendidikan' ? selectedKalenderSemesterId : undefined,
+					wakaKurikulumPegawaiId:
+						documentType === 'jadwal-pelajaran' || documentType === 'kalender-pendidikan'
+							? selectedWakaKurikulumId
+							: undefined
 				})
 			});
 			if (!res.ok) throw new Error('Gagal mendapatkan token');
@@ -715,8 +734,8 @@
 		<div
 			class="border-base-300 bg-base-200/30 mt-3 grid gap-3 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-3 {selectedDocument ===
 			'jadwal-pelajaran'
-				? 'xl:grid-cols-5'
-				: 'xl:grid-cols-6'}"
+				? '2xl:grid-cols-6'
+				: '2xl:grid-cols-7'}"
 		>
 			<label class="form-control">
 				<span class="label-text mb-1">Tahun Ajaran</span>
@@ -772,6 +791,23 @@
 					</select>
 				</label>
 			{/if}
+			<label class="form-control">
+				<span class="label-text mb-1">Waka Kurikulum</span>
+				<select
+					class="select select-bordered bg-base-100"
+					bind:value={selectedWakaKurikulumId}
+					disabled={!pegawaiGuruList.length}
+				>
+					<option value={null}>
+						{pegawaiGuruList.length ? 'Pilih pegawai guru' : 'Belum ada pegawai guru aktif'}
+					</option>
+					{#each pegawaiGuruList as pegawai}
+						<option value={pegawai.id}>
+							{pegawai.nama}{pegawai.jabatan ? ' - ' + pegawai.jabatan : ''}
+						</option>
+					{/each}
+				</select>
+			</label>
 			<div class="flex items-end">
 				<a class="btn btn-outline h-12 min-h-12 w-full" href={selectedDocument === 'jadwal-pelajaran' ? jadwalSourceHref : kalenderSourceHref}>
 					Buka sumber di Akademik

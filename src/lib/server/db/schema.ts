@@ -1318,7 +1318,9 @@ export const tableJadwalMapel = sqliteTable(
 			.default('semua')
 			.notNull(),
 		fase: text(),
-		kategori: text({ enum: ['akademik', 'kokurikuler', 'keasramaan', 'muatan_lokal'] })
+		kategori: text({
+			enum: ['masa_persiapan', 'akademik', 'kokurikuler', 'keasramaan', 'muatan_lokal']
+		})
 			.default('akademik')
 			.notNull(),
 		jpPerMinggu: int('jp_per_minggu').default(0).notNull(),

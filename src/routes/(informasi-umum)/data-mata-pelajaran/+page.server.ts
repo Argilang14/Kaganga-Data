@@ -11,6 +11,7 @@ const JENJANG_OPTIONS = ['semua', 'srd', 'srmp', 'srma'] as const;
 type JenjangOption = (typeof JENJANG_OPTIONS)[number];
 const KATEGORI_OPTIONS = [
 	'semua',
+	'masa_persiapan',
 	'akademik',
 	'kokurikuler',
 	'keasramaan',
@@ -37,7 +38,7 @@ function normalizeJenjang(value: FormDataEntryValue | string | null): JenjangOpt
 }
 
 function normalizeKategoriFilter(value: FormDataEntryValue | string | null): KategoriFilter {
-	const raw = value?.toString() ?? 'semua';
+	const raw = value?.toString().trim().toLowerCase().replace(/[\s-]+/g, '_') ?? 'semua';
 	return KATEGORI_OPTIONS.includes(raw as KategoriFilter) ? (raw as KategoriFilter) : 'semua';
 }
 

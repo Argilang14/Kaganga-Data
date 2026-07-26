@@ -4,7 +4,13 @@
 	import Icon from '$lib/components/icon.svelte';
 
 	type JenjangOption = 'semua' | 'srd' | 'srmp' | 'srma';
-	type KategoriOption = 'semua' | 'akademik' | 'kokurikuler' | 'keasramaan' | 'muatan_lokal';
+	type KategoriOption =
+		| 'semua'
+		| 'masa_persiapan'
+		| 'akademik'
+		| 'kokurikuler'
+		| 'keasramaan'
+		| 'muatan_lokal';
 	type KategoriValue = Exclude<KategoriOption, 'semua'>;
 	type GuruRow = { id: number; nama: string; nip: string; jenis: string; status: string };
 	type MapelRow = {
@@ -51,6 +57,7 @@
 	};
 	const kategoriLabels: Record<KategoriOption, string> = {
 		semua: 'Semua Kategori',
+		masa_persiapan: 'Masa Persiapan',
 		akademik: 'Akademik',
 		kokurikuler: 'Kokurikuler',
 		keasramaan: 'Keasramaan',

@@ -33,6 +33,7 @@ function hasCommand(cmd) {
 function main() {
 	const args = process.argv.slice(2);
 	const skipBuild = args.includes('--skip-build');
+	const skipDbPush = args.includes('--skip-db-push');
 	const outputDir = 'dist/windows';
 
 	const absOutput = path.resolve(projectRoot, outputDir);
@@ -85,20 +86,18 @@ function main() {
 	}
 
 	// 6) DB migration
-	console.info('Running database migration (db:push)...');
-	if (hasPnpm) {
-		run('pnpm', ['db:push'], { cwd: projectRoot });
+	const dbPath = path.join(projectRoot, 'data', 'database.sqlite3');
+	if (skipDbPush) {
+		console.info('Skipping repository database migration as requested.');
 	} else {
-		if (!hasCommand('npm')) {
-			console.warn('npm not found; skipping db:push.');
-		} else {
-			run('npm', ['install'], { cwd: projectRoot });
-			run('npm', ['run', 'db:push'], { cwd: projectRoot });
-		}
+		console.info('Running database migration against the repository database...');
+		run(process.execPath, [path.join(projectRoot, 'scripts', 'migrate-installed-db.mjs')], {
+			cwd: projectRoot,
+			env: { ...process.env, DB_URL: 'file:' + dbPath }
+		});
 	}
 
 	// 7) Bundle database
-	const dbPath = path.join(projectRoot, 'data', 'database.sqlite3');
 	if (fs.existsSync(dbPath)) {
 		console.info('Bundling default SQLite database...');
 		const dataDir = path.join(appStage, 'data');
@@ -261,7 +260,7 @@ function main() {
 	} else {
 		const redistUrl = 'https://aka.ms/vs/17/release/vc_redist.x64.exe';
 		if (hasCommand('curl')) {
-			run('curl', ['-#Lo', redistDest, redistUrl]);
+			run('curl', ['-#Lo', redistDest, redistUrl], { shell: false });
 		} else if (hasCommand('wget')) {
 			run('wget', ['-O', redistDest, redistUrl]);
 		} else {

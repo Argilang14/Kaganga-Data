@@ -125,8 +125,10 @@ async function main() {
 		`drizzle-kit${isWin ? '.cmd' : ''}`
 	);
 	let drizzleCmd;
+	let drizzleArgsPrefix = [];
 	if (fs.existsSync(drizzleBin)) {
-		drizzleCmd = drizzleBin;
+		drizzleCmd = process.execPath;
+		drizzleArgsPrefix = [path.join(projectRoot, 'node_modules', 'drizzle-kit', 'bin.cjs')];
 	} else {
 		// Check if drizzle-kit is available on PATH as a last resort
 		try {
@@ -367,7 +369,10 @@ async function main() {
 			let lastError;
 			for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
 				try {
-					runCapture(drizzleCmd, ['push', '--force'], { env: childEnv, cwd: projectRoot });
+					runCapture(drizzleCmd, [...drizzleArgsPrefix, 'push', '--force'], {
+                        env: childEnv,
+                        cwd: projectRoot
+                    });
 					lastError = null;
 					break;
 				} catch (err) {

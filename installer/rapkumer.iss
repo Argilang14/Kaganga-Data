@@ -1,5 +1,5 @@
 #define AppName "Rapkumer - Aplikasi administrasi guru terpadu"
-#define AppVersion "2.0.0"
+#define AppVersion "2.0.1"
 #define StagePath "..\\dist\\windows\\stage\\Rapkumer"
 
 [Setup]
@@ -7,7 +7,7 @@ AppId={{06E10F9F-0AD2-4F31-A64B-7C3B36F2D0D6}}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher="Rapkumer"
-AppPublisherURL="https://github.com/sira313/rapkumer"
+AppPublisherURL="https://github.com/Argilang14/Kaganga-Data"
 AppContact="me@apoxi.cam"
 ; Install under the current user's Local AppData so admin privileges are not required
 DefaultDirName={localappdata}\Rapkumer

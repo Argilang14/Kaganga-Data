@@ -8,8 +8,10 @@ import { join, dirname } from 'node:path';
 
 import { getAppVersion } from './app-info';
 
-const releasesEndpoint = 'https://api.github.com/repos/sira313/rapkumer/releases/latest';
-const userAgent = 'RapkumerUpdater/1.0';
+const updatesRepository =
+	process.env.KAGANGA_UPDATE_REPOSITORY?.trim() || 'Argilang14/Kaganga-Data';
+const releasesEndpoint = `https://api.github.com/repos/${updatesRepository}/releases/latest`;
+const userAgent = 'KagangaUpdater/1.0';
 
 const downloads = new Map<string, DownloadRecord>();
 
@@ -110,6 +112,9 @@ type DownloadState = 'pending' | 'downloading' | 'completed' | 'failed' | 'cance
 export async function fetchLatestRelease(): Promise<ReleaseSummary> {
 	const response = await fetch(releasesEndpoint, { headers: buildGithubHeaders() });
 	if (!response.ok) {
+		if (response.status === 404) {
+			throw new Error(`Belum ada GitHub Release pada ${updatesRepository}.`);
+		}
 		const details = await response.text().catch(() => '');
 		throw new Error(
 			`Gagal mengambil data rilis GitHub (${response.status} ${response.statusText}): ${details}`.trim()

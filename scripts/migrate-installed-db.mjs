@@ -16,7 +16,7 @@ function resolveLocalAppData() {
 }
 
 function joinDbPath(base) {
-	return path.join(base, 'Rapkumer-data', 'database.sqlite3');
+	return path.join(base, 'Kaganga-data', 'database.sqlite3');
 }
 
 function run(cmd, args, opts = {}) {
@@ -58,6 +58,10 @@ function runCapture(cmd, args, opts = {}) {
 		process.exitCode = 1;
 		throw res.error;
 	}
+	const stderrText = (res.stderr || '').toString();
+	if (res.status === 0 && /interactive prompts require a tty/i.test(stderrText)) {
+		throw new Error(stderrText);
+	}
 	if (res.status !== 0) {
 		// Include stdout/stderr in the thrown error message for downstream parsing
 		const out = (res.stdout || '').toString();
@@ -89,7 +93,7 @@ async function main() {
 		const localLower = String(localAppData).toLowerCase();
 		const looksInstalled =
 			projLower.startsWith(localLower + path.sep) ||
-			path.basename(projectRoot).toLowerCase() === 'rapkumer';
+			['rapkumer', 'kaganga'].includes(path.basename(projectRoot).toLowerCase());
 
 		const projectLocal = path.join(projectRoot, 'data', 'database.sqlite3');
 		const installedCandidate = joinDbPath(localAppData);
@@ -126,22 +130,14 @@ async function main() {
 	);
 	let drizzleCmd;
 	let drizzleArgsPrefix = [];
-	if (fs.existsSync(drizzleBin)) {
+	const drizzleEntry = path.join(projectRoot, 'node_modules', 'drizzle-kit', 'bin.cjs');
+	if (fs.existsSync(drizzleBin) && fs.existsSync(drizzleEntry)) {
 		drizzleCmd = process.execPath;
-		drizzleArgsPrefix = [path.join(projectRoot, 'node_modules', 'drizzle-kit', 'bin.cjs')];
+		drizzleArgsPrefix = [drizzleEntry];
 	} else {
-		// Check if drizzle-kit is available on PATH as a last resort
-		try {
-			const whichResult = spawnSync(isWin ? 'where' : 'which', ['drizzle-kit'], {
-				stdio: 'pipe',
-				encoding: 'utf-8'
-			});
-			drizzleCmd = whichResult.status === 0 ? 'drizzle-kit' : null;
-		} catch {
-			drizzleCmd = null;
-		}
+		drizzleCmd = null;
 	}
-	const hasDrizzleKit = drizzleCmd !== null;
+	const hasDrizzleKit = process.env.KAGANGA_SKIP_DRIZZLE !== '1' && drizzleCmd !== null;
 
 	try {
 		function normalizeIndexNameForMatch(name) {
@@ -175,6 +171,7 @@ async function main() {
 				// Ensure common columns that older installs may lack. Keep conservative (NULLable INTEGER)
 				const checks = [
 					{ table: 'tasks', column: 'sekolah_id', type: 'INTEGER' },
+					{ table: 'pegawai', column: 'sekolah_id', type: 'INTEGER' },
 					{ table: 'kelas', column: 'sekolah_id', type: 'INTEGER' },
 					{ table: 'mata_pelajaran', column: 'kelas_id', type: 'INTEGER' },
 					{ table: 'auth_user', column: 'sekolah_id', type: 'INTEGER' },
@@ -370,9 +367,9 @@ async function main() {
 			for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
 				try {
 					runCapture(drizzleCmd, [...drizzleArgsPrefix, 'push', '--force'], {
-                        env: childEnv,
-                        cwd: projectRoot
-                    });
+						env: childEnv,
+						cwd: projectRoot
+					});
 					lastError = null;
 					break;
 				} catch (err) {
@@ -447,11 +444,6 @@ async function main() {
 			env: childEnv,
 			cwd: projectRoot
 		});
-		run(process.execPath, [path.join(projectRoot, 'scripts', 'notify-server-reload.mjs')], {
-			env: childEnv,
-			cwd: projectRoot
-		});
-
 		console.info('\n[migrate-installed-db] All steps completed successfully.');
 	} catch (err) {
 		console.error('\n[migrate-installed-db] Migration failed:', err?.message || err);

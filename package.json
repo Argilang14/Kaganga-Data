@@ -1,7 +1,7 @@
 {
 	"name": "rapkumer",
 	"private": true,
-	"version": "2.0.1",
+	"version": "2.0.2",
 	"type": "module",
 	"scripts": {
 		"db:push": "node scripts/migrate-installed-db.mjs",
@@ -13,7 +13,7 @@
 		"preview": "vite preview",
 		"start": "node scripts/start-build.mjs",
 		"package:win": "node scripts/prepare-windows.mjs",
-		"package:win:installer": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& 'C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe' 'installer/rapkumer.iss'\"",
+		"package:win:installer": "node scripts/build-windows-installer.mjs",
 		"sign:executables": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/scripts/sign-files.ps1 -SignExecutables",
 		"sign:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/scripts/sign-files.ps1 -SignInstaller",
 		"sign:verify": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/scripts/sign-files.ps1 -VerifyOnly -SignExecutables -SignInstaller",
@@ -22,7 +22,7 @@
 		"sign:create-cert:force": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/scripts/setup-signing.ps1 -CreateSelfSigned -Force",
 		"prepare": "svelte-kit sync || echo ''",
 		"version": "node scripts/update-version.mjs",
-		"check": "svelte-kit sync && node scripts/svelte-check-wrapper.mjs",
+		"check": "node node_modules/@sveltejs/kit/svelte-kit.js sync && node scripts/svelte-check-wrapper.mjs",
 		"check:watch": "svelte-kit sync && node scripts/svelte-check-wrapper.mjs --watch",
 		"tes-bell": "node scripts/test-bell.mjs",
 		"format": "prettier --write .",
@@ -69,5 +69,12 @@
 		"puppeteer-core": "^25.3.0",
 		"qrcode": "^1.5.4",
 		"unzipper": "^0.12.5"
+	},
+	"overrides": {
+		"body-parser": "1.20.6",
+		"js-yaml": "4.3.0",
+		"tar-fs": "3.1.1",
+		"tmp": "0.2.7",
+		"ws": "8.21.0"
 	}
 }

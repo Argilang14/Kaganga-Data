@@ -67,7 +67,7 @@
 					form.set('ids', idsToDelete.join(','));
 					const response = await fetch('?/delete_users', { method: 'POST', body: form });
 					const result = deserialize(await response.text());
-					const body = (result.data ?? {}) as ActionBody;
+					const body = ('data' in result ? (result.data ?? {}) : {}) as ActionBody;
 					if (result.type !== 'success') {
 						toast({ message: String(body.message ?? 'Gagal menghapus akun'), type: 'error' });
 						return;
@@ -175,7 +175,7 @@
 										body: form
 									});
 									const result = deserialize(await response.text());
-									const body = (result.data ?? {}) as ActionBody;
+									const body = ('data' in result ? (result.data ?? {}) : {}) as ActionBody;
 									if (result.type !== 'success') {
 										toast({ message: String(body.message ?? 'Gagal menyimpan'), type: 'error' });
 										return;

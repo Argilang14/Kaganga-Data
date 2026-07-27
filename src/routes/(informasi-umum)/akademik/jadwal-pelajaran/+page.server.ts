@@ -409,7 +409,7 @@ export const actions: Actions = {
 		}
 
 		const formData = await request.formData();
-		const isActive = formData.get('isActive') === '1' ? 1 : 0;
+		const isActive = formData.get('isActive') === '1';
 
 		await ensureJadwalBellSchema();
 

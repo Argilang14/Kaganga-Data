@@ -105,6 +105,7 @@ async function main() {
 	const client = createClient({ url: dbUrl });
 	const added = [];
 	const skipped = [];
+	const failed = [];
 
 	try {
 		// Ensure keasramaan tables exist (from migration 0021)
@@ -466,6 +467,7 @@ async function main() {
 				type: "TEXT NOT NULL DEFAULT 'definitif'"
 			},
 			{ table: 'tasks', column: 'sekolah_id', type: 'INTEGER' },
+			{ table: 'pegawai', column: 'sekolah_id', type: 'INTEGER' },
 			{ table: 'tasks', column: 'kelas_id', type: 'INTEGER' },
 			{ table: 'kelas', column: 'sekolah_id', type: 'INTEGER' },
 			{ table: 'mata_pelajaran', column: 'kelas_id', type: 'INTEGER' },
@@ -512,14 +514,60 @@ async function main() {
 			{ table: 'sekolah', column: 'naungan', type: 'TEXT' },
 			{ table: 'auth_user', column: 'sekolah_id', type: 'INTEGER' },
 			{ table: 'feature_unlock', column: 'sekolah_id', type: 'INTEGER' },
-			{ table: 'tahun_ajaran', column: 'sekolah_id', type: 'INTEGER' }
+			{ table: 'tahun_ajaran', column: 'sekolah_id', type: 'INTEGER' },
+			{ table: 'jadwal_pelajaran', column: 'jam_ke', type: 'INTEGER NOT NULL DEFAULT 0' },
+			{ table: 'jadwal_pelajaran', column: 'kode_kegiatan', type: "TEXT NOT NULL DEFAULT ''" }
 		];
 
 		for (const c of checks) {
 			const res = await addColumnIfMissing(client, c.table, c.column, c.type);
-			if (res && res.added) added.push(`${c.table}.${c.column}`);
+			if (res?.error) failed.push(`${c.table}.${c.column}: ${res.error}`);
+			else if (res?.added) added.push(`${c.table}.${c.column}`);
 			else skipped.push(`${c.table}.${c.column}`);
 		}
+
+		try {
+			await client.execute({
+				sql: `UPDATE jadwal_pelajaran
+				SET jam_ke = COALESCE(
+					(SELECT jam_ke FROM jadwal_jam WHERE jadwal_jam.id = jadwal_pelajaran.jam_id),
+					jam_ke
+				)
+				WHERE jam_ke = 0`
+			});
+			await client.execute({
+				sql: `UPDATE jadwal_pelajaran
+				SET kode_kegiatan = COALESCE(
+					(SELECT kode FROM jadwal_mata_pelajaran WHERE jadwal_mata_pelajaran.id = jadwal_pelajaran.jadwal_mapel_id),
+					(SELECT kode FROM jadwal_kegiatan WHERE jadwal_kegiatan.id = jadwal_pelajaran.kegiatan_id),
+					NULLIF(tipe, ''),
+					'-'
+				)
+				WHERE kode_kegiatan = ''`
+			});
+		} catch (error) {
+			console.warn(
+				'[ensure-columns] Jadwal lama belum dapat diisi ulang; pemeriksaan runtime akan mencobanya kembali:',
+				error && (error.message || error.toString())
+			);
+		}
+		await client.execute({
+			sql: `UPDATE pegawai
+			SET sekolah_id = COALESCE(
+				(SELECT s.id FROM sekolah s WHERE s.kepala_sekolah_id = pegawai.id LIMIT 1),
+				(SELECT au.sekolah_id FROM auth_user au WHERE au.pegawai_id = pegawai.id AND au.sekolah_id IS NOT NULL LIMIT 1),
+				(SELECT k.sekolah_id FROM kelas k WHERE k.wali_kelas_id = pegawai.id AND k.sekolah_id IS NOT NULL LIMIT 1),
+				(SELECT id FROM sekolah WHERE (SELECT COUNT(*) FROM sekolah) = 1 LIMIT 1)
+			)
+			WHERE sekolah_id IS NULL`
+		});
+		await ensureIndexExists(
+			client,
+			'idx_pegawai_sekolah_id',
+			'CREATE INDEX IF NOT EXISTS "idx_pegawai_sekolah_id" ON "pegawai" ("sekolah_id")'
+		);
+
+		if (failed.length) throw new Error(`Gagal memastikan skema:\n${failed.join('\n')}`);
 
 		console.info('[ensure-columns] Summary:');
 		console.info('[ensure-columns] Added columns:', added.length ? added.join(', ') : '(none)');

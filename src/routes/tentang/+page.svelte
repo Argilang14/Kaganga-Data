@@ -12,7 +12,7 @@
 
 <div class="w-full space-y-5">
 	<section
-		class="rounded-box from-primary/15 via-base-100 to-secondary/20 ring-base-200/60 overflow-hidden bg-linear-to-br p-5 shadow-md ring-1 sm:p-8"
+		class="rounded-box from-primary/15 via-base-100 to-secondary/20 ring-base-200/60 relative z-10 overflow-visible bg-linear-to-br p-5 shadow-md ring-1 sm:p-8"
 	>
 		<div class="space-y-6">
 			<span class="badge badge-outline bg-base-100/70 text-primary shadow"
@@ -22,8 +22,8 @@
 				Kaganga — Kawasan Gerbang Administrasi dan Informasi Data Sekolah
 			</h1>
 			<p class="text-base-content/90 text-base md:text-lg">
-				Kaganga membantu guru dan operator sekolah menyelesaikan administrasi rutin secara efisien
-				dan siap cetak sesuai kurikulum terbaru.
+				Kaganga membantu guru, operator, wali kelas, dan pengelola asrama mengelola data sekolah
+				secara cepat, rapi, dan siap cetak sesuai kurikulum terbaru.
 			</p>
 
 			<div class="grid gap-4 sm:grid-cols-2">
@@ -44,22 +44,36 @@
 			</div>
 
 			<div class="flex flex-col gap-3 sm:flex-row">
-				<a
-					class="btn btn-outline shadow-none"
-					href="https://kurikulum.kemendikdasmen.go.id/"
-					target="_blank"
-					rel="noreferrer">Pelajari Kurikulum</a
-				>
+				<div class="dropdown dropdown-start">
+					<button type="button" tabindex="0" class="btn btn-outline shadow-none">
+						Pelajari Kurikulum
+						<Icon name="down" class="text-sm" />
+					</button>
+					<ul
+						tabindex="-1"
+						class="dropdown-content menu bg-base-100 rounded-box border-base-300 z-50 mt-2 w-72 border p-2 shadow-xl"
+					>
+						<li>
+							<a href="https://kurikulum.kemendikdasmen.go.id" target="_blank" rel="noreferrer">
+								Kurikulum Kemendikdasmen
+							</a>
+						</li>
+						<li>
+							<a
+								href="https://sekolahrakyat.kemensos.go.id/kurikulum"
+								target="_blank"
+								rel="noreferrer"
+							>
+								Kurikulum Sekolah Rakyat
+							</a>
+						</li>
+					</ul>
+				</div>
 				<a class="btn btn-outline shadow-none" href="/lisensi">Lihat Lisensi</a>
-				<a
-					class="btn btn-primary shadow-none sm:ml-auto"
-					href="https://t.me/+zj3h_zjBAC02YjZl"
-					target="_blank"
-					rel="noreferrer"
-				>
+				<button class="btn btn-primary shadow-none sm:ml-auto" type="button" disabled>
 					<Icon name="telegram" class="mr-2 text-xl shadow-none" />
 					Tanya di Telegram
-				</a>
+				</button>
 			</div>
 		</div>
 	</section>
@@ -69,18 +83,19 @@
 			<div class="space-y-4">
 				<h2 class="text-base-content text-2xl font-semibold">Mengapa kami membangun Kaganga?</h2>
 				<p class="text-base-content/90">
-					Aplikasi Kaganga ini kami kembangkan sebagai aplikasi terpadu untuk membantu tugas-tugas
-					administrasi guru seperti: presensi harian murid, jurnal mengajar, nilai harian, nilai
-					STS, dan nilai SAS yang dihitung otomatis untuk dijadikan nilai rapor yang bisa langsung
-					dicetak maupun di-export menjadi file excel yang bisa di-import ke e-rapor kemdikdas.
+					Kaganga dikembangkan untuk memudahkan sekolah dalam mengelola nilai murid menjadi rapor
+					siap cetak. Input data bisa dilakukan manual atau massal melalui fitur <span
+						class="font-medium">import file Excel</span
+					> yang tersedia.
 				</p>
 				<p class="text-base-content/90">
-					Selain itu, Kaganga juga memiliki fitur tambahan seperti jadwal pembelajaran dan bell
-					otomatis.
+					Selain itu, Kaganga dirancang untuk membantu operator sekolah mempersiapkan data yang
+					diperlukan Dapodik. Fitur <span class="font-medium">ekspor nilai ke Dapodik</span> sedang disempurnakan
+					agar proses validasi dan format sesuai kebutuhan downstream.
 				</p>
 				<p class="text-base-content/90">
-					Harapan kami, aplikasi ini menjadi solusi praktis bagi pendidik dan tenaga kependidikan
-					dalam menerapkan Kurikulum Merdeka secara efektif dan efisien.
+					Harapan kami, aplikasi ini menjadi solusi praktis bagi tenaga pendidik dalam menerapkan
+					Kurikulum Merdeka secara efektif dan efisien.
 				</p>
 			</div>
 		</div>
@@ -97,6 +112,7 @@
 						<a href="https://mustofa.id" target="_blank" class="link link-primary">Habib Mustofa</a>
 						— Mentor & Advisor
 					</li>
+					<li>Argilang R — pengembang khusus bagian sekolah rakyat</li>
 				</ul>
 
 				<h3 class="text-base-content text-lg font-semibold">Tester</h3>
@@ -104,6 +120,7 @@
 					<li>Hamdani, S.Pd., Gr.</li>
 					<li>Rudiansyah, S.Pd., Gr.</li>
 					<li>Putra Panji Prasetiyo, S.Pd., Gr.</li>
+					<li>Tendik SRMA 6 Bengkulu</li>
 				</ul>
 
 				<h3 class="text-base-content text-lg font-semibold">Referensi</h3>
@@ -149,8 +166,10 @@
 						<span class="badge badge-primary badge-outline">UI &amp; UX</span>
 						<h3 class="text-base-content text-lg font-semibold">Masukan Antarmuka</h3>
 						<p class="text-base-content/70 text-sm">
-							<span class="text-base-content font-semibold">Noffie Suryanti Mandasari, S.Pd.</span> memberikan
-							ide dan saran pengembangan tampilan pengguna.
+							<span class="text-base-content font-semibold">Noffie Suryanti Mandasari, S.Pd.</span>
+							memberikan ide dan saran pengembangan tampilan pengguna.<br />
+							<span class="text-base-content font-semibold">Veronica R, S.Pd., Gr.</span> memberikan penambahan
+							saran khusus menu sekolah rakyat.
 						</p>
 					</div>
 				</article>
@@ -168,6 +187,10 @@
 								<span class="text-base-content font-semibold">Fathonah Nilawidya, S.Pd.</span>
 							</li>
 							<li><span class="text-base-content font-semibold">Rudiansyah, S.Pd., Gr.</span></li>
+							<li>
+								<span class="text-base-content font-semibold">Riska Riani, S.Pd., Gr.</span> — saran alur
+								penilaian dan kurikulum menu khusus sekolah rakyat
+							</li>
 						</ul>
 					</div>
 				</article>

@@ -219,7 +219,7 @@ export async function load({ locals, url }) {
 		and(
 			lte(tableKalenderPendidikan.tanggalMulai, calendarRange.end),
 			gte(tableKalenderPendidikan.tanggalSelesai, calendarRange.start)
-		)
+		)!
 	);
 	if (selectedSemesterId)
 		whereParts.push(

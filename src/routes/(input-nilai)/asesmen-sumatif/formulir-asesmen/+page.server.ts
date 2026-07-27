@@ -3,7 +3,6 @@ import { ensureAsesmenSumatifSchema } from '$lib/server/db/ensure-asesmen-sumati
 import {
 	tableAsesmenSumatif,
 	tableAsesmenSumatifTujuan,
-	tableFeatureUnlock,
 	tableMataPelajaran,
 	tableMurid,
 	tableTujuanPembelajaran,
@@ -13,8 +12,6 @@ import { unflattenFormData } from '$lib/utils';
 import { fail, error, redirect } from '@sveltejs/kit';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { authority } from '../../../pengguna/utils.server';
-
-const CHEAT_FEATURE_KEY = 'cheat-asesmen-sumatif';
 
 const DEFAULT_LINGKUP = 'Tanpa lingkup materi';
 
@@ -246,14 +243,6 @@ export async function load({ url, locals, depends }) {
 		}
 	}
 
-	const featureUnlock = await db.query.tableFeatureUnlock.findFirst({
-		columns: { id: true },
-		where: and(
-			eq(tableFeatureUnlock.sekolahId, sekolahId),
-			eq(tableFeatureUnlock.featureKey, CHEAT_FEATURE_KEY)
-		)
-	});
-
 	await ensureAsesmenSumatifSchema();
 
 	const tujuanPembelajaran = await db.query.tableTujuanPembelajaran.findMany({
@@ -323,7 +312,6 @@ export async function load({ url, locals, depends }) {
 		hasTujuan: entries.length > 0,
 		hasLingkupComplete,
 		entries,
-		cheatUnlocked: Boolean(featureUnlock),
 		sumatifWeights: {
 			lingkup: Number(locals.sekolah?.sumatifBobotLingkup ?? 60),
 			sts: Number(locals.sekolah?.sumatifBobotSts ?? 20),

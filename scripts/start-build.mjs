@@ -78,7 +78,7 @@ const candidates = [
 			console.error('Kemungkinan penyebab: Microsoft Visual C++ Redistributable');
 			console.error('2015-2022 (x64) belum terinstall di komputer ini.');
 			console.error('');
-			console.error('Solusi: Jalankan ulang installer Rapkumer, atau unduh dan');
+			console.error('Solusi: Jalankan ulang installer Kaganga, atau unduh dan');
 			console.error('install langsung dari Microsoft:');
 			console.error('  https://aka.ms/vs/17/release/vc_redist.x64.exe');
 			console.error('=====================================================================');

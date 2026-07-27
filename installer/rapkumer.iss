@@ -1,20 +1,20 @@
-#define AppName "Rapkumer - Aplikasi administrasi guru terpadu"
-#define AppVersion "2.0.1"
+#define AppName "Kaganga - Administrasi dan Informasi Data Sekolah"
+#define AppVersion "2.0.2"
 #define StagePath "..\\dist\\windows\\stage\\Rapkumer"
 
 [Setup]
 AppId={{06E10F9F-0AD2-4F31-A64B-7C3B36F2D0D6}}
 AppName={#AppName}
 AppVersion={#AppVersion}
-AppPublisher="Rapkumer"
+AppPublisher="Kaganga"
 AppPublisherURL="https://github.com/Argilang14/Kaganga-Data"
 AppContact="me@apoxi.cam"
 ; Install under the current user's Local AppData so admin privileges are not required
-DefaultDirName={localappdata}\Rapkumer
-DefaultGroupName=Rapkumer
+DefaultDirName={localappdata}\Kaganga
+DefaultGroupName=Kaganga
 DisableProgramGroupPage=yes
 OutputDir=..\dist\windows
-OutputBaseFilename=RapkumerSetup
+OutputBaseFilename=KagangaSetup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -36,12 +36,13 @@ Source:"{#StagePath}\\*"; DestDir:"{app}"; Flags: ignoreversion recursesubdirs c
 Source:"files\\start-rapkumer.mjs"; DestDir:"{app}"; Flags: ignoreversion
 Source:"..\dist\windows\vc_redist.x64.exe"; DestDir:"{tmp}"; Flags: ignoreversion deleteafterinstall
 
-[Run]
-Filename:"node"; Parameters:"""{app}\scripts\migrate-installed-db.mjs"""; WorkingDir:"{app}"; StatusMsg:"Menjalankan migrasi database (drizzle-kit) pada mesin ini..."; Flags: runhidden waituntilterminated
+[InstallDelete]
+Type: files; Name: "{autodesktop}\Rapkumer.lnk"
+Type: filesandordirs; Name: "{autoprograms}\Rapkumer"
 
 [Icons]
-Name:"{autoprograms}\Rapkumer\Rapkumer"; Filename:"{sys}\cmd.exe"; Parameters:"/c ""node ""{app}\start-rapkumer.mjs"""; WorkingDir:"{app}"; IconFilename:"{app}\rapkumer.ico"
-Name:"{autodesktop}\Rapkumer"; Filename:"{sys}\cmd.exe"; Parameters:"/c ""node ""{app}\start-rapkumer.mjs"""; WorkingDir:"{app}"; IconFilename:"{app}\rapkumer.ico"
+Name:"{autoprograms}\Kaganga\Kaganga"; Filename:"{sys}\cmd.exe"; Parameters:"/c ""node ""{app}\start-rapkumer.mjs"""; WorkingDir:"{app}"; IconFilename:"{app}\rapkumer.ico"
+Name:"{autodesktop}\Kaganga"; Filename:"{sys}\cmd.exe"; Parameters:"/c ""node ""{app}\start-rapkumer.mjs"""; WorkingDir:"{app}"; IconFilename:"{app}\rapkumer.ico"
 
 [Code]
 
@@ -95,37 +96,29 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-	EnvPath, DbPath, DbDir, S, SrcDb, LogDir, LogFile, SoundDir: string;
+	EnvPath, DbPath, DbDir, S, LogDir, LogFile, SoundDir: string;
 begin
 	if CurStep = ssPostInstall then
 	begin
 		InstallVcRedist;
-		DbPath := ExpandConstant('{localappdata}\Rapkumer-data\database.sqlite3');
+		DbPath := ExpandConstant('{localappdata}\Kaganga-data\database.sqlite3');
 		DbDir := ExtractFileDir(DbPath);
 		if not DirExists(DbDir) then
 			ForceDirectories(DbDir);
-			// If the user doesn't already have a DB in their user state, copy the packaged one
-			SrcDb := ExpandConstant('{localappdata}\Rapkumer\data\database.sqlite3');
-			if (not FileExists(DbPath)) and FileExists(SrcDb) then
-			begin
-				if not CopyFile(SrcDb, DbPath, False) then
-					Log(Format('Failed to copy initial database from %s to %s', [SrcDb, DbPath]));
-			end;
-
 			// Ensure log directory and empty log file exist
-			LogDir := ExpandConstant('{localappdata}\Rapkumer-data\logs');
+			LogDir := ExpandConstant('{localappdata}\Kaganga-data\logs');
 			if not DirExists(LogDir) then
 				ForceDirectories(LogDir);
-			LogFile := LogDir + '\\rapkumer.log';
+			LogFile := LogDir + '\\kaganga.log';
 			if not FileExists(LogFile) then
 				SaveStringToFile(LogFile, '', False);
 		// Ensure sounds directory exists
-			SoundDir := ExpandConstant('{localappdata}\Rapkumer-data\sounds');
+			SoundDir := ExpandConstant('{localappdata}\Kaganga-data\sounds');
 			if not DirExists(SoundDir) then
 				ForceDirectories(SoundDir);
 
 		EnvPath := ExpandConstant('{app}\.env');
-		S := 'DB_URL="file:' + DbPath + '"' + #13#10 + 'BODY_SIZE_LIMIT=5M' + #13#10 + 'photo="file:' + ExpandConstant('{localappdata}\Rapkumer-data\uploads') + '"' + #13#10 + 'sounds="file:' + ExpandConstant('{localappdata}\Rapkumer-data\sounds') + '"';
+		S := 'DB_URL="file:' + DbPath + '"' + #13#10 + 'BODY_SIZE_LIMIT=5M' + #13#10 + 'photo="file:' + ExpandConstant('{localappdata}\Kaganga-data\uploads') + '"' + #13#10 + 'sounds="file:' + ExpandConstant('{localappdata}\Kaganga-data\sounds') + '"';
 		if SaveStringToFile(EnvPath, S, False) then
 			Log(Format('Wrote .env to %s', [EnvPath]))
 		else

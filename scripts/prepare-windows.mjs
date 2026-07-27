@@ -85,15 +85,16 @@ function main() {
 		console.warn('File static/logo.ico tidak ditemukan; ikon installer tidak akan diperbarui.');
 	}
 
-	// 6) DB migration
-	const dbPath = path.join(projectRoot, 'data', 'database.sqlite3');
+	// 6) Generate a clean installer database. Never package the repository DB,
+	// because it may contain development or school data.
+	const dbPath = path.join(absOutput, 'installer-database.sqlite3');
 	if (skipDbPush) {
-		console.info('Skipping repository database migration as requested.');
+		if (!fs.existsSync(dbPath)) throw new Error(`Clean installer database not found: ${dbPath}`);
+		console.info('Reusing the existing clean installer database.');
 	} else {
-		console.info('Running database migration against the repository database...');
-		run(process.execPath, [path.join(projectRoot, 'scripts', 'migrate-installed-db.mjs')], {
-			cwd: projectRoot,
-			env: { ...process.env, DB_URL: 'file:' + dbPath }
+		console.info('Generating a clean installer database...');
+		run(process.execPath, [path.join(projectRoot, 'scripts', 'create-installer-db.mjs'), dbPath], {
+			cwd: projectRoot
 		});
 	}
 
@@ -118,7 +119,8 @@ function main() {
 		private: true,
 		type: 'module',
 		scripts: { start: 'node build/index.js' },
-		dependencies: pkgJson.dependencies
+		dependencies: pkgJson.dependencies,
+		overrides: pkgJson.overrides
 	};
 	fs.writeFileSync(path.join(appStage, 'package.json'), JSON.stringify(runtimePkg, null, 2));
 
@@ -188,7 +190,7 @@ function main() {
 	const envTarget = path.join(appStage, '.env');
 	if (!fs.existsSync(envTarget)) {
 		const envContent =
-			'DB_URL=file:%LOCALAPPDATA%/Rapkumer-data/database.sqlite3\nBODY_SIZE_LIMIT=5M\n';
+			'DB_URL=file:%LOCALAPPDATA%/Kaganga-data/database.sqlite3\nBODY_SIZE_LIMIT=5M\n';
 		fs.writeFileSync(envTarget, envContent);
 		console.info('Wrote default .env to', envTarget);
 	} else {
@@ -214,20 +216,7 @@ function main() {
 		env: winEnv
 	});
 
-	// 13) Install drizzle-kit
-	console.info('Installing drizzle-kit into staged app...');
-	try {
-		run('npm', ['install', '--no-package-lock', '--no-save', 'drizzle-kit'], {
-			cwd: appStage,
-			env: winEnv
-		});
-	} catch {
-		console.warn(
-			'Failed to install drizzle-kit into staged app; migrations on target may not be possible.'
-		);
-	}
-
-	// 14) Explicitly install Windows native binding for libsql.
+	// 13) Explicitly install Windows native binding for libsql.
 	//     Doing this after all npm operations because npm may prune the package
 	//     when it doesn't match the current Linux platform.
 	console.info('Installing Windows native binding @libsql/win32-x64-msvc...');

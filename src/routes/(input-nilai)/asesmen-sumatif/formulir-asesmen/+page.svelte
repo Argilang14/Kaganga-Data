@@ -38,7 +38,6 @@
 			sasNonTes: number | null;
 			nilaiAkhir: number | null;
 		};
-		cheatUnlocked: boolean;
 	};
 
 	type SavePayload = {
@@ -72,8 +71,6 @@
 	let stsNonTesText = $state(
 		data.initialScores.stsNonTes != null ? data.initialScores.stsNonTes.toFixed(2) : ''
 	);
-	let cheatUnlocked = $state(data.cheatUnlocked);
-
 	$effect(() => {
 		entries = data.entries.map(toDraft);
 		sasTesText = data.initialScores.sasTes != null ? data.initialScores.sasTes.toFixed(2) : '';
@@ -82,7 +79,6 @@
 		stsTesText = data.initialScores.stsTes != null ? data.initialScores.stsTes.toFixed(2) : '';
 		stsNonTesText =
 			data.initialScores.stsNonTes != null ? data.initialScores.stsNonTes.toFixed(2) : '';
-		cheatUnlocked = data.cheatUnlocked;
 	});
 
 	const lingkupSummaries = $derived.by((): LingkupSummary[] => {
@@ -383,10 +379,6 @@
 		stsNonTesText = stsNonTes;
 	}
 
-	function handleCheatUnlockChange(event: CustomEvent<{ cheatUnlocked: boolean }>): void {
-		cheatUnlocked = event.detail.cheatUnlocked;
-	}
-
 	async function handleSuccess({ data: result }: { data?: Record<string, unknown> }) {
 		const payload = (result?.payload ?? null) as SavePayload | null;
 		if (payload) {
@@ -430,9 +422,7 @@
 					initialNilaiAkhir={data.initialScores.nilaiAkhir}
 					{nilaiAkhir}
 					disabled={submitting}
-					{cheatUnlocked}
 					on:apply={handleCheatApply}
-					on:unlockChange={handleCheatUnlockChange}
 				/>
 				<button
 					type="submit"

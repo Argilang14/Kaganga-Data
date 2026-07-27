@@ -145,6 +145,11 @@ interface RaporPrintData {
 		tanpaKeterangan: number;
 	};
 	catatanWali: string;
+	statusAkhirRapor?: {
+		status: string;
+		tanggalPenetapan: string;
+		catatan: string;
+	};
 	tanggapanOrangTua: string;
 	naik: boolean;
 	ttd: {

@@ -3,8 +3,14 @@ import fsPromises from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, spawnSync } from 'child_process';
+import http from 'http';
 import net from 'net';
 import os from 'os';
+
+const DEFAULT_PORT = 1206;
+const APP_NAME = 'Kaganga';
+const USER_STATE_DIR = 'Kaganga-data';
+const LEGACY_USER_STATE_DIR = 'Rapkumer-data';
 
 function timeStamp() {
 	return new Date().toISOString();
@@ -55,25 +61,143 @@ async function waitForPort(port, attempts = 10, delayMs = 1000) {
 	return false;
 }
 
+async function isKagangaServer(port) {
+	return new Promise((resolve) => {
+		const request = http.get(
+			{ hostname: '127.0.0.1', port, path: '/login', timeout: 2500 },
+			(response) => {
+				let body = '';
+				response.setEncoding('utf8');
+				response.on('data', (chunk) => {
+					if (body.length < 64 * 1024) body += chunk;
+				});
+				response.on('end', () => resolve(/Kaganga/i.test(body)));
+			}
+		);
+		request.once('timeout', () => {
+			request.destroy();
+			resolve(false);
+		});
+		request.once('error', () => resolve(false));
+	});
+}
+
+function openBrowser(url) {
+	if (process.platform !== 'win32') return;
+	const cmdPath = process.env.ComSpec || 'cmd.exe';
+	const opener = spawn(cmdPath, ['/c', 'start', '', url], {
+		windowsHide: true,
+		detached: true,
+		stdio: 'ignore'
+	});
+	opener.on('error', () => void 0);
+	opener.unref();
+}
+
+async function checkpointDatabase(databasePath, logFile) {
+	if (!fs.existsSync(databasePath)) return;
+	try {
+		const { createClient } = await import('@libsql/client');
+		const client = createClient({ url: 'file:' + databasePath.replace(/\\/g, '/') });
+		try {
+			await client.execute('PRAGMA wal_checkpoint(TRUNCATE)');
+		} finally {
+			if (typeof client.close === 'function') await client.close();
+		}
+	} catch (error) {
+		await appendLog(logFile, `Peringatan: checkpoint database dilewati: ${String(error)}`);
+	}
+}
+
+async function copyLegacyState(legacyRoot, targetRoot, logFile) {
+	const targetDb = path.join(targetRoot, 'database.sqlite3');
+	const legacyDb = path.join(legacyRoot, 'database.sqlite3');
+	if (fs.existsSync(targetDb) || !fs.existsSync(legacyDb)) return;
+
+	await appendLog(logFile, `Menyalin data lama dari ${legacyRoot} ke ${targetRoot}`);
+	await checkpointDatabase(legacyDb, logFile);
+	await fsPromises.copyFile(legacyDb, targetDb);
+	for (const suffix of ['-wal', '-shm']) {
+		if (fs.existsSync(legacyDb + suffix)) {
+			await fsPromises.copyFile(legacyDb + suffix, targetDb + suffix);
+		}
+	}
+	for (const folder of ['uploads', 'sounds']) {
+		const source = path.join(legacyRoot, folder);
+		const destination = path.join(targetRoot, folder);
+		if (fs.existsSync(source) && !fs.existsSync(destination)) {
+			await fsPromises.cp(source, destination, { recursive: true, errorOnExist: false });
+		}
+	}
+	const legacyOrigins = path.join(legacyRoot, 'csrf-origins.txt');
+	const targetOrigins = path.join(targetRoot, 'csrf-origins.txt');
+	if (fs.existsSync(legacyOrigins) && !fs.existsSync(targetOrigins)) {
+		await fsPromises.copyFile(legacyOrigins, targetOrigins);
+	}
+	await appendLog(logFile, 'Data lama berhasil disalin. Data sumber tetap dipertahankan.');
+}
+
+async function readAppVersion(appHome) {
+	try {
+		const pkg = JSON.parse(await fsPromises.readFile(path.join(appHome, 'package.json'), 'utf8'));
+		return String(pkg.version || 'unknown');
+	} catch {
+		return 'unknown';
+	}
+}
+
+async function backupDatabaseForVersion(databasePath, stateRoot, version, logFile) {
+	if (!fs.existsSync(databasePath)) return null;
+	const marker = path.join(stateRoot, '.last-migrated-version');
+	const migratedVersion = await fsPromises.readFile(marker, 'utf8').catch(() => '');
+	if (migratedVersion.trim() === version) return marker;
+
+	await checkpointDatabase(databasePath, logFile);
+	const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+	const backupPath = path.join(stateRoot, `database-backup-before-${version}-${stamp}.sqlite3`);
+	await fsPromises.copyFile(databasePath, backupPath);
+	await appendLog(logFile, `Backup sebelum migrasi dibuat: ${backupPath}`);
+	return marker;
+}
+
 async function main() {
 	const __filename = fileURLToPath(import.meta.url);
 	const APP_HOME = path.dirname(__filename);
 
-	const PORT = process.env.PORT || '3000';
+	const PORT = Number(process.env.PORT || DEFAULT_PORT);
+	if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+		throw new Error(`PORT tidak valid: ${process.env.PORT}`);
+	}
 	const NODE_ENV = process.env.NODE_ENV || 'production';
 
 	const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-	const USER_STATE_ROOT = path.join(localAppData, 'Rapkumer-data');
+	const USER_STATE_ROOT = path.join(localAppData, USER_STATE_DIR);
+	const LEGACY_STATE_ROOT = path.join(localAppData, LEGACY_USER_STATE_DIR);
 	const LOG_DIR = path.join(USER_STATE_ROOT, 'logs');
-	const LOG_FILE = path.join(LOG_DIR, 'rapkumer.log');
+	const LOG_FILE = path.join(LOG_DIR, 'kaganga.log');
 
 	await ensureDir(LOG_DIR);
 	await ensureDir(USER_STATE_ROOT);
 
-	await appendLog(LOG_FILE, `Starting Rapkumer (app home: ${APP_HOME})`);
+	await appendLog(LOG_FILE, `Starting ${APP_NAME} (app home: ${APP_HOME})`);
+
+	if (await waitForPort(PORT, 1, 0)) {
+		const url = `http://localhost:${PORT}`;
+		if (await isKagangaServer(PORT)) {
+			await appendLog(
+				LOG_FILE,
+				`${APP_NAME} sudah berjalan pada ${url}; menggunakan proses yang ada.`
+			);
+			openBrowser(url);
+			return;
+		}
+		throw new Error(`Port ${PORT} sedang digunakan aplikasi lain. ${APP_NAME} tidak dijalankan.`);
+	}
+
+	await copyLegacyState(LEGACY_STATE_ROOT, USER_STATE_ROOT, LOG_FILE);
 
 	// Ensure database exists in user folder
-	const srcDb = path.join(APP_HOME, '..', 'data', 'database.sqlite3');
+	const srcDb = path.join(APP_HOME, 'data', 'database.sqlite3');
 	const dstDb = path.join(USER_STATE_ROOT, 'database.sqlite3');
 	try {
 		if (!fs.existsSync(dstDb)) {
@@ -96,10 +220,10 @@ async function main() {
 
 	await appendLog(LOG_FILE, `Using DB_URL=${DB_URL}`);
 
-	console.log(`Menjalankan Rapkumer pada http://localhost:${PORT}`);
+	console.log(`Menjalankan ${APP_NAME} pada http://localhost:${PORT}`);
 	await appendLog(
 		LOG_FILE,
-		`Starting Rapkumer using node start-build.mjs on port ${PORT} with DB_URL=${DB_URL}`
+		`Starting ${APP_NAME} using node start-build.mjs on port ${PORT} with DB_URL=${DB_URL}`
 	);
 
 	const childEnv = {
@@ -108,12 +232,15 @@ async function main() {
 		NODE_ENV,
 		BODY_SIZE_LIMIT: '5242880',
 		DB_URL,
-		DATABASE_URL: DB_URL
+		DATABASE_URL: DB_URL,
+		KAGANGA_SKIP_DRIZZLE: '1'
 	};
 	const nodeBin = process.execPath || 'node';
 
-	// Run database migration synchronously before starting the server
-	// This ensures the schema is always up-to-date (especially after version upgrades)
+	const version = await readAppVersion(APP_HOME);
+	const migrationMarker = await backupDatabaseForVersion(dstDb, USER_STATE_ROOT, version, LOG_FILE);
+
+	// Run database migration synchronously before starting the server.
 	const migrateScript = path.join(APP_HOME, 'scripts', 'migrate-installed-db.mjs');
 	if (fs.existsSync(migrateScript)) {
 		await appendLog(LOG_FILE, 'Menjalankan migrasi database...');
@@ -126,9 +253,10 @@ async function main() {
 			});
 			if (result.error) {
 				await appendLog(LOG_FILE, `Migrasi database error: ${result.error.message}`);
-				console.error('[start-rapkumer] Database migration error:', result.error.message);
+				throw result.error;
 			} else if (result.status === 0) {
 				await appendLog(LOG_FILE, 'Migrasi database berhasil');
+				if (migrationMarker) await fsPromises.writeFile(migrationMarker, version, 'utf8');
 			} else {
 				const stderr = result.stderr?.toString() || '';
 				const stdout = result.stdout?.toString() || '';
@@ -136,14 +264,14 @@ async function main() {
 					LOG_FILE,
 					`Migrasi database gagal (exit code ${result.status}): ${stderr}${stdout}`
 				);
-				console.error('[start-rapkumer] Database migration failed:', stderr || stdout);
+				throw new Error(`Migrasi database gagal (exit code ${result.status}): ${stderr || stdout}`);
 			}
 		} catch (err) {
 			await appendLog(LOG_FILE, `Error saat migrasi database: ${String(err)}`);
-			console.error('[start-rapkumer] Database migration error:', err);
+			throw err;
 		}
 	} else {
-		await appendLog(LOG_FILE, `Script migrasi tidak ditemukan di ${migrateScript}, dilewati`);
+		throw new Error(`Script migrasi tidak ditemukan di ${migrateScript}`);
 	}
 
 	// Spawn the start-build script as a detached background process.
@@ -190,22 +318,10 @@ async function main() {
 		await appendLog(LOG_FILE, 'Server is listening on port ' + PORT);
 		if (process.platform === 'win32') {
 			const url = `http://localhost:${PORT}`;
-			console.log('Sedang membuka Rapkumer...');
+			console.log(`Sedang membuka ${APP_NAME}...`);
 			await appendLog(LOG_FILE, `Opening browser to ${url}`);
-			const cmdPath = process.env.ComSpec || 'cmd.exe';
 			try {
-				const opener = spawn(cmdPath, ['/c', 'start', '', url], {
-					windowsHide: true,
-					detached: true
-				});
-				opener.on('error', async (e) => {
-					await appendLog(LOG_FILE, `Failed to open browser (spawn error): ${String(e)}`);
-				});
-				try {
-					opener.unref();
-				} catch {
-					void 0;
-				}
+				openBrowser(url);
 			} catch (err) {
 				await appendLog(LOG_FILE, `Failed to open browser: ${String(err)}`);
 			}
@@ -220,7 +336,7 @@ async function main() {
 
 main().catch(async (err) => {
 	const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-	const LOG_FILE = path.join(localAppData, 'Rapkumer-data', 'logs', 'rapkumer.log');
+	const LOG_FILE = path.join(localAppData, USER_STATE_DIR, 'logs', 'kaganga.log');
 	try {
 		await appendLog(LOG_FILE, `Fatal: ${String(err)}`);
 	} catch {
@@ -241,7 +357,7 @@ main().catch(async (err) => {
 		console.error('Kemungkinan penyebab: Microsoft Visual C++ Redistributable');
 		console.error('2015-2022 (x64) belum terinstall di komputer ini.');
 		console.error('');
-		console.error('Solusi: Jalankan ulang installer Rapkumer, atau unduh dan');
+		console.error(`Solusi: Jalankan ulang installer ${APP_NAME}, atau unduh dan`);
 		console.error('install langsung dari Microsoft:');
 		console.error('  https://aka.ms/vs/17/release/vc_redist.x64.exe');
 		console.error('=====================================================================');

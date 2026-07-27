@@ -23,20 +23,16 @@ export async function ensurePegawaiSchema() {
 	await addColumnIfMissing('pegawai', 'email', 'TEXT');
 	await addColumnIfMissing('pegawai', 'catatan', 'TEXT');
 
-	// Kaitkan data wali kelas lama ke sekolahnya tanpa membuat pegawai atau akun baru.
+	// Kaitkan data pegawai lama ke sekolah tanpa membuat pegawai atau akun baru.
 	await db.$client.execute(`
 		UPDATE pegawai
-		SET sekolah_id = (
-			SELECT MIN(k.sekolah_id)
-			FROM kelas k
-			WHERE k.wali_kelas_id = pegawai.id
+		SET sekolah_id = COALESCE(
+			(SELECT s.id FROM sekolah s WHERE s.kepala_sekolah_id = pegawai.id LIMIT 1),
+			(SELECT au.sekolah_id FROM auth_user au WHERE au.pegawai_id = pegawai.id AND au.sekolah_id IS NOT NULL LIMIT 1),
+			(SELECT k.sekolah_id FROM kelas k WHERE k.wali_kelas_id = pegawai.id AND k.sekolah_id IS NOT NULL LIMIT 1),
+			(SELECT id FROM sekolah WHERE (SELECT COUNT(*) FROM sekolah) = 1 LIMIT 1)
 		)
 		WHERE sekolah_id IS NULL
-			AND 1 = (
-				SELECT COUNT(DISTINCT k.sekolah_id)
-				FROM kelas k
-				WHERE k.wali_kelas_id = pegawai.id
-			)
 	`);
 	await db.$client.execute('CREATE INDEX IF NOT EXISTS pegawai_sekolah_idx ON pegawai(sekolah_id)');
 	await db.$client.execute('CREATE INDEX IF NOT EXISTS pegawai_jenis_idx ON pegawai(jenis)');

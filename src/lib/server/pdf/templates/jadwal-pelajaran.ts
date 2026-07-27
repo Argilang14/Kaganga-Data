@@ -1,4 +1,6 @@
-import type { JadwalPelajaranPrintData } from '../../../../routes/cetak/jadwal-pelajaran/preview-data';
+﻿import type { JadwalPelajaranPrintData } from '../../../../routes/cetak/jadwal-pelajaran/preview-data';
+import { buildJadwalSegments, type JadwalSegment } from '../../../jadwal-segments';
+import { onePageFitScript, onePageFitStyles } from './one-page-fit';
 
 function escapeHtml(value: string | number | null | undefined): string {
 	return String(value ?? '')
@@ -13,39 +15,69 @@ function safeColor(value?: string | null) {
 	return value && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
 }
 
+function tintColor(value?: string | null, strength = 0.42) {
+	const color = safeColor(value);
+	if (!color) return null;
+	const channels = [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16));
+	return `rgb(${channels.map((channel) => Math.round(255 - (255 - channel) * strength)).join(',')})`;
+}
+
 function buildSubjectLegend(data: JadwalPelajaranPrintData) {
-	const legend = new Map<string, { kode: string; nama: string; guru: string }>();
+	const legend = new Map<
+		string,
+		{ kode: string; nama: string; guru: Set<string>; warna: string | null }
+	>();
 	for (const cell of data.cells) {
 		if (!cell.mapelKode && !cell.mapelNama) continue;
 		const kode = cell.mapelKode || cell.label;
-		const key = kode + '::' + cell.mapelNama + '::' + cell.guru;
-		if (!legend.has(key)) legend.set(key, { kode, nama: cell.mapelNama, guru: cell.guru });
+		const key = kode + '::' + cell.mapelNama;
+		const item = legend.get(key) ?? {
+			kode,
+			nama: cell.mapelNama,
+			guru: new Set<string>(),
+			warna: safeColor(cell.warna)
+		};
+		if (cell.guru) item.guru.add(cell.guru);
+		legend.set(key, item);
 	}
-	return Array.from(legend.values()).sort((a, b) => a.kode.localeCompare(b.kode, 'id-ID'));
+	return Array.from(legend.values())
+		.map((item) => ({
+			kode: item.kode,
+			nama: item.nama,
+			warna: item.warna,
+			guru: Array.from(item.guru)
+				.sort((a, b) => a.localeCompare(b, 'id-ID'))
+				.join(', ')
+		}))
+		.sort((a, b) => a.kode.localeCompare(b.kode, 'id-ID'));
 }
 
 function renderLegend(data: JadwalPelajaranPrintData) {
 	const legend = buildSubjectLegend(data);
 	if (!legend.length) {
-		return '<section class="legend"><h2>Keterangan Mapel dan Guru</h2><p>Belum ada mata pelajaran terjadwal.</p></section>';
+		return '<aside class="legend"><h2>Keterangan Mapel dan Guru</h2><p>Belum ada mata pelajaran terjadwal.</p></aside>';
 	}
 	return (
-		'<section class="legend"><h2>Keterangan Mapel dan Guru</h2><table><thead><tr>' +
-		'<th class="legend-code">Kode</th><th>Mata Pelajaran</th><th>Guru Pengampu</th>' +
-		'</tr></thead><tbody>' +
+		'<aside class="legend"><h2>Keterangan Mapel dan Guru</h2><div class="legend-list">' +
 		legend
-			.map(
-				(item) =>
-					'<tr><td class="legend-code">' +
+			.map((item) => {
+				const codeBackground = tintColor(item.warna, 0.62);
+				return (
+					'<div class="legend-item"><strong class="legend-code"' +
+					(codeBackground
+						? ' style="background:' + codeBackground + ';border-color:' + item.warna + '"'
+						: '') +
+					'>' +
 					escapeHtml(item.kode) +
-					'</td><td>' +
+					'</strong><div class="legend-detail"><b>' +
 					escapeHtml(item.nama || item.kode) +
-					'</td><td>' +
+					'</b><span>' +
 					escapeHtml(item.guru || '-') +
-					'</td></tr>'
-			)
+					'</span></div></div>'
+				);
+			})
 			.join('') +
-		'</tbody></table></section>'
+		'</div></aside>'
 	);
 }
 
@@ -54,22 +86,23 @@ function renderSignature(data: JadwalPelajaranPrintData) {
 	const waka = data.sekolah.wakaKurikulum;
 	const jabatan = kepala.status === 'plt' ? 'Plt. Kepala Sekolah' : 'Kepala Sekolah';
 	return (
-		'<section class="signatures"><div class="signature-date">' +
+		'<section class="signatures"><table class="signature-table"><colgroup><col><col></colgroup><tbody>' +
+		'<tr><td class="signature-heading">Mengetahui</td><td>' +
 		escapeHtml(data.sekolah.lokasiTandaTangan || '') +
 		(data.sekolah.lokasiTandaTangan ? ', ' : '') +
 		escapeHtml(data.tanggalCetak) +
-		'</div><div class="signature-grid"><div class="signature-block"><div>' +
+		'</td></tr><tr><td>' +
 		escapeHtml(jabatan) +
-		'</div><div class="signature-space"></div><div class="signature-name">' +
+		'</td><td>Waka Kurikulum</td></tr><tr><td class="signature-space"></td>' +
+		'<td class="signature-space"></td></tr><tr><td class="signature-name">' +
 		escapeHtml(kepala.nama || '................................') +
-		'</div><div>NIP. ' +
-		escapeHtml(kepala.nip || '-') +
-		'</div></div><div class="signature-block"><div>Waka Kurikulum</div>' +
-		'<div class="signature-space"></div><div class="signature-name">' +
+		'</td><td class="signature-name">' +
 		escapeHtml(waka?.nama || '................................') +
-		'</div><div>NIP. ' +
+		'</td></tr><tr><td>NIP. ' +
+		escapeHtml(kepala.nip || '-') +
+		'</td><td>NIP. ' +
 		escapeHtml(waka?.nip || '-') +
-		'</div></div></div></section>'
+		'</td></tr></tbody></table></section>'
 	);
 }
 
@@ -88,9 +121,34 @@ function renderSchedule(data: JadwalPelajaranPrintData) {
 	const jamBySlot = new Map(
 		data.jamList.map((jam) => [jam.jenjang + '|' + jam.hari + '|' + jam.jamKe, jam])
 	);
+	const cellKey = (kelasId: number, hari: string, jamKe: number) =>
+		kelasId + '|' + hari + '|' + jamKe;
 	const cellBySlot = new Map(
-		data.cells.map((cell) => [cell.kelasId + '|' + cell.hari + '|' + cell.jamKe, cell])
+		data.cells.map((cell) => [cellKey(cell.kelasId, cell.hari, cell.jamKe), cell])
 	);
+	const mergeCells = visibleJenjang.flatMap((jenjang) => {
+		const kelas = kelasByJenjang.get(jenjang) ?? [];
+		const columnByClass = new Map(kelas.map((item, index) => [item.id, index]));
+		return data.cells.flatMap((cell) => {
+			const column = columnByClass.get(cell.kelasId);
+			const label = cell.mapelKode || cell.label;
+			if (column === undefined || !label || label === '-' || cell.tipe === 'kosong') return [];
+			const isSubject = cell.tipe === 'pelajaran' && Boolean(cell.mapelKode);
+			return [
+				{
+					key: cellKey(cell.kelasId, cell.hari, cell.jamKe),
+					hari: cell.hari,
+					row: cell.jamKe,
+					column,
+					group: jenjang,
+					kode: label,
+					kind: isSubject ? ('mapel' as const) : ('kegiatan' as const),
+					mergeIdentity: isSubject ? cell.guru || 'tanpa-guru' : label
+				}
+			];
+		});
+	});
+	const segments = buildJadwalSegments(mergeCells);
 	const jamColumnCount = visibleJenjang.length;
 	const totalColumns = 1 + jamColumnCount + data.kelasList.length;
 
@@ -118,6 +176,10 @@ function renderSchedule(data: JadwalPelajaranPrintData) {
 			.join('') +
 		'</tr></thead>';
 
+	const spanAttributes = (segment?: JadwalSegment) =>
+		(segment && segment.rowSpan > 1 ? ' rowspan="' + segment.rowSpan + '"' : '') +
+		(segment && segment.colSpan > 1 ? ' colspan="' + segment.colSpan + '"' : '');
+
 	const bodyRows: string[] = [];
 	for (const [hari, hariLabel] of Object.entries(data.hariLabels)) {
 		const maxJamKe = Math.max(
@@ -131,12 +193,7 @@ function renderSchedule(data: JadwalPelajaranPrintData) {
 		for (let jamKe = 1; jamKe <= maxJamKe; jamKe += 1) {
 			let row = '<tr>';
 			if (jamKe === 1) {
-				row +=
-					'<th class="day-cell" rowspan="' +
-					maxJamKe +
-					'">' +
-					escapeHtml(hariLabel) +
-					'</th>';
+				row += '<th class="day-cell" rowspan="' + maxJamKe + '">' + escapeHtml(hariLabel) + '</th>';
 			}
 			for (const jenjang of visibleJenjang) {
 				const jam = jamBySlot.get(jenjang + '|' + hari + '|' + jamKe);
@@ -154,9 +211,13 @@ function renderSchedule(data: JadwalPelajaranPrintData) {
 						row += '<td class="schedule-cell inactive"><span>Tidak aktif</span></td>';
 						continue;
 					}
-					const cell = cellBySlot.get(kelas.id + '|' + hari + '|' + jamKe);
-					const label = cell?.label || jam.namaDefault || '-';
+					const key = cellKey(kelas.id, hari, jamKe);
+					const segment = segments.get(key);
+					if (segment && segment.anchorKey !== key) continue;
+					const cell = cellBySlot.get(key);
+					const label = cell?.mapelKode || cell?.label || jam.namaDefault || '-';
 					const color = safeColor(cell?.warna);
+					const background = tintColor(cell?.warna);
 					const typeClass =
 						cell?.tipe === 'istirahat'
 							? 'break'
@@ -165,15 +226,24 @@ function renderSchedule(data: JadwalPelajaranPrintData) {
 								: cell?.tipe === 'kosong'
 									? 'empty'
 									: 'subject';
+					const mergedLabel =
+						segment && segment.cellKeys.length > 1
+							? '<small class="merge-badge">' +
+								(segment.kind === 'mapel' ? segment.rowSpan + ' JP' : segment.colSpan + ' kelas') +
+								'</small>'
+							: '';
 					row +=
 						'<td class="schedule-cell ' +
 						typeClass +
 						'"' +
-						(color ? ' style="background:' + color + '22;border-color:' + color + ';"' : '') +
+						spanAttributes(segment) +
+						(background
+							? ' style="background:' + background + ';border-color:' + (color ?? '#333') + ';"'
+							: '') +
 						'><strong>' +
 						escapeHtml(label) +
 						'</strong>' +
-						(cell?.guru ? '<small>' + escapeHtml(cell.guru) + '</small>' : '') +
+						mergedLabel +
 						'</td>';
 				}
 			}
@@ -194,7 +264,15 @@ function renderSchedule(data: JadwalPelajaranPrintData) {
 export function renderJadwalPelajaranHTML(data: JadwalPelajaranPrintData): string {
 	const orientation = data.orientation === 'portrait' ? 'portrait' : 'landscape';
 	const columnCount = Math.max(data.kelasList.length, 1);
-	const subjectFont = columnCount > 10 ? '5.6px' : columnCount > 7 ? '6.2px' : '7px';
+	const rowCount = Object.keys(data.hariLabels).reduce((total, hari) => {
+		const slots = data.jamList
+			.filter((jam) => jam.hari === hari)
+			.reduce((maximum, jam) => Math.max(maximum, jam.jamKe), 0);
+		return total + slots;
+	}, 0);
+	const rowHeight = rowCount > 40 ? '3.2mm' : rowCount > 30 ? '4mm' : rowCount > 20 ? '5mm' : '7mm';
+	const subjectFont = columnCount > 10 ? '6.4px' : columnCount > 7 ? '7px' : '8px';
+	const legendWidth = orientation === 'landscape' ? '52mm' : '40mm';
 	return (
 		'<!doctype html><html lang="id"><head><meta charset="utf-8" />' +
 		'<title>Jadwal Pelajaran - ' +
@@ -203,20 +281,30 @@ export function renderJadwalPelajaranHTML(data: JadwalPelajaranPrintData): strin
 		'@page{size:A4 ' +
 		orientation +
 		';margin:7mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+		onePageFitStyles(orientation) +
 		'body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#111827;background:#fff;font-size:8px}' +
-		'.document-header{display:grid;grid-template-columns:24mm minmax(0,1fr) 24mm;align-items:center;gap:3mm;margin-bottom:4mm}.header-logo{display:flex;width:24mm;height:22mm;align-items:center;justify-content:center}.header-logo img{display:block;max-width:20mm;max-height:20mm;object-fit:contain}.header{text-align:center;text-transform:uppercase}.header h1{margin:0;font-size:15px}.header .school{margin-top:2px;font-size:12px;font-weight:700}.header .meta{margin-top:2px;font-size:9px;color:#475569}' +
-		'table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:.55px solid #cbd5e1;padding:2px;vertical-align:middle}' +
-		'.schedule thead th{height:10mm;background:#155bb7;color:#fff;text-align:center}.day-head{width:12mm}.time-head{width:18mm}.class-head span,.class-head small{display:block}.class-head small{margin-top:1px;font-size:5.5px;color:#dbeafe}' +
-		'.day-cell{background:#dbeafe;color:#0f172a;text-align:center;text-transform:uppercase}.time-cell{background:#eff6ff;text-align:center}.time-cell strong,.time-cell span{display:block}.time-cell span{margin-top:1px;font-size:5.5px;white-space:nowrap}' +
-		'.schedule-cell{height:10mm;text-align:center;overflow:hidden}.schedule-cell strong{display:block;font-size:' +
+		'.document-header{display:grid;grid-template-columns:24mm minmax(0,1fr) 24mm;align-items:center;gap:3mm;margin-bottom:4mm}.header-logo{display:flex;width:24mm;height:22mm;align-items:center;justify-content:center}.header-logo img{display:block;max-width:20mm;max-height:20mm;object-fit:contain}.header{text-align:center;text-transform:uppercase}.header h1{margin:0;font-size:19px;line-height:1.15}.header .school{margin-top:2px;font-size:13px;font-weight:700}.header .meta{margin-top:2px;font-size:9.5px;color:#334155}' +
+		'.print-main{display:grid;grid-template-columns:minmax(0,1fr) ' +
+		legendWidth +
+		';align-items:start;gap:3mm}.schedule-wrap{min-width:0}' +
+		'table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #292929;padding:2px;vertical-align:middle}' +
+		'.schedule thead th{height:10mm;background:#155bb7;color:#fff;text-align:center}.day-head{width:12mm}.time-head{width:18mm}.class-head span,.class-head small{display:block}.class-head small{margin-top:1px;font-size:5.8px;color:#dbeafe}' +
+		'.day-cell{background:#bfdbfe;color:#0f172a;text-align:center;text-transform:uppercase}.time-cell{background:#dbeafe;text-align:center}.time-cell strong,.time-cell span{display:block}.time-cell span{margin-top:1px;font-size:5.8px;white-space:nowrap}' +
+		'.schedule-cell{height:' +
+		rowHeight +
+		';text-align:center;overflow:hidden}.schedule-cell strong{display:block;font-size:' +
 		subjectFont +
-		';line-height:1.15;overflow-wrap:anywhere}.schedule-cell small{display:block;margin-top:1px;font-size:5px;line-height:1.05;color:#475569;overflow-wrap:anywhere}' +
-		'.subject{background:#e0f2fe}.activity{background:#dcfce7}.break{background:#fef3c7}.empty{background:#fff;color:#94a3b8}.inactive{background:#f3f4f6!important;color:#9ca3af;border-color:#e5e7eb!important}.empty-table{padding:8mm;text-align:center;color:#64748b}' +
-		'.after-table{margin-top:4mm;break-inside:avoid}.legend h2{margin:0 0 2mm;font-size:9px}.legend table{table-layout:auto;font-size:7px}.legend th{background:#e5e7eb;color:#111827;text-align:left}.legend th,.legend td{padding:2px 3px;border-color:#94a3b8}.legend-code{width:18mm;text-align:center!important;font-weight:700}' +
-		'.signatures{margin-top:5mm;min-height:32mm;line-height:1.35;font-size:8px;break-inside:avoid}.signature-date{margin-left:auto;width:58mm;text-align:left}.signature-grid{display:grid;grid-template-columns:58mm 58mm;justify-content:space-between;margin-top:1mm}.signature-block{text-align:left}.signature-space{height:18mm}.signature-name{font-weight:700;text-decoration:underline}.footer{margin-top:3mm;display:flex;justify-content:space-between;color:#64748b;font-size:7px}' +
-		'</style></head><body><section class="sheet"><div class="document-header"><div class="header-logo">' +
+		';line-height:1.18;overflow-wrap:anywhere}.merge-badge{display:block;margin-top:1px;font-size:5.4px;line-height:1;color:#334155}' +
+		'.subject{background:#bae6fd}.activity{background:#bbf7d0}.break{background:#fde68a}.empty{background:#fff;color:#64748b}.inactive{background:#d1d5db!important;color:#475569!important;border:1px solid #64748b!important}.time-cell.inactive{background:#cbd5e1!important}.empty-table{padding:8mm;text-align:center;color:#64748b}' +
+		'.legend{border:1px solid #292929;background:#fff}.legend h2{margin:0;padding:2mm;background:#155bb7;color:#fff;font-size:8px;text-align:center;text-transform:uppercase}.legend p{margin:2mm;font-size:6.5px}.legend-list{display:grid;grid-template-columns:1fr}.legend-item{display:grid;grid-template-columns:12mm minmax(0,1fr);align-items:stretch;min-width:0;border-bottom:1px solid #292929}.legend-item:last-child{border-bottom:0}.legend-code{display:flex;align-items:center;justify-content:center;min-width:0;padding:1.2mm .8mm;border-right:1px solid #292929;font-size:7px;line-height:1.15;text-align:center}.legend-detail{min-width:0;padding:1.2mm 1.4mm}.legend-item b,.legend-item span{display:block;overflow-wrap:anywhere}.legend-item b{font-size:6.4px;line-height:1.15}.legend-item span{margin-top:.5px;color:#334155;font-size:5.8px;line-height:1.15}' +
+		'.after-table{margin-top:3mm;break-inside:avoid}.signatures{min-height:34mm;line-height:1.4;font-size:10.5px;break-inside:avoid}.signature-table{width:100%;border-collapse:collapse;table-layout:fixed}.signature-table col{width:50%}.signature-table td{border:0;padding:1px 8mm;text-align:center;vertical-align:top}.signature-heading{font-weight:700}.signature-table .signature-space{height:18mm}.signature-name{font-size:11.5px;font-weight:700;text-decoration:underline}.footer{margin-top:2mm;display:flex;justify-content:space-between;color:#64748b;font-size:7px}' +
+		'</style>' +
+		onePageFitScript() +
+		'</head><body><main class="print-page"><section class="sheet fit-content"><div class="document-header"><div class="header-logo">' +
 		(data.sekolah.logoDinasUrl
-			? '<img src="' + escapeHtml(data.sekolah.logoDinasUrl) + '" alt="Logo pemda atau kementerian" />'
+			? '<img src="' +
+				escapeHtml(data.sekolah.logoDinasUrl) +
+				'" alt="Logo pemda atau kementerian" />'
 			: '') +
 		'</div><div class="header"><h1>Jadwal Pelajaran</h1><div class="school">' +
 		escapeHtml(data.sekolah.nama) +
@@ -230,13 +318,14 @@ export function renderJadwalPelajaranHTML(data: JadwalPelajaranPrintData): strin
 		(data.sekolah.logoUrl
 			? '<img src="' + escapeHtml(data.sekolah.logoUrl) + '" alt="Logo sekolah" />'
 			: '') +
-		'</div></div>' +
+		'</div></div><div class="print-main"><div class="schedule-wrap">' +
 		renderSchedule(data) +
-		'<div class="after-table">' +
+		'</div>' +
 		renderLegend(data) +
+		'</div><div class="after-table">' +
 		renderSignature(data) +
 		'</div><div class="footer"><span>Dicetak dari Kaganga</span><span>Orientasi: ' +
 		(orientation === 'landscape' ? 'Landscape' : 'Portrait') +
-		'</span></div></section></body></html>'
+		'</span></div></section></main></body></html>'
 	);
 }

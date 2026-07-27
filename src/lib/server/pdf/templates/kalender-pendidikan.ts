@@ -1,4 +1,5 @@
 import type { KalenderPendidikanPrintData } from '../../../../routes/cetak/kalender-pendidikan/preview-data';
+import { onePageFitScript, onePageFitStyles } from './one-page-fit';
 
 function escapeHtml(value: string | number | null | undefined): string {
 	return String(value ?? '')
@@ -35,7 +36,12 @@ function agendaTanggalDalamBulan(
 		: start.getDate() + '-' + end.getDate();
 }
 
-function agendasForDay(data: KalenderPendidikanPrintData, year: number, month: number, day: number) {
+function agendasForDay(
+	data: KalenderPendidikanPrintData,
+	year: number,
+	month: number,
+	day: number
+) {
 	const value = new Date(year, month, day).toISOString().slice(0, 10);
 	return data.kalenderList
 		.filter((item) => item.tanggalMulai <= value && item.tanggalSelesai >= value)
@@ -84,12 +90,7 @@ function renderMonth(
 							? '<div class="dots">' +
 								agendas
 									.slice(0, 4)
-									.map(
-										(item) =>
-											'<i style="background:' +
-											escapeHtml(agendaColor(item)) +
-											'"></i>'
-									)
+									.map((item) => '<i style="background:' + escapeHtml(agendaColor(item)) + '"></i>')
 									.join('') +
 								(agendas.length > 4 ? '<small>+' + (agendas.length - 4) + '</small>' : '') +
 								'</div>'
@@ -140,29 +141,43 @@ function renderMonth(
 
 export function renderKalenderPendidikanHTML(data: KalenderPendidikanPrintData): string {
 	const portrait = data.orientation === 'portrait';
+	const orientation = portrait ? 'portrait' : 'landscape';
+	const dense = data.months.length > 6;
+	const monthColumns = portrait ? (dense ? 3 : 2) : dense ? 4 : 3;
 	const kepala = data.sekolah.kepalaSekolah;
 	const waka = data.sekolah.wakaKurikulum;
 	return (
 		'<!doctype html><html lang="id"><head><meta charset="utf-8" /><title>Kalender Pendidikan</title><style>' +
 		'@page{size:A4 ' +
-		(portrait ? 'portrait' : 'landscape') +
+		orientation +
 		';margin:7mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+		onePageFitStyles(orientation) +
 		'body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#020617;background:#fff;font-size:' +
 		(portrait ? '7.5px' : '8px') +
-		'}.document-header{display:grid;grid-template-columns:24mm minmax(0,1fr) 24mm;align-items:center;gap:3mm;margin-bottom:4mm}.header-logo{display:flex;width:24mm;height:22mm;align-items:center;justify-content:center}.header-logo img{display:block;max-width:20mm;max-height:20mm;object-fit:contain}.header{text-align:center}.header h1{margin:0 0 2px;font-size:18px}.header .school{font-size:10.5px;font-weight:700;text-transform:uppercase}.header .period{margin-top:2px;color:#475569;font-size:10px}' +
+		'}.document-header{display:grid;grid-template-columns:24mm minmax(0,1fr) 24mm;align-items:center;gap:3mm;margin-bottom:4mm}.header-logo{display:flex;width:24mm;height:22mm;align-items:center;justify-content:center}.header-logo img{display:block;max-width:20mm;max-height:20mm;object-fit:contain}.header{text-align:center}.header h1{margin:0 0 2px;font-size:21px;line-height:1.15}.header .school{font-size:12px;font-weight:700;text-transform:uppercase}.header .period{margin-top:2px;color:#334155;font-size:10.5px}' +
 		'.month-grid{display:grid;grid-template-columns:repeat(' +
-		(portrait ? '2' : '3') +
-		',1fr);gap:3mm}.month-card{min-height:' +
-		(portrait ? '72mm' : '74mm') +
-		';border:.7px solid #e2e8f0;border-radius:5px;padding:3mm;break-inside:avoid}.month-card h2{margin:0 0 2.5mm;text-align:center;font-size:10px;text-transform:uppercase}' +
-		'.calendar{width:100%;border-collapse:collapse;table-layout:fixed}.calendar th,.calendar td{border:.5px solid #e5e7eb;text-align:center;vertical-align:middle}.calendar th{height:5.6mm;background:#f3f4f6;font-size:7px}.calendar th.sunday-head{background:#fee2e2;color:#b91c1c}.calendar td{height:' +
-		(portrait ? '6.5mm' : '6.8mm') +
+		monthColumns +
+		',1fr);gap:' +
+		(dense ? '1.5mm' : '3mm') +
+		'}.month-card{min-height:' +
+		(dense ? '0' : portrait ? '72mm' : '74mm') +
+		';border:.7px solid #e2e8f0;border-radius:5px;padding:' +
+		(dense ? '1.6mm' : '3mm') +
+		';break-inside:avoid}.month-card h2{margin:0 0 ' +
+		(dense ? '1mm' : '2.5mm') +
+		';text-align:center;font-size:10px;text-transform:uppercase}' +
+		'.calendar{width:100%;border-collapse:collapse;table-layout:fixed}.calendar th,.calendar td{border:1px solid #333;text-align:center;vertical-align:middle}.calendar th{height:5.6mm;background:#f3f4f6;font-size:7px}.calendar th.sunday-head{background:#fee2e2;color:#b91c1c}.calendar td{height:' +
+		(dense ? '4.6mm' : portrait ? '6.5mm' : '6.8mm') +
 		';font-size:7px}.day{background:#fff}.day.sunday,.day.holiday{background:#fee2e2;color:#991b1b}.day.saturday{background:#fff;color:#111827}.day.empty{background:#fff}.day strong{display:block}.dots{display:flex;align-items:center;justify-content:center;gap:1px;margin-top:1px}.dots i{display:block;width:4px;height:4px;border-radius:50%}.dots small{font-size:5px;line-height:1}' +
 		'.agenda-list{margin-top:2.5mm;min-height:14mm}.agenda-item{display:grid;grid-template-columns:24px 7px 1fr;align-items:center;gap:3px;margin-bottom:1.1mm;line-height:1.15}.agenda-item i{width:6px;height:6px;border-radius:50%}.agenda-date{font-weight:700}.empty-agenda{padding-top:3mm;color:#94a3b8;text-align:center}' +
-		'.summary{display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin-top:4mm}.summary div{border:.7px solid #e2e8f0;border-radius:5px;padding:3mm;font-size:9px}.summary strong{font-weight:700}.signatures{margin-top:8mm;break-inside:avoid;font-size:9px}.signature-date{margin-left:auto;width:58mm;text-align:left}.signature-grid{display:grid;grid-template-columns:58mm 58mm;justify-content:space-between;margin-top:1mm}.signature-block{text-align:left}.signature-space{height:18mm}.signature-name{font-weight:700;text-decoration:underline}' +
-		'</style></head><body><section><div class="document-header"><div class="header-logo">' +
+		'.summary{display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin-top:4mm}.summary div{border:.7px solid #e2e8f0;border-radius:5px;padding:3mm;font-size:9px}.summary strong{font-weight:700}.signatures{margin-top:6mm;break-inside:avoid;font-size:10px;line-height:1.4}.signature-table{width:100%;border-collapse:collapse;table-layout:fixed}.signature-table col{width:50%}.signature-table td{border:0;padding:1px 6mm;text-align:center;vertical-align:top}.signature-heading{font-weight:700}.signature-table .signature-space{height:15mm}.signature-name{font-size:10.5px;font-weight:700;text-decoration:underline}' +
+		'</style>' +
+		onePageFitScript() +
+		'</head><body><main class="print-page"><section class="fit-content"><div class="document-header"><div class="header-logo">' +
 		(data.sekolah.logoDinasUrl
-			? '<img src="' + escapeHtml(data.sekolah.logoDinasUrl) + '" alt="Logo pemda atau kementerian" />'
+			? '<img src="' +
+				escapeHtml(data.sekolah.logoDinasUrl) +
+				'" alt="Logo pemda atau kementerian" />'
 			: '') +
 		'</div><div class="header"><h1>Kalender Pendidikan</h1><div class="school">' +
 		escapeHtml(data.sekolah.nama) +
@@ -180,20 +195,21 @@ export function renderKalenderPendidikanHTML(data: KalenderPendidikanPrintData):
 		data.summary.totalHariEfektif +
 		' Hari</div><div><strong>Minggu Efektif</strong> = ' +
 		data.summary.totalMingguEfektif +
-		' Minggu</div></div><div class="signatures"><div class="signature-date">' +
+		' Minggu</div></div><div class="signatures"><table class="signature-table">' +
+		'<colgroup><col><col></colgroup><tbody><tr><td class="signature-heading">Mengetahui</td><td>' +
 		escapeHtml(data.ttd.tempat) +
 		(data.ttd.tempat && data.ttd.tanggal ? ', ' : '') +
 		escapeHtml(data.ttd.tanggal) +
-		'</div><div class="signature-grid"><div class="signature-block"><div>Kepala Sekolah</div>' +
-		'<div class="signature-space"></div><div class="signature-name">' +
+		'</td></tr><tr><td>Kepala Sekolah</td><td>Waka Kurikulum</td></tr>' +
+		'<tr><td class="signature-space"></td><td class="signature-space"></td></tr>' +
+		'<tr><td class="signature-name">' +
 		escapeHtml(kepala?.nama || '................................') +
-		'</div><div>NIP. ' +
-		escapeHtml(kepala?.nip || '-') +
-		'</div></div><div class="signature-block"><div>Waka Kurikulum</div>' +
-		'<div class="signature-space"></div><div class="signature-name">' +
+		'</td><td class="signature-name">' +
 		escapeHtml(waka?.nama || '................................') +
-		'</div><div>NIP. ' +
+		'</td></tr><tr><td>NIP. ' +
+		escapeHtml(kepala?.nip || '-') +
+		'</td><td>NIP. ' +
 		escapeHtml(waka?.nip || '-') +
-		'</div></div></div></div></section></body></html>'
+		'</td></tr></tbody></table></div></section></main></body></html>'
 	);
 }

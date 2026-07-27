@@ -10,12 +10,7 @@ const inputArgs = process.argv.slice(2).filter((arg) => !forbidden.has(arg));
 const hasTsconfig = inputArgs.some((a) => a === '--tsconfig' || a.startsWith('--tsconfig='));
 if (!hasTsconfig) inputArgs.unshift('--tsconfig', './tsconfig.json');
 
-// Resolve local svelte-check binary -- on Windows prefer the .CMD shim
-const binName = process.platform === 'win32' ? 'svelte-check.CMD' : 'svelte-check';
-const binPath = path.join(process.cwd(), 'node_modules', '.bin', binName);
-
-// Use shell on Windows to execute the .CMD shim correctly
-const useShell = process.platform === 'win32';
-const result = spawnSync(binPath, inputArgs, { stdio: 'inherit', shell: useShell });
+const binPath = path.join(process.cwd(), 'node_modules', 'svelte-check', 'bin', 'svelte-check');
+const result = spawnSync(process.execPath, [binPath, ...inputArgs], { stdio: 'inherit' });
 
 process.exit(result.status ?? 1);

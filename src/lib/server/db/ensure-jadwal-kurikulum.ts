@@ -114,4 +114,19 @@ export async function ensureJadwalKurikulumSchema() {
 	await addColumnIfMissing('jadwal_mata_pelajaran', 'jp_per_minggu', 'integer DEFAULT 0 NOT NULL');
 	await addColumnIfMissing('jadwal_pelajaran', 'guru_pegawai_id', 'integer');
 	await addColumnIfMissing('jadwal_pelajaran', 'catatan', 'text');
+
+	await db.$client.execute(`UPDATE jadwal_pelajaran
+		SET jam_ke = COALESCE(
+			(SELECT jam_ke FROM jadwal_jam WHERE jadwal_jam.id = jadwal_pelajaran.jam_id),
+			jam_ke
+		)
+		WHERE jam_ke = 0`);
+	await db.$client.execute(`UPDATE jadwal_pelajaran
+		SET kode_kegiatan = COALESCE(
+			(SELECT kode FROM jadwal_mata_pelajaran WHERE jadwal_mata_pelajaran.id = jadwal_pelajaran.jadwal_mapel_id),
+			(SELECT kode FROM jadwal_kegiatan WHERE jadwal_kegiatan.id = jadwal_pelajaran.kegiatan_id),
+			NULLIF(tipe, ''),
+			'-'
+		)
+		WHERE kode_kegiatan = ''`);
 }

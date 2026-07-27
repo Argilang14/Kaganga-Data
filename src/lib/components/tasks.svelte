@@ -13,7 +13,7 @@
 	} from './tasks/task-service';
 	import type { TaskRecord } from './tasks/types';
 
-	let { variant = 'sidebar' }: { variant?: 'sidebar' | 'modal' } = $props();
+	let { variant = 'sidebar' }: { variant?: 'sidebar' | 'modal' | 'popup' } = $props();
 
 	const wrapperClass = $derived(
 		variant === 'sidebar'

@@ -63,24 +63,14 @@ if (Test-Path $iconSource) {
     Write-Warning 'File static/logo.ico tidak ditemukan; ikon installer tidak akan diperbarui.'
 }
 
-# Ensure database schema is prepared by running the project's db:push script.
-# Try pnpm first; if it's not present fall back to npm (installing dev deps).
-Write-Host 'Running database migration (db:push) to produce data/database.sqlite3 if needed...'
+# Generate a clean database specifically for new installations. Never package
+# data/database.sqlite3 because it may contain development or school data.
+Write-Host 'Generating clean installer database...'
 Push-Location $projectRoot
-if (Test-CommandExists 'pnpm') {
-    pnpm db:push
-} else {
-    if (-not (Test-CommandExists 'npm')) {
-        Write-Warning 'npm not found on PATH; skipping db:push. No database will be bundled.'
-    } else {
-        Write-Host 'pnpm not found; using npm to run db:push. Installing devDependencies if needed.'
-        npm install
-        npm run db:push
-    }
-}
+$databasePath = Join-Path $absOutput 'installer-database.sqlite3'
+node scripts/create-installer-db.mjs $databasePath
+if ($LASTEXITCODE -ne 0) { throw 'Failed to generate clean installer database.' }
 Pop-Location
-
-$databasePath = Join-Path $projectRoot 'data/database.sqlite3'
 if (Test-Path $databasePath) {
     Write-Host 'Bundling default SQLite database...'
     $dataDir = Join-Path $appStage 'data'
@@ -173,7 +163,7 @@ if (Test-Path $envSample) {
 # location. Do not overwrite an existing .env in the staged app.
 $envTarget = Join-Path $appStage '.env'
 if (-not (Test-Path $envTarget)) {
-    $envContent = 'DB_URL=file:%LOCALAPPDATA%/Rapkumer-data/database.sqlite3'
+    $envContent = 'DB_URL=file:%LOCALAPPDATA%/Kaganga-data/database.sqlite3'
     $envContent += "`nBODY_SIZE_LIMIT=5M"
     Set-Content -Path $envTarget -Value $envContent -Encoding UTF8
     Write-Host "Wrote default .env to $envTarget" -ForegroundColor Green
@@ -186,13 +176,6 @@ Push-Location $appStage
 if (Test-Path 'node_modules') { Remove-Item 'node_modules' -Recurse -Force }
 if (Test-Path 'package-lock.json') { Remove-Item 'package-lock.json' -Force }
 npm install --omit=dev --no-package-lock
-Write-Host 'Installing drizzle-kit into staged app so migrations can run on target...'
-# Install only drizzle-kit (no-save) into staged app to keep install minimal but provide the CLI
-try {
-    npm install --no-package-lock --no-save drizzle-kit
-} catch {
-    Write-Warning 'Failed to install drizzle-kit into staged app; migrations on target may not be possible.'
-}
 Pop-Location
 
 Write-Host "Staging complete. Contents available at $appStage" -ForegroundColor Green

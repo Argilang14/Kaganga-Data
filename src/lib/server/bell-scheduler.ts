@@ -132,7 +132,7 @@ async function tick() {
 	const dateStr = toDateStr(now);
 
 	const activeSettings = await db.query.tableBellSettings.findMany({
-		where: eq(tableBellSettings.isActive, 1)
+		where: eq(tableBellSettings.isActive, true)
 	});
 
 	for (const setting of activeSettings) {

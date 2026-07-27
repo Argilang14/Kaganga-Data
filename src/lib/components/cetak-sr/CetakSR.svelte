@@ -735,29 +735,29 @@
 			class="border-base-300 bg-base-200/30 mt-3 grid gap-3 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-3 {selectedDocument ===
 			'jadwal-pelajaran'
 				? '2xl:grid-cols-6'
-				: '2xl:grid-cols-7'}"
+				: '2xl:grid-cols-[minmax(0,.85fr)_minmax(0,1fr)_minmax(0,.9fr)_minmax(0,.9fr)_minmax(0,1.75fr)_minmax(0,1.45fr)_minmax(0,1.25fr)]'}"
 		>
-			<label class="form-control">
+			<label class="form-control min-w-0">
 				<span class="label-text mb-1">Tahun Ajaran</span>
-				<select class="select select-bordered bg-base-100" bind:value={selectedPrintTahunAjaranId}>
+				<select class="select select-bordered bg-base-100 w-full min-w-0 pr-10" bind:value={selectedPrintTahunAjaranId}>
 					{#each tahunAjaranList as tahun}
 						<option value={tahun.id}>{tahun.nama}</option>
 					{/each}
 				</select>
 			</label>
 			{#if selectedDocument === 'jadwal-pelajaran'}
-				<label class="form-control">
+				<label class="form-control min-w-0">
 					<span class="label-text mb-1">Jenis Jadwal</span>
-					<select class="select select-bordered bg-base-100" bind:value={selectedJadwalJenis}>
+					<select class="select select-bordered bg-base-100 w-full min-w-0 pr-10" bind:value={selectedJadwalJenis}>
 						<option value="persiapan">Masa Persiapan</option>
 						<option value="ganjil">Semester Ganjil</option>
 						<option value="genap">Semester Genap</option>
 					</select>
 				</label>
 			{:else}
-				<label class="form-control">
+				<label class="form-control min-w-0">
 					<span class="label-text mb-1">Semester</span>
-					<select class="select select-bordered bg-base-100" bind:value={selectedKalenderSemesterId}>
+					<select class="select select-bordered bg-base-100 w-full min-w-0 pr-10" bind:value={selectedKalenderSemesterId}>
 						<option value={null}>Semua Semester</option>
 						{#each kalenderSemesterOptions as semester}
 							<option value={semester.id}>{semester.nama}</option>
@@ -765,36 +765,36 @@
 					</select>
 				</label>
 			{/if}
-			<label class="form-control">
+			<label class="form-control min-w-0">
 				<span class="label-text mb-1">Jenjang</span>
-				<select class="select select-bordered bg-base-100" bind:value={selectedJadwalJenjang}>
+				<select class="select select-bordered bg-base-100 w-full min-w-0 pr-10" bind:value={selectedJadwalJenjang}>
 					<option value="semua">Semua Jenjang</option>
 					<option value="srd">SRD</option>
 					<option value="srmp">SRMP</option>
 					<option value="srma">SRMA</option>
 				</select>
 			</label>
-			<label class="form-control">
+			<label class="form-control min-w-0">
 				<span class="label-text mb-1">Orientasi A4</span>
-				<select class="select select-bordered bg-base-100" bind:value={selectedJadwalOrientation}>
+				<select class="select select-bordered bg-base-100 w-full min-w-0 pr-10" bind:value={selectedJadwalOrientation}>
 					<option value="landscape">Landscape</option>
 					<option value="portrait">Portrait</option>
 				</select>
 			</label>
 			{#if selectedDocument === 'kalender-pendidikan'}
-				<label class="form-control">
+				<label class="form-control min-w-0">
 					<span class="label-text mb-1">Periode Kalender</span>
-					<select class="select select-bordered bg-base-100" bind:value={selectedKalenderPeriode}>
+					<select class="select select-bordered bg-base-100 w-full min-w-0 pr-10" bind:value={selectedKalenderPeriode}>
 						<option value="tahun_ajaran">Tahun Ajaran (Juli-Juni)</option>
 						<option value="semester_ganjil">Semester Ganjil (Juli-Desember)</option>
 						<option value="semester_genap">Semester Genap (Januari-Juni)</option>
 					</select>
 				</label>
 			{/if}
-			<label class="form-control">
+			<label class="form-control min-w-0">
 				<span class="label-text mb-1">Waka Kurikulum</span>
 				<select
-					class="select select-bordered bg-base-100"
+					class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
 					bind:value={selectedWakaKurikulumId}
 					disabled={!pegawaiGuruList.length}
 				>
@@ -808,8 +808,8 @@
 					{/each}
 				</select>
 			</label>
-			<div class="flex items-end">
-				<a class="btn btn-outline h-12 min-h-12 w-full" href={selectedDocument === 'jadwal-pelajaran' ? jadwalSourceHref : kalenderSourceHref}>
+			<div class="flex min-w-0 items-end">
+				<a class="btn btn-outline h-12 min-h-12 w-full whitespace-normal text-center leading-tight" href={selectedDocument === 'jadwal-pelajaran' ? jadwalSourceHref : kalenderSourceHref}>
 					Buka sumber di Akademik
 				</a>
 			</div>

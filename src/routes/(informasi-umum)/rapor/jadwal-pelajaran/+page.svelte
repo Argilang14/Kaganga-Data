@@ -4,12 +4,19 @@
 	import { page } from '$app/state';
 	import Icon from '$lib/components/icon.svelte';
 	import { toast } from '$lib/components/toast.svelte';
+	import { buildJadwalSegments, type JadwalSegment } from '$lib/jadwal-segments';
 	import type { PageData } from './$types';
 
 	const { data } = $props<{ data: PageData }>();
 
 	type Kelas = { id: number; nama: string; fase?: string | null };
-	type JadwalEntry = { hari: string; jamKe: number; kelasId: number; kodeKegiatan: string };
+	type JadwalEntry = {
+		hari: string;
+		jamKe: number;
+		kelasId: number;
+		kodeKegiatan: string;
+		guruPegawaiId?: number | null;
+	};
 	type JamSlot = {
 		hari: string;
 		jamKe: number;
@@ -34,9 +41,21 @@
 		guruId?: number | null;
 		guru?: string | null;
 	};
-	type DropScope = 'cell' | 'jenjang' | 'row' | 'sameJamAllDays';
-	type PendingDrop = { item: PaletteItem; hari: string; jamKe: number; kelasId: number };
-	type SelectedCell = { hari: string; jamKe: number; kelasId: number; kode: string };
+	type DropScope = 'cell' | 'block' | 'jenjang' | 'row' | 'sameJamAllDays';
+	type PendingDrop = {
+		item: PaletteItem;
+		hari: string;
+		jamKe: number;
+		kelasId: number;
+		blockCellKeys: string[];
+	};
+	type SelectedCell = {
+		hari: string;
+		jamKe: number;
+		kelasId: number;
+		kode: string;
+		blockCellKeys: string[];
+	};
 	type JadwalExcelRow = { hari: string; jamKe: number; kelasId: number; kode: string };
 	type ImportPreview = {
 		validRows: Array<JadwalExcelRow & { kelas: string }>;
@@ -116,6 +135,10 @@
 		)
 	);
 	const savedJadwal = $derived((data.jadwalPelajaran ?? []) as JadwalEntry[]);
+	const savedJadwalByCell = $derived.by(
+		() =>
+			new Map(savedJadwal.map((entry) => [keyFor(entry.hari, entry.jamKe, entry.kelasId), entry]))
+	);
 	const jadwalJam = $derived((data.jadwalJam ?? []) as JamSlot[]);
 
 	let cells = $state<Record<string, string>>({});
@@ -247,6 +270,44 @@
 			}))
 			.filter((group) => group.kelas.length > 0)
 	);
+	const jadwalSegments = $derived.by(() => {
+		const mergeCells = hariList.flatMap((hari) =>
+			Array.from({ length: jumlahJamFor(hari) }, (_, index) => index + 1).flatMap((jamKe) =>
+				visibleGroups.flatMap((group) =>
+					group.kelas.flatMap((kelas, column) => {
+						if (!slotAktif(hari, jamKe, group.jenjang)) return [];
+						const key = keyFor(hari, jamKe, kelas.id);
+						const kode = cells[key];
+						if (!kode) return [];
+						const saved = savedJadwalByCell.get(key);
+						const savedTeacher =
+							saved?.kodeKegiatan === kode ? (saved.guruPegawaiId ?? null) : null;
+						const inferredTeachers = (mapelByCode.get(kode) ?? [])
+							.filter((item) => itemSesuaiKelas(item, kelas))
+							.map((item) => item.guruId)
+							.filter((id): id is number => Boolean(id))
+							.sort((a, b) => a - b);
+						const kegiatan = kegiatanCodes.has(kode);
+						return [
+							{
+								key,
+								hari,
+								row: jamKe,
+								column,
+								group: group.jenjang,
+								kode,
+								kind: kegiatan ? ('kegiatan' as const) : ('mapel' as const),
+								mergeIdentity: kegiatan
+									? kode
+									: kode + '|guru:' + (savedTeacher ?? (inferredTeachers.join(',') || 'tanpa'))
+							}
+						];
+					})
+				)
+			)
+		);
+		return buildJadwalSegments(mergeCells);
+	});
 	const selectedMapelItems = $derived(
 		selectedKelas ? mapelItems.filter((item) => itemSesuaiKelas(item, selectedKelas)) : mapelItems
 	);
@@ -383,6 +444,19 @@
 
 	function keyFor(hari: string, jamKe: number, kelasId: number) {
 		return `${hari}|${jamKe}|${kelasId}`;
+	}
+
+	function targetsFromCellKeys(cellKeys: string[]) {
+		return cellKeys
+			.map((cellKey) => {
+				const [hari, jamKe, kelasId] = cellKey.split('|');
+				return { hari, jamKe: Number(jamKe), kelasId: Number(kelasId) };
+			})
+			.filter((target) => Number.isInteger(target.jamKe) && Number.isInteger(target.kelasId));
+	}
+
+	function segmentHasConflict(segment: JadwalSegment | undefined, cellKey: string) {
+		return (segment?.cellKeys ?? [cellKey]).some((key) => conflictCellKeys.has(key));
 	}
 
 	function kelasJenjang(kelas: Kelas | null | undefined): JenjangFilter {
@@ -534,7 +608,13 @@
 		return item;
 	}
 
-	function dropToCell(event: DragEvent, hari: string, jamKe: number, kelasId: number) {
+	function dropToCell(
+		event: DragEvent,
+		hari: string,
+		jamKe: number,
+		kelasId: number,
+		segment?: JadwalSegment
+	) {
 		if (!canManage) return;
 		event.preventDefault();
 		const item = readDraggedItem(event);
@@ -551,7 +631,13 @@
 			);
 			return;
 		}
-		pendingDrop = { item, hari, jamKe, kelasId };
+		pendingDrop = {
+			item,
+			hari,
+			jamKe,
+			kelasId,
+			blockCellKeys: segment?.cellKeys ?? [keyFor(hari, jamKe, kelasId)]
+		};
 		draggedItem = null;
 		dropDialog?.showModal();
 	}
@@ -561,6 +647,7 @@
 		const { hari, jamKe, kelasId, item } = pendingDrop;
 		let targets: Array<{ hari: string; jamKe: number; kelasId: number }>;
 		if (scope === 'cell') targets = [{ hari, jamKe, kelasId }];
+		else if (scope === 'block') targets = targetsFromCellKeys(pendingDrop.blockCellKeys);
 		else if (scope === 'row') {
 			targets = visibleKelas.map((kelas) => ({ hari, jamKe, kelasId: kelas.id }));
 		} else if (scope === 'sameJamAllDays') {
@@ -603,28 +690,50 @@
 		dropDialog?.close();
 	}
 
-	function openCell(hari: string, jamKe: number, kelasId: number, kode: string) {
+	function openCell(
+		hari: string,
+		jamKe: number,
+		kelasId: number,
+		kode: string,
+		segment?: JadwalSegment
+	) {
 		if (!canManage) return;
-		selectedCell = { hari, jamKe, kelasId, kode };
+		selectedCell = {
+			hari,
+			jamKe,
+			kelasId,
+			kode,
+			blockCellKeys: segment?.cellKeys ?? [keyFor(hari, jamKe, kelasId)]
+		};
 		editKode = kode;
 		cellDialog?.showModal();
 	}
 
-	function saveSelectedCell() {
+	function saveSelectedCell(scope: 'cell' | 'block' = 'block') {
 		if (!selectedCell) return;
-		const kelas = daftarKelas.find((entry) => entry.id === selectedCell?.kelasId);
-		if (editKode && kelas && !kodeSesuaiKelas(editKode, kelas)) {
-			toast(`Mata pelajaran ${editKode} tidak tersedia untuk kelas ${kelas.nama}.`, 'error');
-			return;
+		const targets =
+			scope === 'block'
+				? targetsFromCellKeys(selectedCell.blockCellKeys)
+				: [{ hari: selectedCell.hari, jamKe: selectedCell.jamKe, kelasId: selectedCell.kelasId }];
+		for (const target of targets) {
+			const kelas = daftarKelas.find((entry) => entry.id === target.kelasId);
+			if (editKode && kelas && !kodeSesuaiKelas(editKode, kelas)) {
+				toast(`Mata pelajaran ${editKode} tidak tersedia untuk kelas ${kelas.nama}.`, 'error');
+				return;
+			}
 		}
-		setCell(selectedCell.hari, selectedCell.jamKe, selectedCell.kelasId, editKode);
+		setMany(targets, editKode);
 		selectedCell = null;
 		cellDialog?.close();
 	}
 
-	function clearSelectedCell() {
+	function clearSelectedCell(scope: 'cell' | 'block' = 'block') {
 		if (!selectedCell) return;
-		setCell(selectedCell.hari, selectedCell.jamKe, selectedCell.kelasId, '');
+		const targets =
+			scope === 'block'
+				? targetsFromCellKeys(selectedCell.blockCellKeys)
+				: [{ hari: selectedCell.hari, jamKe: selectedCell.jamKe, kelasId: selectedCell.kelasId }];
+		setMany(targets, '');
 		selectedCell = null;
 		cellDialog?.close();
 	}
@@ -907,34 +1016,55 @@
 											{#each group.kelas as kelas (kelas.id)}
 												{@const key = keyFor(hari, jamKe, kelas.id)}
 												{@const kode = cells[key]}
-												<td class="schedule-cell" class:is-inactive={!activeSlot}>
-													<button
-														class={`slot-button ${kode && activeSlot ? 'has-value' : ''}`}
-														class:is-conflict={activeSlot && conflictCellKeys.has(key)}
-														type="button"
-														style={activeSlot ? cellStyle(kode) : ''}
-														ondragover={allowDrop}
-														ondrop={(event) => dropToCell(event, hari, jamKe, kelas.id)}
-														onclick={() => openCell(hari, jamKe, kelas.id, kode ?? '')}
-														disabled={!canManage || !activeSlot}
-														title={activeSlot
-															? kode
-																? `${kode} - ${textFor(kode)}`
-																: 'Kosong'
-															: `Jam tidak aktif untuk ${jenjangLabel[group.jenjang]}`}
+												{@const segment = jadwalSegments.get(key)}
+												{#if !segment || segment.anchorKey === key}
+													<td
+														class="schedule-cell"
+														class:is-inactive={!activeSlot}
+														class:is-merged={(segment?.cellKeys.length ?? 0) > 1}
+														class:is-merged-activity={segment?.kind === 'kegiatan' &&
+															segment.colSpan > 1}
+														class:is-merged-subject={segment?.kind === 'mapel' &&
+															segment.rowSpan > 1}
+														rowspan={segment?.rowSpan ?? 1}
+														colspan={segment?.colSpan ?? 1}
 													>
-														{#if !activeSlot}
-															<span class="slot-inactive">Tidak aktif</span>
-														{:else if kode}
-															<span class="slot-code">{kode}</span>
-															<span class="slot-name">{textFor(kode)}</span>
-															{#if detailFor(kode)}<span class="slot-detail">{detailFor(kode)}</span
-																>{/if}
-														{:else}
-															<span class="slot-empty">-</span>
-														{/if}
-													</button>
-												</td>
+														<button
+															class={`slot-button ${kode && activeSlot ? 'has-value' : ''}`}
+															class:is-conflict={activeSlot && segmentHasConflict(segment, key)}
+															type="button"
+															style={activeSlot ? cellStyle(kode) : ''}
+															ondragover={allowDrop}
+															ondrop={(event) => dropToCell(event, hari, jamKe, kelas.id, segment)}
+															onclick={() => openCell(hari, jamKe, kelas.id, kode ?? '', segment)}
+															disabled={!canManage || !activeSlot}
+															title={activeSlot
+																? kode
+																	? `${kode} - ${textFor(kode)}`
+																	: 'Kosong'
+																: `Jam tidak aktif untuk ${jenjangLabel[group.jenjang]}`}
+														>
+															{#if !activeSlot}
+																<span class="slot-inactive">Tidak aktif</span>
+															{:else if kode}
+																<span class="slot-code">{kode}</span>
+																<span class="slot-name">{textFor(kode)}</span>
+																{#if segment && segment.cellKeys.length > 1}
+																	<span class="slot-span">
+																		{segment.kind === 'mapel'
+																			? `${segment.rowSpan} JP`
+																			: `${segment.colSpan} kelas`}
+																	</span>
+																{/if}
+																{#if detailFor(kode)}<span class="slot-detail"
+																		>{detailFor(kode)}</span
+																	>{/if}
+															{:else}
+																<span class="slot-empty">-</span>
+															{/if}
+														</button>
+													</td>
+												{/if}
 											{/each}
 										{/each}
 									</tr>
@@ -1044,48 +1174,64 @@
 				{pendingDrop.item.kode} - {pendingDrop.item.nama} ke {hariLabel[pendingDrop.hari]} jam {pendingDrop.jamKe}.
 			</p>
 			<div class="mt-4 grid gap-2">
+				{#if pendingDrop.blockCellKeys.length > 1}
+					<button
+						class="btn btn-primary justify-start shadow-none"
+						type="button"
+						onclick={() => applyPendingDrop('block')}
+					>
+						<span class="flex-1 text-left"
+							>Seluruh blok ({pendingDrop.blockCellKeys.length} sel)</span
+						>
+						{#if overwriteCountForDrop('block')}<span class="badge badge-warning"
+								>Timpa {overwriteCountForDrop('block')}</span
+							>{/if}
+					</button>
+				{/if}
 				<button
 					class="btn btn-primary justify-start shadow-none"
 					type="button"
 					onclick={() => applyPendingDrop('cell')}
 				>
-					<span class="flex-1 text-left">Cell ini saja</span>
+					<span class="flex-1 text-left">Sel ini saja</span>
 					{#if overwriteCountForDrop('cell')}<span class="badge badge-warning"
 							>Timpa {overwriteCountForDrop('cell')}</span
 						>{/if}
 				</button>
-				<button
-					class="btn btn-soft justify-start shadow-none"
-					type="button"
-					onclick={() => applyPendingDrop('jenjang')}
-				>
-					<span class="flex-1 text-left"
-						>Semua kelas jenjang {jenjangLabel[pendingJenjang] ?? 'yang sama'}</span
+				{#if pendingDrop.item.source === 'kegiatan'}
+					<button
+						class="btn btn-soft justify-start shadow-none"
+						type="button"
+						onclick={() => applyPendingDrop('jenjang')}
 					>
-					{#if overwriteCountForDrop('jenjang')}<span class="badge badge-warning"
-							>Timpa {overwriteCountForDrop('jenjang')}</span
-						>{/if}
-				</button>
-				<button
-					class="btn btn-soft justify-start shadow-none"
-					type="button"
-					onclick={() => applyPendingDrop('row')}
-				>
-					<span class="flex-1 text-left">Semua kelas pada jam ini</span>
-					{#if overwriteCountForDrop('row')}<span class="badge badge-warning"
-							>Timpa {overwriteCountForDrop('row')}</span
-						>{/if}
-				</button>
-				<button
-					class="btn btn-soft justify-start shadow-none"
-					type="button"
-					onclick={() => applyPendingDrop('sameJamAllDays')}
-				>
-					<span class="flex-1 text-left">Semua hari pada jam ke-{pendingDrop.jamKe}</span>
-					{#if overwriteCountForDrop('sameJamAllDays')}<span class="badge badge-warning"
-							>Timpa {overwriteCountForDrop('sameJamAllDays')}</span
-						>{/if}
-				</button>
+						<span class="flex-1 text-left"
+							>Semua kelas jenjang {jenjangLabel[pendingJenjang] ?? 'yang sama'}</span
+						>
+						{#if overwriteCountForDrop('jenjang')}<span class="badge badge-warning"
+								>Timpa {overwriteCountForDrop('jenjang')}</span
+							>{/if}
+					</button>
+					<button
+						class="btn btn-soft justify-start shadow-none"
+						type="button"
+						onclick={() => applyPendingDrop('row')}
+					>
+						<span class="flex-1 text-left">Semua kelas pada jam ini</span>
+						{#if overwriteCountForDrop('row')}<span class="badge badge-warning"
+								>Timpa {overwriteCountForDrop('row')}</span
+							>{/if}
+					</button>
+					<button
+						class="btn btn-soft justify-start shadow-none"
+						type="button"
+						onclick={() => applyPendingDrop('sameJamAllDays')}
+					>
+						<span class="flex-1 text-left">Semua hari pada jam ke-{pendingDrop.jamKe}</span>
+						{#if overwriteCountForDrop('sameJamAllDays')}<span class="badge badge-warning"
+								>Timpa {overwriteCountForDrop('sameJamAllDays')}</span
+							>{/if}
+					</button>
+				{/if}
 			</div>
 		{/if}
 		<div class="modal-action">
@@ -1104,10 +1250,15 @@
 
 <dialog class="modal" bind:this={cellDialog}>
 	<div class="modal-box max-w-md">
-		<h3 class="text-lg font-bold">Edit Cell Jadwal</h3>
+		<h3 class="text-lg font-bold">Edit Blok Jadwal</h3>
 		{#if selectedCell}
 			<p class="text-base-content/70 mt-1 text-sm">
 				{hariLabel[selectedCell.hari]} jam {selectedCell.jamKe} - {selectedKelas?.nama ?? 'Kelas'}
+				{#if selectedCell.blockCellKeys.length > 1}
+					<span class="badge badge-info ml-1"
+						>{selectedCell.blockCellKeys.length} sel tergabung</span
+					>
+				{/if}
 			</p>
 			<label class="form-control mt-4">
 				<span class="label-text mb-1">Item Jadwal</span>
@@ -1127,10 +1278,28 @@
 			</label>
 		{/if}
 		<div class="modal-action flex-wrap">
-			<button class="btn btn-error btn-outline" type="button" onclick={clearSelectedCell}
-				>Kosongkan</button
-			>
-			<button class="btn btn-primary" type="button" onclick={saveSelectedCell}>Simpan Cell</button>
+			{#if selectedCell && selectedCell.blockCellKeys.length > 1}
+				<button
+					class="btn btn-error btn-outline"
+					type="button"
+					onclick={() => clearSelectedCell('block')}>Kosongkan Blok</button
+				>
+				<button class="btn btn-soft" type="button" onclick={() => saveSelectedCell('cell')}
+					>Simpan Sel Awal</button
+				>
+				<button class="btn btn-primary" type="button" onclick={() => saveSelectedCell('block')}
+					>Simpan Seluruh Blok</button
+				>
+			{:else}
+				<button
+					class="btn btn-error btn-outline"
+					type="button"
+					onclick={() => clearSelectedCell('cell')}>Kosongkan</button
+				>
+				<button class="btn btn-primary" type="button" onclick={() => saveSelectedCell('cell')}
+					>Simpan Sel</button
+				>
+			{/if}
 			<button
 				class="btn"
 				type="button"
@@ -1320,6 +1489,38 @@
 	.schedule-cell {
 		min-width: 10rem;
 		padding: 0.25rem;
+	}
+
+	.schedule-cell.is-merged {
+		padding: 0.2rem;
+	}
+
+	.schedule-cell.is-merged .slot-button {
+		border-width: 2px;
+		height: 100%;
+	}
+
+	.schedule-cell.is-merged-activity .slot-button {
+		background-image: linear-gradient(
+			90deg,
+			rgba(255, 255, 255, 0.12),
+			transparent 35%,
+			rgba(255, 255, 255, 0.12)
+		);
+	}
+
+	.schedule-cell.is-merged-subject .slot-button {
+		min-height: 4.75rem;
+	}
+
+	.slot-span {
+		border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+		border-radius: 999px;
+		font-size: 0.58rem;
+		font-weight: 700;
+		line-height: 1;
+		margin-top: 0.1rem;
+		padding: 0.15rem 0.35rem;
 	}
 
 	.sticky-col {

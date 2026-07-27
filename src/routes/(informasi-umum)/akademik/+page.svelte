@@ -18,7 +18,7 @@
 	const activeSemesterId = data.activeSemesterId ?? null;
 	const downloadDataSiswaHref = $derived(
 		activeSemesterId
-			? resolve('/api/rapor/unduh-data-siswa?semesterId=' + activeSemesterId)
+			? resolve('/api/rapor/unduh-data-siswa') + '?semesterId=' + activeSemesterId
 			: resolve('/api/rapor/unduh-data-siswa')
 	);
 	const tanggalBagiRaport = data.tanggalBagiRaport as {

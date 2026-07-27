@@ -24,6 +24,14 @@ NUL
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
+# Local development artifacts
+/.pnpm-store
+/.release-tests
+/dev-server-*.log
+/dev-server-*.pid
+/gh-auth.*.log
+/run-dev-*.cmd
+
 # Our custom
 /src/lib/icons/__icons.d.ts
 /data/*.sqlite3

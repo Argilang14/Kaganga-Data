@@ -138,7 +138,7 @@
 		try {
 			const response = await fetch('?/create_user', { method: 'POST', body: form });
 			const result = deserialize(await response.text());
-			const body = (result.data ?? {}) as CreateUserBody;
+			const body = ('data' in result ? (result.data ?? {}) : {}) as CreateUserBody;
 			if (result.type !== 'success') {
 				const errorMessage =
 					result.type === 'error' && result.error instanceof Error

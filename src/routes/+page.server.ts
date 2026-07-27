@@ -414,7 +414,7 @@ export const load: PageServerLoad = async (event) => {
 		...parentData,
 		favorites,
 		statistikDashboard,
-		bellActive: bellRow?.isActive === 1,
+		bellActive: bellRow?.isActive === true,
 		hariSekolah,
 		liburNasional,
 		liburSemester,

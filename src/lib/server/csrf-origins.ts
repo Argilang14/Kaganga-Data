@@ -3,11 +3,11 @@ import { join, dirname } from 'node:path';
 import { networkInterfaces } from 'node:os';
 import { env } from '$env/dynamic/private';
 
-// Prefer install-time data directory for persistence. Use explicit env var if set,
-// otherwise use LOCALAPPDATA\Rapkumer-data on Windows, else fallback to repo ./data.
+// Prefer the Kaganga user-state directory while retaining the legacy env alias.
 const dataDir =
+	env.KAGANGA_DATA_DIR ||
 	env.RAPKUMER_DATA_DIR ||
-	(env.LOCALAPPDATA ? join(env.LOCALAPPDATA, 'Rapkumer-data') : join(process.cwd(), 'data'));
+	(env.LOCALAPPDATA ? join(env.LOCALAPPDATA, 'Kaganga-data') : join(process.cwd(), 'data'));
 
 const ORIGINS_FILE = join(dataDir, 'csrf-origins.txt');
 const CACHE_TTL = 5_000; // ms
@@ -115,7 +115,7 @@ export async function readCombinedOriginsFromEnvAndFile(): Promise<Set<string>> 
 	// to the trusted origins set so LAN access works without manual editing.
 	// Construct origins for both http/https and with/without port for
 	// compatibility.
-	const port = (env.RAPKUMER_PORT || env.PORT || '3000').toString();
+	const port = (env.RAPKUMER_PORT || env.PORT || '1206').toString();
 	const detected = new Set<string>();
 	try {
 		const nets = networkInterfaces();
@@ -137,7 +137,7 @@ export async function readCombinedOriginsFromEnvAndFile(): Promise<Set<string>> 
 	}
 
 	// Ensure localhost/loopback variants are trusted by default (with and
-	// without port) so local browser requests to localhost:3000 aren't
+	// without port) so local browser requests to localhost:1206 aren't
 	// rejected even when no file/env entries exist.
 	const loopbacks = [
 		`http://localhost:${port}`,

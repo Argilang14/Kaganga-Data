@@ -479,7 +479,7 @@
 		};
 	});
 
-	let bellActive = $state(bellSettings?.isActive === 1);
+	let bellActive = $state(bellSettings?.isActive === true);
 
 	function openSimulasi() {
 		showModal({

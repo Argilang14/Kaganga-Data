@@ -16,11 +16,12 @@ const userAgent = 'KagangaUpdater/1.0';
 const downloads = new Map<string, DownloadRecord>();
 
 const updateBaseDir = (() => {
+	if (process.env.KAGANGA_UPDATE_DIR) return process.env.KAGANGA_UPDATE_DIR;
 	if (process.env.RAPKUMER_UPDATE_DIR) return process.env.RAPKUMER_UPDATE_DIR;
 	const localAppData = process.env.LOCALAPPDATA;
-	if (localAppData) return join(localAppData, 'Rapkumer', 'updates');
+	if (localAppData) return join(localAppData, 'Kaganga', 'updates');
 	const home = homedir() || process.cwd();
-	return join(home, '.rapkumer', 'updates');
+	return join(home, '.kaganga', 'updates');
 })();
 
 async function ensureDir(pathname: string) {
@@ -324,7 +325,7 @@ export async function scheduleInstall(downloadId: string): Promise<{ message: st
 		return { message: 'Pemasangan pembaruan sudah dijadwalkan.' };
 	}
 
-	const port = process.env.PORT ?? '3000';
+	const port = process.env.PORT ?? '1206';
 
 	try {
 		await new Promise<void>((resolve, reject) => {

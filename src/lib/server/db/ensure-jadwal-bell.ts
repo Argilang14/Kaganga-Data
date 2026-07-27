@@ -1,6 +1,18 @@
 import db from '$lib/server/db';
 import { ensureSchema } from './ensure-helper';
 
+async function addColumnIfMissing(tableName: string, columnName: string, definition: string) {
+	const result = (await db.$client.execute(`PRAGMA table_info(${tableName})`)) as unknown as {
+		rows?: Array<Record<string, unknown> | unknown[]>;
+	};
+	const hasColumn = (result.rows ?? []).some((row) =>
+		Array.isArray(row) ? row[1] === columnName : row.name === columnName
+	);
+	if (!hasColumn) {
+		await db.$client.execute(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+	}
+}
+
 export async function ensureJadwalBellSchema() {
 	await ensureSchema('jadwal-bell', [
 		`CREATE TABLE IF NOT EXISTS bell_settings (
@@ -45,8 +57,11 @@ export async function ensureJadwalBellSchema() {
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			updated_at TEXT
 		)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS jadwal_pelajaran_uniq_idx ON jadwal_pelajaran(sekolah_id, hari, jam_ke, kelas_id)`
+		// Jadwal bertemplate dapat memiliki slot yang sama, sehingga indeks lama tidak boleh unik.
 	]);
+
+	await addColumnIfMissing('jadwal_pelajaran', 'jam_ke', 'INTEGER NOT NULL DEFAULT 0');
+	await addColumnIfMissing('jadwal_pelajaran', 'kode_kegiatan', "TEXT NOT NULL DEFAULT ''");
 
 	try {
 		await db.$client.execute(`ALTER TABLE kegiatan_custom ADD COLUMN durasi INTEGER`);

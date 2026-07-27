@@ -137,7 +137,7 @@
 					<li><a href="/api/jadwal/mapel/export"><Icon name="export" /> Export Data</a></li>
 				</ul>
 			</div>
-			<a class="btn btn-soft shadow-none" href={resolve('/jadwal/pelajaran')}>
+			<a class="btn btn-soft shadow-none" href={resolve('/rapor/jadwal-pelajaran')}>
 				<Icon name="calendar" /> Jadwal Pelajaran
 			</a>
 		</div>

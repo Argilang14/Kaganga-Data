@@ -1314,7 +1314,7 @@ export const tableJadwalMapel = sqliteTable(
 			.notNull(),
 		kode: text().notNull(),
 		nama: text().notNull(),
-		jenjang: text({ enum: ['semua', 'srd', 'srmp', 'srma'] })
+		jenjang: text({ enum: ['semua', 'srd', 'srmp', 'srma', 'sd', 'smp', 'sma'] })
 			.default('semua')
 			.notNull(),
 		fase: text(),
@@ -1398,12 +1398,13 @@ export const tableKalenderPendidikan = sqliteTable(
 				'asesmen',
 				'pembagian_rapor',
 				'kegiatan_sekolah',
+				'kegiatan_asrama',
 				'lainnya'
 			]
 		})
 			.default('lainnya')
 			.notNull(),
-		jenjang: text({ enum: ['semua', 'srd', 'srmp', 'srma'] })
+		jenjang: text({ enum: ['semua', 'srd', 'srmp', 'srma', 'sd', 'smp', 'sma'] })
 			.default('semua')
 			.notNull(),
 		keterangan: text(),

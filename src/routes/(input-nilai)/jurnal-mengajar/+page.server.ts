@@ -1,8 +1,10 @@
+import { buildJpNumberBySlot, jadwalSlotKey } from '$lib/jadwal-slots';
 import db from '$lib/server/db';
 import { ensureJurnalMengajarSchema } from '$lib/server/db/ensure-jurnal-mengajar';
 import {
 	tableAuthUserMataPelajaran,
 	tableJadwalPelajaran,
+	tableJadwalJam,
 	tableJurnalMengajar,
 	tableKelas,
 	tableMataPelajaran,
@@ -102,7 +104,8 @@ export async function load({ locals, url, depends, parent }) {
 			where: and(
 				eq(tableJadwalPelajaran.sekolahId, sekolahId),
 				inArray(tableJadwalPelajaran.kelasId, effectiveKelasIds),
-				eq(tableJadwalPelajaran.hari, hari)
+				eq(tableJadwalPelajaran.hari, hari),
+				eq(tableJadwalPelajaran.tipe, 'pelajaran')
 			)
 		});
 
@@ -193,7 +196,8 @@ export async function load({ locals, url, depends, parent }) {
 				where: and(
 					eq(tableJadwalPelajaran.sekolahId, sekolahId),
 					inArray(tableJadwalPelajaran.kelasId, effectiveKelasIds),
-					eq(tableJadwalPelajaran.hari, hari)
+					eq(tableJadwalPelajaran.hari, hari),
+					eq(tableJadwalPelajaran.tipe, 'pelajaran')
 				)
 			});
 
@@ -530,11 +534,12 @@ export const actions = {
 			}
 
 			let jadwalEntries = await db.query.tableJadwalPelajaran.findMany({
-				columns: { jamKe: true },
+				columns: { jamKe: true, jamId: true },
 				where: and(
 					eq(tableJadwalPelajaran.sekolahId, sekolahId),
 					eq(tableJadwalPelajaran.kelasId, kelasId),
 					eq(tableJadwalPelajaran.hari, hari),
+					eq(tableJadwalPelajaran.tipe, 'pelajaran'),
 					eq(tableJadwalPelajaran.kodeKegiatan, mpRow.kode)
 				),
 				orderBy: [asc(tableJadwalPelajaran.jamKe)]
@@ -552,11 +557,12 @@ export const actions = {
 				];
 				if (mpRow.nama && agamaMapelNames.includes(mpRow.nama)) {
 					jadwalEntries = await db.query.tableJadwalPelajaran.findMany({
-						columns: { jamKe: true },
+						columns: { jamKe: true, jamId: true },
 						where: and(
 							eq(tableJadwalPelajaran.sekolahId, sekolahId),
 							eq(tableJadwalPelajaran.kelasId, kelasId),
 							eq(tableJadwalPelajaran.hari, hari),
+							eq(tableJadwalPelajaran.tipe, 'pelajaran'),
 							eq(tableJadwalPelajaran.kodeKegiatan, 'PAPB')
 						),
 						orderBy: [asc(tableJadwalPelajaran.jamKe)]
@@ -568,10 +574,11 @@ export const actions = {
 				return fail(400, { fail: 'Tidak ada jadwal untuk mata pelajaran ini hari ini' });
 			}
 
+			const jpNumbers = await resolveJpNumbers(jadwalEntries);
 			const jamPelajaran =
-				jadwalEntries.length === 1
-					? String(jadwalEntries[0].jamKe)
-					: `${Math.min(...jadwalEntries.map((j) => j.jamKe))}-${Math.max(...jadwalEntries.map((j) => j.jamKe))}`;
+				jpNumbers.length === 1
+					? String(jpNumbers[0])
+					: `${Math.min(...jpNumbers)}-${Math.max(...jpNumbers)}`;
 
 			await db.insert(tableJurnalMengajar).values({
 				authUserId: user.id,
@@ -638,3 +645,28 @@ export const actions = {
 		return { message: 'Jurnal dihapus' };
 	}
 };
+async function resolveJpNumbers(entries: Array<{ jamId: number | null; jamKe: number }>) {
+	const jamIds = [
+		...new Set(entries.map((entry) => entry.jamId).filter((id): id is number => !!id))
+	];
+	if (!jamIds.length) return entries.map((entry) => entry.jamKe);
+
+	const selectedRows = await db.query.tableJadwalJam.findMany({
+		where: inArray(tableJadwalJam.id, jamIds)
+	});
+	const templateIds = [
+		...new Set(selectedRows.map((row) => row.templateId).filter((id): id is number => id !== null))
+	];
+	const allRows = templateIds.length
+		? await db.query.tableJadwalJam.findMany({
+				where: inArray(tableJadwalJam.templateId, templateIds)
+			})
+		: selectedRows;
+	const jpNumbers = buildJpNumberBySlot(allRows);
+	const selectedById = new Map(selectedRows.map((row) => [row.id, row]));
+
+	return entries.map((entry) => {
+		const slot = entry.jamId ? selectedById.get(entry.jamId) : null;
+		return slot ? (jpNumbers.get(jadwalSlotKey(slot)) ?? entry.jamKe) : entry.jamKe;
+	});
+}

@@ -285,7 +285,7 @@
 	);
 
 	function openJadwalBell() {
-		goto(resolve('/akademik/jadwal-pelajaran'));
+		goto(resolve('/rapor/jadwal-pelajaran'));
 	}
 
 	const jadwalBellDisabled = $derived(!presensiJadwalReady || !canRaporManage);

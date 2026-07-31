@@ -1,8 +1,17 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import { deserialize } from '$app/forms';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/icon.svelte';
+	import {
+		buildJpNumberBySlot,
+		canPlaceJadwalItem,
+		jadwalSlotKey,
+		normalizeJadwalKegiatanKode,
+		normalizeJadwalKode,
+		uniqueJadwalSlots
+	} from '$lib/jadwal-slots';
 	import { toast } from '$lib/components/toast.svelte';
 	import { buildJadwalSegments, type JadwalSegment } from '$lib/jadwal-segments';
 	import type { PageData } from './$types';
@@ -26,6 +35,7 @@
 		tipe: string;
 		namaDefault: string | null;
 		aktif: boolean;
+		urutan?: number | null;
 	};
 	type JenjangFilter = 'semua' | 'srd' | 'srmp' | 'srma';
 	type TableDensity = 'normal' | 'padat';
@@ -100,7 +110,7 @@
 		).map((item) => ({
 			source: 'mapel' as const,
 			id: item.id,
-			kode: item.kode,
+			kode: normalizeJadwalKode(item.kode),
 			nama: item.nama,
 			warna: item.warna ?? '#dbeafe',
 			detail: item.guru ?? String(item.jpPerMinggu ?? 0) + ' JP/minggu',
@@ -122,7 +132,7 @@
 		).map((item) => ({
 			source: 'kegiatan' as const,
 			id: item.id,
-			kode: item.kode,
+			kode: normalizeJadwalKode(item.kode),
 			nama: item.nama,
 			warna: item.warna ?? '#dcfce7',
 			detail: item.kategori
@@ -139,7 +149,7 @@
 		() =>
 			new Map(savedJadwal.map((entry) => [keyFor(entry.hari, entry.jamKe, entry.kelasId), entry]))
 	);
-	const jadwalJam = $derived((data.jadwalJam ?? []) as JamSlot[]);
+	const jadwalJam = $derived.by(() => uniqueJadwalSlots((data.jadwalJam ?? []) as JamSlot[]));
 
 	let cells = $state<Record<string, string>>({});
 	let saving = $state(false);
@@ -150,6 +160,7 @@
 	let durasiUpacara = $state(70);
 	let bellActive = $state(false);
 	let activePalette = $state<'mapel' | 'kegiatan'>('mapel');
+	const jpNumberBySlot = $derived.by(() => buildJpNumberBySlot(jadwalJam));
 	let activeJenjang = $state<JenjangFilter>('semua');
 	let tableDensity = $state<TableDensity>('padat');
 	let paletteSearch = $state('');
@@ -281,7 +292,9 @@
 						if (!kode) return [];
 						const saved = savedJadwalByCell.get(key);
 						const savedTeacher =
-							saved?.kodeKegiatan === kode ? (saved.guruPegawaiId ?? null) : null;
+							normalizeJadwalKode(saved?.kodeKegiatan) === kode
+								? (saved?.guruPegawaiId ?? null)
+								: null;
 						const inferredTeachers = (mapelByCode.get(kode) ?? [])
 							.filter((item) => itemSesuaiKelas(item, kelas))
 							.map((item) => item.guruId)
@@ -308,9 +321,14 @@
 		);
 		return buildJadwalSegments(mergeCells);
 	});
-	const selectedMapelItems = $derived(
-		selectedKelas ? mapelItems.filter((item) => itemSesuaiKelas(item, selectedKelas)) : mapelItems
-	);
+	const selectedMapelItems = $derived.by(() => {
+		const kelas = selectedKelas;
+		const cell = selectedCell;
+		if (!kelas || !cell) return mapelItems;
+		return mapelItems.filter(
+			(item) => itemSesuaiKelas(item, kelas) && itemSesuaiSlot(item, cell.hari, cell.jamKe, kelas)
+		);
+	});
 	const activeJenjangName = $derived(jenjangLabel[activeJenjang] ?? 'Semua Jenjang');
 	const scheduleChecks = $derived.by(() => {
 		const visibleIds = new Set(visibleKelas.map((kelas) => kelas.id));
@@ -342,6 +360,7 @@
 				let actual = 0;
 				for (const hari of hariList) {
 					for (const slot of slotsForJenjang(hari, jenjang)) {
+						if (slot.tipe !== 'pelajaran') continue;
 						if (cells[keyFor(hari, slot.jamKe, kelas.id)] === item.kode) actual += 1;
 					}
 				}
@@ -372,7 +391,8 @@
 	$effect(() => {
 		const nextCells: Record<string, string> = {};
 		for (const entry of savedJadwal) {
-			nextCells[`${entry.hari}|${entry.jamKe}|${entry.kelasId}`] = entry.kodeKegiatan;
+			const kode = normalizeJadwalKode(entry.kodeKegiatan);
+			if (kode) nextCells[`${entry.hari}|${entry.jamKe}|${entry.kelasId}`] = kode;
 		}
 		cells = nextCells;
 	});
@@ -426,8 +446,24 @@
 		);
 	}
 
+	function slotForJenjang(hari: string, jamKe: number, jenjang: Exclude<JenjangFilter, 'semua'>) {
+		return slotsForJenjang(hari, jenjang).find((slot) => slot.jamKe === jamKe) ?? null;
+	}
+
+	function slotDefaultForJenjang(
+		hari: string,
+		jamKe: number,
+		jenjang: Exclude<JenjangFilter, 'semua'>
+	) {
+		const slot = slotForJenjang(hari, jamKe, jenjang);
+		return slot && slot.tipe !== 'pelajaran' ? slot.namaDefault : null;
+	}
 	function slotAktif(hari: string, jamKe: number, jenjang: Exclude<JenjangFilter, 'semua'>) {
 		return slotsForJenjang(hari, jenjang).some((slot) => slot.jamKe === jamKe);
+	}
+
+	function jpForJenjang(hari: string, jamKe: number, jenjang: Exclude<JenjangFilter, 'semua'>) {
+		return jpNumberBySlot.get(jadwalSlotKey({ hari, jamKe, jenjang })) ?? null;
 	}
 
 	function jumlahJamFor(hari: string) {
@@ -476,6 +512,12 @@
 		);
 	}
 
+	function itemSesuaiSlot(item: PaletteItem, hari: string, jamKe: number, kelas: Kelas) {
+		const jenjang = kelasJenjang(kelas);
+		if (jenjang === 'semua') return false;
+		const slot = slotForJenjang(hari, jamKe, jenjang);
+		return Boolean(slot?.aktif) && canPlaceJadwalItem(slot?.tipe, item.source);
+	}
 	function kodeSesuaiKelas(kode: string, kelas: Kelas) {
 		if (kegiatanCodes.has(kode)) return true;
 		return (mapelByCode.get(kode) ?? []).some((item) => itemSesuaiKelas(item, kelas));
@@ -488,16 +530,18 @@
 
 	function setCell(hari: string, jamKe: number, kelasId: number, kode: string) {
 		const key = keyFor(hari, jamKe, kelasId);
-		if (kode) cells[key] = kode;
+		const normalized = normalizeJadwalKode(kode);
+		if (normalized) cells[key] = normalized;
 		else delete cells[key];
 		cells = { ...cells };
 	}
 
 	function setMany(targets: Array<{ hari: string; jamKe: number; kelasId: number }>, kode: string) {
+		const normalized = normalizeJadwalKode(kode);
 		const next = { ...cells };
 		for (const target of targets) {
 			const key = keyFor(target.hari, target.jamKe, target.kelasId);
-			if (kode) next[key] = kode;
+			if (normalized) next[key] = normalized;
 			else delete next[key];
 		}
 		cells = next;
@@ -631,6 +675,10 @@
 			);
 			return;
 		}
+		if (!itemSesuaiSlot(item, hari, jamKe, kelas)) {
+			toast('Mata pelajaran hanya dapat ditempatkan pada slot bertipe Pelajaran.', 'error');
+			return;
+		}
 		pendingDrop = {
 			item,
 			hari,
@@ -665,6 +713,7 @@
 			return (
 				kelas &&
 				itemSesuaiKelas(item, kelas) &&
+				itemSesuaiSlot(item, target.hari, target.jamKe, kelas) &&
 				slotAktifUntukKelas(target.hari, target.jamKe, kelas)
 			);
 		});
@@ -722,6 +771,16 @@
 				return;
 			}
 		}
+		const selectedItem = editKode ? kodeMeta.get(editKode) : null;
+		if (selectedItem) {
+			for (const target of targets) {
+				const kelas = daftarKelas.find((entry) => entry.id === target.kelasId);
+				if (kelas && !itemSesuaiSlot(selectedItem, target.hari, target.jamKe, kelas)) {
+					toast('Mata pelajaran hanya dapat ditempatkan pada slot bertipe Pelajaran.', 'error');
+					return;
+				}
+			}
+		}
 		setMany(targets, editKode);
 		selectedCell = null;
 		cellDialog?.close();
@@ -738,18 +797,29 @@
 		cellDialog?.close();
 	}
 
-	async function postAction(action: string, formData: FormData) {
+	async function postAction(action: string, formData: FormData): Promise<Record<string, unknown>> {
 		const res = await fetch(`?/${action}`, { method: 'POST', body: formData, redirect: 'error' });
-		if (!res.ok) {
-			let message = 'Gagal memproses permintaan';
-			try {
-				const payload = await res.json();
-				message = payload?.data?.fail ?? payload?.fail ?? message;
-			} catch {
-				// ignore non-json action response
-			}
-			throw new Error(message);
+		let result;
+		try {
+			result = deserialize(await res.text());
+		} catch {
+			throw new Error('Respons penyimpanan tidak valid');
 		}
+		if (result.type === 'failure') {
+			const data = result.data as { fail?: string; message?: string } | undefined;
+			throw new Error(data?.fail ?? data?.message ?? 'Gagal memproses permintaan');
+		}
+		if (result.type === 'error') {
+			const error = result.error as { message?: string } | string | undefined;
+			throw new Error(
+				typeof error === 'string' ? error : (error?.message ?? 'Terjadi kesalahan server')
+			);
+		}
+		if (result.type === 'redirect') {
+			throw new Error('Sesi berubah. Muat ulang halaman sebelum menyimpan kembali.');
+		}
+		if (!res.ok || result.type !== 'success') throw new Error('Gagal memproses permintaan');
+		return (result.data ?? {}) as Record<string, unknown>;
 	}
 
 	async function saveSettings() {
@@ -778,7 +848,12 @@
 		const entries = Object.entries(cells)
 			.map(([key, kode]) => {
 				const [hari, jamKe, kelasId] = key.split('|');
-				return { hari, jamKe: Number(jamKe), kelasId: Number(kelasId), kodeKegiatan: kode };
+				return {
+					hari,
+					jamKe: Number(jamKe),
+					kelasId: Number(kelasId),
+					kodeKegiatan: normalizeJadwalKode(kode)
+				};
 			})
 			.filter((entry) => entry.kodeKegiatan);
 		const formData = new FormData();
@@ -786,9 +861,31 @@
 		formData.set('tahunAjaranId', String(data.selectedContext?.tahunAjaranId ?? ''));
 		formData.set('jenis', data.selectedContext?.jenis ?? 'ganjil');
 		try {
-			await postAction('saveJadwal', formData);
-			toast('Jadwal pelajaran tersimpan', 'success');
+			const result = await postAction('saveJadwal', formData);
+			const savedEntries = (
+				Array.isArray(result.savedEntries) ? result.savedEntries : entries
+			) as Array<{
+				hari: string;
+				jamKe: number;
+				kelasId: number;
+				kodeKegiatan: string;
+			}>;
+			const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+			toast(
+				warnings.length
+					? `Jadwal tersimpan dengan ${warnings.length} peringatan bentrok guru.`
+					: 'Jadwal pelajaran tersimpan',
+				warnings.length ? 'warning' : 'success'
+			);
 			await invalidateAll();
+			cells = Object.fromEntries(
+				savedEntries
+					.map((entry) => [
+						keyFor(entry.hari, Number(entry.jamKe), Number(entry.kelasId)),
+						normalizeJadwalKode(entry.kodeKegiatan)
+					])
+					.filter((entry) => entry[1])
+			);
 		} catch (error) {
 			toast(error instanceof Error ? error.message : 'Gagal menyimpan jadwal', 'error');
 		} finally {
@@ -1001,9 +1098,11 @@
 										{/if}
 										{#each visibleGroups as group (group.jenjang)}
 											{@const activeSlot = slotAktif(hari, jamKe, group.jenjang)}
+											{@const jpNumber = jpForJenjang(hari, jamKe, group.jenjang)}
+											{@const slotDefault = slotDefaultForJenjang(hari, jamKe, group.jenjang)}
 											<td class="group-jam-cell text-center" class:is-inactive={!activeSlot}>
 												{#if activeSlot}
-													<div class="font-semibold">{jamKe}</div>
+													<div class="font-semibold">{jpNumber ? `JP ${jpNumber}` : '-'}</div>
 													<div
 														class="text-base-content/60 whitespace-nowrap text-[10px] font-normal"
 													>
@@ -1060,7 +1159,12 @@
 																		>{detailFor(kode)}</span
 																	>{/if}
 															{:else}
-																<span class="slot-empty">-</span>
+																{#if slotDefault}
+																	<span class="slot-name">{slotDefault}</span>
+																	<span class="slot-detail">Kegiatan default · Non-JP</span>
+																{:else}
+																	<span class="slot-empty">-</span>
+																{/if}
 															{/if}
 														</button>
 													</td>
@@ -1493,11 +1597,14 @@
 
 	.schedule-cell.is-merged {
 		padding: 0.2rem;
+		position: relative;
 	}
 
 	.schedule-cell.is-merged .slot-button {
 		border-width: 2px;
-		height: 100%;
+		inset: 0.2rem;
+		position: absolute;
+		width: auto;
 	}
 
 	.schedule-cell.is-merged-activity .slot-button {
@@ -1507,10 +1614,6 @@
 			transparent 35%,
 			rgba(255, 255, 255, 0.12)
 		);
-	}
-
-	.schedule-cell.is-merged-subject .slot-button {
-		min-height: 4.75rem;
 	}
 
 	.slot-span {

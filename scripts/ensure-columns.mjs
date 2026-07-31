@@ -486,7 +486,10 @@ async function main() {
 			{ table: 'murid', column: 'foto', type: 'TEXT' },
 			// wali asuh per murid (moved from kelas level)
 			{ table: 'murid', column: 'wali_asuh_nama', type: 'TEXT' },
-			{ table: 'murid', column: 'wali_asuh_nip', type: 'TEXT' }, // Columns for mata_pelajaran relations used by asesmen/tujuan tables
+			{ table: 'murid', column: 'wali_asuh_nip', type: 'TEXT' },
+			// Token dibuat saat QR pertama kali diterbitkan; murid lama boleh tetap NULL.
+			{ table: 'murid', column: 'qr_token', type: 'TEXT' },
+			// Columns for mata_pelajaran relations used by asesmen/tujuan tables
 			{ table: 'tujuan_pembelajaran', column: 'mata_pelajaran_id', type: 'INTEGER' },
 			{ table: 'asesmen_sumatif', column: 'mata_pelajaran_id', type: 'INTEGER' },
 			{ table: 'asesmen_sumatif', column: 'nilai_akhir_rts', type: 'REAL' },
@@ -544,6 +547,37 @@ async function main() {
 					'-'
 				)
 				WHERE kode_kegiatan = ''`
+			});
+			await client.execute({
+				sql: `UPDATE jadwal_pelajaran
+				SET kode_kegiatan = UPPER(TRIM(kode_kegiatan))
+				WHERE kode_kegiatan <> UPPER(TRIM(kode_kegiatan))
+					AND (
+						EXISTS (SELECT 1 FROM jadwal_kegiatan
+							WHERE jadwal_kegiatan.sekolah_id = jadwal_pelajaran.sekolah_id
+								AND UPPER(TRIM(jadwal_kegiatan.kode)) = UPPER(TRIM(jadwal_pelajaran.kode_kegiatan)))
+						OR EXISTS (SELECT 1 FROM jadwal_mata_pelajaran
+							WHERE jadwal_mata_pelajaran.sekolah_id = jadwal_pelajaran.sekolah_id
+								AND UPPER(TRIM(jadwal_mata_pelajaran.kode)) = UPPER(TRIM(jadwal_pelajaran.kode_kegiatan)))
+					)`
+			});
+			await client.execute({
+				sql: `UPDATE jadwal_pelajaran
+				SET kegiatan_id = (
+					SELECT jadwal_kegiatan.id FROM jadwal_kegiatan
+					WHERE jadwal_kegiatan.sekolah_id = jadwal_pelajaran.sekolah_id
+						AND UPPER(TRIM(jadwal_kegiatan.kode)) = UPPER(TRIM(jadwal_pelajaran.kode_kegiatan))
+					LIMIT 1
+				),
+				tipe = COALESCE((
+					SELECT CASE WHEN jadwal_kegiatan.kategori = 'istirahat' THEN 'istirahat' ELSE 'kegiatan' END
+					FROM jadwal_kegiatan WHERE jadwal_kegiatan.sekolah_id = jadwal_pelajaran.sekolah_id
+						AND UPPER(TRIM(jadwal_kegiatan.kode)) = UPPER(TRIM(jadwal_pelajaran.kode_kegiatan))
+					LIMIT 1
+				), tipe)
+				WHERE EXISTS (SELECT 1 FROM jadwal_kegiatan
+					WHERE jadwal_kegiatan.sekolah_id = jadwal_pelajaran.sekolah_id
+						AND UPPER(TRIM(jadwal_kegiatan.kode)) = UPPER(TRIM(jadwal_pelajaran.kode_kegiatan)))`
 			});
 		} catch (error) {
 			console.warn(

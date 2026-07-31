@@ -1,4 +1,6 @@
+import { normalizeJadwalKegiatanKode } from '$lib/jadwal-slots';
 import db from '$lib/server/db';
+import { ensureJadwalKegiatanTerintegrasi } from '$lib/server/db/reconcile-jadwal-kegiatan';
 import { ensureJadwalKurikulumSchema } from '$lib/server/db/ensure-jadwal-kurikulum';
 import { withSchemaReady } from '$lib/server/db/schema-guard';
 import { tableJadwalJam, tableJadwalKegiatan, tableJadwalTemplate } from '$lib/server/db/schema';
@@ -198,7 +200,10 @@ async function ensureTemplateForJenjang(
 	];
 	if (params.tahunAjaranId)
 		filters.push(eq(tableJadwalTemplate.tahunAjaranId, params.tahunAjaranId));
-	let template = await db.query.tableJadwalTemplate.findFirst({ where: and(...filters) });
+	let template = await db.query.tableJadwalTemplate.findFirst({
+		where: and(...filters),
+		orderBy: [asc(tableJadwalTemplate.id)]
+	});
 	let created = false;
 	if (!template) {
 		const result = await db
@@ -228,15 +233,16 @@ export async function ensureJadwalPelajaranTemplate(
 	await ensureJadwalKurikulumSchema();
 	const jenis = normalizeJadwalJenis(params.jenis);
 	const nama = 'Jadwal Pelajaran ' + JADWAL_JENIS_LABELS[jenis] + ' ' + params.tahunAjaranId;
-	let template = await db.query.tableJadwalTemplate.findFirst({
+	let templates = await db.query.tableJadwalTemplate.findMany({
 		where: and(
 			eq(tableJadwalTemplate.sekolahId, sekolahId),
 			eq(tableJadwalTemplate.tahunAjaranId, params.tahunAjaranId),
 			eq(tableJadwalTemplate.jenis, jenis),
 			eq(tableJadwalTemplate.nama, nama)
-		)
+		),
+		orderBy: [asc(tableJadwalTemplate.id)]
 	});
-	if (!template) {
+	if (!templates.length) {
 		const rows = await db
 			.insert(tableJadwalTemplate)
 			.values({
@@ -251,9 +257,10 @@ export async function ensureJadwalPelajaranTemplate(
 				updatedAt: new Date().toISOString()
 			})
 			.returning();
-		template = rows[0];
+		templates = rows;
 	}
-	return template;
+	const template = templates[0];
+	return { ...template, contextTemplateIds: templates.map((item) => item.id) };
 }
 
 export async function ensureDefaultJadwalFoundation(
@@ -272,6 +279,7 @@ export async function ensureDefaultJadwalFoundation(
 		const selectedJenjang = normalizeJadwalJenjang(params?.jenjang);
 		let selectedTemplate = null as
 			Awaited<ReturnType<typeof ensureTemplateForJenjang>>['template'] | null;
+		const templates: Awaited<ReturnType<typeof ensureTemplateForJenjang>>['template'][] = [];
 		let jamInserted = 0;
 
 		for (const jenjang of JADWAL_JENJANG) {
@@ -281,6 +289,7 @@ export async function ensureDefaultJadwalFoundation(
 				params
 			);
 			if (jenjang === selectedJenjang) selectedTemplate = template;
+			templates.push(template);
 
 			const existingJam = await db.query.tableJadwalJam.findMany({
 				columns: { hari: true, jamKe: true },
@@ -324,12 +333,14 @@ export async function ensureDefaultJadwalFoundation(
 			columns: { kode: true },
 			where: eq(tableJadwalKegiatan.sekolahId, sekolahId)
 		});
-		const existingKegiatanCodes = new Set(existingKegiatan.map((row) => row.kode));
+		const existingKegiatanCodes = new Set(
+			existingKegiatan.map((row) => normalizeJadwalKegiatanKode(row.kode))
+		);
 		const kegiatanValues = DEFAULT_KEGIATAN_JADWAL.filter(
-			(item) => !existingKegiatanCodes.has(item.kode)
+			(item) => !existingKegiatanCodes.has(normalizeJadwalKegiatanKode(item.kode))
 		).map((item) => ({
 			sekolahId,
-			kode: item.kode,
+			kode: normalizeJadwalKegiatanKode(item.kode),
 			nama: item.nama,
 			kategori: item.kategori,
 			warna: item.warna,
@@ -343,6 +354,7 @@ export async function ensureDefaultJadwalFoundation(
 			template:
 				selectedTemplate ??
 				(await ensureTemplateForJenjang(sekolahId, selectedJenjang, params)).template,
+			templates,
 			jamInserted,
 			kegiatanInserted: kegiatanValues.length
 		};
@@ -367,6 +379,7 @@ export async function loadJadwalJam(
 
 export async function loadJadwalKegiatan(sekolahId: number) {
 	await ensureJadwalKurikulumSchema();
+	await ensureJadwalKegiatanTerintegrasi();
 	return withSchemaReady('Jadwal', () =>
 		db.query.tableJadwalKegiatan.findMany({
 			where: eq(tableJadwalKegiatan.sekolahId, sekolahId),

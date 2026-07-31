@@ -174,6 +174,7 @@ async function main() {
 					{ table: 'pegawai', column: 'sekolah_id', type: 'INTEGER' },
 					{ table: 'kelas', column: 'sekolah_id', type: 'INTEGER' },
 					{ table: 'mata_pelajaran', column: 'kelas_id', type: 'INTEGER' },
+					{ table: 'murid', column: 'qr_token', type: 'TEXT' },
 					{ table: 'auth_user', column: 'sekolah_id', type: 'INTEGER' },
 					{ table: 'feature_unlock', column: 'sekolah_id', type: 'INTEGER' },
 					{ table: 'tahun_ajaran', column: 'sekolah_id', type: 'INTEGER' }

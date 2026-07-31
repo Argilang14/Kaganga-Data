@@ -1,12 +1,13 @@
+import { normalizeJadwalKegiatanKode, normalizeJadwalKode } from '$lib/jadwal-slots';
 import { error, redirect } from '@sveltejs/kit';
 import db from '$lib/server/db';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
+import { ensureJadwalKegiatanTerintegrasi } from '$lib/server/db/reconcile-jadwal-kegiatan';
 import {
 	tableJadwalJam,
 	tableJadwalKegiatan,
 	tableJadwalMapel,
 	tableJadwalPelajaran,
-	tableJadwalTemplate,
 	tableKelas,
 	tablePegawai,
 	tableSekolah
@@ -17,7 +18,6 @@ import {
 	inferKelasJadwalJenjang,
 	JADWAL_HARI_LABELS,
 	JADWAL_JENIS_LABELS,
-	JADWAL_JENJANG,
 	JADWAL_JENJANG_LABELS,
 	mapelSesuaiJenjang,
 	requireJadwalAccess,
@@ -54,10 +54,6 @@ function parseOrientation(value: string | null): Orientation {
 	return value === 'portrait' ? 'portrait' : 'landscape';
 }
 
-function normalizeKode(value?: string | null) {
-	return value?.trim().toUpperCase() ?? '';
-}
-
 export type JadwalPelajaranPrintData = Awaited<
 	ReturnType<typeof getJadwalPelajaranPreviewPayload>
 >['jadwalPelajaranData'];
@@ -91,21 +87,14 @@ export async function getJadwalPelajaranPreviewPayload({
 		context.semesterId ?? selectedYear?.semester.find((item) => item.tipe === 'ganjil')?.id ?? null;
 	const scheduleTemplate = await ensureJadwalPelajaranTemplate(sekolahId, context);
 
-	await Promise.all(
-		JADWAL_JENJANG.map((jenjang) =>
-			ensureDefaultJadwalFoundation(sekolahId, { ...context, jenjang })
-		)
-	);
-
-	const settingTemplates = await db.query.tableJadwalTemplate.findMany({
-		columns: { id: true },
-		where: and(
-			eq(tableJadwalTemplate.sekolahId, sekolahId),
-			eq(tableJadwalTemplate.tahunAjaranId, context.tahunAjaranId),
-			eq(tableJadwalTemplate.jenis, context.jenis)
-		)
+	const settingFoundation = await ensureDefaultJadwalFoundation(sekolahId, {
+		...context,
+		jenjang: 'srd'
 	});
-	const templateIds = settingTemplates.map((item) => item.id);
+
+	await ensureJadwalKegiatanTerintegrasi();
+
+	const templateIds = settingFoundation.templates.map((template) => template.id);
 
 	const [sekolah, kelasRows, jadwalRows, jamRows, mapelRows, kegiatanRows, guruRows] =
 		await Promise.all([
@@ -166,12 +155,14 @@ export async function getJadwalPelajaranPreviewPayload({
 	);
 	const guruById = new Map(guruRows.map((item) => [item.id, item.nama]));
 	const kegiatanByKode = new Map(
-		kegiatanRows.filter((item) => item.aktif).map((item) => [normalizeKode(item.kode), item])
+		kegiatanRows
+			.filter((item) => item.aktif)
+			.map((item) => [normalizeJadwalKegiatanKode(item.kode), item])
 	);
 	const mapelByKode = new Map<string, typeof mapelRows>();
 	for (const mapel of mapelRows) {
 		if (!mapel.aktif || !mapel.kode) continue;
-		const kode = AGAMA_MAPEL_NAMES.has(mapel.nama) ? 'PAPB' : normalizeKode(mapel.kode);
+		const kode = AGAMA_MAPEL_NAMES.has(mapel.nama) ? 'PAPB' : normalizeJadwalKode(mapel.kode);
 		const group = mapelByKode.get(kode) ?? [];
 		group.push(mapel);
 		mapelByKode.set(kode, group);
@@ -196,7 +187,10 @@ export async function getJadwalPelajaranPreviewPayload({
 			.filter((jam) => jam.jenjang === kelas.jenjang)
 			.map((jam) => {
 				const jadwal = jadwalBySlot.get(kelas.id + '|' + jam.hari + '|' + jam.jamKe);
-				const kode = normalizeKode(jadwal?.kodeKegiatan);
+				const rawKode = normalizeJadwalKode(jadwal?.kodeKegiatan);
+				const kegiatanKode = normalizeJadwalKegiatanKode(jadwal?.kodeKegiatan);
+				const kode = kegiatanByKode.has(kegiatanKode) ? kegiatanKode : rawKode;
+				const hasJadwal = Boolean(jadwal && kode);
 				const mapelCandidates = (mapelByKode.get(kode) ?? []).filter((item) =>
 					mapelSesuaiJenjang(item.jenjang, kelas.jenjang)
 				);
@@ -205,25 +199,27 @@ export async function getJadwalPelajaranPreviewPayload({
 					(mapelCandidates.length === 1 ? mapelCandidates[0] : null);
 				const kegiatan = kegiatanByKode.get(kode);
 				const guruId = jadwal?.guruPegawaiId ?? mapel?.guruPegawaiId ?? null;
-				const tipe = mapel
-					? 'pelajaran'
-					: kegiatan?.kategori === 'istirahat'
-						? 'istirahat'
-						: kegiatan
-							? 'kegiatan'
-							: jam.tipe;
+				const tipe = !hasJadwal
+					? 'kosong'
+					: mapel
+						? 'pelajaran'
+						: kegiatan?.kategori === 'istirahat'
+							? 'istirahat'
+							: kegiatan
+								? 'kegiatan'
+								: 'kosong';
 				return {
 					kelasId: kelas.id,
 					jamId: jam.id,
 					jamKe: jam.jamKe,
 					hari: jam.hari,
 					tipe,
-					label: kode || jam.namaDefault || '',
+					label: hasJadwal ? kode : '',
 					mapelKode: mapel ? kode : '',
 					mapelNama: mapel?.nama ?? '',
-					guru: guruId ? guruById.get(guruId) ?? '' : '',
+					guru: guruId ? (guruById.get(guruId) ?? '') : '',
 					catatan: jadwal?.catatan ?? '',
-					warna: mapel?.warna ?? kegiatan?.warna ?? null
+					warna: hasJadwal ? (mapel?.warna ?? kegiatan?.warna ?? null) : null
 				};
 			})
 	);

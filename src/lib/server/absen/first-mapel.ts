@@ -28,7 +28,8 @@ export async function getFirstMapelForDay(
 		where: and(
 			eq(tableJadwalPelajaran.sekolahId, sekolahId),
 			eq(tableJadwalPelajaran.kelasId, kelasId),
-			eq(tableJadwalPelajaran.hari, hari)
+			eq(tableJadwalPelajaran.hari, hari),
+			eq(tableJadwalPelajaran.tipe, 'pelajaran')
 		),
 		orderBy: [asc(tableJadwalPelajaran.jamKe)]
 	});
@@ -49,6 +50,7 @@ export async function getFirstMapelForDay(
 			where: and(
 				eq(tableJadwalPelajaran.sekolahId, sekolahId),
 				eq(tableJadwalPelajaran.hari, hari),
+				eq(tableJadwalPelajaran.tipe, 'pelajaran'),
 				eq(tableJadwalPelajaran.kodeKegiatan, 'UPB')
 			)
 		});
@@ -101,7 +103,8 @@ export async function getJadwalForDay(
 		where: and(
 			eq(tableJadwalPelajaran.sekolahId, sekolahId),
 			eq(tableJadwalPelajaran.kelasId, kelasId),
-			eq(tableJadwalPelajaran.hari, hari)
+			eq(tableJadwalPelajaran.hari, hari),
+			eq(tableJadwalPelajaran.tipe, 'pelajaran')
 		),
 		orderBy: [asc(tableJadwalPelajaran.jamKe)]
 	});

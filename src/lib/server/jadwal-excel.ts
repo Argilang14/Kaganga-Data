@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- ExcelJS belum menyediakan tipe lengkap untuk API runtime. */
 import db from '$lib/server/db';
+import { normalizeJadwalKegiatanKode } from '$lib/jadwal-slots';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { ensureJadwalKurikulumSchema } from '$lib/server/db/ensure-jadwal-kurikulum';
+import { ensureJadwalKegiatanTerintegrasi } from '$lib/server/db/reconcile-jadwal-kegiatan';
 import {
 	tableJadwalJam,
 	tableJadwalKegiatan,
@@ -68,6 +70,7 @@ export async function loadJadwalExcelContext(
 	params: { tahunAjaranId?: string | null; jenis?: string | null }
 ) {
 	await ensureJadwalKurikulumSchema();
+	await ensureJadwalKegiatanTerintegrasi();
 	const academic = await resolveSekolahAcademicContext(sekolahId);
 	const context = selectJadwalContext(academic, params);
 	if (!context.tahunAjaranId) throw new Error('Tahun ajaran belum tersedia.');
@@ -293,7 +296,9 @@ export async function parseJadwalWorkbook(
 		const hariRaw = normalize(row.getCell(columns.hari).value);
 		const jamRaw = textValue(row.getCell(columns.jam).value);
 		const kelasRaw = textValue(row.getCell(columns.kelas).value);
-		const kode = normalizeKode(row.getCell(columns.kode).value);
+		const rawKode = normalizeKode(row.getCell(columns.kode).value);
+		const kegiatanKode = normalizeJadwalKegiatanKode(row.getCell(columns.kode).value);
+		const kode = codesByValue.has(kegiatanKode) ? kegiatanKode : rawKode;
 		if (!hariRaw && !jamRaw && !kelasRaw && !kode) continue;
 		if (!kode) continue;
 		const hari = HARI.find((item) => item === hariRaw) ?? '';

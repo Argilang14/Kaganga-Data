@@ -1,7 +1,7 @@
 {
 	"name": "rapkumer",
 	"private": true,
-	"version": "2.0.2",
+	"version": "2.0.3",
 	"type": "module",
 	"scripts": {
 		"db:push": "node scripts/migrate-installed-db.mjs",
@@ -24,6 +24,7 @@
 		"version": "node scripts/update-version.mjs",
 		"check": "node node_modules/@sveltejs/kit/svelte-kit.js sync && node scripts/svelte-check-wrapper.mjs",
 		"check:watch": "svelte-kit sync && node scripts/svelte-check-wrapper.mjs --watch",
+		"test:jadwal": "node --test src/lib/jadwal-segments.test.ts src/lib/jadwal-slots.test.ts",
 		"tes-bell": "node scripts/test-bell.mjs",
 		"format": "prettier --write .",
 		"lint": "prettier --check . && eslint .",

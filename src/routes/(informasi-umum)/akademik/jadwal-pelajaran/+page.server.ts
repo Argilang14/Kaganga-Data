@@ -13,13 +13,13 @@ import {
 } from '$lib/server/db/schema';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fail } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ locals, depends }) => {
+export const load: PageServerLoad = async ({ locals, depends, url }) => {
 	depends('app:jadwal-bell');
-	const sekolahId = locals.sekolah?.id;
+	const sekolahId = locals.sekolah?.id ?? 0;
 	if (!sekolahId)
 		return {
 			bellSettings: null,
@@ -129,6 +129,7 @@ export const load: PageServerLoad = async ({ locals, depends }) => {
 	}));
 
 	const daftarKodeKokurikuler = daftarKokurikulerRows.map((k) => k.kode);
+	throw redirect(303, `/rapor/jadwal-pelajaran${url.search}`);
 
 	return {
 		meta: { title: 'Jadwal Pelajaran & Bell Sekolah' },

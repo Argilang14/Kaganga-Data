@@ -129,4 +129,31 @@ export async function ensureJadwalKurikulumSchema() {
 			'-'
 		)
 		WHERE kode_kegiatan = ''`);
+
+	await db.$client.execute(`UPDATE jadwal_pelajaran
+		SET kode_kegiatan = UPPER(TRIM(kode_kegiatan))
+		WHERE kode_kegiatan <> UPPER(TRIM(kode_kegiatan))
+			AND (
+				EXISTS (SELECT 1 FROM jadwal_kegiatan
+					WHERE jadwal_kegiatan.sekolah_id = jadwal_pelajaran.sekolah_id
+						AND UPPER(TRIM(jadwal_kegiatan.kode)) = UPPER(TRIM(jadwal_pelajaran.kode_kegiatan)))
+				OR EXISTS (SELECT 1 FROM jadwal_mata_pelajaran
+					WHERE jadwal_mata_pelajaran.sekolah_id = jadwal_pelajaran.sekolah_id
+						AND UPPER(TRIM(jadwal_mata_pelajaran.kode)) = UPPER(TRIM(jadwal_pelajaran.kode_kegiatan)))
+			)`);
+	await db.$client.execute(`UPDATE jadwal_pelajaran
+		SET kegiatan_id = (
+				SELECT jadwal_kegiatan.id FROM jadwal_kegiatan
+				WHERE jadwal_kegiatan.sekolah_id = jadwal_pelajaran.sekolah_id
+					AND UPPER(TRIM(jadwal_kegiatan.kode)) = UPPER(TRIM(jadwal_pelajaran.kode_kegiatan))
+				LIMIT 1
+			),
+			tipe = COALESCE((
+				SELECT CASE WHEN jadwal_kegiatan.kategori = 'istirahat' THEN 'istirahat' ELSE 'kegiatan' END
+				FROM jadwal_kegiatan WHERE jadwal_kegiatan.sekolah_id = jadwal_pelajaran.sekolah_id
+					AND UPPER(TRIM(jadwal_kegiatan.kode)) = UPPER(TRIM(jadwal_pelajaran.kode_kegiatan))
+				LIMIT 1
+			), tipe)
+		WHERE EXISTS (SELECT 1 FROM jadwal_kegiatan WHERE jadwal_kegiatan.sekolah_id = jadwal_pelajaran.sekolah_id
+			AND UPPER(TRIM(jadwal_kegiatan.kode)) = UPPER(TRIM(jadwal_pelajaran.kode_kegiatan)))`);
 }

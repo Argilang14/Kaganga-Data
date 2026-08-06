@@ -35,6 +35,7 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 
 type JenjangFilter = 'semua' | JadwalJenjang;
 type Orientation = 'landscape' | 'portrait';
+type LayoutMode = 'padat' | 'multi';
 
 const AGAMA_MAPEL_NAMES = new Set([
 	'Pendidikan Agama dan Budi Pekerti',
@@ -52,6 +53,10 @@ function parseJenjang(value: string | null): JenjangFilter {
 
 function parseOrientation(value: string | null): Orientation {
 	return value === 'portrait' ? 'portrait' : 'landscape';
+}
+
+function parseLayoutMode(value: string | null): LayoutMode {
+	return value === 'multi' ? 'multi' : 'padat';
 }
 
 export type JadwalPelajaranPrintData = Awaited<
@@ -78,6 +83,7 @@ export async function getJadwalPelajaranPreviewPayload({
 
 	const selectedJenjang = parseJenjang(url.searchParams.get('jenjang'));
 	const orientation = parseOrientation(url.searchParams.get('orientation'));
+	const layoutMode = parseLayoutMode(url.searchParams.get('layout_mode'));
 	const wakaKurikulumPegawaiId = optionalInteger(
 		'waka_kurikulum_pegawai_id',
 		url.searchParams.get('waka_kurikulum_pegawai_id')
@@ -258,6 +264,7 @@ export async function getJadwalPelajaranPreviewPayload({
 			jenisLabel: JADWAL_JENIS_LABELS[context.jenis],
 			tanggalCetak: formatTanggal(new Date()),
 			orientation,
+			layoutMode,
 			selectedJenjang,
 			jenjangLabel,
 			hariLabels: JADWAL_HARI_LABELS,

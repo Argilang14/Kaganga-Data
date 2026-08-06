@@ -1,6 +1,7 @@
 <script lang="ts">
 	/* eslint-disable @typescript-eslint/no-unused-vars */
 	import { page } from '$app/state';
+	import Icon from '$lib/components/icon.svelte';
 	import PreviewHeader from '$lib/components/cetak-sr/PreviewHeader.svelte';
 	import DocumentMuridSelector from '$lib/components/cetak-sr/DocumentMuridSelector.svelte';
 	import PreviewFooter from '$lib/components/cetak-sr/PreviewFooter.svelte';
@@ -98,6 +99,7 @@
 	let jurnalTanggalMulai = $state('');
 	let jurnalTanggalSelesai = $state('');
 	let selectedJadwalOrientation = $state<'landscape' | 'portrait'>('landscape');
+	let selectedJadwalLayout = $state<'padat' | 'multi'>('padat');
 	let selectedJadwalJenjang = $state<'semua' | 'srd' | 'srmp' | 'srma'>('semua');
 	let selectedKalenderPeriode = $state<
 		'tahun_kalender' | 'tahun_ajaran' | 'semester_ganjil' | 'semester_genap'
@@ -193,6 +195,16 @@
 	let bulkPrintableNodes = $state<HTMLDivElement[]>([]);
 	let waitingForPrintable = $state(false);
 	let bulkLoadProgress = $state<{ current: number; total: number } | null>(null);
+	let qrReadiness = $state<{
+		total: number;
+		ready: number;
+		missing: number;
+		outdated: number;
+		generated: number;
+	} | null>(null);
+	let qrReadinessLoading = $state(false);
+	let qrGenerateLoading = $state(false);
+	let qrReadinessError = $state<string | null>(null);
 
 	// increment this to bust background cache after upload
 	let bgRefreshKey = $state<number>(0);
@@ -225,6 +237,9 @@
 	const isJadwalSelected = $derived.by(() => selectedDocument === 'jadwal-pelajaran');
 	const isKalenderSelected = $derived.by(() => selectedDocument === 'kalender-pendidikan');
 	const isJurnalSelected = $derived.by(() => selectedDocument === 'jurnal-mengajar');
+	const qrNotReadyCount = $derived(
+		(qrReadiness?.missing ?? 0) + (qrReadiness?.outdated ?? 0)
+	);
 	const hasValidJurnalPeriod = $derived.by(
 		() =>
 			Boolean(jurnalTanggalMulai && jurnalTanggalSelesai) &&
@@ -304,6 +319,15 @@
 		if (selectedMuridId && !list.some((murid) => String(murid.id) === selectedMuridId)) {
 			selectedMuridId = '';
 		}
+	});
+
+	$effect(() => {
+		if (selectedDocument !== 'kartu-absensi' || !daftarMurid.length) {
+			qrReadiness = null;
+			qrReadinessError = null;
+			return;
+		}
+		void refreshQrReadiness();
 	});
 
 	const selectedDocumentEntry = $derived.by(
@@ -469,6 +493,7 @@
 						documentType === 'jadwal-pelajaran' || documentType === 'kalender-pendidikan'
 							? selectedJadwalOrientation
 							: undefined,
+					layoutMode: documentType === 'jadwal-pelajaran' ? selectedJadwalLayout : undefined,
 					jenjang:
 						documentType === 'jadwal-pelajaran' || documentType === 'kalender-pendidikan'
 							? selectedJadwalJenjang
@@ -530,6 +555,54 @@
 		}
 	}
 
+	async function requestQrReadiness(action: 'status' | 'generate-missing') {
+		const response = await fetch('/api/absensi/kartu-qr', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action,
+				muridIds: daftarMurid.map((murid) => murid.id)
+			})
+		});
+		const payload = await response.json().catch(() => ({}));
+		if (!response.ok) {
+			throw new Error(payload?.message ?? 'Status QR murid tidak dapat diperiksa.');
+		}
+		return payload as NonNullable<typeof qrReadiness>;
+	}
+
+	async function refreshQrReadiness() {
+		qrReadinessLoading = true;
+		qrReadinessError = null;
+		try {
+			qrReadiness = await requestQrReadiness('status');
+		} catch (err) {
+			qrReadiness = null;
+			qrReadinessError = err instanceof Error ? err.message : 'Status QR murid tidak tersedia.';
+		} finally {
+			qrReadinessLoading = false;
+		}
+	}
+
+	async function generateMissingQr() {
+		qrGenerateLoading = true;
+		qrReadinessError = null;
+		try {
+			qrReadiness = await requestQrReadiness('generate-missing');
+			toast(
+				qrReadiness.generated
+					? `${qrReadiness.generated} QR murid berhasil dibuat. QR aktif lainnya tetap dipertahankan.`
+					: 'Semua murid sudah memiliki QR aktif yang dapat dicetak.',
+				'success'
+			);
+		} catch (err) {
+			qrReadinessError = err instanceof Error ? err.message : 'Gagal membuat QR murid.';
+			toast(qrReadinessError, 'error');
+		} finally {
+			qrGenerateLoading = false;
+		}
+	}
+
 	async function handleDownloadBulk() {
 		const documentType = selectedDocument;
 		if (documentType === 'jurnal-mengajar') {
@@ -559,6 +632,24 @@
 				: 'Tidak ada murid di kelas ini.';
 			toast(message, 'warning');
 			return;
+		}
+		if (documentType === 'kartu-absensi') {
+			try {
+				const status = await requestQrReadiness('status');
+				qrReadiness = status;
+				if (status.missing + status.outdated > 0) {
+					toast(
+						`${status.missing + status.outdated} murid belum memiliki QR siap cetak. Gunakan tombol Buat QR yang Belum Siap.`,
+						'warning'
+					);
+					return;
+				}
+			} catch (err) {
+				const message = err instanceof Error ? err.message : 'Status QR murid tidak tersedia.';
+				qrReadinessError = message;
+				toast(message, 'error');
+				return;
+			}
 		}
 
 		downloadLoading = true;
@@ -730,11 +821,54 @@
 		{downloadLoading}
 	/>
 
+	{#if selectedDocument === 'kartu-absensi' && daftarMurid.length}
+		<div class="border-base-300 bg-base-200/40 mt-3 flex flex-wrap items-center gap-3 rounded-lg border px-4 py-3 text-sm">
+			{#if qrReadinessLoading}
+				<span class="loading loading-spinner loading-sm"></span>
+				<span>Memeriksa kesiapan QR {daftarMurid.length} murid...</span>
+			{:else if qrReadinessError}
+				<Icon name="alert" />
+				<span class="min-w-0 flex-1">{qrReadinessError}</span>
+				<button class="btn btn-soft btn-sm shadow-none" type="button" onclick={refreshQrReadiness}>
+					<Icon name="repeat" />
+					Periksa Lagi
+				</button>
+			{:else if qrReadiness}
+				<Icon name={qrNotReadyCount ? 'alert' : 'check'} />
+				<div class="min-w-0 flex-1">
+					<div class="font-semibold">{qrReadiness.ready} dari {qrReadiness.total} QR siap dicetak</div>
+					{#if qrNotReadyCount}
+						<div class="text-base-content/65 text-xs">
+							{qrReadiness.missing} belum dibuat dan {qrReadiness.outdated} memakai format lama.
+						</div>
+					{:else}
+						<div class="text-base-content/65 text-xs">Semua kartu dapat dicetak tanpa mengganti token QR aktif.</div>
+					{/if}
+				</div>
+				{#if qrNotReadyCount}
+					<button
+						class="btn btn-primary btn-sm shadow-none"
+						type="button"
+						disabled={qrGenerateLoading}
+						onclick={generateMissingQr}
+					>
+						{#if qrGenerateLoading}
+							<span class="loading loading-spinner loading-sm"></span>
+						{:else}
+							<Icon name="plus" />
+						{/if}
+						Buat QR yang Belum Siap
+					</button>
+				{/if}
+			{/if}
+		</div>
+	{/if}
+
 	{#if selectedDocument === 'jadwal-pelajaran' || selectedDocument === 'kalender-pendidikan'}
 		<div
 			class="border-base-300 bg-base-200/30 mt-3 grid gap-3 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-3 {selectedDocument ===
 			'jadwal-pelajaran'
-				? '2xl:grid-cols-6'
+				? '2xl:grid-cols-7'
 				: '2xl:grid-cols-[minmax(0,.85fr)_minmax(0,1fr)_minmax(0,.9fr)_minmax(0,.9fr)_minmax(0,1.75fr)_minmax(0,1.45fr)_minmax(0,1.25fr)]'}"
 		>
 			<label class="form-control min-w-0">
@@ -781,6 +915,15 @@
 					<option value="portrait">Portrait</option>
 				</select>
 			</label>
+			{#if selectedDocument === 'jadwal-pelajaran'}
+				<label class="form-control min-w-0">
+					<span class="label-text mb-1">Tampilan Tabel</span>
+					<select class="select select-bordered bg-base-100 w-full min-w-0 pr-10" bind:value={selectedJadwalLayout}>
+						<option value="padat">Padat (1 Halaman)</option>
+						<option value="multi">Mudah Dibaca (Multi Halaman)</option>
+					</select>
+				</label>
+			{/if}
 			{#if selectedDocument === 'kalender-pendidikan'}
 				<label class="form-control min-w-0">
 					<span class="label-text mb-1">Periode Kalender</span>

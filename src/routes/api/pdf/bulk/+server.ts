@@ -24,6 +24,14 @@ type BulkRequest = {
 	parentSignature?: string;
 };
 
+const MAX_BULK_MURID = 500;
+const BULK_DATA_CONCURRENCY = 12;
+
+function normalizeMuridIds(value: unknown): number[] {
+	if (!Array.isArray(value)) return [];
+	return [...new Set(value.map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+}
+
 async function fetchStudentData(
 	locals: App.Locals,
 	body: BulkRequest,
@@ -49,29 +57,29 @@ async function fetchStudentData(
 
 	switch (body.docType) {
 		case 'rapor': {
-			const p = await getRaporPreviewPayload({ locals, url });
-			return p.raporData as unknown as Record<string, unknown>;
+			const payload = await getRaporPreviewPayload({ locals, url });
+			return payload.raporData as unknown as Record<string, unknown>;
 		}
 		case 'cover': {
-			const p = await getCoverPreviewPayload({ locals, url });
-			return p.coverData as unknown as Record<string, unknown>;
+			const payload = await getCoverPreviewPayload({ locals, url });
+			return payload.coverData as unknown as Record<string, unknown>;
 		}
 		case 'biodata': {
-			const p = await getBiodataPreviewPayload({ locals, url });
-			return p.biodataData as unknown as Record<string, unknown>;
+			const payload = await getBiodataPreviewPayload({ locals, url });
+			return payload.biodataData as unknown as Record<string, unknown>;
 		}
 		case 'keasramaan': {
-			const p = await getKeasramaanPreviewPayload({ locals, url });
-			if (!p) throw error(400, 'Data rapor keasramaan tidak ditemukan.');
-			return p.keasramaanData as unknown as Record<string, unknown>;
+			const payload = await getKeasramaanPreviewPayload({ locals, url });
+			if (!payload) throw error(400, 'Data rapor keasramaan tidak ditemukan.');
+			return payload.keasramaanData as unknown as Record<string, unknown>;
 		}
 		case 'piagam': {
-			const p = await getPiagamPreviewPayload({ locals, url });
-			return p.piagamData as unknown as Record<string, unknown>;
+			const payload = await getPiagamPreviewPayload({ locals, url });
+			return payload.piagamData as unknown as Record<string, unknown>;
 		}
 		case 'kartu-absensi': {
-			const p = await getKartuAbsensiPreviewPayload({ locals, url });
-			return p.kartuAbsensiData as unknown as Record<string, unknown>;
+			const payload = await getKartuAbsensiPreviewPayload({ locals, url });
+			return payload.kartuAbsensiData as unknown as Record<string, unknown>;
 		}
 		default:
 			throw error(400, `Unknown document type: ${body.docType}`);
@@ -81,17 +89,31 @@ async function fetchStudentData(
 export const POST = (async ({ locals, request }) => {
 	const body: BulkRequest = await request.json();
 	const variant: PdfVariant = body.pdfVariant === 'sr' ? 'sr' : 'default';
+	const muridIds = normalizeMuridIds(body.muridIds);
 
-	if (!body.docType || !body.muridIds?.length) {
+	if (!locals.user || !locals.sekolah?.id) {
+		throw error(401, 'Sesi sekolah tidak valid. Silakan masuk kembali.');
+	}
+	if (!body.docType || !muridIds.length) {
 		throw error(400, 'Parameter docType dan muridIds wajib diisi.');
 	}
-	if (locals.user?.type === 'wali_asrama' && (body.docType !== 'keasramaan' || variant !== 'sr')) {
+	if (muridIds.length > MAX_BULK_MURID) {
+		throw error(
+			413,
+			`Maksimal ${MAX_BULK_MURID} murid dalam satu PDF. Cetak per jenjang atau kelas untuk data yang lebih besar.`
+		);
+	}
+	if (locals.user.type === 'wali_asrama' && (body.docType !== 'keasramaan' || variant !== 'sr')) {
 		throw error(403, 'Wali asrama hanya dapat mencetak Dokumen SR Rapor Keasramaan.');
 	}
 
-	const allData = await Promise.all(
-		body.muridIds.map((muridId) => fetchStudentData(locals, body, muridId))
-	);
+	const allData: Record<string, unknown>[] = [];
+	for (let index = 0; index < muridIds.length; index += BULK_DATA_CONCURRENCY) {
+		const batch = muridIds.slice(index, index + BULK_DATA_CONCURRENCY);
+		allData.push(
+			...(await Promise.all(batch.map((muridId) => fetchStudentData(locals, body, muridId))))
+		);
+	}
 
 	const items = allData.map((data) => ({
 		docType: body.docType,
@@ -101,10 +123,9 @@ export const POST = (async ({ locals, request }) => {
 	}));
 
 	const pdfBuffer = await generateBulkPDF(items);
-
 	const docLabel = body.docLabel || body.docType;
 	const kelasLabel = body.kelasLabel || 'Semua-Kelas';
-	const filename = `${docLabel}-${kelasLabel}-${body.muridIds.length}murid.pdf`;
+	const filename = `${docLabel}-${kelasLabel}-${muridIds.length}murid.pdf`;
 
 	return new Response(new Blob([pdfBuffer as unknown as BlobPart], { type: 'application/pdf' }), {
 		headers: {

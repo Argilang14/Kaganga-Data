@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { formatUpper } from './shared';
 import type { KartuAbsensiPrintData } from '../../../../routes/cetak/kartu-absensi/preview-data';
 
 let fallbackLogoDataUri: string | null = null;
@@ -8,8 +7,8 @@ let fallbackLogoDataUri: string | null = null;
 function getFallbackLogoDataUri(): string {
 	if (fallbackLogoDataUri) return fallbackLogoDataUri;
 	try {
-		const buf = readFileSync(resolve('static/tutwuri.png'));
-		fallbackLogoDataUri = `data:image/png;base64,${buf.toString('base64')}`;
+		const buffer = readFileSync(resolve('static/tutwuri.png'));
+		fallbackLogoDataUri = `data:image/png;base64,${buffer.toString('base64')}`;
 	} catch {
 		fallbackLogoDataUri = '';
 	}
@@ -25,36 +24,98 @@ function escapeHtml(value: string | number | null | undefined): string {
 		.replace(/'/g, '&#39;');
 }
 
-function cardMarkup(data: KartuAbsensiPrintData): string {
+function headerMarkup(data: KartuAbsensiPrintData) {
 	const logoSrc = data.sekolah.logoSrc || getFallbackLogoDataUri();
-	return `<div class="card">
-		<div class="corner-gray"></div>
-		<div class="corner-red"></div>
-		<div class="dots-top"></div>
-		<div class="slash-top"></div>
-		<div class="slash-left"></div>
-		<div class="bottom-gray"></div>
-		<div class="bottom-red"></div>
-		<div class="dots-bottom"></div>
-		${logoSrc ? `<img class="logo" src="${logoSrc}" alt="Logo sekolah" />` : ''}
-		<div class="title">
-			<div class="title-main">KARTU ABSENSI</div>
-			<div class="school">${escapeHtml(formatUpper(data.sekolah.nama))}</div>
+	return `<header class="card-header">
+		<div class="logo-frame">${logoSrc ? `<img src="${logoSrc}" alt="Logo sekolah" />` : ''}</div>
+		<div class="school-heading">
+			<div class="authority">${escapeHtml(data.sekolah.naungan)}</div>
+			<div class="school-name">${escapeHtml(data.sekolah.nama)}</div>
+			<div class="school-address">${escapeHtml(data.sekolah.alamat)}</div>
 		</div>
-		<img class="qr" src="${data.qrDataUrl}" alt="QR Absensi ${escapeHtml(data.murid.nama)}" />
-		<div class="identity">
-			<div class="name">${escapeHtml(formatUpper(data.murid.nama))}</div>
-			<div class="nis">NIS ${escapeHtml(data.murid.nis)}</div>
-		</div>
+	</header>`;
+}
+
+function identityRow(label: string, value: string) {
+	return `<div class="identity-row">
+		<div class="identity-label">${escapeHtml(label)}</div>
+		<div class="identity-separator">:</div>
+		<div class="identity-value">${escapeHtml(value)}</div>
 	</div>`;
 }
 
-function kartuAbsensiStyles(mode: 'single' | 'sheet'): string {
-	const isSheet = mode === 'sheet';
+function frontCardMarkup(data: KartuAbsensiPrintData): string {
+	const studentNumber = data.murid.nisn || data.murid.nis;
+	return `<article class="student-card front">
+		${headerMarkup(data)}
+		<div class="front-title">KARTU PELAJAR SISWA</div>
+		<div class="front-body">
+			<div class="photo-frame">
+				${data.murid.fotoSrc ? `<img src="${data.murid.fotoSrc}" alt="Foto ${escapeHtml(data.murid.nama)}" />` : ''}
+			</div>
+			<div class="identity-list">
+				${identityRow('Nama Lengkap', data.murid.nama)}
+				${identityRow('NISN', studentNumber)}
+				${identityRow('T.T.L', data.murid.tempatTanggalLahir)}
+				${identityRow('Kelas', data.kelas.nama)}
+				${identityRow('Alamat', data.murid.alamat)}
+			</div>
+		</div>
+		<div class="card-footer">${escapeHtml(data.sekolah.nama)}</div>
+	</article>`;
+}
+
+function backCardMarkup(data: KartuAbsensiPrintData): string {
+	return `<article class="student-card back">
+		${headerMarkup(data)}
+		<div class="back-body">
+			<section class="terms">
+				<h2>SYARAT DAN KETENTUAN</h2>
+				<p>Kartu ini merupakan identitas resmi pemegang kartu selama menjadi siswa aktif dan tidak dapat dipindahtangankan kepada pihak lain.</p>
+				<p>Pemegang kartu wajib membawa dan menunjukkan kartu saat menggunakan fasilitas sekolah atau mengikuti kegiatan resmi kependidikan.</p>
+				<p>Apabila kartu hilang atau rusak, pemegang kartu segera melapor kepada tata usaha sekolah.</p>
+			</section>
+			<section class="qr-panel">
+				<h2>QR ABSENSI</h2>
+				<img class="qr" src="${data.qrDataUrl}" alt="QR Absensi ${escapeHtml(data.murid.nama)}" />
+				<div class="qr-name">${escapeHtml(data.murid.nama)}</div>
+				<div class="qr-number">NIS ${escapeHtml(data.murid.nis)}</div>
+			</section>
+		</div>
+		<div class="card-footer">${escapeHtml(data.sekolah.nama)}</div>
+	</article>`;
+}
+
+function slotMarkup(data: KartuAbsensiPrintData | undefined, side: 'front' | 'back') {
+	if (!data) return '<div class="card-slot empty" aria-hidden="true"></div>';
+	return `<div class="card-slot">${side === 'front' ? frontCardMarkup(data) : backCardMarkup(data)}</div>`;
+}
+
+function sheetMarkup(
+	cards: Array<KartuAbsensiPrintData | undefined>,
+	side: 'front' | 'back',
+	isLast: boolean
+) {
+	return `<section class="sheet ${isLast ? 'last-sheet' : ''}" data-side="${side}">
+		${cards.map((card) => slotMarkup(card, side)).join('\n')}
+	</section>`;
+}
+
+function renderCardSheets(cards: KartuAbsensiPrintData[]) {
+	const sheets: string[] = [];
+	for (let index = 0; index < cards.length; index += 2) {
+		const pair = [cards[index], cards[index + 1]];
+		sheets.push(sheetMarkup(pair, 'front', false));
+		sheets.push(sheetMarkup(pair, 'back', index + 2 >= cards.length));
+	}
+	return sheets.join('\n');
+}
+
+function kartuAbsensiStyles(): string {
 	return `
 		@page {
 			size: A4 portrait;
-			margin: ${isSheet ? '8mm' : '12mm'};
+			margin: 0;
 		}
 
 		* {
@@ -63,220 +124,282 @@ function kartuAbsensiStyles(mode: 'single' | 'sheet'): string {
 			print-color-adjust: exact;
 		}
 
+		html,
 		body {
 			margin: 0;
+			padding: 0;
 			font-family: Arial, Helvetica, sans-serif;
-			color: #333333;
+			color: #102a38;
 			background: #ffffff;
 		}
 
-		.page {
-			min-height: ${isSheet ? 'auto' : '100vh'};
-			display: ${isSheet ? 'grid' : 'flex'};
-			${isSheet ? 'grid-template-columns: repeat(3, 1fr); gap: 4mm 3mm; align-items: start;' : 'align-items: center; justify-content: center;'}
-		}
-
-		.card {
-			position: relative;
-			width: ${isSheet ? '61mm' : '76mm'};
-			height: ${isSheet ? '95.3mm' : '119mm'};
+		.sheet {
+			width: 210mm;
+			height: 297mm;
+			display: grid;
+			grid-template-rows: repeat(2, 100mm);
+			justify-items: center;
+			align-content: center;
+			row-gap: 12mm;
 			overflow: hidden;
-			border: 1px solid #e5e7eb;
-			border-radius: ${isSheet ? '2mm' : '3mm'};
+			break-after: page;
+			page-break-after: always;
+		}
+
+		.sheet.last-sheet {
+			break-after: auto;
+			page-break-after: auto;
+		}
+
+		.card-slot {
+			width: 150mm;
+			height: 100mm;
+		}
+
+		.card-slot.empty {
+			visibility: hidden;
+		}
+
+		.student-card {
+			position: relative;
+			width: 150mm;
+			height: 100mm;
+			overflow: hidden;
+			border: 0.3mm solid #1d3542;
+			border-radius: 2.4mm;
 			background: #ffffff;
-			text-align: center;
-			break-inside: avoid;
-			page-break-inside: avoid;
 		}
 
-		.corner-gray {
+		.student-card::before {
+			content: '';
 			position: absolute;
 			top: 0;
-			left: 0;
-			width: 29%;
-			height: 17%;
-			background: #5f6a6b;
-			clip-path: polygon(0 0, 100% 0, 0 100%);
+			right: 0;
+			width: 22mm;
+			height: 22mm;
+			background: #6ec4d8;
+			clip-path: polygon(100% 0, 100% 100%, 0 0);
 		}
 
-		.corner-red {
-			position: absolute;
-			top: 0;
-			left: 11%;
-			width: 31%;
-			height: 12%;
-			background: #9f3438;
-			clip-path: polygon(28% 0, 100% 0, 58% 100%, 0 100%);
-		}
-
-		.dots-top {
-			position: absolute;
-			top: 0;
-			left: 38%;
-			width: 38%;
-			height: 9%;
-			opacity: 0.9;
-			background-image: radial-gradient(#9f3438 ${isSheet ? '0.44mm' : '0.55mm'}, transparent ${isSheet ? '0.5mm' : '0.62mm'});
-			background-size: ${isSheet ? '1.8mm 1.8mm' : '2.2mm 2.2mm'};
-			clip-path: polygon(18% 0, 100% 0, 78% 100%, 0 100%);
-		}
-
-		.slash-top,
-		.slash-left {
-			position: absolute;
-			width: ${isSheet ? '1.6mm' : '2mm'};
-			background: #9f3438;
-			transform: rotate(45deg);
-		}
-
-		.slash-top {
-			top: 7%;
-			right: 10%;
-			height: 14%;
-		}
-
-		.slash-left {
-			bottom: 27%;
-			left: 7%;
-			height: 13%;
-		}
-
-		.bottom-gray {
+		.student-card::after {
+			content: '';
 			position: absolute;
 			right: 0;
 			bottom: 0;
-			width: 38%;
-			height: 25%;
-			background: #5f6a6b;
-			clip-path: polygon(100% 0, 100% 100%, 0 100%);
+			width: 44mm;
+			height: 8mm;
+			background: #0b4964;
+			clip-path: polygon(18% 0, 100% 0, 100% 100%, 0 100%);
 		}
 
-		.bottom-red {
-			position: absolute;
-			right: 12%;
-			bottom: 0;
-			width: 45%;
-			height: 17%;
-			background: #9f3438;
-			clip-path: polygon(33% 0, 100% 0, 66% 100%, 0 100%);
+		.card-header {
+			position: relative;
+			z-index: 1;
+			height: 23mm;
+			display: grid;
+			grid-template-columns: 19mm minmax(0, 1fr);
+			align-items: center;
+			gap: 4mm;
+			padding: 2.5mm 8mm;
+			color: #ffffff;
+			background: #0b4964;
 		}
 
-		.dots-bottom {
-			position: absolute;
-			bottom: 7%;
-			left: 7%;
-			width: 40%;
-			height: 10%;
-			opacity: 0.8;
-			background-image: radial-gradient(#9f3438 ${isSheet ? '0.38mm' : '0.48mm'}, transparent ${isSheet ? '0.44mm' : '0.56mm'});
-			background-size: ${isSheet ? '1.55mm 1.55mm' : '1.9mm 1.9mm'};
-			clip-path: polygon(25% 0, 100% 0, 72% 100%, 0 100%);
+		.logo-frame {
+			width: 17mm;
+			height: 17mm;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			overflow: hidden;
+			border-radius: 3mm;
+			background: #ffffff;
 		}
 
-		.logo {
-			position: absolute;
-			top: 12%;
-			left: 50%;
-			width: ${isSheet ? '12.8mm' : '16mm'};
-			height: ${isSheet ? '12.8mm' : '16mm'};
-			transform: translateX(-50%);
+		.logo-frame img {
+			width: 15mm;
+			height: 15mm;
 			object-fit: contain;
 		}
 
-		.title {
-			position: absolute;
-			top: 29%;
-			left: 7%;
-			right: 7%;
+		.school-heading {
+			min-width: 0;
+			padding-right: 13mm;
 		}
 
-		.title-main {
-			font-size: ${isSheet ? '10.5px' : '14px'};
-			font-weight: 900;
-			letter-spacing: 0.28em;
-			white-space: nowrap;
-		}
-
-		.school {
-			margin-top: ${isSheet ? '2mm' : '2.5mm'};
-			font-size: ${isSheet ? '7.8px' : '10px'};
-			line-height: 1.35;
-			font-weight: 900;
-			letter-spacing: 0.14em;
-			text-transform: uppercase;
-		}
-
-		.qr {
-			position: absolute;
-			top: 47%;
-			left: 50%;
-			width: ${isSheet ? '21mm' : '26mm'};
-			height: ${isSheet ? '21mm' : '26mm'};
-			transform: translateX(-50%);
-		}
-
-		.identity {
-			position: absolute;
-			top: 70.5%;
-			left: 12%;
-			right: 12%;
-			padding: ${isSheet ? '1.1mm 1.6mm' : '1.4mm 2mm'};
-			border-radius: 1mm;
-			background: rgba(255, 255, 255, 0.92);
-		}
-
-		.name {
-			overflow: hidden;
-			font-size: ${isSheet ? '8.5px' : '11px'};
+		.authority {
+			font-size: 9.5px;
 			font-weight: 800;
-			letter-spacing: 0.1em;
-			text-transform: uppercase;
+			line-height: 1.15;
+		}
+
+		.school-name {
+			margin-top: 1mm;
+			overflow: hidden;
+			font-size: 12.5px;
+			font-weight: 800;
+			line-height: 1.15;
 			text-overflow: ellipsis;
 			white-space: nowrap;
 		}
 
-		.nis {
-			margin-top: ${isSheet ? '1.5mm' : '2mm'};
-			font-size: ${isSheet ? '8.5px' : '11px'};
+		.school-address {
+			margin-top: 1mm;
+			overflow: hidden;
+			font-size: 6.8px;
+			line-height: 1.2;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		.front-title {
+			margin: 3.2mm 8mm 2.5mm;
+			color: #0b4964;
+			font-size: 13px;
+			font-weight: 900;
+			text-align: center;
+		}
+
+		.front-body {
+			display: grid;
+			grid-template-columns: 31mm minmax(0, 1fr);
+			gap: 5mm;
+			padding: 0 10mm;
+		}
+
+		.photo-frame {
+			width: 29mm;
+			height: 39mm;
+			overflow: hidden;
+			border: 0.3mm solid #436272;
+			background: #ffffff;
+		}
+
+		.photo-frame img {
+			width: 100%;
+			height: 100%;
+			object-fit: cover;
+			object-position: center top;
+		}
+
+		.identity-list {
+			min-width: 0;
+			padding-top: 0.5mm;
+		}
+
+		.identity-row {
+			display: grid;
+			grid-template-columns: 28mm 3mm minmax(0, 1fr);
+			min-height: 7.1mm;
+			align-items: start;
+			padding: 1.1mm 0;
+			border-bottom: 0.2mm solid #bdd7e1;
+			font-size: 9px;
+			line-height: 1.25;
+		}
+
+		.identity-label {
+			font-weight: 700;
+		}
+
+		.identity-value {
+			min-width: 0;
+			max-height: 9mm;
+			overflow: hidden;
+			overflow-wrap: anywhere;
+			font-weight: 700;
+		}
+
+		.back-body {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) 45mm;
+			gap: 7mm;
+			padding: 6mm 10mm 0;
+		}
+
+		.terms {
+			min-width: 0;
+			padding-right: 6mm;
+			border-right: 0.25mm solid #8ab8c8;
+		}
+
+		.terms h2,
+		.qr-panel h2 {
+			margin: 0 0 3mm;
+			color: #0b4964;
+			font-size: 11px;
+			font-weight: 900;
+		}
+
+		.terms p {
+			margin: 0 0 2.3mm;
+			font-size: 8.2px;
+			line-height: 1.35;
+			text-align: justify;
+		}
+
+		.qr-panel {
+			text-align: center;
+		}
+
+		.qr {
+			display: block;
+			width: 34mm;
+			height: 34mm;
+			margin: 0 auto;
+		}
+
+		.qr-name {
+			margin-top: 2mm;
+			overflow: hidden;
+			font-size: 8.5px;
 			font-weight: 800;
-			letter-spacing: 0.1em;
+			line-height: 1.2;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		.qr-number {
+			margin-top: 1mm;
+			font-size: 7.5px;
+			font-weight: 700;
+		}
+
+		.card-footer {
+			position: absolute;
+			left: 8mm;
+			right: 8mm;
+			bottom: 2.2mm;
+			z-index: 1;
+			overflow: hidden;
+			color: #476572;
+			font-size: 6.8px;
+			font-weight: 700;
+			text-overflow: ellipsis;
+			white-space: nowrap;
 		}
 	`;
 }
 
-export function renderKartuAbsensiHTML(data: KartuAbsensiPrintData): string {
+function documentHtml(cards: KartuAbsensiPrintData[], title: string) {
 	return `<!doctype html>
 <html lang="id">
 <head>
 	<meta charset="utf-8" />
-	<title>Kartu Absensi - ${escapeHtml(data.murid.nama)}</title>
-	<style>
-		${kartuAbsensiStyles('single')}
-	</style>
+	<title>${escapeHtml(title)}</title>
+	<style>${kartuAbsensiStyles()}</style>
 </head>
 <body>
-	<div class="page">
-		${cardMarkup(data)}
-	</div>
+	${renderCardSheets(cards)}
 </body>
 </html>`;
 }
 
+export function renderKartuAbsensiHTML(data: KartuAbsensiPrintData): string {
+	return documentHtml([data], `Kartu Pelajar dan Absensi - ${data.murid.nama}`);
+}
+
 export function renderKartuAbsensiSheetHTML(cards: KartuAbsensiPrintData[]): string {
 	const schoolName = cards[0]?.sekolah.nama ?? 'Sekolah';
-	return `<!doctype html>
-<html lang="id">
-<head>
-	<meta charset="utf-8" />
-	<title>Kartu Absensi Murid - ${escapeHtml(schoolName)}</title>
-	<style>
-		${kartuAbsensiStyles('sheet')}
-	</style>
-</head>
-<body>
-	<div class="page">
-		${cards.map(cardMarkup).join('\n')}
-	</div>
-</body>
-</html>`;
+	return documentHtml(cards, `Kartu Pelajar dan Absensi - ${schoolName}`);
 }

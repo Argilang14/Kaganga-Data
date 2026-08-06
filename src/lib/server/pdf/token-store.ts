@@ -11,14 +11,15 @@ type PdfParams = {
 	bgLogo?: boolean;
 	raporPeriode?: string;
 	variant?: 'default' | 'sr';
-    parentSignature?: 'ayah' | 'ibu' | 'wali';
-    orientation?: 'landscape' | 'portrait';
-    jenjang?: string;
-    periodeMode?: string;
-    tahunAjaranId?: number;
-    jenisJadwal?: string;
-    semesterId?: number;
-    wakaKurikulumPegawaiId?: number;
+	parentSignature?: 'ayah' | 'ibu' | 'wali';
+	orientation?: 'landscape' | 'portrait';
+	layoutMode?: 'padat' | 'multi';
+	jenjang?: string;
+	periodeMode?: string;
+	tahunAjaranId?: number;
+	jenisJadwal?: string;
+	semesterId?: number;
+	wakaKurikulumPegawaiId?: number;
 	slug: string;
 };
 
@@ -53,4 +54,3 @@ export function consumePdfParams(token: string): PdfParams | null {
 	store.delete(token);
 	return entry.params;
 }
-

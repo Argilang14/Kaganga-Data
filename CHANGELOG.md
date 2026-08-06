@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.0.4 - 2026-08-07
+
+### Fitur dan perbaikan
+
+- Merapikan tabel Data Pegawai dan menambahkan tampilan detail pegawai tanpa menggandakan data penugasan maupun akun pengguna.
+- Memperbaiki penyuntingan Kegiatan Non-Mapel agar kode dan nama yang diubah tersimpan serta tersinkron ke jadwal terkait.
+- Mempertahankan pilihan hari aktif setelah jam pelajaran disimpan atau dihapus pada Pengaturan Jadwal.
+- Menyatukan sumber QR kartu absensi serta mendukung foto murid dan pencetakan kartu secara massal pada kertas A4.
+- Menambahkan pilihan tampilan padat dan mudah dibaca pada Cetak Jadwal Pelajaran.
+- Memperbaiki tampilan multi-halaman agar tabel jadwal tetap menyatu, blok merge tetap utuh, dan ruang halaman digunakan lebih efektif.
+- Memperjelas kode mata pelajaran dan kegiatan, garis tabel, keterangan guru, kop dokumen, tanda tangan, serta posisi catatan cetak.
+
+### Catatan pembaruan
+
+- Cadangkan database sebelum memasang pembaruan.
+- Installer menggunakan port aplikasi tetap `1206` dan tidak membuat port aplikasi baru.
+- Installer tidak menimpa database yang sudah ada di `%LOCALAPPDATA%\Kaganga-data`.
+
 ## 2.0.3 - 2026-07-31
 
 ### Perbaikan

@@ -68,15 +68,13 @@ async function resolveNama(docType: string, locals: App.Locals, url: URL): Promi
 				nama =
 					(
 						preview?.periode as
-							| { label?: string; semester?: string; tahunPelajaran?: string }
-							| undefined
+							{ label?: string; semester?: string; tahunPelajaran?: string } | undefined
 					)?.label || 'Kalender Pendidikan';
 				break;
 			}
 		}
 		const muridName = (preview?.murid as Record<string, unknown> | undefined)?.nama as
-			| string
-			| undefined;
+			string | undefined;
 		if (muridName) nama = muridName;
 	} catch {
 		// fallback
@@ -96,17 +94,19 @@ export const POST = (async ({ locals, request }) => {
 		bgLogo,
 		raporPeriode,
 		orientation,
+		layoutMode: layoutModeRaw,
 		jenjang,
 		periodeMode,
-        tahunAjaranId,
-        jenisJadwal,
-        semesterId,
-        wakaKurikulumPegawaiId: wakaKurikulumPegawaiIdRaw
+		tahunAjaranId,
+		jenisJadwal,
+		semesterId,
+		wakaKurikulumPegawaiId: wakaKurikulumPegawaiIdRaw
 	} = body;
 	const wakaKurikulumPegawaiId =
 		Number.isInteger(Number(wakaKurikulumPegawaiIdRaw)) && Number(wakaKurikulumPegawaiIdRaw) > 0
 			? Number(wakaKurikulumPegawaiIdRaw)
 			: undefined;
+	const layoutMode = layoutModeRaw === 'multi' ? 'multi' : 'padat';
 	const parentSignature =
 		body.parentSignature === 'ayah' ||
 		body.parentSignature === 'ibu' ||
@@ -132,11 +132,12 @@ export const POST = (async ({ locals, request }) => {
 	if (raporPeriode) url.searchParams.set('rapor_periode', raporPeriode);
 	if (parentSignature) url.searchParams.set('ttd_wali', parentSignature);
 	if (orientation) url.searchParams.set('orientation', orientation);
+	if (docType === 'jadwal-pelajaran') url.searchParams.set('layout_mode', layoutMode);
 	if (jenjang) url.searchParams.set('jenjang', jenjang);
 	if (periodeMode) url.searchParams.set('periode_mode', periodeMode);
-    if (tahunAjaranId) url.searchParams.set('tahun_ajaran_id', String(tahunAjaranId));
-    if (jenisJadwal) url.searchParams.set('jenis', jenisJadwal);
-    if (semesterId) url.searchParams.set('semester_id', String(semesterId));
+	if (tahunAjaranId) url.searchParams.set('tahun_ajaran_id', String(tahunAjaranId));
+	if (jenisJadwal) url.searchParams.set('jenis', jenisJadwal);
+	if (semesterId) url.searchParams.set('semester_id', String(semesterId));
 	if (wakaKurikulumPegawaiId) {
 		url.searchParams.set('waka_kurikulum_pegawai_id', String(wakaKurikulumPegawaiId));
 	}
@@ -158,11 +159,12 @@ export const POST = (async ({ locals, request }) => {
 		raporPeriode,
 		parentSignature,
 		orientation,
+		layoutMode: docType === 'jadwal-pelajaran' ? layoutMode : undefined,
 		jenjang,
 		periodeMode,
-        tahunAjaranId,
-        jenisJadwal,
-        semesterId,
+		tahunAjaranId,
+		jenisJadwal,
+		semesterId,
 		wakaKurikulumPegawaiId,
 		slug
 	});

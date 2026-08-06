@@ -38,6 +38,7 @@
 			semesterId: number | null;
 		};
 		selectedJenjang: JadwalJenjang;
+		selectedHari: JadwalHari;
 		jenjangOptions: { value: JadwalJenjang; label: string }[];
 		seedInfo: { jamInserted: number; kegiatanInserted: number };
 		hariLabels: Record<JadwalHari, string>;
@@ -51,7 +52,8 @@
 	let kegiatanDialog = $state<HTMLDialogElement | null>(null);
 	let editingKegiatan = $state<KegiatanRow | null>(null);
 	let selectedJamIds = $state<number[]>([]);
-	let activeHari = $state<JadwalHari>('senin');
+	let activeHariOverride = $state<JadwalHari | null>(null);
+	const activeHari = $derived(activeHariOverride ?? data.selectedHari);
 	const failMessage = $derived(typeof form?.fail === 'string' ? form.fail : '');
 	const successMessage = $derived(typeof form?.message === 'string' ? form.message : '');
 	const hariOrder: JadwalHari[] = ['senin', 'selasa', 'rabu', 'kamis', 'jumat'];
@@ -139,6 +141,7 @@
 		</div>
 		<div class="flex flex-wrap items-center gap-2">
 			<form method="GET" class="flex flex-wrap items-center gap-2">
+				<input type="hidden" name="hari" value={activeHari} />
 				<label class="text-sm font-semibold whitespace-nowrap" for="tahun-filter"
 					>Tahun Ajaran</label
 				>
@@ -314,7 +317,7 @@
 					<div class="flex flex-wrap items-center justify-end gap-2">
 						<form
 							method="POST"
-							action={`?/bulkJam&jenjang=${data.selectedJenjang}`}
+							action={`?/bulkJam&jenjang=${data.selectedJenjang}&hari=${activeHari}`}
 							class="flex flex-wrap items-center justify-end gap-2"
 							onsubmit={confirmBulkJam}
 						>
@@ -345,7 +348,10 @@
 								Terapkan ({selectedVisibleJamCount})
 							</button>
 						</form>
-						<form method="POST" action={`?/resetDefault&jenjang=${data.selectedJenjang}`}>
+						<form
+							method="POST"
+							action={`?/resetDefault&jenjang=${data.selectedJenjang}&hari=${activeHari}`}
+						>
 							<input type="hidden" name="jenjang" value={data.selectedJenjang} />
 							<input
 								type="hidden"
@@ -368,7 +374,7 @@
 							class:tab-active={activeHari === hari}
 							type="button"
 							onclick={() => {
-								activeHari = hari;
+								activeHariOverride = hari;
 								selectedJamIds = [];
 							}}>{data.hariLabels[hari]}</button
 						>
@@ -429,7 +435,7 @@
 													<form
 														id={`jam-form-${jam.id}`}
 														method="POST"
-														action={`?/updateJam&jenjang=${data.selectedJenjang}`}
+														action={`?/updateJam&jenjang=${data.selectedJenjang}&hari=${activeHari}`}
 														class="contents"
 													>
 														<input type="hidden" name="jamId" value={jam.id} />
@@ -517,7 +523,7 @@
 														</button>
 														<form
 															method="POST"
-															action={`?/deleteJam&jenjang=${data.selectedJenjang}`}
+															action={`?/deleteJam&jenjang=${data.selectedJenjang}&hari=${activeHari}`}
 														>
 															<input type="hidden" name="jamId" value={jam.id} />
 															<input type="hidden" name="jenjang" value={data.selectedJenjang} />
@@ -569,7 +575,7 @@
 			</p>
 			<form
 				method="POST"
-				action={`?/createJam&jenjang=${data.selectedJenjang}`}
+				action={`?/createJam&jenjang=${data.selectedJenjang}&hari=${activeHari}`}
 				class="mt-5 grid gap-4 md:grid-cols-2"
 			>
 				<input type="hidden" name="jenjang" value={data.selectedJenjang} />
@@ -581,7 +587,7 @@
 				<input type="hidden" name="jenis" value={data.selectedContext.jenis} />
 				<label class="form-control">
 					<span class="label-text mb-1">Hari</span>
-					<select class="select select-bordered" name="hari" required>
+					<select class="select select-bordered" name="hari" value={activeHari} required>
 						{#each hariOrder as hari (hari)}
 							<option value={hari}>{data.hariLabels[hari]}</option>
 						{/each}

@@ -201,7 +201,7 @@
 							isKalenderSelected ||
 							isJurnalSelected}
 					>
-						{isKartuAbsensiSelected ? 'Cetak Tabel Kartu' : 'Semua Murid'}
+						{isKartuAbsensiSelected ? 'Semua Murid (A4)' : 'Semua Murid'}
 					</button>
 				</li>
 			</ul>

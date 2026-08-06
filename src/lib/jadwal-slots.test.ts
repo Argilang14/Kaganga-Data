@@ -5,6 +5,7 @@ import type { JadwalSlotLike } from './jadwal-slots';
 const {
 	buildJpNumberBySlot,
 	canPlaceJadwalItem,
+	formatJadwalKegiatanKode,
 	jadwalSlotKey,
 	normalizeJadwalKode,
 	normalizeJadwalKegiatanKode
@@ -17,6 +18,11 @@ test('normalizes schedule codes consistently', () => {
 		assert.equal(normalizeJadwalKegiatanKode('sholat-duha'), 'SHOLAT_DHUHA');
 		assert.equal(normalizeJadwalKegiatanKode('salat dhuha'), 'SHOLAT_DHUHA');
 	});
+});
+
+test('preserves activity code display formatting', () => {
+	assert.equal(formatJadwalKegiatanKode('  Sholat   Dhuha  '), 'Sholat Dhuha');
+	assert.equal(formatJadwalKegiatanKode('Sholat_Dhuha'), 'Sholat_Dhuha');
 });
 
 test('only lesson slots receive sequential JP numbers', () => {

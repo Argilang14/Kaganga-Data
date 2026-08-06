@@ -26,6 +26,7 @@ const JENIS_PEGAWAI = [
 ] as const;
 
 const STATUS_PEGAWAI = ['aktif', 'nonaktif'] as const;
+const PEGAWAI_PER_PAGE = 20;
 
 type JenisPegawai = (typeof JENIS_PEGAWAI)[number];
 type StatusPegawai = (typeof STATUS_PEGAWAI)[number];
@@ -40,14 +41,14 @@ function parseId(value: FormDataEntryValue | string | null) {
 	return Number.isInteger(id) && id > 0 ? id : null;
 }
 
-function normalizeJenis(value: FormDataEntryValue | null): JenisPegawai {
-	const raw = value?.toString() ?? 'guru';
-	return JENIS_PEGAWAI.includes(raw as JenisPegawai) ? (raw as JenisPegawai) : 'guru';
+function parseJenis(value: FormDataEntryValue | string | null): JenisPegawai | null {
+	const raw = value?.toString() ?? '';
+	return JENIS_PEGAWAI.includes(raw as JenisPegawai) ? (raw as JenisPegawai) : null;
 }
 
-function normalizeStatus(value: FormDataEntryValue | null): StatusPegawai {
-	const raw = value?.toString() ?? 'aktif';
-	return STATUS_PEGAWAI.includes(raw as StatusPegawai) ? (raw as StatusPegawai) : 'aktif';
+function parseStatus(value: FormDataEntryValue | string | null): StatusPegawai | null {
+	const raw = value?.toString() ?? '';
+	return STATUS_PEGAWAI.includes(raw as StatusPegawai) ? (raw as StatusPegawai) : null;
 }
 
 async function safeCountReferences(
@@ -166,12 +167,21 @@ async function parsePegawaiWorkbook(file: File) {
 		const nama = get(1);
 		const nip = get(2);
 		if (!nama || !nip) return;
+		const jenisRaw = get(3) || 'guru';
+		const statusRaw = get(5) || 'aktif';
+		const jenis = parseJenis(jenisRaw);
+		const status = parseStatus(statusRaw);
+		if (!jenis || !status) {
+			throw new Error(
+				`Baris ${rowNumber}: jenis "${jenisRaw}" atau status "${statusRaw}" tidak valid.`
+			);
+		}
 		rows.push({
 			nama,
 			nip,
-			jenis: normalizeJenis(get(3) || 'guru'),
+			jenis,
 			jabatan: get(4) || null,
-			status: normalizeStatus(get(5) || 'aktif'),
+			status,
 			telepon: get(6) || null,
 			email: get(7) || null,
 			catatan: get(8) || null
@@ -192,6 +202,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const jenis = url.searchParams.get('jenis')?.trim() ?? '';
 	const status = url.searchParams.get('status')?.trim() ?? '';
 	const editId = parseId(url.searchParams.get('edit'));
+	const requestedPage = Math.max(1, Math.floor(Number(url.searchParams.get('page')) || 1));
 
 	const filters = [eq(tablePegawai.sekolahId, sekolahId)];
 	if (q) {
@@ -205,33 +216,66 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		filters.push(eq(tablePegawai.status, status as StatusPegawai));
 	}
 
-	const daftarPegawai = await db.query.tablePegawai.findMany({
-		where: and(...filters),
-		orderBy: [asc(tablePegawai.nama)]
-	});
-
-	const editPegawai = editId
-		? await db.query.tablePegawai.findFirst({
-				where: and(eq(tablePegawai.id, editId), eq(tablePegawai.sekolahId, sekolahId))
+	const listFilter = and(...filters);
+	const [[countRow], [totalsRow]] = await Promise.all([
+		db
+			.select({ total: sql<number>`count(*)` })
+			.from(tablePegawai)
+			.where(listFilter),
+		db
+			.select({
+				total: sql<number>`count(*)`,
+				aktif: sql<number>`sum(case when ${tablePegawai.status} = 'aktif' then 1 else 0 end)`,
+				guru: sql<number>`sum(case when ${tablePegawai.jenis} in ('guru', 'kepala_sekolah') then 1 else 0 end)`,
+				asrama: sql<number>`sum(case when ${tablePegawai.jenis} in ('wali_asuh', 'wali_asrama') then 1 else 0 end)`
 			})
-		: null;
+			.from(tablePegawai)
+			.where(eq(tablePegawai.sekolahId, sekolahId))
+	]);
 
-	const totals = daftarPegawai.reduce(
-		(acc, item) => {
-			acc.total += 1;
-			if (item.status === 'aktif') acc.aktif += 1;
-			if (item.jenis === 'guru' || item.jenis === 'kepala_sekolah') acc.guru += 1;
-			if (item.jenis === 'wali_asuh' || item.jenis === 'wali_asrama') acc.asrama += 1;
-			return acc;
-		},
-		{ total: 0, aktif: 0, guru: 0, asrama: 0 }
-	);
+	const totalItems = countRow?.total ?? 0;
+	const totalPages = Math.max(1, Math.ceil(totalItems / PEGAWAI_PER_PAGE));
+	const currentPage = Math.min(requestedPage, totalPages);
+
+	if (requestedPage !== currentPage) {
+		const params = new URLSearchParams(url.searchParams);
+		if (currentPage === 1) params.delete('page');
+		else params.set('page', String(currentPage));
+		throw redirect(303, `${url.pathname}${params.size ? `?${params}` : ''}`);
+	}
+
+	const [daftarPegawai, editPegawai] = await Promise.all([
+		db.query.tablePegawai.findMany({
+			where: listFilter,
+			orderBy: [asc(tablePegawai.nama)],
+			limit: PEGAWAI_PER_PAGE,
+			offset: (currentPage - 1) * PEGAWAI_PER_PAGE
+		}),
+		editId
+			? db.query.tablePegawai.findFirst({
+					where: and(eq(tablePegawai.id, editId), eq(tablePegawai.sekolahId, sekolahId))
+				})
+			: Promise.resolve(null)
+	]);
+
+	const totals = {
+		total: totalsRow?.total ?? 0,
+		aktif: totalsRow?.aktif ?? 0,
+		guru: totalsRow?.guru ?? 0,
+		asrama: totalsRow?.asrama ?? 0
+	};
 
 	return {
 		meta: { title: 'Data Pegawai' } satisfies PageMeta,
 		pegawai: daftarPegawai,
 		editPegawai,
 		filter: { q, jenis, status },
+		page: {
+			currentPage,
+			totalPages,
+			totalItems,
+			perPage: PEGAWAI_PER_PAGE
+		},
 		options: { jenis: JENIS_PEGAWAI, status: STATUS_PEGAWAI },
 		sekolah: locals.sekolah ? { id: locals.sekolah.id, nama: locals.sekolah.nama } : null,
 		totals
@@ -250,8 +294,8 @@ export const actions: Actions = {
 		const id = parseId(formData.get('id'));
 		const nama = normalizeText(formData.get('nama'));
 		const nip = normalizeText(formData.get('nip'));
-		const jenis = normalizeJenis(formData.get('jenis'));
-		const status = normalizeStatus(formData.get('status'));
+		const jenis = parseJenis(formData.get('jenis'));
+		const status = parseStatus(formData.get('status'));
 		const jabatan = normalizeText(formData.get('jabatan'));
 		const telepon = normalizeText(formData.get('telepon'));
 		const email = normalizeText(formData.get('email'));
@@ -259,6 +303,9 @@ export const actions: Actions = {
 
 		if (!nama || !nip) {
 			return fail(400, { fail: 'Nama dan NIP wajib diisi.' });
+		}
+		if (!jenis || !status) {
+			return fail(400, { fail: 'Jenis atau status pegawai tidak valid.' });
 		}
 
 		const payload = {
@@ -299,8 +346,9 @@ export const actions: Actions = {
 		if (!sekolahId) return fail(400, { fail: 'Sekolah aktif tidak ditemukan.' });
 		const formData = await request.formData();
 		const id = parseId(formData.get('id'));
-		const status = normalizeStatus(formData.get('status'));
+		const status = parseStatus(formData.get('status'));
 		if (!id) return fail(400, { fail: 'Pegawai tidak valid.' });
+		if (!status) return fail(400, { fail: 'Status pegawai tidak valid.' });
 
 		await db
 			.update(tablePegawai)
@@ -402,7 +450,14 @@ export const actions: Actions = {
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(400, { fail: 'Sekolah aktif tidak ditemukan.' });
 
-		const rows = await parsePegawaiWorkbook(file);
+		let rows;
+		try {
+			rows = await parsePegawaiWorkbook(file);
+		} catch (error) {
+			return fail(400, {
+				fail: error instanceof Error ? error.message : 'File Excel pegawai tidak valid.'
+			});
+		}
 		if (!rows.length) return fail(400, { fail: 'Tidak ada data pegawai valid di file Excel.' });
 
 		let inserted = 0;

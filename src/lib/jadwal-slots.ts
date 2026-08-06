@@ -19,6 +19,12 @@ export function normalizeJadwalKode(value: unknown): string {
 		.trim()
 		.toUpperCase();
 }
+export function formatJadwalKegiatanKode(value: unknown): string {
+	return String(value ?? '')
+		.trim()
+		.replace(/\s+/g, ' ');
+}
+
 export function normalizeJadwalKegiatanKode(value: unknown): string {
 	const normalized = normalizeJadwalKode(value)
 		.replace(/[^A-Z0-9]+/g, '_')

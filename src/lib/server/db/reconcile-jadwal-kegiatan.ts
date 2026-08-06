@@ -12,8 +12,7 @@ type KegiatanKategori = 'umum' | 'kokurikuler' | 'keagamaan' | 'istirahat';
 
 function kategoriFromKode(kode: string): KegiatanKategori {
 	if (kode.includes('ISTIRAHAT') || kode.includes('ISHOMA')) return 'istirahat';
-	if (kode.includes('SHOLAT') || kode.includes('SALAT') || kode.includes('DOA'))
-		return 'keagamaan';
+	if (kode.includes('SHOLAT') || kode.includes('SALAT') || kode.includes('DOA')) return 'keagamaan';
 	if (kode.includes('KOKURIKULER')) return 'kokurikuler';
 	return 'umum';
 }
@@ -48,9 +47,7 @@ async function reconcileJadwalKegiatan() {
 	]);
 
 	const existingKeys = new Set(
-		existingRows.map(
-			(row) => `${row.sekolahId}|${normalizeJadwalKegiatanKode(row.kode)}`
-		)
+		existingRows.map((row) => `${row.sekolahId}|${normalizeJadwalKegiatanKode(row.kode)}`)
 	);
 	for (const legacy of legacyRows) {
 		const kode = normalizeJadwalKegiatanKode(legacy.kode || legacy.nama);
@@ -113,13 +110,6 @@ async function reconcileJadwalKegiatan() {
 						)
 					);
 				await tx.delete(tableJadwalKegiatan).where(inArray(tableJadwalKegiatan.id, duplicateIds));
-			}
-			if (canonical.kode !== kode) {
-				await tx
-					.update(tableJadwalKegiatan)
-					.set({ kode, updatedAt: new Date().toISOString() })
-					.where(eq(tableJadwalKegiatan.id, canonical.id));
-				canonical.kode = kode;
 			}
 		}
 

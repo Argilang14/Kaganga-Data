@@ -1,9 +1,9 @@
 import db from '$lib/server/db';
 import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
-import { tableKelas } from '$lib/server/db/schema';
+import { tableKelas, tableQrMurid } from '$lib/server/db/schema';
 import { error, redirect } from '@sveltejs/kit';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 
 export const ABSENSI_PERMISSION = 'administrasi_absensi' as UserPermission;
@@ -67,6 +67,37 @@ export function createPreviewableQrToken(params: {
 		.update(payload, 'utf8')
 		.digest('base64url');
 	return `rapkumer-absensi:v2:${payload}.${signature}`;
+}
+
+export type PrintableQrRecord = {
+	muridId: number;
+	tokenHash: string;
+	tokenVersion: number;
+	issuedAt: string;
+};
+
+export function resolvePrintableQrToken(qr: PrintableQrRecord): string | null {
+	const token = createPreviewableQrToken(qr);
+	return hashQrToken(token) === qr.tokenHash ? token : null;
+}
+
+export async function loadActivePrintableQr(muridId: number) {
+	await ensureAbsensiDigitalSchema();
+	const qr = await db.query.tableQrMurid.findFirst({
+		columns: {
+			muridId: true,
+			tokenHash: true,
+			tokenVersion: true,
+			issuedAt: true
+		},
+		where: and(eq(tableQrMurid.muridId, muridId), isNull(tableQrMurid.revokedAt)),
+		orderBy: (table, { desc }) => [desc(table.tokenVersion), desc(table.id)]
+	});
+	if (!qr) return { status: 'missing' as const };
+
+	const token = resolvePrintableQrToken(qr);
+	if (!token) return { status: 'not_printable' as const, qr };
+	return { status: 'ready' as const, qr, token };
 }
 
 export function parsePositiveInteger(value: FormDataEntryValue | string | null | undefined) {

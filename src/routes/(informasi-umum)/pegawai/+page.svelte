@@ -1,8 +1,11 @@
 <script lang="ts">
 	/* eslint-disable svelte/no-navigation-without-resolve -- halaman memakai link download dan form route lokal */
 	import { enhance } from '$app/forms';
+	import { page } from '$app/state';
 	import Icon from '$lib/components/icon.svelte';
+	import { modalRoute } from '$lib/utils';
 	import type { SubmitFunction } from '@sveltejs/kit';
+	import DetailPegawai from './[id]/+page.svelte';
 
 	type PegawaiRow = {
 		id: number;
@@ -28,6 +31,14 @@
 	const allSelected = $derived(
 		pegawaiList.length > 0 && pegawaiList.every((pegawai) => selectedIds.includes(pegawai.id))
 	);
+	const currentPage = $derived(data.page?.currentPage ?? 1);
+	const totalPages = $derived(Math.max(1, data.page?.totalPages ?? 1));
+	const pageStart = $derived(
+		data.page?.totalItems ? (currentPage - 1) * (data.page?.perPage ?? 20) + 1 : 0
+	);
+	const pageEnd = $derived(
+		Math.min(currentPage * (data.page?.perPage ?? 20), data.page?.totalItems ?? 0)
+	);
 
 	const jenisLabels: Record<string, string> = {
 		guru: 'Guru',
@@ -50,6 +61,21 @@
 	function openEditModal(pegawai: PegawaiRow) {
 		selectedPegawai = pegawai;
 		formDialog?.showModal();
+	}
+
+	function openEditFromDetail(pegawai: PegawaiRow) {
+		history.back();
+		selectedPegawai = pegawai;
+		setTimeout(() => formDialog?.showModal(), 0);
+	}
+
+	function pageHref(pageNumber: number) {
+		const params = new URLSearchParams();
+		if (data.filter.q) params.set('q', data.filter.q);
+		if (data.filter.jenis) params.set('jenis', data.filter.jenis);
+		if (data.filter.status) params.set('status', data.filter.status);
+		if (pageNumber > 1) params.set('page', String(pageNumber));
+		return params.size ? `/pegawai?${params}` : '/pegawai';
 	}
 
 	function toggleRow(id: number, checked: boolean) {
@@ -236,9 +262,9 @@
 		</div>
 	</form>
 
-	<div class="bg-base-100 border-base-200 rounded-box overflow-hidden border shadow-sm">
+	<div class="bg-base-100 dark:bg-base-200 overflow-hidden rounded-md shadow-md dark:shadow-none">
 		<div
-			class="border-base-200 flex flex-col gap-3 border-b p-4 md:flex-row md:items-center md:justify-between"
+			class="border-base-200 dark:border-base-300 flex flex-col gap-3 border-b px-4 py-3 md:flex-row md:items-center md:justify-between"
 		>
 			<div>
 				<h2 class="font-semibold">Daftar Pegawai</h2>
@@ -261,66 +287,74 @@
 			</form>
 		</div>
 		<div class="overflow-x-auto">
-			<table class="table-zebra table-sm table">
+			<table class="border-base-200 table min-w-[880px] border dark:border-none">
+				<colgroup>
+					<col class="w-16" />
+					<col class="w-16" />
+					<col class="w-[34%]" />
+					<col class="w-[16%]" />
+					<col />
+					<col class="w-24" />
+					<col class="w-36" />
+				</colgroup>
 				<thead>
-					<tr>
-						<th class="w-10">
+					<tr class="bg-base-200 dark:bg-base-300 text-base-content text-left font-bold">
+						<th>
 							<input
-								class="checkbox checkbox-sm"
+								class="checkbox"
 								type="checkbox"
 								checked={allSelected}
 								onchange={(event) => toggleAll(event.currentTarget.checked)}
-								aria-label="Pilih semua pegawai"
+								aria-label="Pilih semua pegawai pada halaman ini"
 							/>
 						</th>
+						<th>No</th>
 						<th>Nama</th>
-						<th>Jenis/Jabatan</th>
-						<th>Kontak</th>
+						<th>Jenis</th>
+						<th>Jabatan</th>
 						<th>Status</th>
-						<th class="text-right">Aksi</th>
+						<th>Aksi</th>
 					</tr>
 				</thead>
 				<tbody>
-					{#each pegawaiList as pegawai (pegawai.id)}
-						<tr>
+					{#each pegawaiList as pegawai, index (pegawai.id)}
+						<tr class="hover:bg-base-200/40 h-[72px] transition-colors">
 							<td>
 								<input
-									class="checkbox checkbox-sm"
+									class="checkbox"
 									type="checkbox"
 									checked={selectedIds.includes(pegawai.id)}
 									onchange={(event) => toggleRow(pegawai.id, event.currentTarget.checked)}
 									aria-label={'Pilih ' + pegawai.nama}
 								/>
 							</td>
-							<td
-								><div class="font-semibold">{pegawai.nama}</div>
-								<div class="text-base-content/60 text-xs">NIP {pegawai.nip}</div></td
-							>
-							<td
-								><div>{jenisLabels[pegawai.jenis] ?? pegawai.jenis}</div>
-								<div class="text-base-content/60 text-xs">
-									{pegawai.jabatan || 'Jabatan belum diisi'}
-								</div></td
-							>
-							<td
-								><div class="text-sm">{pegawai.telepon || '-'}</div>
-								<div class="text-base-content/60 text-xs">{pegawai.email || '-'}</div></td
-							>
-							<td
-								><span
+							<td>{(currentPage - 1) * (data.page?.perPage ?? 20) + index + 1}</td>
+							<td>
+								<div class="font-medium">{pegawai.nama}</div>
+								<div class="text-base-content/60 mt-0.5 text-xs">NIP {pegawai.nip}</div>
+							</td>
+							<td>{jenisLabels[pegawai.jenis] ?? pegawai.jenis}</td>
+							<td>{pegawai.jabatan || '-'}</td>
+							<td>
+								<span
 									class:badge-success={pegawai.status === 'aktif'}
 									class:badge-neutral={pegawai.status !== 'aktif'}
-									class="badge badge-soft">{statusLabels[pegawai.status] ?? pegawai.status}</span
-								></td
-							>
+									class="badge badge-soft"
+								>
+									{statusLabels[pegawai.status] ?? pegawai.status}
+								</span>
+							</td>
 							<td>
-								<div class="flex flex-nowrap justify-end gap-1">
-									<button
-										class="btn btn-ghost btn-square btn-xs"
-										type="button"
-										title="Edit"
-										onclick={() => openEditModal(pegawai)}><Icon name="edit" /></button
+								<div class="flex flex-nowrap">
+									<a
+										class="btn btn-sm btn-soft pointer-events-auto rounded-r-none shadow-none"
+										href="/pegawai/{pegawai.id}"
+										use:modalRoute={'detail-pegawai'}
+										title="Lihat informasi pegawai"
+										aria-label={'Lihat informasi ' + pegawai.nama}
 									>
+										<Icon name="eye" />
+									</a>
 									<form method="POST" action="?/setStatus" use:enhance={tableActionEnhance}>
 										<input type="hidden" name="id" value={pegawai.id} />
 										<input
@@ -329,11 +363,15 @@
 											value={pegawai.status === 'aktif' ? 'nonaktif' : 'aktif'}
 										/>
 										<button
-											class="btn btn-soft btn-square btn-xs"
+											class="btn btn-sm btn-soft rounded-none shadow-none"
 											type="submit"
 											title={pegawai.status === 'aktif' ? 'Nonaktifkan' : 'Aktifkan'}
-											><Icon name={pegawai.status === 'aktif' ? 'close' : 'check'} /></button
+											aria-label={pegawai.status === 'aktif'
+												? 'Nonaktifkan ' + pegawai.nama
+												: 'Aktifkan ' + pegawai.nama}
 										>
+											<Icon name={pegawai.status === 'aktif' ? 'close' : 'check'} />
+										</button>
 									</form>
 									<form
 										method="POST"
@@ -345,26 +383,104 @@
 									>
 										<input type="hidden" name="id" value={pegawai.id} />
 										<button
-											class="btn btn-error btn-soft btn-square btn-xs"
+											class="btn btn-sm btn-error btn-soft rounded-l-none shadow-none"
 											type="submit"
-											title="Hapus"><Icon name="del" /></button
+											title="Hapus"
+											aria-label={'Hapus ' + pegawai.nama}
 										>
+											<Icon name="del" />
+										</button>
 									</form>
 								</div>
 							</td>
 						</tr>
 					{:else}
-						<tr
-							><td colspan="6" class="text-base-content/60 py-10 text-center"
-								>Belum ada data pegawai sesuai filter.</td
-							></tr
-						>
+						<tr>
+							<td colspan="7" class="text-base-content/60 py-10 text-center">
+								Belum ada data pegawai sesuai filter.
+							</td>
+						</tr>
 					{/each}
 				</tbody>
 			</table>
 		</div>
+		<div
+			class="border-base-200 flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+		>
+			<p class="text-base-content/60 text-sm">
+				Menampilkan {pageStart}-{pageEnd} dari {data.page?.totalItems ?? 0} pegawai
+			</p>
+			<div class="join">
+				{#if currentPage > 1}
+					<a
+						class="join-item btn btn-sm btn-soft"
+						href={pageHref(currentPage - 1)}
+						title="Halaman sebelumnya"
+						aria-label="Halaman sebelumnya"
+					>
+						<Icon name="left" />
+					</a>
+				{:else}
+					<button
+						class="join-item btn btn-sm btn-soft"
+						type="button"
+						disabled
+						aria-label="Tidak ada halaman sebelumnya"
+					>
+						<Icon name="left" />
+					</button>
+				{/if}
+				<span class="join-item btn btn-sm pointer-events-none">
+					{currentPage} / {totalPages}
+				</span>
+				{#if currentPage < totalPages}
+					<a
+						class="join-item btn btn-sm btn-soft"
+						href={pageHref(currentPage + 1)}
+						title="Halaman berikutnya"
+						aria-label="Halaman berikutnya"
+					>
+						<Icon name="right" />
+					</a>
+				{:else}
+					<button
+						class="join-item btn btn-sm btn-soft"
+						type="button"
+						disabled
+						aria-label="Tidak ada halaman berikutnya"
+					>
+						<Icon name="right" />
+					</button>
+				{/if}
+			</div>
+		</div>
 	</div>
 </div>
+
+{#if page.state.modal?.name === 'detail-pegawai'}
+	<dialog
+		class="modal"
+		open
+		onclose={() => history.back()}
+		onclick={(event) => {
+			const rect = event.currentTarget.querySelector('.modal-box')?.getBoundingClientRect();
+			if (
+				rect &&
+				(event.clientX < rect.left ||
+					event.clientX > rect.right ||
+					event.clientY < rect.top ||
+					event.clientY > rect.bottom)
+			) {
+				event.currentTarget.close();
+			}
+		}}
+	>
+		<div class="modal-box w-11/12 max-w-5xl p-5">
+			<DetailPegawai data={page.state.modal.data} onEdit={openEditFromDetail} />
+		</div>
+		<form method="dialog" class="modal-backdrop"><button>Tutup</button></form>
+	</dialog>
+{/if}
 
 <dialog class="modal" bind:this={formDialog}>
 	<div class="modal-box max-w-5xl">

@@ -1,4 +1,8 @@
-import { normalizeJadwalKegiatanKode, normalizeJadwalKode } from '$lib/jadwal-slots';
+import {
+	formatJadwalKegiatanKode,
+	normalizeJadwalKegiatanKode,
+	normalizeJadwalKode
+} from '$lib/jadwal-slots';
 import { ensureJadwalKegiatanTerintegrasi } from '$lib/server/db/reconcile-jadwal-kegiatan';
 /* eslint-disable @typescript-eslint/no-explicit-any -- Tipe ExcelJS di workspace ini tidak memuat semua API runtime. */
 import { parsePositiveInteger } from '$lib/server/absensi-digital';
@@ -27,6 +31,11 @@ import ExcelJS from 'exceljs';
 const JADWAL_TIPES = ['pelajaran', 'kegiatan', 'istirahat', 'kosong'] as const;
 const JADWAL_KATEGORI = ['umum', 'kokurikuler', 'keagamaan', 'istirahat'] as const;
 const JADWAL_HARI_SET = new Set<string>(JADWAL_HARI);
+
+function normalizeJadwalHari(value: unknown): (typeof JADWAL_HARI)[number] {
+	const hari = String(value ?? '').toLowerCase();
+	return JADWAL_HARI_SET.has(hari) ? (hari as (typeof JADWAL_HARI)[number]) : 'senin';
+}
 
 function normalizeTime(value: FormDataEntryValue | null) {
 	const raw = value?.toString().trim() ?? '';
@@ -122,6 +131,7 @@ export async function load({ locals, url }) {
 	if (!sekolahId || !locals.user) throw redirect(303, '/login');
 
 	const selectedJenjang = normalizeJadwalJenjang(url.searchParams.get('jenjang'));
+	const selectedHari = normalizeJadwalHari(url.searchParams.get('hari'));
 	const academic = await resolveSekolahAcademicContext(sekolahId);
 	const context = selectJadwalContext(academic, {
 		tahunAjaranId: url.searchParams.get('tahunAjaranId'),
@@ -144,6 +154,7 @@ export async function load({ locals, url }) {
 		jenisOptions: JADWAL_JENIS.map((value) => ({ value, label: JADWAL_JENIS_LABELS[value] })),
 		selectedContext: context,
 		selectedJenjang,
+		selectedHari,
 		jenjangOptions: JADWAL_JENJANG.map((value) => ({ value, label: JADWAL_JENJANG_LABELS[value] })),
 		seedInfo: {
 			jamInserted: seedResult.jamInserted,
@@ -153,7 +164,7 @@ export async function load({ locals, url }) {
 		jamList,
 		kegiatanList: kegiatanList.map((item) => ({
 			...item,
-			kode: normalizeJadwalKegiatanKode(item.kode)
+			kode: formatJadwalKegiatanKode(item.kode)
 		}))
 	};
 }
@@ -399,13 +410,14 @@ export const actions = {
 		if (!sekolahId || !locals.user) return fail(401, { fail: 'Sesi tidak valid.' });
 
 		const formData = await request.formData();
-		const kode = normalizeJadwalKegiatanKode(formData.get('kode'));
+		const kode = formatJadwalKegiatanKode(formData.get('kode'));
+		const kodeKey = normalizeJadwalKegiatanKode(kode);
 		const nama = formData.get('nama')?.toString().trim() || '';
 		const kategori = normalizeJadwalKategori(formData.get('kategori'));
 		const warnaRaw = formData.get('warna')?.toString().trim() || '';
 		const warna = /^#[0-9a-fA-F]{6}$/.test(warnaRaw) ? warnaRaw : null;
 
-		if (!kode || !nama || !kategori) {
+		if (!kode || !kodeKey || !nama || !kategori) {
 			return fail(400, { fail: 'Kode, nama, dan kategori kegiatan wajib diisi.' });
 		}
 
@@ -413,7 +425,7 @@ export const actions = {
 			columns: { id: true, kode: true },
 			where: eq(tableJadwalKegiatan.sekolahId, sekolahId)
 		});
-		if (existingRows.some((row) => normalizeJadwalKegiatanKode(row.kode) === kode)) {
+		if (existingRows.some((row) => normalizeJadwalKegiatanKode(row.kode) === kodeKey)) {
 			return fail(400, { fail: 'Kode kegiatan sudah dipakai.' });
 		}
 
@@ -439,14 +451,15 @@ export const actions = {
 
 		const formData = await request.formData();
 		const kegiatanId = parsePositiveInteger(formData.get('kegiatanId'));
-		const kode = normalizeJadwalKegiatanKode(formData.get('kode'));
+		const kode = formatJadwalKegiatanKode(formData.get('kode'));
+		const kodeKey = normalizeJadwalKegiatanKode(kode);
 		const nama = formData.get('nama')?.toString().trim() || '';
 		const kategori = normalizeJadwalKategori(formData.get('kategori'));
 		const warnaRaw = formData.get('warna')?.toString().trim() || '';
 		const warna = /^#[0-9a-fA-F]{6}$/.test(warnaRaw) ? warnaRaw : null;
 		const aktif = formData.get('aktif') === 'on';
 
-		if (!kegiatanId || !kode || !nama || !kategori) {
+		if (!kegiatanId || !kode || !kodeKey || !nama || !kategori) {
 			return fail(400, { fail: 'Data kegiatan yang akan diedit belum lengkap.' });
 		}
 		const existing = await db.query.tableJadwalKegiatan.findFirst({
@@ -463,7 +476,7 @@ export const actions = {
 		});
 		if (
 			siblings.some(
-				(row) => row.id !== kegiatanId && normalizeJadwalKegiatanKode(row.kode) === kode
+				(row) => row.id !== kegiatanId && normalizeJadwalKegiatanKode(row.kode) === kodeKey
 			)
 		) {
 			return fail(400, { fail: 'Kode kegiatan sudah dipakai oleh kegiatan lain.' });
@@ -486,7 +499,7 @@ export const actions = {
 			await tx
 				.update(tableJadwalPelajaran)
 				.set({
-					kodeKegiatan: kode,
+					kodeKegiatan: kodeKey,
 					tipe: kategori === 'istirahat' ? 'istirahat' : 'kegiatan',
 					updatedAt: now
 				})

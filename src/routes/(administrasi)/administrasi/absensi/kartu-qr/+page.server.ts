@@ -5,7 +5,8 @@ import {
 	loadAbsensiKelasOptions,
 	parsePositiveInteger,
 	requireAbsensiDigitalAccess,
-	resolveKelasId
+	resolveKelasId,
+	resolvePrintableQrToken
 } from '$lib/server/absensi-digital';
 import db from '$lib/server/db';
 import { tableKelas, tableMurid, tableQrMurid } from '$lib/server/db/schema';
@@ -49,25 +50,14 @@ async function getAccessibleActiveKelas(
 	});
 }
 
-function buildPreviewToken(qr: Pick<QrRow, 'muridId' | 'tokenVersion' | 'issuedAt'>) {
-	return createPreviewableQrToken({
-		muridId: qr.muridId,
-		tokenVersion: qr.tokenVersion,
-		issuedAt: qr.issuedAt
-	});
-}
-
-function isPreviewableQr(qr: Pick<QrRow, 'muridId' | 'tokenHash' | 'tokenVersion' | 'issuedAt'>) {
-	return hashQrToken(buildPreviewToken(qr)) === qr.tokenHash;
-}
-
 async function buildCardFromQr(
 	murid: { id: number; nama: string; nis: string },
 	qr: Pick<QrRow, 'muridId' | 'tokenVersion' | 'issuedAt' | 'tokenHash'>,
 	kelasLabel: string,
 	sekolahNama: string
 ) {
-	if (!isPreviewableQr(qr)) return null;
+	const token = resolvePrintableQrToken(qr);
+	if (!token) return null;
 	return {
 		muridId: murid.id,
 		nama: murid.nama,
@@ -75,7 +65,7 @@ async function buildCardFromQr(
 		kelas: kelasLabel,
 		sekolah: sekolahNama,
 		logoUrl: '/sekolah/logo',
-		qrDataUrl: await QRCode.toDataURL(buildPreviewToken(qr), { margin: 1, width: 240 }),
+		qrDataUrl: await QRCode.toDataURL(token, { margin: 1, width: 240 }),
 		issuedAt: qr.issuedAt
 	} satisfies CardPayload;
 }
@@ -169,7 +159,7 @@ export async function load({ locals, url }) {
 		muridList: await Promise.all(
 			muridList.map(async (murid) => {
 				const qr = activeQr.get(murid.id) ?? null;
-				const previewable = qr ? isPreviewableQr(qr) : false;
+				const token = qr ? resolvePrintableQrToken(qr) : null;
 				return {
 					...murid,
 					logoUrl: '/sekolah/logo',
@@ -177,10 +167,8 @@ export async function load({ locals, url }) {
 						? {
 								issuedAt: qr.issuedAt,
 								tokenVersion: qr.tokenVersion,
-								previewable,
-								qrDataUrl: previewable
-									? await QRCode.toDataURL(buildPreviewToken(qr), { margin: 1, width: 240 })
-									: null
+								previewable: Boolean(token),
+								qrDataUrl: token ? await QRCode.toDataURL(token, { margin: 1, width: 240 }) : null
 							}
 						: null
 				};

@@ -3,19 +3,42 @@
 	import { enhance } from '$app/forms';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/icon.svelte';
+	import DetailPegawai from '$lib/components/pegawai/DetailPegawai.svelte';
 	import { modalRoute } from '$lib/utils';
 	import type { SubmitFunction } from '@sveltejs/kit';
-	import DetailPegawai from './[id]/+page.svelte';
 
 	type PegawaiRow = {
 		id: number;
 		nama: string;
 		nip: string;
+		nik: string | null;
+		nuptk: string | null;
 		jenis: string;
 		jabatan: string | null;
 		status: string;
+		jenisKelamin: string | null;
+		tempatLahir: string | null;
+		tanggalLahir: string | null;
+		agama: string | null;
+		statusPerkawinan: string | null;
 		telepon: string | null;
 		email: string | null;
+		alamat: string | null;
+		desa: string | null;
+		kecamatan: string | null;
+		kabupaten: string | null;
+		provinsi: string | null;
+		kodePos: string | null;
+		kontakDaruratNama: string | null;
+		kontakDaruratHubungan: string | null;
+		kontakDaruratTelepon: string | null;
+		statusKepegawaian: string | null;
+		tanggalMulaiKerja: string | null;
+		unitPenempatan: string | null;
+		pangkatGolongan: string | null;
+		nomorSk: string | null;
+		tanggalSk: string | null;
+		foto: string | null;
 		catatan: string | null;
 	};
 
@@ -24,6 +47,24 @@
 	let importDialog: HTMLDialogElement | null = $state(null);
 	let selectedPegawai = $state<PegawaiRow | null>(null);
 	let selectedIds = $state<number[]>([]);
+	type ImportPreview = {
+		fileName: string;
+		legacyFormat: boolean;
+		total: number;
+		baru: number;
+		perbarui: number;
+		bermasalah: number;
+		rows: Array<{
+			rowNumber: number;
+			nama: string;
+			nip: string;
+			action: 'baru' | 'perbarui' | 'bermasalah';
+			errors: string[];
+		}>;
+	};
+	let importPreview = $state<ImportPreview | null>(null);
+	let importError = $state('');
+	let importBusy = $state(false);
 
 	const pegawaiList = $derived((data.pegawai ?? []) as PegawaiRow[]);
 	const failMessage = $derived(typeof form?.fail === 'string' ? form.fail : '');
@@ -147,7 +188,32 @@
 	const tableActionEnhance = preserveScroll();
 	const bulkDeleteEnhance = preserveScroll({ clearSelected: true });
 	const saveEnhance = preserveScroll({ closeDialog: () => formDialog?.close() });
-	const importEnhance = preserveScroll({ closeDialog: () => importDialog?.close() });
+	const importEnhance: SubmitFunction = ({ action }) => {
+		const isPreview = action.search.includes('/previewImport');
+		importBusy = true;
+		importError = '';
+		return async ({ result, update }) => {
+			importBusy = false;
+			if (result.type === 'failure') {
+				importError = String(result.data?.fail ?? 'File Excel tidak dapat diproses.');
+				return;
+			}
+			if (result.type === 'success' && isPreview) {
+				importPreview = (result.data?.preview as ImportPreview | undefined) ?? null;
+				return;
+			}
+			await update({ reset: true, invalidateAll: true });
+			if (result.type === 'success') {
+				importPreview = null;
+				importDialog?.close();
+			}
+		};
+	};
+
+	function resetImportPreview() {
+		importPreview = null;
+		importError = '';
+	}
 </script>
 
 <div class="space-y-6">
@@ -228,12 +294,12 @@
 		class="bg-base-100 border-base-200 rounded-box grid gap-3 border p-4 lg:grid-cols-[1fr_220px_180px_auto]"
 	>
 		<label class="form-control gap-1">
-			<span class="label-text font-medium">Cari nama atau NIP</span>
+			<span class="label-text font-medium">Cari pegawai</span>
 			<input
 				class="input input-bordered w-full"
 				name="q"
 				value={data.filter.q}
-				placeholder="Contoh: Budi atau 198..."
+				placeholder="Nama, NIP, atau NIK"
 			/>
 		</label>
 		<label class="form-control gap-1">
@@ -475,7 +541,7 @@
 			}
 		}}
 	>
-		<div class="modal-box w-11/12 max-w-5xl p-5">
+		<div class="modal-box max-h-[94vh] w-11/12 max-w-7xl p-5">
 			<DetailPegawai data={page.state.modal.data} onEdit={openEditFromDetail} />
 		</div>
 		<form method="dialog" class="modal-backdrop"><button>Tutup</button></form>
@@ -483,7 +549,7 @@
 {/if}
 
 <dialog class="modal" bind:this={formDialog}>
-	<div class="modal-box max-w-5xl">
+	<div class="modal-box max-h-[92vh] w-11/12 max-w-6xl overflow-y-auto">
 		<h3 class="text-lg font-bold">{selectedPegawai ? 'Edit Pegawai' : 'Tambah Pegawai'}</h3>
 		<p class="text-base-content/60 mt-1 text-sm">
 			Isi data pokok pegawai. Jika belum punya NIP, boleh isi tanda minus (-).
@@ -491,6 +557,7 @@
 		<form method="POST" action="?/save" use:enhance={saveEnhance} class="mt-5 space-y-4">
 			<input type="hidden" name="id" value={selectedPegawai?.id ?? ''} />
 			<div class="grid gap-4 md:grid-cols-2">
+				<div class="border-base-200 md:col-span-2 border-b pb-2 font-bold">Identitas Pegawai</div>
 				<label class="form-control gap-2"
 					><span class="label-text font-medium">Nama Pegawai</span><input
 						class="input input-bordered w-full"
@@ -507,6 +574,21 @@
 						value={selectedPegawai?.nip ?? ''}
 						placeholder="Contoh: 198... atau -"
 						required
+					/></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">NIK</span><input
+						class="input input-bordered w-full"
+						name="nik"
+						value={selectedPegawai?.nik ?? ''}
+						inputmode="numeric"
+					/></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">NUPTK</span><input
+						class="input input-bordered w-full"
+						name="nuptk"
+						value={selectedPegawai?.nuptk ?? ''}
 					/></label
 				>
 				<label class="form-control gap-2"
@@ -531,6 +613,52 @@
 					></label
 				>
 				<label class="form-control gap-2"
+					><span class="label-text font-medium">Jenis Kelamin</span><select
+						class="select select-bordered w-full"
+						name="jenisKelamin"
+						><option value="">Belum diisi</option><option
+							value="laki-laki"
+							selected={selectedPegawai?.jenisKelamin === 'laki-laki'}>Laki-laki</option
+						><option value="perempuan" selected={selectedPegawai?.jenisKelamin === 'perempuan'}
+							>Perempuan</option
+						></select
+					></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Tempat Lahir</span><input
+						class="input input-bordered w-full"
+						name="tempatLahir"
+						value={selectedPegawai?.tempatLahir ?? ''}
+					/></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Tanggal Lahir</span><input
+						class="input input-bordered w-full"
+						type="date"
+						name="tanggalLahir"
+						value={selectedPegawai?.tanggalLahir ?? ''}
+					/></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Agama</span><input
+						class="input input-bordered w-full"
+						name="agama"
+						value={selectedPegawai?.agama ?? ''}
+					/></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Status Perkawinan</span><select
+						class="select select-bordered w-full"
+						name="statusPerkawinan"
+						><option value="">Belum diisi</option
+						>{#each ['Belum Kawin', 'Kawin', 'Cerai Hidup', 'Cerai Mati'] as status}<option
+								value={status}
+								selected={selectedPegawai?.statusPerkawinan === status}>{status}</option
+							>{/each}</select
+					></label
+				>
+				<div class="border-base-200 mt-2 md:col-span-2 border-b pb-2 font-bold">Kepegawaian</div>
+				<label class="form-control gap-2"
 					><span class="label-text font-medium">Jabatan</span><input
 						class="input input-bordered w-full"
 						name="jabatan"
@@ -538,6 +666,54 @@
 						placeholder="Contoh: Wali Kelas X-A"
 					/></label
 				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Status Kepegawaian</span><input
+						class="input input-bordered w-full"
+						name="statusKepegawaian"
+						value={selectedPegawai?.statusKepegawaian ?? ''}
+						placeholder="Contoh: PNS, PPPK, Honorer"
+					/></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Tanggal Mulai Kerja</span><input
+						class="input input-bordered w-full"
+						type="date"
+						name="tanggalMulaiKerja"
+						value={selectedPegawai?.tanggalMulaiKerja ?? ''}
+					/></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Unit Penempatan</span><input
+						class="input input-bordered w-full"
+						name="unitPenempatan"
+						value={selectedPegawai?.unitPenempatan ?? ''}
+					/></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Pangkat/Golongan</span><input
+						class="input input-bordered w-full"
+						name="pangkatGolongan"
+						value={selectedPegawai?.pangkatGolongan ?? ''}
+					/></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Nomor SK</span><input
+						class="input input-bordered w-full"
+						name="nomorSk"
+						value={selectedPegawai?.nomorSk ?? ''}
+					/></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Tanggal SK</span><input
+						class="input input-bordered w-full"
+						type="date"
+						name="tanggalSk"
+						value={selectedPegawai?.tanggalSk ?? ''}
+					/></label
+				>
+				<div class="border-base-200 mt-2 md:col-span-2 border-b pb-2 font-bold">
+					Kontak dan Alamat
+				</div>
 				<label class="form-control gap-2"
 					><span class="label-text font-medium">Telepon</span><input
 						class="input input-bordered w-full"
@@ -553,6 +729,70 @@
 						name="email"
 						value={selectedPegawai?.email ?? ''}
 						placeholder="Contoh: guru@sekolah.sch.id"
+					/></label
+				>
+				<label class="form-control gap-2 md:col-span-2"
+					><span class="label-text font-medium">Alamat</span><textarea
+						class="textarea textarea-bordered min-h-20 w-full"
+						name="alamat">{selectedPegawai?.alamat ?? ''}</textarea
+					></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Desa/Kelurahan</span><input
+						class="input input-bordered w-full"
+						name="desa"
+						value={selectedPegawai?.desa ?? ''}
+					/></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Kecamatan</span><input
+						class="input input-bordered w-full"
+						name="kecamatan"
+						value={selectedPegawai?.kecamatan ?? ''}
+					/></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Kabupaten/Kota</span><input
+						class="input input-bordered w-full"
+						name="kabupaten"
+						value={selectedPegawai?.kabupaten ?? ''}
+					/></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Provinsi</span><input
+						class="input input-bordered w-full"
+						name="provinsi"
+						value={selectedPegawai?.provinsi ?? ''}
+					/></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Kode Pos</span><input
+						class="input input-bordered w-full"
+						name="kodePos"
+						value={selectedPegawai?.kodePos ?? ''}
+						inputmode="numeric"
+					/></label
+				>
+				<div class="border-base-200 mt-2 md:col-span-2 border-b pb-2 font-bold">Kontak Darurat</div>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Nama Kontak</span><input
+						class="input input-bordered w-full"
+						name="kontakDaruratNama"
+						value={selectedPegawai?.kontakDaruratNama ?? ''}
+					/></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Hubungan</span><input
+						class="input input-bordered w-full"
+						name="kontakDaruratHubungan"
+						value={selectedPegawai?.kontakDaruratHubungan ?? ''}
+					/></label
+				>
+				<label class="form-control gap-2"
+					><span class="label-text font-medium">Telepon Darurat</span><input
+						class="input input-bordered w-full"
+						name="kontakDaruratTelepon"
+						value={selectedPegawai?.kontakDaruratTelepon ?? ''}
 					/></label
 				>
 				<label class="form-control gap-2 md:col-span-2"
@@ -573,15 +813,15 @@
 	<form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
-<dialog class="modal" bind:this={importDialog}>
-	<div class="modal-box max-w-lg">
+<dialog class="modal" bind:this={importDialog} onclose={resetImportPreview}>
+	<div class="modal-box max-h-[92vh] w-11/12 max-w-5xl overflow-y-auto">
 		<h3 class="text-lg font-bold">Import Data Pegawai</h3>
 		<p class="text-base-content/70 mt-1 text-sm">
-			Gunakan template Excel agar kolom terbaca rapi. NIP yang sama akan memperbarui data lama.
+			Periksa pratinjau sebelum menyimpan. Data lama dicocokkan melalui NIP, lalu NIK.
 		</p>
 		<form
 			method="POST"
-			action="?/importExcel"
+			action="?/previewImport"
 			use:enhance={importEnhance}
 			enctype="multipart/form-data"
 			class="mt-4 space-y-4"
@@ -591,10 +831,93 @@
 				type="file"
 				name="file"
 				accept=".xlsx"
+				onchange={resetImportPreview}
 				required
 			/>
+			<p class="text-base-content/55 text-xs">
+				Maksimal 5 MB dan 2.000 pegawai per file. Template delapan kolom lama tetap didukung.
+			</p>
+			{#if importError}
+				<div class="alert alert-error alert-soft text-sm">
+					<Icon name="warning" />
+					{importError}
+				</div>
+			{/if}
+			{#if importPreview}
+				<div class="border-base-200 rounded-md border">
+					<div class="border-base-200 grid grid-cols-2 gap-3 border-b p-3 sm:grid-cols-4">
+						<div>
+							<p class="text-base-content/55 text-xs">Total</p>
+							<p class="font-bold">{importPreview.total}</p>
+						</div>
+						<div>
+							<p class="text-base-content/55 text-xs">Data Baru</p>
+							<p class="text-success font-bold">{importPreview.baru}</p>
+						</div>
+						<div>
+							<p class="text-base-content/55 text-xs">Diperbarui</p>
+							<p class="text-info font-bold">{importPreview.perbarui}</p>
+						</div>
+						<div>
+							<p class="text-base-content/55 text-xs">Bermasalah</p>
+							<p class="text-error font-bold">{importPreview.bermasalah}</p>
+						</div>
+					</div>
+					{#if importPreview.legacyFormat}
+						<div class="alert alert-info alert-soft m-3 text-sm">
+							Format lama terdeteksi. Kolom biodata baru tidak akan dikosongkan.
+						</div>
+					{/if}
+					<div class="max-h-72 overflow-auto">
+						<table class="table-sm table min-w-[720px]">
+							<thead
+								><tr><th>Baris</th><th>Nama</th><th>NIP</th><th>Status</th><th>Keterangan</th></tr
+								></thead
+							>
+							<tbody>
+								{#each importPreview.rows as row (row.rowNumber)}
+									<tr>
+										<td>{row.rowNumber}</td>
+										<td class="font-medium">{row.nama || '-'}</td>
+										<td>{row.nip}</td>
+										<td
+											><span
+												class:badge-success={row.action === 'baru'}
+												class:badge-info={row.action === 'perbarui'}
+												class:badge-error={row.action === 'bermasalah'}
+												class="badge badge-soft">{row.action}</span
+											></td
+										>
+										<td class="text-error text-xs">{row.errors.join(' ') || '-'}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+					{#if importPreview.total > importPreview.rows.length}
+						<p class="text-base-content/55 border-base-200 border-t p-3 text-xs">
+							Pratinjau menampilkan 100 baris pertama.
+						</p>
+					{/if}
+				</div>
+			{/if}
 			<div class="modal-action">
-				<button class="btn btn-primary" type="submit"><Icon name="import" /> Import</button>
+				<button
+					class="btn btn-soft"
+					type="submit"
+					formaction="?/previewImport"
+					disabled={importBusy}
+				>
+					<Icon name="eye" /> Periksa Data
+				</button>
+				<button
+					class="btn btn-primary"
+					type="submit"
+					formaction="?/importExcel"
+					disabled={importBusy || !importPreview || importPreview.bermasalah > 0}
+				>
+					<Icon name="import" /> Simpan Import
+				</button>
 				<button class="btn" type="button" onclick={() => importDialog?.close()}>Batal</button>
 			</div>
 		</form>

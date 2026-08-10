@@ -10,6 +10,11 @@ import db from '$lib/server/db';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { tableJadwalJam, tableJadwalKegiatan, tableJadwalPelajaran } from '$lib/server/db/schema';
 import {
+	applyJadwalJamCopy,
+	planJadwalJamCopy,
+	type JadwalJamCopyRequest
+} from '$lib/server/jadwal-copy';
+import {
 	ensureDefaultJadwalFoundation,
 	inferKelasJadwalJenjang,
 	JADWAL_HARI,
@@ -20,9 +25,11 @@ import {
 	JADWAL_JENJANG_LABELS,
 	loadJadwalJam,
 	loadJadwalKegiatan,
+	normalizeJadwalJenis,
 	normalizeJadwalJenjang,
 	requireJadwalManageAccess,
-	selectJadwalContext
+	selectJadwalContext,
+	type JadwalHari
 } from '$lib/server/jadwal';
 import { fail, redirect } from '@sveltejs/kit';
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
@@ -96,33 +103,47 @@ async function resolveKegiatanDefaultName(
 async function findUsedMapelSlot(
 	sekolahId: number,
 	jenjang: (typeof JADWAL_JENJANG)[number],
-	slot: { hari: string; jamKe: number }
+	slot: { id: number }
 ) {
 	const rows = await db.query.tableJadwalPelajaran.findMany({
 		columns: { id: true },
 		where: and(
 			eq(tableJadwalPelajaran.sekolahId, sekolahId),
-			eq(tableJadwalPelajaran.hari, slot.hari),
-			eq(tableJadwalPelajaran.jamKe, slot.jamKe),
+			eq(tableJadwalPelajaran.jamId, slot.id),
 			isNotNull(tableJadwalPelajaran.jadwalMapelId)
 		),
 		with: { kelas: { columns: { nama: true, fase: true } } }
 	});
 	return rows.find((row) => row.kelas && inferKelasJadwalJenjang(row.kelas) === jenjang) ?? null;
 }
-async function findUsedSlot(sekolahId: number, slots: Array<{ hari: string; jamKe: number }>) {
-	for (const slot of slots) {
-		const used = await db.query.tableJadwalPelajaran.findFirst({
-			columns: { id: true },
-			where: and(
-				eq(tableJadwalPelajaran.sekolahId, sekolahId),
-				eq(tableJadwalPelajaran.hari, slot.hari),
-				eq(tableJadwalPelajaran.jamKe, slot.jamKe)
+async function findUsedSlot(
+	sekolahId: number,
+	slots: Array<{ id: number; hari: string; jamKe: number }>
+) {
+	if (!slots.length) return null;
+	const used = await db.query.tableJadwalPelajaran.findFirst({
+		columns: { jamId: true },
+		where: and(
+			eq(tableJadwalPelajaran.sekolahId, sekolahId),
+			inArray(
+				tableJadwalPelajaran.jamId,
+				slots.map((slot) => slot.id)
 			)
-		});
-		if (used) return slot;
-	}
-	return null;
+		)
+	});
+	return slots.find((slot) => slot.id === used?.jamId) ?? null;
+}
+
+function publicCopyPlan(plan: Awaited<ReturnType<typeof planJadwalJamCopy>>) {
+	return {
+		sourceCount: plan.sourceCount,
+		targetDayCount: plan.targetDayCount,
+		added: plan.added,
+		updated: plan.updated,
+		unchanged: plan.unchanged,
+		removed: plan.removed,
+		conflicts: plan.conflicts
+	};
 }
 
 export async function load({ locals, url }) {
@@ -257,11 +278,17 @@ export const actions = {
 			return fail(400, { fail: 'Data jam belum lengkap.' });
 		}
 
+		const context = await resolveFormContext(sekolahId, formData);
+		const { template } = await ensureDefaultJadwalFoundation(sekolahId, {
+			...context,
+			jenjang
+		});
 		const existing = await db.query.tableJadwalJam.findFirst({
 			columns: { id: true, hari: true, jamKe: true, tipe: true, aktif: true },
 			where: and(
 				eq(tableJadwalJam.id, jamId),
 				eq(tableJadwalJam.sekolahId, sekolahId),
+				eq(tableJadwalJam.templateId, template.id),
 				eq(tableJadwalJam.jenjang, jenjang)
 			)
 		});
@@ -314,11 +341,17 @@ export const actions = {
 		const jenjang = normalizeJadwalJenjang(formData.get('jenjang'));
 		const jamId = parsePositiveInteger(formData.get('jamId'));
 		if (!jamId) return fail(400, { fail: 'Jam jadwal belum dipilih.' });
+		const context = await resolveFormContext(sekolahId, formData);
+		const { template } = await ensureDefaultJadwalFoundation(sekolahId, {
+			...context,
+			jenjang
+		});
 		const slot = await db.query.tableJadwalJam.findFirst({
 			columns: { id: true, hari: true, jamKe: true },
 			where: and(
 				eq(tableJadwalJam.id, jamId),
 				eq(tableJadwalJam.sekolahId, sekolahId),
+				eq(tableJadwalJam.templateId, template.id),
 				eq(tableJadwalJam.jenjang, jenjang)
 			)
 		});
@@ -356,10 +389,16 @@ export const actions = {
 			.filter((value) => Number.isInteger(value) && value > 0);
 		const bulkAction = formData.get('bulkAction')?.toString();
 		if (!ids.length) return fail(400, { fail: 'Pilih minimal satu jam pelajaran.' });
+		const context = await resolveFormContext(sekolahId, formData);
+		const { template } = await ensureDefaultJadwalFoundation(sekolahId, {
+			...context,
+			jenjang
+		});
 		const selectedSlots = await db.query.tableJadwalJam.findMany({
 			columns: { id: true, hari: true, jamKe: true },
 			where: and(
 				eq(tableJadwalJam.sekolahId, sekolahId),
+				eq(tableJadwalJam.templateId, template.id),
 				eq(tableJadwalJam.jenjang, jenjang),
 				inArray(tableJadwalJam.id, ids)
 			)
@@ -404,6 +443,75 @@ export const actions = {
 
 		return fail(400, { fail: 'Aksi massal tidak dikenali.' });
 	},
+	copyJam: async ({ request, locals }) => {
+		requireJadwalManageAccess(locals.user);
+		const sekolahId = locals.sekolah?.id;
+		if (!sekolahId || !locals.user) return fail(401, { fail: 'Sesi tidak valid.' });
+		const formData = await request.formData();
+		const academic = await resolveSekolahAcademicContext(sekolahId);
+		const sourceContext = selectJadwalContext(academic, {
+			tahunAjaranId: formData.get('sourceTahunAjaranId')?.toString(),
+			jenis: formData.get('sourceJenis')?.toString()
+		});
+		const targetContext = selectJadwalContext(academic, {
+			tahunAjaranId: formData.get('targetTahunAjaranId')?.toString(),
+			jenis: formData.get('targetJenis')?.toString()
+		});
+		if (!sourceContext.tahunAjaranId || !targetContext.tahunAjaranId) {
+			return fail(400, { fail: 'Tahun ajaran sumber atau tujuan tidak valid.' });
+		}
+		const sourceHariRaw = formData.get('sourceHari')?.toString() ?? '';
+		const sourceHari = JADWAL_HARI_SET.has(sourceHariRaw) ? (sourceHariRaw as JadwalHari) : null;
+		const targetHari = formData
+			.getAll('targetHari')
+			.map((value) => value.toString())
+			.filter((value): value is JadwalHari => JADWAL_HARI_SET.has(value));
+		if (!sourceHari || !targetHari.length) {
+			return fail(400, { fail: 'Hari sumber dan minimal satu hari tujuan wajib dipilih.' });
+		}
+		const scope = formData.get('scope') === 'terpilih' ? 'terpilih' : 'semua';
+		const policy = formData.get('policy') === 'ganti' ? 'ganti' : 'gabung';
+		const copyRequest: JadwalJamCopyRequest = {
+			source: {
+				...sourceContext,
+				tahunAjaranId: sourceContext.tahunAjaranId,
+				jenis: normalizeJadwalJenis(sourceContext.jenis),
+				jenjang: normalizeJadwalJenjang(formData.get('sourceJenjang')),
+				hari: sourceHari
+			},
+			target: {
+				...targetContext,
+				tahunAjaranId: targetContext.tahunAjaranId,
+				jenis: normalizeJadwalJenis(targetContext.jenis),
+				jenjang: normalizeJadwalJenjang(formData.get('targetJenjang')),
+				hari: targetHari
+			},
+			scope,
+			policy,
+			selectedJamIds: formData
+				.getAll('selectedJamIds')
+				.map((value) => Number.parseInt(value.toString(), 10))
+				.filter((value) => Number.isInteger(value) && value > 0)
+		};
+		const intent = formData.get('intent') === 'apply' ? 'apply' : 'preview';
+		const plan =
+			intent === 'apply'
+				? await applyJadwalJamCopy(sekolahId, copyRequest)
+				: await planJadwalJamCopy(sekolahId, copyRequest);
+		const copyPreview = publicCopyPlan(plan);
+		if (plan.conflicts.length) {
+			return fail(400, {
+				fail: 'Penyalinan belum dapat dijalankan. Periksa konflik pada pratinjau.',
+				copyPreview,
+				copyRequest
+			});
+		}
+		if (intent === 'preview') return { copyPreview, copyRequest };
+		return {
+			message: `Susunan jam berhasil disalin ke ${plan.targetDayCount} hari. Ditambah: ${plan.added}, diperbarui: ${plan.updated}, dihapus: ${plan.removed}.`
+		};
+	},
+
 	createKegiatan: async ({ request, locals }) => {
 		requireJadwalManageAccess(locals.user);
 		const sekolahId = locals.sekolah?.id;

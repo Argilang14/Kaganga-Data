@@ -6,30 +6,34 @@ import {
 	tableJadwalPelajaran,
 	tableKelas,
 	tablePegawai,
+	tablePegawaiDokumen,
+	tablePegawaiPendidikan,
+	tablePegawaiPenugasan,
+	tablePegawaiRiwayat,
+	tablePegawaiSertifikasi,
 	tableSekolah
 } from '$lib/server/db/schema';
 import { fail, redirect } from '@sveltejs/kit';
-import { and, asc, eq, inArray, like, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, like, ne, or, sql } from 'drizzle-orm';
 import { authority } from '../../pengguna/utils.server';
 import type { Actions, PageServerLoad } from './$types';
+import {
+	parsePegawaiWorkbook,
+	PEGAWAI_JENIS,
+	PEGAWAI_STATUS,
+	buildPegawaiImportUpdatePayload,
+	resolvePegawaiImportRows,
+	type PegawaiJenis,
+	type PegawaiStatus
+} from '$lib/server/pegawai-excel';
+import { recordPegawaiHistory } from '$lib/server/pegawai-history';
 
-const JENIS_PEGAWAI = [
-	'guru',
-	'kepala_sekolah',
-	'operator',
-	'tu',
-	'kebersihan',
-	'keamanan',
-	'wali_asuh',
-	'wali_asrama',
-	'lainnya'
-] as const;
-
-const STATUS_PEGAWAI = ['aktif', 'nonaktif'] as const;
+const JENIS_PEGAWAI = PEGAWAI_JENIS;
+const STATUS_PEGAWAI = PEGAWAI_STATUS;
 const PEGAWAI_PER_PAGE = 20;
 
-type JenisPegawai = (typeof JENIS_PEGAWAI)[number];
-type StatusPegawai = (typeof STATUS_PEGAWAI)[number];
+type JenisPegawai = PegawaiJenis;
+type StatusPegawai = PegawaiStatus;
 
 function normalizeText(value: FormDataEntryValue | null) {
 	const text = value?.toString().trim() ?? '';
@@ -51,6 +55,32 @@ function parseStatus(value: FormDataEntryValue | string | null): StatusPegawai |
 	return STATUS_PEGAWAI.includes(raw as StatusPegawai) ? (raw as StatusPegawai) : null;
 }
 
+function normalizeDate(value: FormDataEntryValue | null) {
+	const date = normalizeText(value);
+	return date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
+}
+
+function isValidEmail(value: string | null) {
+	return !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+async function hasDuplicateIdentity(
+	sekolahId: number,
+	column: typeof tablePegawai.nip | typeof tablePegawai.nik,
+	value: string | null,
+	excludeId: number | null
+) {
+	if (!value || value === '-') return false;
+	const filters = [eq(tablePegawai.sekolahId, sekolahId), eq(column, value)];
+	if (excludeId) filters.push(ne(tablePegawai.id, excludeId));
+	const row = await db
+		.select({ id: tablePegawai.id })
+		.from(tablePegawai)
+		.where(and(...filters))
+		.limit(1);
+	return row.length > 0;
+}
+
 async function safeCountReferences(
 	label: string,
 	query: Promise<{ total: number }[]>
@@ -70,125 +100,158 @@ async function safeCountReferences(
 }
 
 async function countReferences(pegawaiId: number, sekolahId: number) {
-	const [sekolahRefs, waliKelasRefs, userRefs, jadwalMapelRefs, jadwalPelajaranRefs] =
-		await Promise.all([
-			safeCountReferences(
-				'sekolah',
-				db
-					.select({ total: sql<number>`count(*)` })
-					.from(tableSekolah)
-					.where(and(eq(tableSekolah.kepalaSekolahId, pegawaiId), eq(tableSekolah.id, sekolahId)))
-			),
-			safeCountReferences(
-				'kelas wali kelas',
-				db
-					.select({ total: sql<number>`count(*)` })
-					.from(tableKelas)
-					.where(
-						and(
-							eq(tableKelas.sekolahId, sekolahId),
-							or(
-								eq(tableKelas.waliKelasId, pegawaiId),
-								eq(tableKelas.waliAsramaId, pegawaiId),
-								eq(tableKelas.waliAsuhId, pegawaiId)
-							)
+	const [
+		sekolahRefs,
+		waliKelasRefs,
+		userRefs,
+		jadwalMapelRefs,
+		jadwalPelajaranRefs,
+		penugasanRefs,
+		pendidikanRefs,
+		sertifikasiRefs,
+		dokumenRefs,
+		riwayatRefs
+	] = await Promise.all([
+		safeCountReferences(
+			'sekolah',
+			db
+				.select({ total: sql<number>`count(*)` })
+				.from(tableSekolah)
+				.where(and(eq(tableSekolah.kepalaSekolahId, pegawaiId), eq(tableSekolah.id, sekolahId)))
+		),
+		safeCountReferences(
+			'kelas wali kelas',
+			db
+				.select({ total: sql<number>`count(*)` })
+				.from(tableKelas)
+				.where(
+					and(
+						eq(tableKelas.sekolahId, sekolahId),
+						or(
+							eq(tableKelas.waliKelasId, pegawaiId),
+							eq(tableKelas.waliAsramaId, pegawaiId),
+							eq(tableKelas.waliAsuhId, pegawaiId)
 						)
 					)
-			),
-			safeCountReferences(
-				'pengguna',
-				db
-					.select({ total: sql<number>`count(*)` })
-					.from(tableAuthUser)
-					.where(
-						and(eq(tableAuthUser.pegawaiId, pegawaiId), eq(tableAuthUser.sekolahId, sekolahId))
+				)
+		),
+		safeCountReferences(
+			'pengguna',
+			db
+				.select({ total: sql<number>`count(*)` })
+				.from(tableAuthUser)
+				.where(and(eq(tableAuthUser.pegawaiId, pegawaiId), eq(tableAuthUser.sekolahId, sekolahId)))
+		),
+		safeCountReferences(
+			'pengaturan mata pelajaran',
+			db
+				.select({ total: sql<number>`count(*)` })
+				.from(tableJadwalMapel)
+				.where(
+					and(
+						eq(tableJadwalMapel.guruPegawaiId, pegawaiId),
+						eq(tableJadwalMapel.sekolahId, sekolahId)
 					)
-			),
-			safeCountReferences(
-				'pengaturan mata pelajaran',
-				db
-					.select({ total: sql<number>`count(*)` })
-					.from(tableJadwalMapel)
-					.where(
-						and(
-							eq(tableJadwalMapel.guruPegawaiId, pegawaiId),
-							eq(tableJadwalMapel.sekolahId, sekolahId)
-						)
+				)
+		),
+		safeCountReferences(
+			'jadwal pelajaran',
+			db
+				.select({ total: sql<number>`count(*)` })
+				.from(tableJadwalPelajaran)
+				.where(
+					and(
+						eq(tableJadwalPelajaran.guruPegawaiId, pegawaiId),
+						eq(tableJadwalPelajaran.sekolahId, sekolahId)
 					)
-			),
-			safeCountReferences(
-				'jadwal pelajaran',
-				db
-					.select({ total: sql<number>`count(*)` })
-					.from(tableJadwalPelajaran)
-					.where(
-						and(
-							eq(tableJadwalPelajaran.guruPegawaiId, pegawaiId),
-							eq(tableJadwalPelajaran.sekolahId, sekolahId)
-						)
+				)
+		),
+		safeCountReferences(
+			'riwayat penugasan',
+			db
+				.select({ total: sql<number>`count(*)` })
+				.from(tablePegawaiPenugasan)
+				.where(
+					and(
+						eq(tablePegawaiPenugasan.pegawaiId, pegawaiId),
+						eq(tablePegawaiPenugasan.sekolahId, sekolahId)
 					)
-			)
-		]);
+				)
+		),
+		safeCountReferences(
+			'riwayat pendidikan',
+			db
+				.select({ total: sql<number>`count(*)` })
+				.from(tablePegawaiPendidikan)
+				.where(
+					and(
+						eq(tablePegawaiPendidikan.pegawaiId, pegawaiId),
+						eq(tablePegawaiPendidikan.sekolahId, sekolahId)
+					)
+				)
+		),
+		safeCountReferences(
+			'sertifikasi',
+			db
+				.select({ total: sql<number>`count(*)` })
+				.from(tablePegawaiSertifikasi)
+				.where(
+					and(
+						eq(tablePegawaiSertifikasi.pegawaiId, pegawaiId),
+						eq(tablePegawaiSertifikasi.sekolahId, sekolahId)
+					)
+				)
+		),
+		safeCountReferences(
+			'dokumen',
+			db
+				.select({ total: sql<number>`count(*)` })
+				.from(tablePegawaiDokumen)
+				.where(
+					and(
+						eq(tablePegawaiDokumen.pegawaiId, pegawaiId),
+						eq(tablePegawaiDokumen.sekolahId, sekolahId)
+					)
+				)
+		),
+		safeCountReferences(
+			'riwayat perubahan',
+			db
+				.select({ total: sql<number>`count(*)` })
+				.from(tablePegawaiRiwayat)
+				.where(
+					and(
+						eq(tablePegawaiRiwayat.pegawaiId, pegawaiId),
+						eq(tablePegawaiRiwayat.sekolahId, sekolahId)
+					)
+				)
+		)
+	]);
 
 	return {
 		sekolah: sekolahRefs[0]?.total ?? 0,
 		kelas: waliKelasRefs[0]?.total ?? 0,
 		pengguna: userRefs[0]?.total ?? 0,
-		jadwal: (jadwalMapelRefs[0]?.total ?? 0) + (jadwalPelajaranRefs[0]?.total ?? 0)
+		jadwal: (jadwalMapelRefs[0]?.total ?? 0) + (jadwalPelajaranRefs[0]?.total ?? 0),
+		riwayat:
+			(penugasanRefs[0]?.total ?? 0) +
+			(pendidikanRefs[0]?.total ?? 0) +
+			(sertifikasiRefs[0]?.total ?? 0) +
+			(dokumenRefs[0]?.total ?? 0),
+		audit: riwayatRefs[0]?.total ?? 0
 	};
 }
 function referenceTotal(refs: Awaited<ReturnType<typeof countReferences>>) {
-	return refs.sekolah + refs.kelas + refs.pengguna + refs.jadwal;
+	return refs.sekolah + refs.kelas + refs.pengguna + refs.jadwal + refs.riwayat;
 }
 
-async function parsePegawaiWorkbook(file: File) {
-	if (!file.size) return [];
-	const ExcelJSModule = await import('exceljs');
-	const ExcelJS = ExcelJSModule.default ?? ExcelJSModule;
-	const workbook = new ExcelJS.Workbook() as any;
-	await workbook.xlsx.load(await file.arrayBuffer());
-	const sheet = workbook.worksheets[0] as any;
-	if (!sheet) return [];
-
-	const rows: Array<{
-		nama: string;
-		nip: string;
-		jenis: JenisPegawai;
-		jabatan: string | null;
-		status: StatusPegawai;
-		telepon: string | null;
-		email: string | null;
-		catatan: string | null;
-	}> = [];
-
-	sheet.eachRow((row: any, rowNumber: number) => {
-		if (rowNumber === 1) return;
-		const get = (index: number) => row.getCell(index).text?.trim() ?? '';
-		const nama = get(1);
-		const nip = get(2);
-		if (!nama || !nip) return;
-		const jenisRaw = get(3) || 'guru';
-		const statusRaw = get(5) || 'aktif';
-		const jenis = parseJenis(jenisRaw);
-		const status = parseStatus(statusRaw);
-		if (!jenis || !status) {
-			throw new Error(
-				`Baris ${rowNumber}: jenis "${jenisRaw}" atau status "${statusRaw}" tidak valid.`
-			);
-		}
-		rows.push({
-			nama,
-			nip,
-			jenis,
-			jabatan: get(4) || null,
-			status,
-			telepon: get(6) || null,
-			email: get(7) || null,
-			catatan: get(8) || null
-		});
+async function preparePegawaiImport(file: File, sekolahId: number) {
+	const parsed = await parsePegawaiWorkbook(file);
+	const existingRows = await db.query.tablePegawai.findMany({
+		columns: { id: true, kodePegawai: true, nip: true, nik: true },
+		where: eq(tablePegawai.sekolahId, sekolahId)
 	});
-
-	return rows;
+	return { parsed, resolutions: resolvePegawaiImportRows(parsed, existingRows) };
 }
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -206,7 +269,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	const filters = [eq(tablePegawai.sekolahId, sekolahId)];
 	if (q) {
-		const searchFilter = or(like(tablePegawai.nama, `%${q}%`), like(tablePegawai.nip, `%${q}%`));
+		const searchFilter = or(
+			like(tablePegawai.nama, `%${q}%`),
+			like(tablePegawai.nip, `%${q}%`),
+			like(tablePegawai.nik, `%${q}%`)
+		);
 		if (searchFilter) filters.push(searchFilter);
 	}
 	if (JENIS_PEGAWAI.includes(jenis as JenisPegawai)) {
@@ -294,29 +361,94 @@ export const actions: Actions = {
 		const id = parseId(formData.get('id'));
 		const nama = normalizeText(formData.get('nama'));
 		const nip = normalizeText(formData.get('nip'));
+		const nik = normalizeText(formData.get('nik'));
+		const nuptk = normalizeText(formData.get('nuptk'));
 		const jenis = parseJenis(formData.get('jenis'));
 		const status = parseStatus(formData.get('status'));
+		const jenisKelaminRaw = normalizeText(formData.get('jenisKelamin'));
+		const jenisKelamin: 'laki-laki' | 'perempuan' | null =
+			jenisKelaminRaw === 'laki-laki' || jenisKelaminRaw === 'perempuan' ? jenisKelaminRaw : null;
+		const tempatLahir = normalizeText(formData.get('tempatLahir'));
+		const tanggalLahirRaw = normalizeText(formData.get('tanggalLahir'));
+		const tanggalLahir = normalizeDate(formData.get('tanggalLahir'));
+		const agama = normalizeText(formData.get('agama'));
+		const statusPerkawinan = normalizeText(formData.get('statusPerkawinan'));
 		const jabatan = normalizeText(formData.get('jabatan'));
 		const telepon = normalizeText(formData.get('telepon'));
 		const email = normalizeText(formData.get('email'));
+		const alamat = normalizeText(formData.get('alamat'));
+		const desa = normalizeText(formData.get('desa'));
+		const kecamatan = normalizeText(formData.get('kecamatan'));
+		const kabupaten = normalizeText(formData.get('kabupaten'));
+		const provinsi = normalizeText(formData.get('provinsi'));
+		const kodePos = normalizeText(formData.get('kodePos'));
+		const kontakDaruratNama = normalizeText(formData.get('kontakDaruratNama'));
+		const kontakDaruratHubungan = normalizeText(formData.get('kontakDaruratHubungan'));
+		const kontakDaruratTelepon = normalizeText(formData.get('kontakDaruratTelepon'));
+		const statusKepegawaian = normalizeText(formData.get('statusKepegawaian'));
+		const tanggalMulaiKerjaRaw = normalizeText(formData.get('tanggalMulaiKerja'));
+		const tanggalMulaiKerja = normalizeDate(formData.get('tanggalMulaiKerja'));
+		const unitPenempatan = normalizeText(formData.get('unitPenempatan'));
+		const pangkatGolongan = normalizeText(formData.get('pangkatGolongan'));
+		const nomorSk = normalizeText(formData.get('nomorSk'));
+		const tanggalSkRaw = normalizeText(formData.get('tanggalSk'));
+		const tanggalSk = normalizeDate(formData.get('tanggalSk'));
 		const catatan = normalizeText(formData.get('catatan'));
-
 		if (!nama || !nip) {
 			return fail(400, { fail: 'Nama dan NIP wajib diisi.' });
 		}
 		if (!jenis || !status) {
 			return fail(400, { fail: 'Jenis atau status pegawai tidak valid.' });
 		}
+		if (
+			(tanggalLahirRaw && !tanggalLahir) ||
+			(tanggalMulaiKerjaRaw && !tanggalMulaiKerja) ||
+			(tanggalSkRaw && !tanggalSk)
+		) {
+			return fail(400, { fail: 'Format tanggal pegawai tidak valid.' });
+		}
+		if (!isValidEmail(email)) return fail(400, { fail: 'Format email pegawai tidak valid.' });
+		if (telepon && !/^[0-9+() .-]{6,24}$/.test(telepon)) {
+			return fail(400, { fail: 'Format nomor telepon pegawai tidak valid.' });
+		}
+		if (await hasDuplicateIdentity(sekolahId, tablePegawai.nip, nip, id)) {
+			return fail(400, { fail: `NIP ${nip} sudah digunakan pegawai lain.` });
+		}
+		if (await hasDuplicateIdentity(sekolahId, tablePegawai.nik, nik, id)) {
+			return fail(400, { fail: `NIK ${nik} sudah digunakan pegawai lain.` });
+		}
 
 		const payload = {
 			sekolahId,
 			nama,
 			nip,
+			nik,
+			nuptk,
 			jenis,
 			jabatan,
 			status,
+			jenisKelamin,
+			tempatLahir,
+			tanggalLahir,
+			agama,
+			statusPerkawinan,
 			telepon,
 			email,
+			alamat,
+			desa,
+			kecamatan,
+			kabupaten,
+			provinsi,
+			kodePos,
+			kontakDaruratNama,
+			kontakDaruratHubungan,
+			kontakDaruratTelepon,
+			statusKepegawaian,
+			tanggalMulaiKerja,
+			unitPenempatan,
+			pangkatGolongan,
+			nomorSk,
+			tanggalSk,
 			catatan,
 			updatedAt: new Date().toISOString()
 		};
@@ -331,10 +463,38 @@ export const actions: Actions = {
 				.update(tablePegawai)
 				.set(payload)
 				.where(and(eq(tablePegawai.id, id), eq(tablePegawai.sekolahId, sekolahId)));
+			await recordPegawaiHistory({
+				sekolahId,
+				pegawaiId: id,
+				userId: Number(locals.user.id) || null,
+				aksi: 'perbarui',
+				bagian: 'biodata',
+				ringkasan: `Biodata ${nama} diperbarui.`
+			});
 			return { message: 'Data pegawai berhasil diperbarui.' };
 		}
 
-		await db.insert(tablePegawai).values({ ...payload, createdAt: new Date().toISOString() });
+		const inserted = await db
+			.insert(tablePegawai)
+			.values({ ...payload, createdAt: new Date().toISOString() })
+			.returning({ id: tablePegawai.id });
+		const insertedId = inserted[0]?.id;
+		if (insertedId) {
+			await db
+				.update(tablePegawai)
+				.set({ kodePegawai: `PGW-${String(insertedId).padStart(8, '0')}` })
+				.where(and(eq(tablePegawai.id, insertedId), eq(tablePegawai.sekolahId, sekolahId)));
+		}
+		if (insertedId) {
+			await recordPegawaiHistory({
+				sekolahId,
+				pegawaiId: insertedId,
+				userId: Number(locals.user.id) || null,
+				aksi: 'tambah',
+				bagian: 'biodata',
+				ringkasan: `Data pegawai ${nama} ditambahkan.`
+			});
+		}
 		return { message: 'Data pegawai berhasil ditambahkan.' };
 	},
 
@@ -354,6 +514,14 @@ export const actions: Actions = {
 			.update(tablePegawai)
 			.set({ status, updatedAt: new Date().toISOString() })
 			.where(and(eq(tablePegawai.id, id), eq(tablePegawai.sekolahId, sekolahId)));
+		await recordPegawaiHistory({
+			sekolahId,
+			pegawaiId: id,
+			userId: Number(locals.user.id) || null,
+			aksi: 'status',
+			bagian: 'kepegawaian',
+			ringkasan: status === 'aktif' ? 'Pegawai diaktifkan.' : 'Pegawai dinonaktifkan.'
+		});
 		return { message: status === 'aktif' ? 'Pegawai diaktifkan.' : 'Pegawai dinonaktifkan.' };
 	},
 
@@ -379,7 +547,8 @@ export const actions: Actions = {
 				refs.sekolah ? `${refs.sekolah} data sekolah` : null,
 				refs.kelas ? `${refs.kelas} penugasan wali kelas/asrama/asuh` : null,
 				refs.pengguna ? `${refs.pengguna} akun pengguna` : null,
-				refs.jadwal ? `${refs.jadwal} jadwal pelajaran` : null
+				refs.jadwal ? `${refs.jadwal} jadwal pelajaran` : null,
+				refs.riwayat ? `${refs.riwayat} data riwayat pegawai` : null
 			]
 				.filter(Boolean)
 				.join(', ');
@@ -438,9 +607,10 @@ export const actions: Actions = {
 		};
 	},
 
-	importExcel: async ({ request, locals }) => {
+	previewImport: async ({ request, locals }) => {
 		authority('sekolah_manage');
 		if (!locals.user) return fail(401, { fail: 'Sesi tidak valid.' });
+		await ensurePegawaiSchema();
 		const formData = await request.formData();
 		const file = formData.get('file');
 		if (!(file instanceof File) || !file.size) {
@@ -450,37 +620,122 @@ export const actions: Actions = {
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(400, { fail: 'Sekolah aktif tidak ditemukan.' });
 
-		let rows;
+		let prepared;
 		try {
-			rows = await parsePegawaiWorkbook(file);
+			prepared = await preparePegawaiImport(file, sekolahId);
 		} catch (error) {
 			return fail(400, {
 				fail: error instanceof Error ? error.message : 'File Excel pegawai tidak valid.'
 			});
 		}
-		if (!rows.length) return fail(400, { fail: 'Tidak ada data pegawai valid di file Excel.' });
+		const { parsed, resolutions } = prepared;
+		return {
+			preview: {
+				fileName: file.name,
+				legacyFormat: parsed.legacyFormat,
+				total: resolutions.length,
+				baru: resolutions.filter((item) => item.action === 'baru').length,
+				perbarui: resolutions.filter((item) => item.action === 'perbarui').length,
+				bermasalah: resolutions.filter((item) => item.action === 'bermasalah').length,
+				rows: resolutions.slice(0, 100).map(({ row, action }) => ({
+					rowNumber: row.rowNumber,
+					nama: row.values.nama,
+					nip: row.values.nip,
+					action,
+					errors: row.errors
+				}))
+			}
+		};
+	},
+
+	importExcel: async ({ request, locals }) => {
+		authority('sekolah_manage');
+		if (!locals.user) return fail(401, { fail: 'Sesi tidak valid.' });
+		await ensurePegawaiSchema();
+		const sekolahId = locals.sekolah?.id;
+		if (!sekolahId) return fail(400, { fail: 'Sekolah aktif tidak ditemukan.' });
+		const formData = await request.formData();
+		const file = formData.get('file');
+		if (!(file instanceof File) || !file.size) {
+			return fail(400, { fail: 'Pilih file Excel pegawai terlebih dahulu.' });
+		}
+
+		let prepared;
+		try {
+			prepared = await preparePegawaiImport(file, sekolahId);
+		} catch (error) {
+			return fail(400, {
+				fail: error instanceof Error ? error.message : 'File Excel pegawai tidak valid.'
+			});
+		}
+		const invalid = prepared.resolutions.filter((item) => item.action === 'bermasalah');
+		if (invalid.length) {
+			const examples = invalid
+				.slice(0, 5)
+				.map((item) => `baris ${item.row.rowNumber}: ${item.row.errors.join(' ')}`)
+				.join('; ');
+			return fail(400, {
+				fail: `Import dibatalkan karena ${invalid.length} baris bermasalah. ${examples}`
+			});
+		}
 
 		let inserted = 0;
 		let updated = 0;
-		const now = new Date().toISOString();
-		for (const row of rows) {
-			const existing =
-				row.nip !== '-'
-					? await db.query.tablePegawai.findFirst({
-							columns: { id: true },
-							where: and(eq(tablePegawai.sekolahId, sekolahId), eq(tablePegawai.nip, row.nip))
+		try {
+			await db.transaction(async (tx) => {
+				for (const resolution of prepared.resolutions) {
+					const now = new Date().toISOString();
+					if (resolution.existingId) {
+						await tx
+							.update(tablePegawai)
+							.set(
+								buildPegawaiImportUpdatePayload(
+									resolution.row.values,
+									prepared.parsed.providedColumns
+								)
+							)
+							.where(
+								and(
+									eq(tablePegawai.id, resolution.existingId),
+									eq(tablePegawai.sekolahId, sekolahId)
+								)
+							);
+						updated += 1;
+						continue;
+					}
+					const {
+						kodePegawai: _legacyCode,
+						nomorIndukPppk: _legacyPppk,
+						...importValues
+					} = resolution.row.values;
+					const created = await tx
+						.insert(tablePegawai)
+						.values({
+							sekolahId,
+							...importValues,
+							createdAt: now,
+							updatedAt: now
 						})
-					: null;
-			const payload = { sekolahId, ...row, updatedAt: now };
-			if (existing) {
-				await db.update(tablePegawai).set(payload).where(eq(tablePegawai.id, existing.id));
-				updated += 1;
-			} else {
-				await db.insert(tablePegawai).values({ ...payload, createdAt: now });
-				inserted += 1;
-			}
+						.returning({ id: tablePegawai.id });
+					const createdId = created[0]?.id;
+					if (createdId) {
+						await tx
+							.update(tablePegawai)
+							.set({ kodePegawai: `PGW-${String(createdId).padStart(8, '0')}` })
+							.where(and(eq(tablePegawai.id, createdId), eq(tablePegawai.sekolahId, sekolahId)));
+					}
+					inserted += 1;
+				}
+			});
+		} catch (error) {
+			console.error('[pegawai-import] Transaksi import gagal:', error);
+			return fail(400, {
+				fail: 'Import dibatalkan seluruhnya karena terjadi konflik data. Periksa kembali NIP dan NIK.'
+			});
 		}
 
-		return { message: `Import pegawai selesai. Baru: ${inserted}, diperbarui: ${updated}.` };
+		return {
+			message: `Import pegawai selesai. Baru: ${inserted}, diperbarui: ${updated}, gagal: 0.`
+		};
 	}
 };

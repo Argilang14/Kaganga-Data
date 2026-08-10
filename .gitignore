@@ -28,6 +28,8 @@ vite.config.ts.timestamp-*
 /.pnpm-store
 /.release-tests
 /dev-server-*.log
+/dev-server.out.log
+/dev-server.err.log
 /dev-server-*.pid
 /gh-auth.*.log
 /run-dev-*.cmd

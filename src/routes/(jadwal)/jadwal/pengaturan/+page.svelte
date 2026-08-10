@@ -45,14 +45,52 @@
 		jamList: JamRow[];
 		kegiatanList: KegiatanRow[];
 	};
+	type CopyPreview = {
+		sourceCount: number;
+		targetDayCount: number;
+		added: number;
+		updated: number;
+		unchanged: number;
+		removed: number;
+		conflicts: string[];
+	};
+	type CopyRequestState = {
+		source: {
+			tahunAjaranId: number;
+			jenis: JadwalJenis;
+			jenjang: JadwalJenjang;
+			hari: JadwalHari;
+		};
+		target: {
+			tahunAjaranId: number;
+			jenis: JadwalJenis;
+			jenjang: JadwalJenjang;
+			hari: JadwalHari[];
+		};
+		scope: 'semua' | 'terpilih';
+		policy: 'gabung' | 'ganti';
+	};
 
-	let { data, form }: { data: PageData; form?: { fail?: string; message?: string } } = $props();
+	let {
+		data,
+		form
+	}: {
+		data: PageData;
+		form?: {
+			fail?: string;
+			message?: string;
+			copyPreview?: CopyPreview;
+			copyRequest?: CopyRequestState;
+		};
+	} = $props();
 	let importDialog = $state<HTMLDialogElement | null>(null);
 	let jamDialog = $state<HTMLDialogElement | null>(null);
+	let copyDialog = $state<HTMLDialogElement | null>(null);
 	let kegiatanDialog = $state<HTMLDialogElement | null>(null);
 	let editingKegiatan = $state<KegiatanRow | null>(null);
 	let selectedJamIds = $state<number[]>([]);
 	let activeHariOverride = $state<JadwalHari | null>(null);
+	let copyScope = $state<'semua' | 'terpilih'>('semua');
 	const activeHari = $derived(activeHariOverride ?? data.selectedHari);
 	const failMessage = $derived(typeof form?.fail === 'string' ? form.fail : '');
 	const successMessage = $derived(typeof form?.message === 'string' ? form.message : '');
@@ -75,6 +113,16 @@
 		istirahat: 'Istirahat',
 		kosong: 'Kosong'
 	};
+	const exportJamHref = $derived(
+		resolve('/api/jadwal/jam/export') +
+			`?tahunAjaranId=${data.selectedContext.tahunAjaranId ?? ''}&jenis=${data.selectedContext.jenis}&jenjang=${data.selectedJenjang}`
+	);
+
+	$effect(() => {
+		if (!form?.copyPreview) return;
+		copyScope = form.copyRequest?.scope ?? 'semua';
+		queueMicrotask(() => copyDialog?.showModal());
+	});
 
 	const jpNumberBySlot = $derived.by(() => buildJpNumberBySlot(data.jamList));
 	function submitJenjangFilter(event: Event) {
@@ -214,7 +262,7 @@
 						>
 					</li>
 					<li>
-						<a href={resolve('/api/jadwal/jam/export')}><Icon name="export" /> Export Data</a>
+						<a href={exportJamHref}><Icon name="export" /> Export Konteks Aktif</a>
 					</li>
 				</ul>
 			</div>
@@ -315,6 +363,13 @@
 						</p>
 					</div>
 					<div class="flex flex-wrap items-center justify-end gap-2">
+						<button
+							class="btn btn-soft btn-sm shadow-none"
+							type="button"
+							onclick={() => copyDialog?.showModal()}
+						>
+							<Icon name="copy" /> Salin Susunan Jam
+						</button>
 						<form
 							method="POST"
 							action={`?/bulkJam&jenjang=${data.selectedJenjang}&hari=${activeHari}`}
@@ -641,6 +696,219 @@
 				<div class="modal-action md:col-span-2">
 					<button class="btn btn-primary" type="submit"><Icon name="plus" /> Tambah Jam</button>
 					<button class="btn" type="button" onclick={() => jamDialog?.close()}>Batal</button>
+				</div>
+			</form>
+		</div>
+		<form method="dialog" class="modal-backdrop"><button>Tutup</button></form>
+	</dialog>
+
+	<dialog class="modal" bind:this={copyDialog}>
+		<div class="modal-box max-w-5xl">
+			<h3 class="text-lg font-bold">Salin Susunan Jam</h3>
+			<p class="text-base-content/70 mt-1 text-sm">
+				Salin struktur waktu dan tipe slot tanpa menyalin mata pelajaran, guru, atau isi jadwal
+				kelas.
+			</p>
+			<form method="POST" action="?/copyJam" class="mt-5 space-y-5">
+				<div class="grid gap-4 lg:grid-cols-2">
+					<fieldset class="border-base-300 grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
+						<legend class="px-2 font-semibold">Sumber</legend>
+						<label class="form-control">
+							<span class="label-text mb-1">Tahun ajaran</span>
+							<select class="select select-bordered" name="sourceTahunAjaranId" required>
+								{#each data.tahunAjaranList as tahun (tahun.id)}
+									<option
+										value={tahun.id}
+										selected={tahun.id ===
+											(form?.copyRequest?.source.tahunAjaranId ??
+												data.selectedContext.tahunAjaranId)}>{tahun.nama}</option
+									>
+								{/each}
+							</select>
+						</label>
+						<label class="form-control">
+							<span class="label-text mb-1">Jenis jadwal</span>
+							<select class="select select-bordered" name="sourceJenis" required>
+								{#each data.jenisOptions as option (option.value)}
+									<option
+										value={option.value}
+										selected={option.value ===
+											(form?.copyRequest?.source.jenis ?? data.selectedContext.jenis)}
+										>{option.label}</option
+									>
+								{/each}
+							</select>
+						</label>
+						<label class="form-control">
+							<span class="label-text mb-1">Jenjang</span>
+							<select class="select select-bordered" name="sourceJenjang" required>
+								{#each data.jenjangOptions as option (option.value)}
+									<option
+										value={option.value}
+										selected={option.value ===
+											(form?.copyRequest?.source.jenjang ?? data.selectedJenjang)}
+										>{option.label}</option
+									>
+								{/each}
+							</select>
+						</label>
+						<label class="form-control">
+							<span class="label-text mb-1">Hari</span>
+							<select class="select select-bordered" name="sourceHari" required>
+								{#each hariOrder as hari (hari)}
+									<option
+										value={hari}
+										selected={hari === (form?.copyRequest?.source.hari ?? activeHari)}
+										>{data.hariLabels[hari]}</option
+									>
+								{/each}
+							</select>
+						</label>
+						<label class="form-control sm:col-span-2">
+							<span class="label-text mb-1">Cakupan</span>
+							<select class="select select-bordered" name="scope" bind:value={copyScope}>
+								<option value="semua">Seluruh susunan hari</option>
+								<option value="terpilih"
+									>Hanya slot yang dicentang ({selectedVisibleJamCount})</option
+								>
+							</select>
+						</label>
+						{#each selectedJamIds as jamId (jamId)}
+							<input type="hidden" name="selectedJamIds" value={jamId} />
+						{/each}
+					</fieldset>
+
+					<fieldset class="border-base-300 grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
+						<legend class="px-2 font-semibold">Tujuan</legend>
+						<label class="form-control">
+							<span class="label-text mb-1">Tahun ajaran</span>
+							<select class="select select-bordered" name="targetTahunAjaranId" required>
+								{#each data.tahunAjaranList as tahun (tahun.id)}
+									<option
+										value={tahun.id}
+										selected={tahun.id ===
+											(form?.copyRequest?.target.tahunAjaranId ??
+												data.selectedContext.tahunAjaranId)}>{tahun.nama}</option
+									>
+								{/each}
+							</select>
+						</label>
+						<label class="form-control">
+							<span class="label-text mb-1">Jenis jadwal</span>
+							<select class="select select-bordered" name="targetJenis" required>
+								{#each data.jenisOptions as option (option.value)}
+									<option
+										value={option.value}
+										selected={option.value ===
+											(form?.copyRequest?.target.jenis ?? data.selectedContext.jenis)}
+										>{option.label}</option
+									>
+								{/each}
+							</select>
+						</label>
+						<label class="form-control sm:col-span-2">
+							<span class="label-text mb-1">Jenjang</span>
+							<select class="select select-bordered" name="targetJenjang" required>
+								{#each data.jenjangOptions as option (option.value)}
+									<option
+										value={option.value}
+										selected={option.value ===
+											(form?.copyRequest?.target.jenjang ?? data.selectedJenjang)}
+										>{option.label}</option
+									>
+								{/each}
+							</select>
+						</label>
+						<div class="sm:col-span-2">
+							<div class="label-text mb-2">Hari tujuan</div>
+							<div class="flex flex-wrap gap-3">
+								{#each hariOrder as hari (hari)}
+									<label class="label cursor-pointer gap-2 p-0">
+										<input
+											class="checkbox checkbox-sm"
+											type="checkbox"
+											name="targetHari"
+											value={hari}
+											checked={form?.copyRequest?.target.hari?.includes(hari) ??
+												hari !== activeHari}
+										/>
+										<span>{data.hariLabels[hari]}</span>
+									</label>
+								{/each}
+							</div>
+						</div>
+						<label class="form-control sm:col-span-2">
+							<span class="label-text mb-1">Cara menyimpan</span>
+							<select class="select select-bordered" name="policy" required>
+								<option
+									value="gabung"
+									selected={(form?.copyRequest?.policy ?? 'gabung') === 'gabung'}
+									>Gabungkan dan perbarui slot yang sama</option
+								>
+								<option
+									value="ganti"
+									disabled={copyScope === 'terpilih'}
+									selected={form?.copyRequest?.policy === 'ganti'}
+									>Ganti seluruh susunan hari tujuan</option
+								>
+							</select>
+						</label>
+					</fieldset>
+				</div>
+
+				{#if form?.copyPreview}
+					<div class="border-base-300 rounded-lg border p-4">
+						<div class="font-semibold">Pratinjau Penyalinan</div>
+						<div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-6">
+							<div>
+								<div class="text-base-content/60 text-xs">Sumber</div>
+								<strong>{form.copyPreview.sourceCount}</strong>
+							</div>
+							<div>
+								<div class="text-base-content/60 text-xs">Hari tujuan</div>
+								<strong>{form.copyPreview.targetDayCount}</strong>
+							</div>
+							<div>
+								<div class="text-base-content/60 text-xs">Baru</div>
+								<strong>{form.copyPreview.added}</strong>
+							</div>
+							<div>
+								<div class="text-base-content/60 text-xs">Diperbarui</div>
+								<strong>{form.copyPreview.updated}</strong>
+							</div>
+							<div>
+								<div class="text-base-content/60 text-xs">Tetap</div>
+								<strong>{form.copyPreview.unchanged}</strong>
+							</div>
+							<div>
+								<div class="text-base-content/60 text-xs">Dihapus</div>
+								<strong>{form.copyPreview.removed}</strong>
+							</div>
+						</div>
+						{#if form.copyPreview.conflicts.length}
+							<div class="alert alert-error alert-soft mt-3">
+								<Icon name="warning" />
+								<div>
+									<div class="font-semibold">Konflik perlu diselesaikan</div>
+									{#each form.copyPreview.conflicts as conflict (conflict)}
+										<div class="text-sm">{conflict}</div>
+									{/each}
+								</div>
+							</div>
+						{/if}
+					</div>
+				{/if}
+
+				<div class="modal-action">
+					<button class="btn btn-soft" type="submit" name="intent" value="preview">
+						<Icon name="eye" /> Pratinjau
+					</button>
+					{#if form?.copyPreview && form.copyPreview.conflicts.length === 0}
+						<button class="btn btn-primary" type="submit" name="intent" value="apply">
+							<Icon name="copy" /> Terapkan Penyalinan
+						</button>
+					{/if}
+					<button class="btn" type="button" onclick={() => copyDialog?.close()}>Batal</button>
 				</div>
 			</form>
 		</div>

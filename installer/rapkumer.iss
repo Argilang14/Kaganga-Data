@@ -1,5 +1,5 @@
 #define AppName "Kaganga - Administrasi dan Informasi Data Sekolah"
-#define AppVersion "2.0.4"
+#define AppVersion "2.0.5"
 #define StagePath "..\\dist\\windows\\stage\\Rapkumer"
 
 [Setup]

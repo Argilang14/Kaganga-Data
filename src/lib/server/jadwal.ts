@@ -185,12 +185,12 @@ function templateNameForJenjang(jenjang: JadwalJenjang, context: TemplateContext
 	);
 }
 
-async function ensureTemplateForJenjang(
+export async function findJadwalJamTemplate(
 	sekolahId: number,
 	jenjang: JadwalJenjang,
 	params: TemplateContext = {}
 ) {
-	const now = new Date().toISOString();
+	await ensureJadwalKurikulumSchema();
 	const jenis = normalizeJadwalJenis(params.jenis);
 	const nama = templateNameForJenjang(jenjang, params);
 	const filters = [
@@ -200,10 +200,21 @@ async function ensureTemplateForJenjang(
 	];
 	if (params.tahunAjaranId)
 		filters.push(eq(tableJadwalTemplate.tahunAjaranId, params.tahunAjaranId));
-	let template = await db.query.tableJadwalTemplate.findFirst({
+	return db.query.tableJadwalTemplate.findFirst({
 		where: and(...filters),
 		orderBy: [asc(tableJadwalTemplate.id)]
 	});
+}
+
+export async function ensureTemplateForJenjang(
+	sekolahId: number,
+	jenjang: JadwalJenjang,
+	params: TemplateContext = {}
+) {
+	const now = new Date().toISOString();
+	const jenis = normalizeJadwalJenis(params.jenis);
+	const nama = templateNameForJenjang(jenjang, params);
+	let template = await findJadwalJamTemplate(sekolahId, jenjang, params);
 	let created = false;
 	if (!template) {
 		const result = await db

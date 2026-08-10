@@ -13,6 +13,7 @@
 		uniqueJadwalSlots
 	} from '$lib/jadwal-slots';
 	import { toast } from '$lib/components/toast.svelte';
+	import { calculateWeeklyJp, summarizeWeeklyJp } from '$lib/jadwal-jp';
 	import { buildJadwalSegments, type JadwalSegment } from '$lib/jadwal-segments';
 	import type { PageData } from './$types';
 
@@ -343,36 +344,31 @@
 			if (!kodeMeta.has(kode)) unknownCodes.add(kode);
 		}
 
-		const jpIssues: Array<{
-			kelas: string;
-			kode: string;
-			nama: string;
-			target: number;
-			actual: number;
-		}> = [];
-		for (const kelas of visibleKelas) {
-			const jenjang = kelasJenjang(kelas);
-			if (jenjang === 'semua') continue;
-			for (const item of mapelItems) {
-				const target = item.jpPerMinggu ?? 0;
-				if (target <= 0) continue;
-				if (item.jenjang !== 'semua' && item.jenjang !== jenjang) continue;
-				let actual = 0;
-				for (const hari of hariList) {
-					for (const slot of slotsForJenjang(hari, jenjang)) {
-						if (slot.tipe !== 'pelajaran') continue;
-						if (cells[keyFor(hari, slot.jamKe, kelas.id)] === item.kode) actual += 1;
-					}
-				}
-				if (actual !== target) {
-					jpIssues.push({ kelas: kelas.nama, kode: item.kode, nama: item.nama, target, actual });
-				}
-			}
-		}
+		const jpResults = calculateWeeklyJp({
+			classes: visibleKelas
+				.map((kelas) => ({ ...kelas, jenjang: kelasJenjang(kelas) }))
+				.filter((kelas) => kelas.jenjang !== 'semua'),
+			targets: mapelItems.map((item) => ({
+				kode: item.kode,
+				nama: item.nama,
+				jenjang: item.jenjang ?? 'semua',
+				jpPerMinggu: item.jpPerMinggu ?? 0
+			})),
+			slots: jadwalJam,
+			entries: Object.entries(cells)
+				.filter(([, kode]) => Boolean(kode))
+				.map(([key, kode]) => {
+					const [hari, jamKe, kelasId] = key.split('|');
+					return { hari, jamKe: Number(jamKe), kelasId: Number(kelasId), kode };
+				})
+		});
+		const jpIssues = jpResults.filter((result) => result.status !== 'tepat');
 
 		return {
 			filledSlots,
 			unknownCodes: [...unknownCodes],
+			jpResults,
+			jpSummary: summarizeWeeklyJp(jpResults),
 			jpIssues,
 			teacherConflicts,
 			visibleSlotTotal: visibleGroups.reduce(
@@ -386,6 +382,26 @@
 				0
 			)
 		};
+	});
+	const paletteJpStatus = $derived.by(() => {
+		const result = new Map<
+			string,
+			{ kurang: number; tepat: number; lebih: number; actual: number; target: number }
+		>();
+		for (const item of scheduleChecks.jpResults) {
+			const current = result.get(item.kode) ?? {
+				kurang: 0,
+				tepat: 0,
+				lebih: 0,
+				actual: 0,
+				target: 0
+			};
+			current[item.status] += 1;
+			current.actual += item.actual;
+			current.target += item.target;
+			result.set(item.kode, current);
+		}
+		return result;
 	});
 
 	$effect(() => {
@@ -873,7 +889,7 @@
 			const warnings = Array.isArray(result.warnings) ? result.warnings : [];
 			toast(
 				warnings.length
-					? `Jadwal tersimpan dengan ${warnings.length} peringatan bentrok guru.`
+					? `Jadwal tersimpan dengan ${warnings.length} peringatan jadwal.`
 					: 'Jadwal pelajaran tersimpan',
 				warnings.length ? 'warning' : 'success'
 			);
@@ -1032,6 +1048,17 @@
 						Pemeriksaan {activeJenjangName}: {scheduleChecks.filledSlots}/{scheduleChecks.visibleSlotTotal}
 						slot terisi.
 					</div>
+					<div class="mt-2 flex flex-wrap gap-2" aria-label="Ringkasan target JP mingguan">
+						<span class="badge badge-warning badge-sm">
+							Kurang {scheduleChecks.jpSummary.kurang}
+						</span>
+						<span class="badge badge-success badge-sm">
+							Tepat {scheduleChecks.jpSummary.tepat}
+						</span>
+						<span class="badge badge-error badge-sm">
+							Lebih {scheduleChecks.jpSummary.lebih}
+						</span>
+					</div>
 					{#if scheduleChecks.unknownCodes.length}
 						<div class="mt-1">Kode belum dikenal: {scheduleChecks.unknownCodes.join(', ')}</div>
 					{/if}
@@ -1047,8 +1074,19 @@
 					{#if scheduleChecks.jpIssues.length}
 						<div class="mt-1 grid gap-1 md:grid-cols-2">
 							{#each scheduleChecks.jpIssues.slice(0, 6) as issue (`${issue.kelas}-${issue.kode}`)}
-								<div>
-									{issue.kelas} - {issue.kode}: {issue.actual}/{issue.target} JP
+								<div class="flex items-center gap-2">
+									<span
+										class="badge badge-xs"
+										class:badge-warning={issue.status === 'kurang'}
+										class:badge-error={issue.status === 'lebih'}
+									>
+										{issue.status === 'kurang' ? 'Kurang' : 'Lebih'}
+									</span>
+									<span>
+										{issue.kelas} - {issue.kode}: {issue.actual}/{issue.target} JP ({Math.abs(
+											issue.difference
+										)} JP)
+									</span>
 								</div>
 							{/each}
 						</div>
@@ -1239,6 +1277,7 @@
 					</label>
 					<div class="max-h-[calc(100vh-19rem)] space-y-1 overflow-y-auto pr-1">
 						{#each visiblePaletteItems as item (`${item.source}-${item.id}`)}
+							{@const jpState = item.source === 'mapel' ? paletteJpStatus.get(item.kode) : null}
 							<button
 								class="palette-item"
 								type="button"
@@ -1254,9 +1293,31 @@
 									<span class="block leading-tight font-bold">{item.kode}</span>
 									<span class="text-base-content/70 block truncate text-xs">{item.nama}</span>
 								</span>
-								{#if item.detail}<span class="badge badge-outline max-w-16 truncate text-[10px]"
-										>{item.detail}</span
-									>{/if}
+								<span class="flex max-w-24 shrink-0 flex-col items-end gap-1">
+									{#if jpState}
+										<span
+											class="badge badge-sm whitespace-nowrap text-[10px]"
+											class:badge-warning={jpState.kurang > 0}
+											class:badge-error={jpState.kurang === 0 && jpState.lebih > 0}
+											class:badge-success={jpState.kurang === 0 && jpState.lebih === 0}
+											title={`Total ${jpState.actual}/${jpState.target} JP pada kelas yang tampil`}
+										>
+											{jpState.kurang > 0
+												? `${jpState.kurang} kurang`
+												: jpState.lebih > 0
+													? `${jpState.lebih} lebih`
+													: 'Sesuai'}
+										</span>
+									{/if}
+									{#if item.detail}
+										<span
+											class="text-base-content/60 max-w-24 truncate text-[10px]"
+											title={item.detail}
+										>
+											{item.detail}
+										</span>
+									{/if}
+								</span>
 							</button>
 						{:else}
 							<div class="border-base-200 text-base-content/60 rounded-lg border p-3 text-sm">

@@ -6,6 +6,7 @@ import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { asc, eq } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
+import { addPegawaiInfoSheet, configurePegawaiSheet } from '$lib/server/pegawai-excel';
 
 export const GET: RequestHandler = async ({ locals }) => {
 	await ensurePegawaiSchema();
@@ -22,30 +23,42 @@ export const GET: RequestHandler = async ({ locals }) => {
 	});
 	const workbook: any = new ExcelJS.Workbook();
 	const sheet: any = workbook.addWorksheet('Pegawai');
-	sheet.columns = [
-		{ header: 'Nama', key: 'nama', width: 28 },
-		{ header: 'NIP', key: 'nip', width: 22 },
-		{ header: 'Jenis', key: 'jenis', width: 18 },
-		{ header: 'Jabatan', key: 'jabatan', width: 28 },
-		{ header: 'Status', key: 'status', width: 14 },
-		{ header: 'Telepon', key: 'telepon', width: 18 },
-		{ header: 'Email', key: 'email', width: 26 },
-		{ header: 'Catatan', key: 'catatan', width: 34 }
-	];
+	configurePegawaiSheet(sheet);
 	for (const row of rows) {
 		sheet.addRow({
 			nama: row.nama,
 			nip: row.nip,
+			nik: row.nik ?? '',
+			nuptk: row.nuptk ?? '',
 			jenis: row.jenis,
 			jabatan: row.jabatan ?? '',
 			status: row.status,
+			jenisKelamin: row.jenisKelamin ?? '',
+			tempatLahir: row.tempatLahir ?? '',
+			tanggalLahir: row.tanggalLahir ?? '',
+			agama: row.agama ?? '',
+			statusPerkawinan: row.statusPerkawinan ?? '',
 			telepon: row.telepon ?? '',
 			email: row.email ?? '',
+			alamat: row.alamat ?? '',
+			desa: row.desa ?? '',
+			kecamatan: row.kecamatan ?? '',
+			kabupaten: row.kabupaten ?? '',
+			provinsi: row.provinsi ?? '',
+			kodePos: row.kodePos ?? '',
+			kontakDaruratNama: row.kontakDaruratNama ?? '',
+			kontakDaruratHubungan: row.kontakDaruratHubungan ?? '',
+			kontakDaruratTelepon: row.kontakDaruratTelepon ?? '',
+			statusKepegawaian: row.statusKepegawaian ?? '',
+			tanggalMulaiKerja: row.tanggalMulaiKerja ?? '',
+			unitPenempatan: row.unitPenempatan ?? '',
+			pangkatGolongan: row.pangkatGolongan ?? '',
+			nomorSk: row.nomorSk ?? '',
+			tanggalSk: row.tanggalSk ?? '',
 			catatan: row.catatan ?? ''
 		});
 	}
-	sheet.getRow(1).font = { bold: true };
-	sheet.views = [{ state: 'frozen', ySplit: 1 }];
+	addPegawaiInfoSheet(workbook);
 
 	const buffer = await workbook.xlsx.writeBuffer();
 	return new Response(buffer as unknown as BodyInit, {

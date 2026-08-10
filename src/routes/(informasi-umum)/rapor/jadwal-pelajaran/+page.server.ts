@@ -13,6 +13,7 @@ import {
 	mapelSesuaiJenjang,
 	selectJadwalContext
 } from '$lib/server/jadwal';
+import { calculateWeeklyJp, summarizeWeeklyJp } from '$lib/jadwal-jp';
 import db from '$lib/server/db';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { ensureJadwalBellSchema } from '$lib/server/db/ensure-jadwal-bell';
@@ -339,7 +340,7 @@ export const actions: Actions = {
 		const [kelasRows, mapelRows, kegiatanRows, jamRows] = await Promise.all([
 			db.query.tableKelas.findMany({
 				where: eq(tableKelas.sekolahId, sekolahId),
-				columns: { id: true, nama: true, fase: true }
+				columns: { id: true, nama: true, fase: true, semesterId: true }
 			}),
 			db.query.tableJadwalMapel.findMany({
 				where: eq(tableJadwalMapel.sekolahId, sekolahId),
@@ -349,6 +350,7 @@ export const actions: Actions = {
 					nama: true,
 					jenjang: true,
 					aktif: true,
+					jpPerMinggu: true,
 					guruPegawaiId: true
 				},
 				with: { guru: { columns: { nama: true } } }
@@ -495,6 +497,36 @@ export const actions: Actions = {
 					'.'
 			);
 		}
+		const jpResults = calculateWeeklyJp({
+			classes: kelasRows
+				.filter((kelas) => kelas.semesterId === scheduleSemesterId)
+				.map((kelas) => ({
+					id: kelas.id,
+					nama: kelas.nama,
+					jenjang: inferKelasJadwalJenjang(kelas)
+				})),
+			targets: mapelRows
+				.filter((mapel) => mapel.aktif)
+				.map((mapel) => ({
+					kode: AGAMA_MAPEL_NAMES.has(mapel.nama) ? 'PAPB' : normalizeJadwalKode(mapel.kode),
+					nama: mapel.nama,
+					jenjang: mapel.jenjang,
+					jpPerMinggu: mapel.jpPerMinggu ?? 0
+				})),
+			slots: jamRows,
+			entries: resolved.map((entry) => ({
+				hari: entry.hari,
+				jamKe: entry.jamKe,
+				kelasId: entry.kelasId,
+				kode: entry.kodeKegiatan
+			}))
+		});
+		const jpSummary = summarizeWeeklyJp(jpResults);
+		if (jpSummary.kurang || jpSummary.lebih) {
+			warnings.push(
+				`Target JP mingguan: ${jpSummary.kurang} kurang, ${jpSummary.tepat} tepat, ${jpSummary.lebih} lebih.`
+			);
+		}
 
 		await ensureJadwalBellSchema();
 		await ensureJadwalKurikulumSchema();
@@ -531,6 +563,7 @@ export const actions: Actions = {
 		return {
 			message: 'Jadwal pelajaran tersimpan',
 			warnings,
+			jpSummary,
 			savedEntries: resolved.map(({ hari, jamKe, kelasId, kodeKegiatan }) => ({
 				hari,
 				jamKe,

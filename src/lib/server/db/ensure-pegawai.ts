@@ -1,42 +1,14 @@
 import db from '$lib/server/db';
+import { ensurePegawaiFoundation } from './pegawai-foundation';
 
-let ensured = false;
-
-async function hasColumn(table: string, column: string) {
-	const result = await db.$client.execute(`PRAGMA table_info("${table}")`);
-	return result.rows.some((row) => String(row.name) === column);
-}
-
-async function addColumnIfMissing(table: string, column: string, type: string) {
-	if (await hasColumn(table, column)) return;
-	await db.$client.execute(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${type}`);
-}
+let ensurePromise: Promise<void> | null = null;
 
 export async function ensurePegawaiSchema() {
-	if (ensured) return;
-
-	await addColumnIfMissing('pegawai', 'sekolah_id', 'INTEGER');
-	await addColumnIfMissing('pegawai', 'jenis', "TEXT NOT NULL DEFAULT 'guru'");
-	await addColumnIfMissing('pegawai', 'jabatan', 'TEXT');
-	await addColumnIfMissing('pegawai', 'status', "TEXT NOT NULL DEFAULT 'aktif'");
-	await addColumnIfMissing('pegawai', 'telepon', 'TEXT');
-	await addColumnIfMissing('pegawai', 'email', 'TEXT');
-	await addColumnIfMissing('pegawai', 'catatan', 'TEXT');
-
-	// Kaitkan data pegawai lama ke sekolah tanpa membuat pegawai atau akun baru.
-	await db.$client.execute(`
-		UPDATE pegawai
-		SET sekolah_id = COALESCE(
-			(SELECT s.id FROM sekolah s WHERE s.kepala_sekolah_id = pegawai.id LIMIT 1),
-			(SELECT au.sekolah_id FROM auth_user au WHERE au.pegawai_id = pegawai.id AND au.sekolah_id IS NOT NULL LIMIT 1),
-			(SELECT k.sekolah_id FROM kelas k WHERE k.wali_kelas_id = pegawai.id AND k.sekolah_id IS NOT NULL LIMIT 1),
-			(SELECT id FROM sekolah WHERE (SELECT COUNT(*) FROM sekolah) = 1 LIMIT 1)
-		)
-		WHERE sekolah_id IS NULL
-	`);
-	await db.$client.execute('CREATE INDEX IF NOT EXISTS pegawai_sekolah_idx ON pegawai(sekolah_id)');
-	await db.$client.execute('CREATE INDEX IF NOT EXISTS pegawai_jenis_idx ON pegawai(jenis)');
-	await db.$client.execute('CREATE INDEX IF NOT EXISTS pegawai_status_idx ON pegawai(status)');
-
-	ensured = true;
+	if (!ensurePromise) {
+		ensurePromise = ensurePegawaiFoundation(db.$client).catch((error) => {
+			ensurePromise = null;
+			throw error;
+		});
+	}
+	await ensurePromise;
 }

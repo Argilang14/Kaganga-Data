@@ -1,9 +1,8 @@
 import '$lib/server/load-env';
-import { applySessionCookie, ensureDefaultAdmin, resolveSession } from '$lib/server/auth';
+import { applySessionCookie, resolveSession } from '$lib/server/auth';
 import db from '$lib/server/db';
 import { tableSekolah } from '$lib/server/db/schema';
-import { ensureCoreSchema } from '$lib/server/db/ensure-core-schema';
-import { ensurePegawaiSchema } from '$lib/server/db/ensure-pegawai';
+import { runStartupEnsures } from '$lib/server/db/ensure-bootstrap';
 import { isSecureRequest, resolveRequestProtocol } from '$lib/server/http';
 import { cookieNames } from '$lib/utils';
 import { error, redirect, type Handle } from '@sveltejs/kit';
@@ -13,8 +12,6 @@ import {
 	readCombinedOriginsFromEnvAndFile,
 	normalizeOrigin as normalizeFileOrigin
 } from '$lib/server/csrf-origins';
-import { ensureJadwalBellSchema } from '$lib/server/db/ensure-jadwal-bell';
-import { ensurePresensiSettingsSchema } from '$lib/server/db/ensure-presensi-settings';
 import { startBellScheduler } from '$lib/server/bell-scheduler';
 import { canLegacyWaliKelasAccess, isLegacyWaliKelas } from '$lib/server/legacy-wali-kelas';
 
@@ -120,8 +117,6 @@ const csrfGuard: Handle = async ({ event, resolve }) => {
 
 const PUBLIC_ROUTE_IDS = new Set(['/login', '/logout']);
 
-let ensureDefaultAdminResolved = false;
-
 function resolveRedirectTarget(value: string | null) {
 	if (!value) return null;
 	if (!value.startsWith('/')) return null;
@@ -130,14 +125,7 @@ function resolveRedirectTarget(value: string | null) {
 }
 
 const authGuard: Handle = async ({ event, resolve }) => {
-	if (!ensureDefaultAdminResolved) {
-		await ensureCoreSchema();
-		await ensurePegawaiSchema();
-		await ensureJadwalBellSchema();
-		await ensurePresensiSettingsSchema();
-		await ensureDefaultAdmin();
-		ensureDefaultAdminResolved = true;
-	}
+	await runStartupEnsures();
 
 	const sessionToken = event.cookies.get(cookieNames.AUTH_SESSION);
 	const resolvedProtocol = resolveRequestProtocol(event.request, event.url);

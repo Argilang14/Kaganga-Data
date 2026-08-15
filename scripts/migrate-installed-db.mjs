@@ -74,6 +74,53 @@ function runCapture(cmd, args, opts = {}) {
 	return res;
 }
 
+function resolveFileDatabasePath(dbUrl) {
+	if (!String(dbUrl).startsWith('file:')) return null;
+	const rawPath = String(dbUrl).replace(/^file:/, '');
+	return path.isAbsolute(rawPath) ? rawPath : path.resolve(process.cwd(), rawPath);
+}
+
+function quoteSqlitePath(filePath) {
+	return filePath.replaceAll('\\', '/').replaceAll("'", "''");
+}
+
+async function backupBeforeMigration(dbUrl) {
+	const databasePath = resolveFileDatabasePath(dbUrl);
+	if (!databasePath || !fs.existsSync(databasePath)) return null;
+
+	const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+	const backupPath = path.join(
+		path.dirname(databasePath),
+		`database-backup-before-migration-${timestamp}.sqlite3`
+	);
+	const { createClient } = await import('@libsql/client');
+	const client = createClient({ url: dbUrl });
+	try {
+		try {
+			await client.execute('PRAGMA wal_checkpoint(FULL)');
+		} catch {
+			// VACUUM INTO tetap membuat snapshot konsisten bila database tidak memakai WAL.
+		}
+		await client.execute(`VACUUM INTO '${quoteSqlitePath(backupPath)}'`);
+	} finally {
+		if (typeof client.close === 'function') await client.close();
+	}
+
+	const backupClient = createClient({ url: `file:${backupPath}` });
+	try {
+		const result = await backupClient.execute('PRAGMA quick_check');
+		const check = String(
+			result.rows[0]?.quick_check ?? Object.values(result.rows[0] ?? {})[0] ?? ''
+		);
+		if (check.toLowerCase() !== 'ok') throw new Error(`Backup migrasi tidak sehat: ${check}`);
+	} finally {
+		if (typeof backupClient.close === 'function') await backupClient.close();
+	}
+
+	console.info('[migrate-installed-db] Backup sebelum migrasi:', backupPath);
+	return backupPath;
+}
+
 async function main() {
 	// project root (assume script is in scripts/)
 	// Use fileURLToPath to get a correct Windows path (avoid leading slash like /C:/...)
@@ -118,6 +165,9 @@ async function main() {
 
 	// prepare env for child processes
 	const childEnv = { ...process.env, DB_URL: dbPath };
+
+	// Migrasi tidak boleh dimulai tanpa snapshot konsisten dari database yang sudah ada.
+	await backupBeforeMigration(dbPath);
 
 	// Locate local drizzle-kit binary if present
 	// Note: drizzle-kit is a devDependency and may not be available in production builds.

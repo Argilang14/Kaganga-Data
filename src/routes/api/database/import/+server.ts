@@ -1,190 +1,144 @@
 import { env } from '$env/dynamic/private';
-import { error, json } from '@sveltejs/kit';
-import { copyFile, mkdir, stat, writeFile, unlink } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
-import { closeDbClient, reloadDbClient } from '$lib/server/db';
-import { execFile } from 'node:child_process';
-import { cookieNames } from '$lib/utils';
 import { resolveSession } from '$lib/server/auth';
+import db, { closeDbClient, reloadDbClient } from '$lib/server/db';
+import {
+	createConsistentDatabaseBackup,
+	inspectDatabaseFile
+} from '$lib/server/db/database-safety';
+import { resetStartupEnsures, runStartupEnsures } from '$lib/server/db/ensure-bootstrap';
+import { cookieNames } from '$lib/utils';
+import { error, json } from '@sveltejs/kit';
+import { execFile } from 'node:child_process';
+import { copyFile, mkdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 
 const DEFAULT_DB_URL = 'file:./data/database.sqlite3';
 
 function resolveDatabasePath(url: string) {
-	if (url.startsWith('file:')) {
-		const cleaned = url.replace(/^file:/, '');
-		return resolve(process.cwd(), cleaned);
-	}
+	if (!url.startsWith('file:')) throw error(500, 'Database URL tidak didukung untuk import');
+	return resolve(process.cwd(), url.replace(/^file:/, ''));
+}
 
-	throw error(500, 'Database URL tidak didukung untuk import');
+function runMigration(databasePath: string) {
+	const scriptPath = resolve(process.cwd(), 'scripts', 'migrate-installed-db.mjs');
+	return new Promise<void>((resolvePromise, rejectPromise) => {
+		execFile(
+			process.execPath,
+			[scriptPath],
+			{
+				cwd: process.cwd(),
+				env: {
+					...process.env,
+					DB_URL: `file:${databasePath}`,
+					KAGANGA_SKIP_DRIZZLE: '1'
+				},
+				maxBuffer: 10 * 1024 * 1024,
+				windowsHide: true
+			},
+			(cause, stdout, stderr) => {
+				if (stdout.trim()) console.info('[database-import migration]', stdout.trim());
+				if (stderr.trim()) console.warn('[database-import migration]', stderr.trim());
+				if (cause) rejectPromise(cause);
+				else resolvePromise();
+			}
+		);
+	});
+}
+
+async function removeDatabaseCompanions(databasePath: string) {
+	await Promise.all(
+		['-wal', '-shm'].map((suffix) => unlink(databasePath + suffix).catch(() => {}))
+	);
 }
 
 export async function POST({ request, cookies }) {
+	const existingToken = cookies.get(cookieNames.AUTH_SESSION);
+	const resolvedSession = existingToken
+		? await resolveSession(existingToken).catch(() => null)
+		: null;
+	if (resolvedSession?.user.type !== 'admin') throw error(403, 'Akses ditolak');
+
 	const formData = await request.formData();
 	const file = formData.get('database');
-	console.log('[database-import] menerima permintaan import');
+	if (!(file instanceof File)) throw error(400, 'Berkas database tidak ditemukan');
+	if (file.size === 0) throw error(400, 'Berkas database kosong');
 
-	// Preserve admin access across the DB swap: verify the caller is an admin
-	// using the currently-open DB before we overwrite it. After the import we
-	// will create a fresh session in the newly-imported DB so the client stays
-	// authenticated.
-	const existingToken = cookies?.get?.(cookieNames.AUTH_SESSION);
-	if (!existingToken) {
-		console.warn('[database-import] tidak ada cookie sesi pada permintaan');
-		throw error(403, 'Akses ditolak');
-	}
-	const resolved = await resolveSession(existingToken).catch((e) => {
-		console.warn('[database-import] gagal memverifikasi sesi sebelum import', e);
-		return null;
-	});
-	if (!resolved || !resolved.user || resolved.user.type !== 'admin') {
-		console.warn('[database-import] user tidak memiliki izin admin');
-		throw error(403, 'Akses ditolak');
-	}
+	const databasePath = resolveDatabasePath(env.DB_URL ?? process.env.DB_URL ?? DEFAULT_DB_URL);
+	const databaseDirectory = dirname(databasePath);
+	const tempPath = join(databaseDirectory, `database-import-temp-${Date.now()}.sqlite3`);
+	let backupPath: string | null = null;
+	let databaseSwapStarted = false;
 
-	if (!(file instanceof File)) {
-		console.warn('[database-import] gagal: field database tidak ditemukan dalam formData');
-		throw error(400, 'Berkas database tidak ditemukan');
-	}
-
-	if (file.size === 0) {
-		console.warn('[database-import] gagal: berkas kosong');
-		throw error(400, 'Berkas database kosong');
-	}
-
-	console.log('[database-import] ukuran berkas', file.size, 'byte');
-
-	const dbUrl = env.DB_URL ?? DEFAULT_DB_URL;
-	const dbPath = resolveDatabasePath(dbUrl);
-	const dbDir = dirname(dbPath);
-
-	await mkdir(dbDir, { recursive: true });
-
-	// Read uploaded file into buffer
-	const uploadedBuffer = Buffer.from(await file.arrayBuffer());
-
-	// Verify buffer length matches expected file size
-	if (uploadedBuffer.length !== file.size) {
-		console.error(
-			'[database-import] ukuran buffer tidak sesuai:',
-			uploadedBuffer.length,
-			'(expected:',
-			file.size,
-			')'
-		);
-		throw error(500, 'Berkas database tidak lengkap');
-	}
-
-	if (uploadedBuffer.length < 100) {
-		console.error('[database-import] buffer terlalu kecil, bukan database SQLite yang valid');
-		throw error(500, 'Berkas database tidak valid');
-	}
-
-	// Write to a temp file first, then atomically replace the target.
-	// This prevents partial writes if the server crashes mid-import.
-	const tempPath = join(dbDir, `database-import-temp-${Date.now()}.sqlite3`);
+	await mkdir(databaseDirectory, { recursive: true });
 	try {
+		const uploadedBuffer = Buffer.from(await file.arrayBuffer());
+		if (uploadedBuffer.length !== file.size || uploadedBuffer.length < 100) {
+			throw error(400, 'Berkas database tidak valid atau tidak lengkap');
+		}
 		await writeFile(tempPath, uploadedBuffer);
-		const writtenStat = await stat(tempPath);
-		if (writtenStat.size !== uploadedBuffer.length) {
-			throw error(500, 'Gagal menulis berkas database: ukuran tidak sesuai');
+		if ((await stat(tempPath)).size !== uploadedBuffer.length) {
+			throw error(500, 'Gagal menulis berkas database secara utuh');
 		}
-	} catch (cause) {
-		await unlink(tempPath).catch(() => {});
-		throw error(500, 'Gagal menyimpan berkas database');
-	}
 
-	const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-	const backupPath = join(dbDir, `database-backup-before-import-${timestamp}.sqlite3`);
+		// Tolak berkas rusak atau database lain sebelum database aktif disentuh.
+		await inspectDatabaseFile(tempPath, { requireKagangaTables: true });
+		backupPath = await createConsistentDatabaseBackup({
+			client: db.$client,
+			databasePath,
+			label: 'before-import'
+		});
 
-	// Close the current DB client so no process holds a WAL lock
-	await closeDbClient();
+		databaseSwapStarted = true;
+		await closeDbClient();
+		await removeDatabaseCompanions(databasePath);
+		await unlink(databasePath).catch(() => {});
+		await rename(tempPath, databasePath);
 
-	// Backup current database (if exists)
-	try {
-		await copyFile(dbPath, backupPath);
-	} catch (cause) {
-		const errorCode = (cause as NodeJS.ErrnoException | undefined)?.code;
-		if (errorCode && errorCode !== 'ENOENT') {
-			console.error('[database-import] gagal membuat backup database', cause);
-			throw error(500, 'Gagal membuat backup database');
+		await runMigration(databasePath);
+		await inspectDatabaseFile(databasePath, { requireKagangaTables: true });
+		await reloadDbClient();
+		resetStartupEnsures();
+		await runStartupEnsures();
+
+		const finalInspection = await inspectDatabaseFile(databasePath, {
+			requireKagangaTables: true
+		});
+		if (finalInspection.foreignKeyViolations > 0) {
+			console.warn(
+				`[database-import] ${finalInspection.foreignKeyViolations} relasi lama perlu ditinjau setelah import`
+			);
 		}
-	}
 
-	// Atomically replace the database file
-	try {
-		await unlink(dbPath).catch(() => {});
-		await copyFile(tempPath, dbPath);
+		cookies.delete(cookieNames.AUTH_SESSION, {
+			path: '/',
+			secure: process.env.NODE_ENV === 'production'
+		});
+		console.info('[database-import] selesai; backup aman:', backupPath);
+		return json({
+			message: 'Database berhasil diimport dan diperbarui. Silakan login ulang.',
+			logout: true,
+			loginPath: '/login'
+		});
 	} catch (cause) {
-		console.error('[database-import] gagal mengganti berkas database', cause);
-		throw error(500, 'Gagal menyimpan berkas database');
+		console.error('[database-import] import gagal:', cause);
+		if (databaseSwapStarted && backupPath) {
+			try {
+				await closeDbClient();
+				await removeDatabaseCompanions(databasePath);
+				await unlink(databasePath).catch(() => {});
+				await copyFile(backupPath, databasePath);
+				await reloadDbClient();
+				resetStartupEnsures();
+				await runStartupEnsures();
+				console.warn('[database-import] database sebelumnya berhasil dipulihkan');
+			} catch (rollbackCause) {
+				console.error('[database-import] pemulihan otomatis gagal:', rollbackCause);
+				throw error(500, `Import dan pemulihan otomatis gagal. Backup tersedia di ${backupPath}.`);
+			}
+		}
+		if (cause && typeof cause === 'object' && 'status' in cause) throw cause;
+		throw error(500, 'Import gagal. Database sebelumnya tetap aman dan telah dipulihkan.');
 	} finally {
 		await unlink(tempPath).catch(() => {});
 	}
-
-	// Delete stale WAL and SHM companion files
-	for (const ext of ['-wal', '-shm']) {
-		try {
-			await unlink(dbPath + ext);
-		} catch {
-			/* ignore if not present */
-		}
-	}
-
-	console.log('[database-import] import selesai. Backup disimpan di', backupPath);
-
-	// Clear auth session cookie so user must re-login against the imported DB
-	try {
-		const secure = process.env.NODE_ENV === 'production';
-		cookies.set(cookieNames.AUTH_SESSION, '', {
-			path: '/',
-			httpOnly: true,
-			sameSite: 'lax',
-			secure,
-			expires: new Date(0)
-		});
-		console.info('[database-import] cleared auth session cookie');
-	} catch (e) {
-		console.warn('[database-import] failed to clear auth session cookie (non-fatal):', e);
-	}
-
-	// Run essential post-import scripts (seed admin + grant permissions).
-	for (const script of ['seed-default-admin.mjs', 'grant-admin-permissions.mjs']) {
-		try {
-			const scriptPath = resolve(process.cwd(), 'scripts', script);
-			console.info('[database-import] running', script);
-			await new Promise((resolvePromise, rejectPromise) => {
-				const child = execFile(
-					process.execPath,
-					[scriptPath],
-					{ windowsHide: true },
-					(err, stdout, stderr) => {
-						if (stdout && String(stdout).trim())
-							console.info('[' + script + ' stdout]', String(stdout).trim());
-						if (stderr && String(stderr).trim())
-							console.warn('[' + script + ' stderr]', String(stderr).trim());
-						if (err) return rejectPromise(err);
-						resolvePromise(null);
-					}
-				);
-				child.on('error', (e) => rejectPromise(e));
-			});
-			console.info('[database-import]', script, 'completed');
-		} catch (e) {
-			console.warn('[database-import]', script, 'failed (non-fatal):', e);
-		}
-	}
-
-	// Reload DB client so the server picks up the imported database.
-	try {
-		await reloadDbClient();
-		console.info('[database-import] reloaded DB client');
-	} catch (e) {
-		console.warn('[database-import] failed to reload DB client (non-fatal):', e);
-	}
-
-	return json({
-		message: 'Database berhasil diimport. Silakan login ulang.',
-		logout: true,
-		loginPath: '/login'
-	});
 }

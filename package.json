@@ -30,6 +30,7 @@
 		"test:jadwal-db": "node scripts/test-jadwal-jp-target-copy.mjs",
 		"test:pegawai": "node --test src/lib/server/db/pegawai-foundation.test.ts src/lib/server/pegawai-excel.test.ts src/lib/server/pegawai-documents.test.ts",
 		"test:pegawai-copy": "node scripts/test-pegawai-foundation-copy.mjs",
+		"test:database-safety": "node --test src/lib/server/db/database-safety.test.ts",
 		"tes-bell": "node scripts/test-bell.mjs",
 		"format": "prettier --write .",
 		"lint": "prettier --check . && eslint .",

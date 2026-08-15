@@ -9,3 +9,8 @@ export async function ensureSchema(name: string, statements: string[]) {
 	}
 	ensured.set(name, true);
 }
+
+/** Reset cache setelah koneksi diarahkan ke file database lain. */
+export function resetEnsuredSchemas() {
+	ensured.clear();
+}

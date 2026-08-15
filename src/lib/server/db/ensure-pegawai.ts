@@ -12,3 +12,7 @@ export async function ensurePegawaiSchema() {
 	}
 	await ensurePromise;
 }
+
+export function resetPegawaiSchemaEnsure() {
+	ensurePromise = null;
+}

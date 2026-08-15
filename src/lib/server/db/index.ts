@@ -113,6 +113,7 @@ export async function reloadDbClient() {
 		console.info('[db] reloaded libsql client and drizzle instance');
 	} catch (e) {
 		console.error('[db] failed to reload client', e);
+		throw e;
 	}
 }
 

@@ -6,6 +6,7 @@ import { ensureJadwalKurikulumSchema } from './ensure-jadwal-kurikulum';
 import { ensureJurnalMengajarSchema } from './ensure-jurnal-mengajar';
 import { ensurePegawaiSchema, resetPegawaiSchemaEnsure } from './ensure-pegawai';
 import { ensurePresensiSettingsSchema } from './ensure-presensi-settings';
+import { ensureSuratMenyuratSchema } from './ensure-surat-menyurat';
 
 let startupPromise: Promise<void> | null = null;
 
@@ -16,6 +17,7 @@ async function applyStartupEnsures() {
 	await ensurePresensiSettingsSchema();
 	await ensureJadwalKurikulumSchema();
 	await ensureJurnalMengajarSchema();
+	await ensureSuratMenyuratSchema();
 	await ensureDefaultAdmin();
 }
 

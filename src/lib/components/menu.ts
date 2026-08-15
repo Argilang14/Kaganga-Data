@@ -171,6 +171,25 @@ export const appMenuItems: MenuItem[] = [
 		]
 	},
 	{
+		title: 'Surat Menyurat',
+		icon: 'briefcase',
+		tags: ['surat', 'sppd', 'dinas luar', 'perjalanan dinas'],
+		subMenu: [
+			{
+				title: 'SPPD',
+				path: '/surat-menyurat/sppd',
+				permission: 'surat_sppd',
+				tags: ['surat perintah perjalanan dinas']
+			},
+			{
+				title: 'Dinas Luar',
+				path: '/surat-menyurat/dinas-luar',
+				permission: 'surat_dinas_luar',
+				tags: ['pengajuan', 'perjalanan dinas']
+			}
+		]
+	},
+	{
 		title: 'Cetak Dokumen',
 		icon: 'print',
 		path: '/cetak'

@@ -2159,3 +2159,100 @@ export const tablePegawaiRiwayatRelations = relations(tablePegawaiRiwayat, ({ on
 		references: [tableAuthUser.id]
 	})
 }));
+
+export const tableSppd = sqliteTable(
+	'surat_sppd',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		pegawaiId: int()
+			.references(() => tablePegawai.id, { onDelete: 'restrict' })
+			.notNull(),
+		tahunAjaranId: int().references(() => tableTahunAjaran.id, { onDelete: 'set null' }),
+		semesterId: int().references(() => tableSemester.id, { onDelete: 'set null' }),
+		nomorSurat: text(),
+		tanggalSurat: text(),
+		dasarSurat: text(),
+		maksud: text().notNull(),
+		alatAngkut: text(),
+		tempatBerangkat: text(),
+		tempatTujuan: text().notNull(),
+		tanggalBerangkat: text().notNull(),
+		tanggalKembali: text().notNull(),
+		status: text({ enum: ['draft', 'terbit', 'selesai'] })
+			.notNull()
+			.default('draft'),
+		keterangan: text(),
+		...audit
+	},
+	(table) => [
+		index('surat_sppd_sekolah_idx').on(table.sekolahId),
+		index('surat_sppd_pegawai_idx').on(table.pegawaiId),
+		index('surat_sppd_tanggal_berangkat_idx').on(table.tanggalBerangkat)
+	]
+);
+
+export const tableDinasLuarPermohonan = sqliteTable(
+	'surat_dinas_luar',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		pegawaiId: int()
+			.references(() => tablePegawai.id, { onDelete: 'restrict' })
+			.notNull(),
+		sppdId: int().references(() => tableSppd.id, { onDelete: 'set null' }),
+		maksud: text().notNull(),
+		tempatTujuan: text().notNull(),
+		tanggalBerangkat: text().notNull(),
+		tanggalKembali: text().notNull(),
+		status: text({ enum: ['diajukan', 'disetujui', 'ditolak', 'selesai'] })
+			.notNull()
+			.default('diajukan'),
+		catatan: text(),
+		...audit
+	},
+	(table) => [
+		index('surat_dinas_luar_sekolah_idx').on(table.sekolahId),
+		index('surat_dinas_luar_pegawai_idx').on(table.pegawaiId),
+		index('surat_dinas_luar_status_idx').on(table.status)
+	]
+);
+
+export const tableSppdRelations = relations(tableSppd, ({ one, many }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableSppd.sekolahId],
+		references: [tableSekolah.id]
+	}),
+	pegawai: one(tablePegawai, {
+		fields: [tableSppd.pegawaiId],
+		references: [tablePegawai.id]
+	}),
+	tahunAjaran: one(tableTahunAjaran, {
+		fields: [tableSppd.tahunAjaranId],
+		references: [tableTahunAjaran.id]
+	}),
+	semester: one(tableSemester, {
+		fields: [tableSppd.semesterId],
+		references: [tableSemester.id]
+	}),
+	permohonan: many(tableDinasLuarPermohonan)
+}));
+
+export const tableDinasLuarPermohonanRelations = relations(tableDinasLuarPermohonan, ({ one }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableDinasLuarPermohonan.sekolahId],
+		references: [tableSekolah.id]
+	}),
+	pegawai: one(tablePegawai, {
+		fields: [tableDinasLuarPermohonan.pegawaiId],
+		references: [tablePegawai.id]
+	}),
+	sppd: one(tableSppd, {
+		fields: [tableDinasLuarPermohonan.sppdId],
+		references: [tableSppd.id]
+	})
+}));

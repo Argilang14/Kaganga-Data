@@ -5,6 +5,7 @@ interface MenuItem {
 	tags?: string[];
 	subMenu?: MenuItem[];
 	condition?: 'genap' | 'ganjil';
+	permission?: UserPermission;
 }
 
 interface PageMeta {

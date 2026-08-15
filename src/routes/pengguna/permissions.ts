@@ -41,6 +41,13 @@ export const groupedUserPermissions = {
 	administrasi: {
 		values: [['absensi', 'Kelola Absensi Digital dan Kegiatan']],
 		description: 'Administrasi'
+	},
+	surat: {
+		values: [
+			['sppd', 'Kelola SPPD'],
+			['dinas_luar', 'Kelola Dinas Luar']
+		],
+		description: 'Surat Menyurat'
 	}
 } as const;
 

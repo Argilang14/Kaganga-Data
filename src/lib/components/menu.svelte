@@ -5,6 +5,7 @@
 	import { searchQueryMarker } from '$lib/utils';
 	import Icon from './icon.svelte';
 	import { appMenuItems } from './menu';
+	import { isAuthorizedUser } from '../../routes/pengguna/permissions';
 
 	const expanded = new StorageState<boolean>('menu-expanded');
 
@@ -12,6 +13,21 @@
 	const activeSemesterTipe = $derived(
 		(page.data as { activeSemesterTipe?: string | null } | null)?.activeSemesterTipe ?? null
 	);
+	const user = $derived(
+		(page.data as { user?: Pick<AuthUser, 'permissions' | 'type'> | null } | null)?.user ?? null
+	);
+
+	function filterMenuByPermission(items: MenuItem[]): MenuItem[] {
+		return items
+			.map((item) => {
+				if (item.permission && !isAuthorizedUser([item.permission], user ?? undefined)) return null;
+				if (!item.subMenu) return item;
+				const subMenu = filterMenuByPermission(item.subMenu);
+				if (!subMenu.length && !item.path) return null;
+				return subMenu.length === item.subMenu.length ? item : { ...item, subMenu };
+			})
+			.filter((item): item is MenuItem => item !== null);
+	}
 
 	function filterByCondition(item: MenuItem, semesterTipe: string | null): boolean {
 		if (item.condition && item.condition !== semesterTipe) return false;
@@ -50,9 +66,11 @@
 	}
 
 	let menuItems = $derived(
-		search
-			? filterMenu(appMenuItems, search)
-			: appMenuItems.filter((item) => filterByCondition(item, activeSemesterTipe))
+		filterMenuByPermission(
+			search
+				? filterMenu(appMenuItems, search)
+				: appMenuItems.filter((item) => filterByCondition(item, activeSemesterTipe))
+		)
 	);
 
 	function collectLeafMenuPaths(items: MenuItem[]): string[] {
@@ -73,9 +91,7 @@
 		const normalizedPath = currentPath.replace(/\/+$/, '');
 		const normalizedItemPath = menuPath.replace(/\/+$/, '');
 		const bestMatch = leafMenuPaths
-			.filter(
-				(path) => normalizedPath === path || normalizedPath.startsWith(path + '/')
-			)
+			.filter((path) => normalizedPath === path || normalizedPath.startsWith(path + '/'))
 			.sort((a, b) => b.length - a.length)[0];
 
 		return bestMatch === normalizedItemPath;

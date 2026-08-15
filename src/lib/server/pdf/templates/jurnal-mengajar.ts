@@ -4,9 +4,10 @@ export interface JurnalMengajarPrintData {
 	sekolah: {
 		nama: string;
 	};
-	murid: {
-		nama: string;
-		nis: string;
+	filter: {
+		label: string;
+		value: string;
+		jenisJadwal: string;
 	};
 	periode: {
 		tahunPelajaran: string;
@@ -185,7 +186,8 @@ tr.striped td {
 	</div>
 
 	<div class="filter-info">
-		<strong>Pendidik:</strong> ${formatValue(data.murid.nama)} &nbsp;&nbsp;
+		<strong>${formatValue(data.filter.label)}:</strong> ${formatValue(data.filter.value)} &nbsp;&nbsp;
+		<strong>Jenis Jadwal:</strong> ${formatValue(data.filter.jenisJadwal)} &nbsp;&nbsp;
 		<strong>Periode:</strong> ${formatValue(data.periode.tanggalMulai)} s.d. ${formatValue(data.periode.tanggalSelesai)}
 	</div>
 

@@ -1,7 +1,13 @@
 import db from '$lib/server/db';
-import { tablePegawai, tableSemester, tableTahunAjaran } from '$lib/server/db/schema';
+import {
+	tableJadwalMapel,
+	tableKelas,
+	tablePegawai,
+	tableSemester,
+	tableTahunAjaran
+} from '$lib/server/db/schema';
 import { computeNilaiAkhirRekap } from '$lib/server/nilai-akhir';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { buildKelasContext, fetchMuridList } from '$lib/server/route-utils';
 
 export async function load({ locals, url, depends, parent }) {
@@ -57,6 +63,41 @@ export async function load({ locals, url, depends, parent }) {
 				orderBy: [asc(tablePegawai.nama)]
 			})
 		: [];
+	const [jurnalKelasList, jurnalMapelList] = sekolahId
+		? await Promise.all([
+				kelasIds.length
+					? db.query.tableKelas.findMany({
+							columns: {
+								id: true,
+								nama: true,
+								fase: true,
+								tahunAjaranId: true,
+								semesterId: true,
+								waliKelasId: true
+							},
+							with: {
+								waliKelas: { columns: { id: true, nama: true, nip: true } },
+								tahunAjaran: { columns: { nama: true } },
+								semester: { columns: { nama: true, tipe: true } }
+							},
+							where: and(eq(tableKelas.sekolahId, sekolahId), inArray(tableKelas.id, kelasIds)),
+							orderBy: [asc(tableKelas.nama)]
+						})
+					: [],
+				db.query.tableJadwalMapel.findMany({
+					columns: {
+						id: true,
+						kode: true,
+						nama: true,
+						jenjang: true,
+						guruPegawaiId: true
+					},
+					with: { guru: { columns: { id: true, nama: true, nip: true } } },
+					where: and(eq(tableJadwalMapel.sekolahId, sekolahId), eq(tableJadwalMapel.aktif, true)),
+					orderBy: [asc(tableJadwalMapel.nama)]
+				})
+			])
+		: [[], []];
 
 	if (!sekolahId || !kelasIds.length) {
 		return {
@@ -66,6 +107,8 @@ export async function load({ locals, url, depends, parent }) {
 			muridCount: 0,
 			piagamRankingOptions: [],
 			pegawaiGuruList,
+			jurnalKelasList,
+			jurnalMapelList,
 			...printContext,
 			...jurnalPeriod
 		};
@@ -100,6 +143,8 @@ export async function load({ locals, url, depends, parent }) {
 		muridCount: daftarMurid.length,
 		piagamRankingOptions,
 		pegawaiGuruList,
+		jurnalKelasList,
+		jurnalMapelList,
 		...printContext,
 		...jurnalPeriod
 	};

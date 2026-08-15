@@ -241,6 +241,7 @@
 					type="date"
 					class="input bg-base-200 dark:bg-base-300 join-item w-full max-w-48 dark:border-none"
 					bind:value={selectedTanggal}
+					onchange={viewDate}
 				/>
 				<button
 					type="button"
@@ -277,6 +278,24 @@
 			</select>
 		</label>
 	</div>
+
+	{#if data.scheduleSummary}
+		<div
+			class="border-base-300 bg-base-200/35 mb-4 flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm"
+		>
+			<span class="font-semibold"
+				>{data.scheduleSummary.kelasNama} · {data.scheduleSummary.hariLabel}</span
+			>
+			<span class="badge badge-primary badge-soft"
+				>{data.scheduleSummary.blokPelajaran} blok mapel</span
+			>
+			<span class="badge badge-ghost">{data.scheduleSummary.slotPelajaran} slot pelajaran</span>
+			<span class="badge badge-ghost">{data.scheduleSummary.slotKegiatan} kegiatan</span>
+			{#if data.scheduleSummary.kegiatan.length}
+				<span class="text-base-content/60 text-xs">{data.scheduleSummary.kegiatan.join(', ')}</span>
+			{/if}
+		</div>
+	{/if}
 
 	<div
 		class="bg-base-100 dark:bg-base-200 mt-4 overflow-x-auto rounded-md shadow-md dark:shadow-none"
@@ -381,7 +400,7 @@
 						<td class="p-7 text-center italic opacity-60" colspan="7">
 							{data.scheduleOptions.length
 								? 'Semua jurnal pada jadwal ini sudah diisi'
-								: 'Tidak ada mata pelajaran pada jadwal kelas ini'}
+								: data.emptyScheduleMessage}
 						</td>
 					</tr>
 				{/if}

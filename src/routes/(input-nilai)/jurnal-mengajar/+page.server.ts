@@ -65,6 +65,8 @@ export async function load({ locals, url, depends, parent }) {
 			lingkupMateriList: [],
 			mataPelajaranList: [],
 			scheduleOptions: [],
+			scheduleSummary: null,
+			emptyScheduleMessage: 'Pilih kelas untuk melihat jadwal mengajar.',
 			hasAnyMapel: false,
 			mapelId: null,
 			tanggal: null,
@@ -109,6 +111,15 @@ export async function load({ locals, url, depends, parent }) {
 	let mapelIds: number[] = [];
 
 	let hasAnyMapel = false;
+	let scheduleSummary: {
+		hari: string;
+		hariLabel: string;
+		kelasNama: string;
+		blokPelajaran: number;
+		slotPelajaran: number;
+		slotKegiatan: number;
+		kegiatan: string[];
+	} | null = null;
 
 	if (userType === 'admin' || userType === 'wali_kelas' || userType === 'user') {
 		let userMpIds: number[] = [];
@@ -233,6 +244,51 @@ export async function load({ locals, url, depends, parent }) {
 		}
 	}
 
+	if (kelasIdNum && scheduleContext) {
+		const dayNames = ['minggu', 'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu'];
+		const hari = dayNames[new Date(`${tanggal}T00:00:00`).getDay()];
+		const entries = scheduleContext.templateIds.length
+			? await db.query.tableJadwalPelajaran.findMany({
+					columns: { tipe: true, kodeKegiatan: true },
+					where: and(
+						eq(tableJadwalPelajaran.sekolahId, sekolahId),
+						eq(tableJadwalPelajaran.kelasId, kelasIdNum),
+						eq(tableJadwalPelajaran.hari, hari),
+						inArray(tableJadwalPelajaran.templateId, scheduleContext.templateIds)
+					)
+				})
+			: [];
+		const kelasNama =
+			(parentData.daftarKelas as Array<{ id: number; nama?: string }> | undefined)?.find(
+				(item) => item.id === kelasIdNum
+			)?.nama ?? `Kelas #${kelasIdNum}`;
+		const kegiatan = [
+			...new Set(
+				entries
+					.filter((entry) => entry.tipe !== 'pelajaran')
+					.map((entry) => entry.kodeKegiatan)
+					.filter((kode): kode is string => Boolean(kode))
+			)
+		];
+		scheduleSummary = {
+			hari,
+			hariLabel: hari.charAt(0).toUpperCase() + hari.slice(1),
+			kelasNama,
+			blokPelajaran: scheduleOptions.length,
+			slotPelajaran: entries.filter((entry) => entry.tipe === 'pelajaran').length,
+			slotKegiatan: entries.filter((entry) => entry.tipe !== 'pelajaran').length,
+			kegiatan
+		};
+	}
+
+	const emptyScheduleMessage = !kelasIdNum
+		? 'Pilih kelas untuk melihat jadwal mengajar.'
+		: !scheduleContext?.templateIds.length
+			? `Template ${scheduleContext?.jenisLabel ?? 'jadwal'} belum tersedia pada tahun ajaran ini.`
+			: scheduleSummary?.slotKegiatan
+				? `Tidak ada mata pelajaran kelas ${scheduleSummary.kelasNama} pada ${scheduleSummary.hariLabel}. Terdapat kegiatan non-mapel: ${scheduleSummary.kegiatan.join(', ') || `${scheduleSummary.slotKegiatan} slot`}.`
+				: `Tidak ada mata pelajaran kelas ${scheduleSummary?.kelasNama ?? ''} pada ${scheduleSummary?.hariLabel ?? 'hari ini'}.`;
+
 	// Get mapelId from URL param or default to first
 	const mapelIdParam = url.searchParams.get('mapel_id');
 	const mapelId =
@@ -354,6 +410,8 @@ export async function load({ locals, url, depends, parent }) {
 		lingkupMateriList,
 		mataPelajaranList,
 		scheduleOptions,
+		scheduleSummary,
+		emptyScheduleMessage,
 		hasAnyMapel,
 		mapelId,
 		tanggal,

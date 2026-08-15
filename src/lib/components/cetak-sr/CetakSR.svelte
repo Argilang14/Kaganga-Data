@@ -41,6 +41,25 @@
 				nip: string;
 				jabatan: string | null;
 			}>;
+			jurnalKelasList?: Array<{
+				id: number;
+				nama: string;
+				fase: string | null;
+				tahunAjaranId: number;
+				semesterId: number;
+				waliKelasId: number | null;
+				waliKelas: { id: number; nama: string; nip: string | null } | null;
+				tahunAjaran: { nama: string };
+				semester: { nama: string; tipe: string };
+			}>;
+			jurnalMapelList?: Array<{
+				id: number;
+				kode: string;
+				nama: string;
+				jenjang: string;
+				guruPegawaiId: number | null;
+				guru: { id: number; nama: string; nip: string | null } | null;
+			}>;
 			daftarMurid?: Array<{ id: number; nama: string; nis?: string | null; nisn?: string | null }>;
 			piagamRankingOptions?: Array<{
 				muridId: number;
@@ -98,6 +117,13 @@
 	let downloadLoading = $state(false);
 	let jurnalTanggalMulai = $state('');
 	let jurnalTanggalSelesai = $state('');
+	let jurnalScope = $state<'kelas' | 'mapel'>('kelas');
+	let jurnalKelasId = $state<number | null>(data.kelasId ? Number(data.kelasId) : null);
+	let jurnalMapelId = $state<number | null>(null);
+	let jurnalJenis = $state<'persiapan' | 'ganjil' | 'genap'>(
+		data.activeSemesterTipe === 'genap' ? 'genap' : 'ganjil'
+	);
+	let jurnalPenandatangan = $state<'wali_kelas' | 'guru_mapel'>('wali_kelas');
 	let selectedJadwalOrientation = $state<'landscape' | 'portrait'>('landscape');
 	let selectedJadwalLayout = $state<'padat' | 'multi'>('padat');
 	let selectedJadwalJenjang = $state<'semua' | 'srd' | 'srmp' | 'srma'>('semua');
@@ -106,6 +132,10 @@
 	>('tahun_ajaran');
 	const tahunAjaranList = $derived(data.tahunAjaranList ?? []);
 	const pegawaiGuruList = $derived(data.pegawaiGuruList ?? []);
+	const jurnalKelasList = $derived(data.jurnalKelasList ?? []);
+	const jurnalMapelList = $derived(data.jurnalMapelList ?? []);
+	const jurnalKelas = $derived(jurnalKelasList.find((item) => item.id === jurnalKelasId) ?? null);
+	const jurnalMapel = $derived(jurnalMapelList.find((item) => item.id === jurnalMapelId) ?? null);
 	function initialWakaKurikulumId() {
 		return (
 			data.pegawaiGuruList?.find((pegawai) =>
@@ -160,6 +190,28 @@
 	let pdfViewerUrl = $state('');
 	let pdfViewerTitle = $state('');
 	let pdfViewerEl = $state<HTMLElement | null>(null);
+	const jurnalSelectionKey = $derived(
+		[
+			jurnalScope,
+			jurnalKelasId,
+			jurnalMapelId,
+			jurnalJenis,
+			jurnalTanggalMulai,
+			jurnalTanggalSelesai,
+			jurnalPenandatangan
+		].join('|')
+	);
+	let previousJurnalSelectionKey = $state('');
+
+	$effect(() => {
+		const nextKey = jurnalSelectionKey;
+		if (previousJurnalSelectionKey && previousJurnalSelectionKey !== nextKey && pdfViewerUrl) {
+			URL.revokeObjectURL(pdfViewerUrl);
+			pdfViewerUrl = '';
+			pdfViewerTitle = '';
+		}
+		previousJurnalSelectionKey = nextKey;
+	});
 
 	// show TP listing: 'compact' | 'full-desc'
 	let fullTP = $state<'compact' | 'full-desc'>('compact');
@@ -237,14 +289,22 @@
 	const isJadwalSelected = $derived.by(() => selectedDocument === 'jadwal-pelajaran');
 	const isKalenderSelected = $derived.by(() => selectedDocument === 'kalender-pendidikan');
 	const isJurnalSelected = $derived.by(() => selectedDocument === 'jurnal-mengajar');
-	const qrNotReadyCount = $derived(
-		(qrReadiness?.missing ?? 0) + (qrReadiness?.outdated ?? 0)
-	);
+	const qrNotReadyCount = $derived((qrReadiness?.missing ?? 0) + (qrReadiness?.outdated ?? 0));
 	const hasValidJurnalPeriod = $derived.by(
 		() =>
 			Boolean(jurnalTanggalMulai && jurnalTanggalSelesai) &&
-			jurnalTanggalMulai <= jurnalTanggalSelesai
+			jurnalTanggalMulai <= jurnalTanggalSelesai &&
+			(jurnalScope === 'kelas' ? Boolean(jurnalKelasId) : Boolean(jurnalMapelId)) &&
+			(jurnalPenandatangan === 'wali_kelas'
+				? Boolean(jurnalKelas?.waliKelas)
+				: Boolean(jurnalMapel?.guru))
 	);
+
+	function changeJurnalScope(scope: 'kelas' | 'mapel') {
+		jurnalScope = scope;
+		jurnalPenandatangan = scope === 'kelas' ? 'wali_kelas' : 'guru_mapel';
+		if (scope === 'kelas') jurnalMapelId = null;
+	}
 	const documentNeedsMurid = $derived.by(
 		() =>
 			selectedDocument !== 'jadwal-pelajaran' &&
@@ -460,14 +520,22 @@
 			if (documentType === 'jurnal-mengajar') {
 				const params = new URLSearchParams({
 					tanggal_mulai: jurnalTanggalMulai,
-					tanggal_selesai: jurnalTanggalSelesai
+					tanggal_selesai: jurnalTanggalSelesai,
+					lingkup: jurnalScope,
+					jenis_jadwal: jurnalJenis,
+					penandatangan: jurnalPenandatangan
 				});
+				if (jurnalKelasId) params.set('kelas_id', String(jurnalKelasId));
+				if (jurnalMapelId) params.set('mapel_id', String(jurnalMapelId));
 				const pdfRes = await fetch(`/api/pdf/jurnal-mengajar?${params}`);
-				if (!pdfRes.ok) throw new Error('Gagal memuat PDF Jurnal Mengajar');
+				if (!pdfRes.ok) {
+					const message = await pdfRes.text();
+					throw new Error(message || 'Gagal memuat PDF Jurnal Mengajar');
+				}
 				const blob = await pdfRes.blob();
 				if (pdfViewerUrl) URL.revokeObjectURL(pdfViewerUrl);
 				pdfViewerUrl = URL.createObjectURL(blob);
-				pdfViewerTitle = `Jurnal Mengajar ${jurnalTanggalMulai} - ${jurnalTanggalSelesai}`;
+				pdfViewerTitle = `Jurnal Mengajar ${jurnalScope === 'kelas' ? jurnalKelas?.nama : jurnalMapel?.nama} ${jurnalTanggalMulai} - ${jurnalTanggalSelesai}`;
 				await scrollToViewer();
 				toast('PDF Jurnal Mengajar berhasil dimuat', 'success');
 				return;
@@ -531,7 +599,7 @@
 			toast('PDF berhasil dimuat', 'success');
 		} catch (err) {
 			console.error('Download error:', err);
-			toast('Gagal membuka PDF', 'error');
+			toast(err instanceof Error ? err.message : 'Gagal membuka PDF', 'error');
 		} finally {
 			downloadLoading = false;
 		}
@@ -822,7 +890,9 @@
 	/>
 
 	{#if selectedDocument === 'kartu-absensi' && daftarMurid.length}
-		<div class="border-base-300 bg-base-200/40 mt-3 flex flex-wrap items-center gap-3 rounded-lg border px-4 py-3 text-sm">
+		<div
+			class="border-base-300 bg-base-200/40 mt-3 flex flex-wrap items-center gap-3 rounded-lg border px-4 py-3 text-sm"
+		>
 			{#if qrReadinessLoading}
 				<span class="loading loading-spinner loading-sm"></span>
 				<span>Memeriksa kesiapan QR {daftarMurid.length} murid...</span>
@@ -836,13 +906,17 @@
 			{:else if qrReadiness}
 				<Icon name={qrNotReadyCount ? 'alert' : 'check'} />
 				<div class="min-w-0 flex-1">
-					<div class="font-semibold">{qrReadiness.ready} dari {qrReadiness.total} QR siap dicetak</div>
+					<div class="font-semibold">
+						{qrReadiness.ready} dari {qrReadiness.total} QR siap dicetak
+					</div>
 					{#if qrNotReadyCount}
 						<div class="text-base-content/65 text-xs">
 							{qrReadiness.missing} belum dibuat dan {qrReadiness.outdated} memakai format lama.
 						</div>
 					{:else}
-						<div class="text-base-content/65 text-xs">Semua kartu dapat dicetak tanpa mengganti token QR aktif.</div>
+						<div class="text-base-content/65 text-xs">
+							Semua kartu dapat dicetak tanpa mengganti token QR aktif.
+						</div>
 					{/if}
 				</div>
 				{#if qrNotReadyCount}
@@ -873,7 +947,10 @@
 		>
 			<label class="form-control min-w-0">
 				<span class="label-text mb-1">Tahun Ajaran</span>
-				<select class="select select-bordered bg-base-100 w-full min-w-0 pr-10" bind:value={selectedPrintTahunAjaranId}>
+				<select
+					class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
+					bind:value={selectedPrintTahunAjaranId}
+				>
 					{#each tahunAjaranList as tahun}
 						<option value={tahun.id}>{tahun.nama}</option>
 					{/each}
@@ -882,7 +959,10 @@
 			{#if selectedDocument === 'jadwal-pelajaran'}
 				<label class="form-control min-w-0">
 					<span class="label-text mb-1">Jenis Jadwal</span>
-					<select class="select select-bordered bg-base-100 w-full min-w-0 pr-10" bind:value={selectedJadwalJenis}>
+					<select
+						class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
+						bind:value={selectedJadwalJenis}
+					>
 						<option value="persiapan">Masa Persiapan</option>
 						<option value="ganjil">Semester Ganjil</option>
 						<option value="genap">Semester Genap</option>
@@ -891,7 +971,10 @@
 			{:else}
 				<label class="form-control min-w-0">
 					<span class="label-text mb-1">Semester</span>
-					<select class="select select-bordered bg-base-100 w-full min-w-0 pr-10" bind:value={selectedKalenderSemesterId}>
+					<select
+						class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
+						bind:value={selectedKalenderSemesterId}
+					>
 						<option value={null}>Semua Semester</option>
 						{#each kalenderSemesterOptions as semester}
 							<option value={semester.id}>{semester.nama}</option>
@@ -901,7 +984,10 @@
 			{/if}
 			<label class="form-control min-w-0">
 				<span class="label-text mb-1">Jenjang</span>
-				<select class="select select-bordered bg-base-100 w-full min-w-0 pr-10" bind:value={selectedJadwalJenjang}>
+				<select
+					class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
+					bind:value={selectedJadwalJenjang}
+				>
 					<option value="semua">Semua Jenjang</option>
 					<option value="srd">SRD</option>
 					<option value="srmp">SRMP</option>
@@ -910,7 +996,10 @@
 			</label>
 			<label class="form-control min-w-0">
 				<span class="label-text mb-1">Orientasi A4</span>
-				<select class="select select-bordered bg-base-100 w-full min-w-0 pr-10" bind:value={selectedJadwalOrientation}>
+				<select
+					class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
+					bind:value={selectedJadwalOrientation}
+				>
 					<option value="landscape">Landscape</option>
 					<option value="portrait">Portrait</option>
 				</select>
@@ -918,7 +1007,10 @@
 			{#if selectedDocument === 'jadwal-pelajaran'}
 				<label class="form-control min-w-0">
 					<span class="label-text mb-1">Tampilan Tabel</span>
-					<select class="select select-bordered bg-base-100 w-full min-w-0 pr-10" bind:value={selectedJadwalLayout}>
+					<select
+						class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
+						bind:value={selectedJadwalLayout}
+					>
 						<option value="padat">Padat (1 Halaman)</option>
 						<option value="multi">Mudah Dibaca (Multi Halaman)</option>
 					</select>
@@ -927,7 +1019,10 @@
 			{#if selectedDocument === 'kalender-pendidikan'}
 				<label class="form-control min-w-0">
 					<span class="label-text mb-1">Periode Kalender</span>
-					<select class="select select-bordered bg-base-100 w-full min-w-0 pr-10" bind:value={selectedKalenderPeriode}>
+					<select
+						class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
+						bind:value={selectedKalenderPeriode}
+					>
 						<option value="tahun_ajaran">Tahun Ajaran (Juli-Juni)</option>
 						<option value="semester_ganjil">Semester Ganjil (Juli-Desember)</option>
 						<option value="semester_genap">Semester Genap (Januari-Juni)</option>
@@ -952,7 +1047,10 @@
 				</select>
 			</label>
 			<div class="flex min-w-0 items-end">
-				<a class="btn btn-outline h-12 min-h-12 w-full whitespace-normal text-center leading-tight" href={selectedDocument === 'jadwal-pelajaran' ? jadwalSourceHref : kalenderSourceHref}>
+				<a
+					class="btn btn-outline h-12 min-h-12 w-full whitespace-normal text-center leading-tight"
+					href={selectedDocument === 'jadwal-pelajaran' ? jadwalSourceHref : kalenderSourceHref}
+				>
 					Buka sumber di Akademik
 				</a>
 			</div>
@@ -960,18 +1058,103 @@
 	{/if}
 
 	{#if selectedDocument === 'jurnal-mengajar'}
-		<div class="border-base-300 bg-base-200/30 mt-3 grid gap-3 rounded-lg border p-3 md:grid-cols-[1fr_1fr_auto]">
+		<div
+			class="border-base-300 bg-base-200/30 mt-3 grid gap-3 rounded-lg border p-3 md:grid-cols-2 xl:grid-cols-4"
+		>
+			<fieldset class="form-control">
+				<legend class="label-text mb-1">Lingkup Cetak</legend>
+				<div class="join w-full">
+					<button
+						type="button"
+						class="btn join-item flex-1"
+						class:btn-primary={jurnalScope === 'kelas'}
+						class:btn-soft={jurnalScope !== 'kelas'}
+						aria-pressed={jurnalScope === 'kelas'}
+						onclick={() => changeJurnalScope('kelas')}>Per Kelas</button
+					>
+					<button
+						type="button"
+						class="btn join-item flex-1"
+						class:btn-primary={jurnalScope === 'mapel'}
+						class:btn-soft={jurnalScope !== 'mapel'}
+						aria-pressed={jurnalScope === 'mapel'}
+						onclick={() => changeJurnalScope('mapel')}>Per Mapel</button
+					>
+				</div>
+			</fieldset>
+			<label class="form-control min-w-0">
+				<span class="label-text mb-1">Kelas{jurnalScope === 'mapel' ? ' (Opsional)' : ''}</span>
+				<select
+					class="select select-bordered bg-base-100 w-full min-w-0"
+					bind:value={jurnalKelasId}
+				>
+					<option value={null}>{jurnalScope === 'mapel' ? 'Semua kelas' : 'Pilih kelas'}</option>
+					{#each jurnalKelasList as kelas}
+						<option value={kelas.id}>{kelas.nama} · {kelas.semester.nama}</option>
+					{/each}
+				</select>
+			</label>
+			<label class="form-control min-w-0">
+				<span class="label-text mb-1"
+					>Mata Pelajaran{jurnalScope === 'kelas' && jurnalPenandatangan !== 'guru_mapel'
+						? ' (Opsional)'
+						: ''}</span
+				>
+				<select
+					class="select select-bordered bg-base-100 w-full min-w-0"
+					bind:value={jurnalMapelId}
+				>
+					<option value={null}>{jurnalScope === 'kelas' ? 'Semua mapel' : 'Pilih mapel'}</option>
+					{#each jurnalMapelList as mapel}
+						<option value={mapel.id}>{mapel.kode} · {mapel.nama}</option>
+					{/each}
+				</select>
+			</label>
+			<label class="form-control">
+				<span class="label-text mb-1">Jenis Jadwal</span>
+				<select class="select select-bordered bg-base-100 w-full" bind:value={jurnalJenis}>
+					<option value="persiapan">Masa Persiapan</option>
+					<option value="ganjil">Semester Ganjil</option>
+					<option value="genap">Semester Genap</option>
+				</select>
+			</label>
 			<label class="form-control">
 				<span class="label-text mb-1">Tanggal Mulai</span>
-				<input class="input input-bordered bg-base-100 w-full" type="date" bind:value={jurnalTanggalMulai} />
+				<input
+					class="input input-bordered bg-base-100 w-full"
+					type="date"
+					bind:value={jurnalTanggalMulai}
+				/>
 			</label>
 			<label class="form-control">
 				<span class="label-text mb-1">Tanggal Selesai</span>
-				<input class="input input-bordered bg-base-100 w-full" type="date" bind:value={jurnalTanggalSelesai} />
+				<input
+					class="input input-bordered bg-base-100 w-full"
+					type="date"
+					bind:value={jurnalTanggalSelesai}
+				/>
+			</label>
+			<label class="form-control">
+				<span class="label-text mb-1">Penandatangan</span>
+				<select class="select select-bordered bg-base-100 w-full" bind:value={jurnalPenandatangan}>
+					<option value="wali_kelas" disabled={!jurnalKelasId}>Wali Kelas</option>
+					<option value="guru_mapel" disabled={!jurnalMapelId}>Guru Mata Pelajaran</option>
+				</select>
 			</label>
 			<div class="flex items-end">
-				<a class="btn btn-outline h-12 min-h-12 w-full md:w-auto" href="/jurnal-mengajar">Buka sumber di Kurikulum</a>
+				<a class="btn btn-outline h-12 min-h-12 w-full md:w-auto" href="/jurnal-mengajar"
+					>Buka sumber di Kurikulum</a
+				>
 			</div>
+			{#if jurnalPenandatangan === 'wali_kelas' && jurnalKelasId && !jurnalKelas?.waliKelas}
+				<div class="alert alert-warning py-2 md:col-span-2 xl:col-span-4">
+					Wali kelas belum ditentukan pada Data Kelas.
+				</div>
+			{:else if jurnalPenandatangan === 'guru_mapel' && jurnalMapelId && !jurnalMapel?.guru}
+				<div class="alert alert-warning py-2 md:col-span-2 xl:col-span-4">
+					Guru belum ditentukan pada Data Mata Pelajaran.
+				</div>
+			{/if}
 		</div>
 	{/if}
 	<PreviewFooter

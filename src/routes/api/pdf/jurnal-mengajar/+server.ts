@@ -38,9 +38,60 @@ export const GET = (async ({ locals, url }) => {
 
 	const tanggalMulai = url.searchParams.get('tanggal_mulai');
 	const tanggalSelesai = url.searchParams.get('tanggal_selesai');
+	const lingkup = url.searchParams.get('lingkup') === 'mapel' ? 'mapel' : 'kelas';
+	const jenisJadwal = url.searchParams.get('jenis_jadwal');
+	const penandatangan =
+		url.searchParams.get('penandatangan') === 'guru_mapel' ? 'guru_mapel' : 'wali_kelas';
+	const kelasId = Number(url.searchParams.get('kelas_id')) || null;
+	const jadwalMapelId = Number(url.searchParams.get('mapel_id')) || null;
 
 	if (!tanggalMulai || !tanggalSelesai) {
 		throw error(400, 'Parameter tanggal_mulai dan tanggal_selesai wajib diisi');
+	}
+	if (tanggalMulai > tanggalSelesai) throw error(400, 'Rentang tanggal jurnal tidak valid');
+	if (!jenisJadwal || !['persiapan', 'ganjil', 'genap'].includes(jenisJadwal)) {
+		throw error(400, 'Jenis jadwal tidak valid');
+	}
+	if (lingkup === 'kelas' && !kelasId) throw error(400, 'Pilih kelas yang akan dicetak');
+	if (lingkup === 'mapel' && !jadwalMapelId) {
+		throw error(400, 'Pilih mata pelajaran yang akan dicetak');
+	}
+
+	const [selectedKelas, selectedMapel, schoolClasses] = await Promise.all([
+		kelasId
+			? db.query.tableKelas.findFirst({
+					where: and(eq(tableKelas.id, kelasId), eq(tableKelas.sekolahId, sekolahId)),
+					with: { waliKelas: { columns: { id: true, nama: true, nip: true } } }
+				})
+			: null,
+		jadwalMapelId
+			? db.query.tableJadwalMapel.findFirst({
+					where: and(
+						eq(tableJadwalMapel.id, jadwalMapelId),
+						eq(tableJadwalMapel.sekolahId, sekolahId)
+					),
+					with: { guru: { columns: { id: true, nama: true, nip: true } } }
+				})
+			: null,
+		db.query.tableKelas.findMany({
+			columns: { id: true },
+			where: eq(tableKelas.sekolahId, sekolahId)
+		})
+	]);
+	if (kelasId && !selectedKelas) throw error(404, 'Kelas tidak ditemukan pada sekolah aktif');
+	if (jadwalMapelId && !selectedMapel) {
+		throw error(404, 'Mata pelajaran tidak ditemukan pada sekolah aktif');
+	}
+	if (!schoolClasses.length) throw error(400, 'Data kelas belum tersedia');
+
+	const signer = penandatangan === 'wali_kelas' ? selectedKelas?.waliKelas : selectedMapel?.guru;
+	if (!signer) {
+		throw error(
+			400,
+			penandatangan === 'wali_kelas'
+				? 'Wali kelas belum ditentukan pada Data Kelas'
+				: 'Guru belum ditentukan pada Data Mata Pelajaran'
+		);
 	}
 
 	// Get active semester info
@@ -56,19 +107,7 @@ export const GET = (async ({ locals, url }) => {
 		.limit(1)
 		.then((r) => r[0]);
 
-	// Get user pegawai data
-	let userName = '';
-	let guruNip: string | null = null;
-	if (user.pegawaiId) {
-		const peg = await db.query.tablePegawai.findFirst({
-			columns: { nama: true, nip: true },
-			where: eq(tablePegawai.id, user.pegawaiId)
-		});
-		userName = peg?.nama ?? '';
-		guruNip = peg?.nip ?? null;
-	}
-
-	// Fetch journal entries within date range for the current user
+	// Admin dapat menyusun rekap sekolah; akun lain tetap dibatasi pada jurnal miliknya.
 	const rows = await db
 		.select({
 			id: tableJurnalMengajar.id,
@@ -100,7 +139,13 @@ export const GET = (async ({ locals, url }) => {
 		)
 		.where(
 			and(
-				eq(tableJurnalMengajar.authUserId, user.id),
+				inArray(
+					tableJurnalMengajar.kelasId,
+					kelasId ? [kelasId] : schoolClasses.map((item) => item.id)
+				),
+				jadwalMapelId ? eq(tableJurnalMengajar.jadwalMapelId, jadwalMapelId) : undefined,
+				eq(tableJurnalMengajar.jenisJadwal, jenisJadwal),
+				user.type === 'admin' ? undefined : eq(tableJurnalMengajar.authUserId, user.id),
 				sql`${tableJurnalMengajar.tanggal} >= ${tanggalMulai}`,
 				sql`${tableJurnalMengajar.tanggal} <= ${tanggalSelesai}`
 			)
@@ -230,9 +275,7 @@ export const GET = (async ({ locals, url }) => {
 		kepalaSekolahNip = kepala?.nip ?? null;
 	}
 
-	// Determine label
-	const userType = user?.type ?? '';
-	const isWaliKelas = userType === 'wali_kelas';
+	const isWaliKelas = penandatangan === 'wali_kelas';
 	const guruLabel = isWaliKelas ? 'Wali Kelas' : 'Guru Mata Pelajaran';
 
 	const tempatTtd = sekolah?.lokasiTandaTangan ?? '';
@@ -246,9 +289,16 @@ export const GET = (async ({ locals, url }) => {
 		sekolah: {
 			nama: sekolah?.nama ?? ''
 		},
-		murid: {
-			nama: userName,
-			nis: ''
+		filter: {
+			label: lingkup === 'kelas' ? 'Kelas' : 'Mata Pelajaran',
+			value:
+				lingkup === 'kelas'
+					? (selectedKelas?.nama ?? '')
+					: `${selectedMapel?.kode ?? ''} - ${selectedMapel?.nama ?? ''}`,
+			jenisJadwal:
+				jenisJadwal === 'persiapan'
+					? 'Masa Persiapan'
+					: `Semester ${jenisJadwal === 'ganjil' ? 'Ganjil' : 'Genap'}`
 		},
 		periode: {
 			tahunPelajaran: historicalYears.join(', ') || semester?.tahunAjaranNama || '',
@@ -273,8 +323,8 @@ export const GET = (async ({ locals, url }) => {
 			statusKepalaSekolah: kepalaSekolahStatus
 		},
 		guru: {
-			nama: userName,
-			nip: guruNip
+			nama: signer.nama,
+			nip: signer.nip
 		},
 		isWaliKelas,
 		guruLabel,

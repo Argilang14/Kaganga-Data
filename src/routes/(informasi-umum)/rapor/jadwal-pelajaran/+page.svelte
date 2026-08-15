@@ -13,7 +13,7 @@
 		uniqueJadwalSlots
 	} from '$lib/jadwal-slots';
 	import { toast } from '$lib/components/toast.svelte';
-	import { calculateWeeklyJp, summarizeWeeklyJp } from '$lib/jadwal-jp';
+	import { calculateWeeklyJp, summarizeWeeklyJp, summarizeWeeklyJpBySubject } from '$lib/jadwal-jp';
 	import { buildJadwalSegments, type JadwalSegment } from '$lib/jadwal-segments';
 	import type { PageData } from './$types';
 
@@ -172,6 +172,9 @@
 	let dropDialog = $state<HTMLDialogElement | null>(null);
 	let cellDialog = $state<HTMLDialogElement | null>(null);
 	let importDialog = $state<HTMLDialogElement | null>(null);
+	let jpTargetDialog = $state<HTMLDialogElement | null>(null);
+	let jpTargetDraft = $state<Record<string, number>>({});
+	let jpTargetSaving = $state(false);
 	let importFile = $state<File | null>(null);
 	let importPreview = $state<ImportPreview | null>(null);
 	let importLoading = $state(false);
@@ -282,6 +285,48 @@
 			}))
 			.filter((group) => group.kelas.length > 0)
 	);
+	const targetJpByClassMapel = $derived.by(
+		() =>
+			new Map(
+				(
+					(data.targetJp ?? []) as Array<{
+						kelasId: number;
+						jadwalMapelId: number;
+						jpPerMinggu: number;
+					}>
+				).map((target) => [`${target.kelasId}|${target.jadwalMapelId}`, target.jpPerMinggu])
+			)
+	);
+	const weeklyJpTargets = $derived.by(() => [
+		...mapelItems.map((item) => ({
+			id: item.id,
+			kode: item.kode,
+			nama: item.nama,
+			jenjang: item.jenjang ?? 'semua',
+			jpPerMinggu: item.jpPerMinggu ?? 0
+		})),
+		...(
+			(data.targetJp ?? []) as Array<{
+				kelasId: number;
+				jadwalMapelId: number;
+				jpPerMinggu: number;
+			}>
+		).flatMap((target) => {
+			const item = mapelItems.find((mapel) => mapel.id === target.jadwalMapelId);
+			return item
+				? [
+						{
+							id: item.id,
+							kelasId: target.kelasId,
+							kode: item.kode,
+							nama: item.nama,
+							jenjang: item.jenjang ?? 'semua',
+							jpPerMinggu: target.jpPerMinggu
+						}
+					]
+				: [];
+		})
+	]);
 	const jadwalSegments = $derived.by(() => {
 		const mergeCells = hariList.flatMap((hari) =>
 			Array.from({ length: jumlahJamFor(hari) }, (_, index) => index + 1).flatMap((jamKe) =>
@@ -331,6 +376,16 @@
 		);
 	});
 	const activeJenjangName = $derived(jenjangLabel[activeJenjang] ?? 'Semua Jenjang');
+	const activeJenisLabel = $derived(
+		((data.jenisOptions ?? []) as Array<{ value: string; label: string }>).find(
+			(item) => item.value === data.selectedContext?.jenis
+		)?.label ?? 'jadwal aktif'
+	);
+	const activeTahunAjaranName = $derived(
+		((data.tahunAjaranList ?? []) as Array<{ id: number; nama: string }>).find(
+			(item) => item.id === data.selectedContext?.tahunAjaranId
+		)?.nama ?? '-'
+	);
 	const scheduleChecks = $derived.by(() => {
 		const visibleIds = new Set(visibleKelas.map((kelas) => kelas.id));
 		const unknownCodes = new Set<string>();
@@ -348,12 +403,7 @@
 			classes: visibleKelas
 				.map((kelas) => ({ ...kelas, jenjang: kelasJenjang(kelas) }))
 				.filter((kelas) => kelas.jenjang !== 'semua'),
-			targets: mapelItems.map((item) => ({
-				kode: item.kode,
-				nama: item.nama,
-				jenjang: item.jenjang ?? 'semua',
-				jpPerMinggu: item.jpPerMinggu ?? 0
-			})),
+			targets: weeklyJpTargets,
 			slots: jadwalJam,
 			entries: Object.entries(cells)
 				.filter(([, kode]) => Boolean(kode))
@@ -384,25 +434,51 @@
 		};
 	});
 	const paletteJpStatus = $derived.by(() => {
-		const result = new Map<
-			string,
-			{ kurang: number; tepat: number; lebih: number; actual: number; target: number }
-		>();
-		for (const item of scheduleChecks.jpResults) {
-			const current = result.get(item.kode) ?? {
-				kurang: 0,
-				tepat: 0,
-				lebih: 0,
-				actual: 0,
-				target: 0
-			};
-			current[item.status] += 1;
-			current.actual += item.actual;
-			current.target += item.target;
-			result.set(item.kode, current);
-		}
-		return result;
+		return summarizeWeeklyJpBySubject(scheduleChecks.jpResults);
 	});
+
+	function targetKey(kelasId: number, mapelId: number) {
+		return `${kelasId}|${mapelId}`;
+	}
+
+	function resolvedJpTarget(kelasId: number, item: PaletteItem) {
+		return targetJpByClassMapel.get(targetKey(kelasId, item.id)) ?? item.jpPerMinggu ?? 0;
+	}
+
+	function openJpTargetDialog() {
+		const draft: Record<string, number> = {};
+		for (const kelas of visibleKelas) {
+			for (const item of mapelItems) {
+				if (itemSesuaiKelas(item, kelas))
+					draft[targetKey(kelas.id, item.id)] = resolvedJpTarget(kelas.id, item);
+			}
+		}
+		jpTargetDraft = draft;
+		jpTargetDialog?.showModal();
+	}
+
+	async function saveJpTargets() {
+		if (!canManage || jpTargetSaving) return;
+		jpTargetSaving = true;
+		const targets = Object.entries(jpTargetDraft).map(([key, jpPerMinggu]) => {
+			const [kelasId, jadwalMapelId] = key.split('|').map(Number);
+			return { kelasId, jadwalMapelId, jpPerMinggu: Number(jpPerMinggu) };
+		});
+		const formData = new FormData();
+		formData.set('tahunAjaranId', String(data.selectedContext?.tahunAjaranId ?? ''));
+		formData.set('jenis', data.selectedContext?.jenis ?? 'ganjil');
+		formData.set('targets', JSON.stringify(targets));
+		try {
+			const result = await postAction('saveJpTargets', formData);
+			toast(String(result.message ?? 'Target JP berhasil disimpan'), 'success');
+			jpTargetDialog?.close();
+			await invalidateAll();
+		} catch (error) {
+			toast(error instanceof Error ? error.message : 'Target JP gagal disimpan', 'error');
+		} finally {
+			jpTargetSaving = false;
+		}
+	}
 
 	$effect(() => {
 		const nextCells: Record<string, string> = {};
@@ -967,6 +1043,14 @@
 				</ul>
 			</div>
 			<button
+				class="btn btn-soft shadow-none"
+				type="button"
+				onclick={openJpTargetDialog}
+				disabled={!canManage || !daftarKelas.length}
+			>
+				<Icon name="edit" /> Target JP
+			</button>
+			<button
 				class="btn btn-primary shadow-none"
 				type="button"
 				onclick={saveJadwal}
@@ -1297,15 +1381,15 @@
 									{#if jpState}
 										<span
 											class="badge badge-sm whitespace-nowrap text-[10px]"
-											class:badge-warning={jpState.kurang > 0}
-											class:badge-error={jpState.kurang === 0 && jpState.lebih > 0}
-											class:badge-success={jpState.kurang === 0 && jpState.lebih === 0}
+											class:badge-warning={jpState.kurangJp > 0}
+											class:badge-error={jpState.kurangJp === 0 && jpState.lebihJp > 0}
+											class:badge-success={jpState.kurangJp === 0 && jpState.lebihJp === 0}
 											title={`Total ${jpState.actual}/${jpState.target} JP pada kelas yang tampil`}
 										>
-											{jpState.kurang > 0
-												? `${jpState.kurang} kurang`
-												: jpState.lebih > 0
-													? `${jpState.lebih} lebih`
+											{jpState.kurangJp > 0
+												? `${jpState.kurangJp} JP kurang`
+												: jpState.lebihJp > 0
+													? `${jpState.lebihJp} JP lebih`
 													: 'Sesuai'}
 										</span>
 									{/if}
@@ -1330,6 +1414,89 @@
 		</aside>
 	</section>
 </div>
+
+<dialog class="modal" bind:this={jpTargetDialog}>
+	<div class="modal-box w-11/12 max-w-7xl rounded-lg">
+		<div class="flex items-start justify-between gap-3">
+			<div>
+				<h3 class="text-lg font-bold">Target JP per Kelas</h3>
+				<p class="text-base-content/70 mt-1 text-sm">
+					Target ini hanya berlaku untuk {activeJenisLabel} pada tahun ajaran {activeTahunAjaranName}.
+				</p>
+			</div>
+			<button
+				class="btn btn-ghost btn-square btn-sm"
+				type="button"
+				title="Tutup"
+				onclick={() => jpTargetDialog?.close()}
+			>
+				<Icon name="close" />
+			</button>
+		</div>
+		<div class="alert alert-info mt-4 py-2 text-sm">
+			Nilai awal mengikuti JP per kelas/minggu dari Data Mata Pelajaran. Isi 0 jika mapel tidak
+			digunakan pada kelas dan jenis jadwal ini.
+		</div>
+		<div class="border-base-300 mt-4 max-h-[60vh] overflow-auto rounded-md border">
+			<table class="table-sm table">
+				<thead class="bg-base-200 sticky top-0 z-10">
+					<tr>
+						<th class="sticky left-0 z-20 min-w-48 bg-inherit">Mata Pelajaran</th>
+						{#each visibleKelas as kelas (kelas.id)}
+							<th class="min-w-24 text-center">{kelas.nama}</th>
+						{/each}
+					</tr>
+				</thead>
+				<tbody>
+					{#each mapelItems as item (item.id)}
+						{#if visibleKelas.some((kelas) => itemSesuaiKelas(item, kelas))}
+							<tr>
+								<th class="bg-base-100 sticky left-0 z-10">
+									<div class="font-bold">{item.kode}</div>
+									<div class="text-base-content/60 max-w-44 truncate text-xs">{item.nama}</div>
+								</th>
+								{#each visibleKelas as kelas (kelas.id)}
+									<td class="text-center">
+										{#if itemSesuaiKelas(item, kelas)}
+											{@const key = targetKey(kelas.id, item.id)}
+											<input
+												class="input input-sm input-bordered w-20 text-center"
+												type="number"
+												min="0"
+												max="50"
+												value={jpTargetDraft[key] ?? 0}
+												oninput={(event) =>
+													(jpTargetDraft[key] = Number(event.currentTarget.value))}
+												aria-label={`Target ${item.kode} kelas ${kelas.nama}`}
+											/>
+										{:else}
+											<span class="text-base-content/30">-</span>
+										{/if}
+									</td>
+								{/each}
+							</tr>
+						{/if}
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<div class="modal-action">
+			<button class="btn" type="button" onclick={() => jpTargetDialog?.close()}>Batal</button>
+			<button
+				class="btn btn-primary"
+				type="button"
+				onclick={saveJpTargets}
+				disabled={jpTargetSaving}
+			>
+				{#if jpTargetSaving}<span class="loading loading-spinner loading-sm"></span>{:else}<Icon
+						name="save"
+					/>{/if}
+				Simpan Target JP
+			</button>
+		</div>
+	</div>
+	<form method="dialog" class="modal-backdrop"><button>Tutup</button></form>
+</dialog>
 
 <dialog class="modal" bind:this={dropDialog}>
 	<div class="modal-box max-w-md">

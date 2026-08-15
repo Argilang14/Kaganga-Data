@@ -5,12 +5,7 @@
 
 	type JenjangOption = 'semua' | 'srd' | 'srmp' | 'srma';
 	type KategoriOption =
-		| 'semua'
-		| 'masa_persiapan'
-		| 'akademik'
-		| 'kokurikuler'
-		| 'keasramaan'
-		| 'muatan_lokal';
+		'semua' | 'masa_persiapan' | 'akademik' | 'kokurikuler' | 'keasramaan' | 'muatan_lokal';
 	type KategoriValue = Exclude<KategoriOption, 'semua'>;
 	type GuruRow = { id: number; nama: string; nip: string; jenis: string; status: string };
 	type MapelRow = {
@@ -372,7 +367,7 @@
 					/>
 				</label>
 				<label class="form-control gap-2">
-					<span class="label-text font-medium">JP per Minggu</span>
+					<span class="label-text font-medium">JP per Kelas/Minggu (Default)</span>
 					<input
 						class="input input-bordered w-full"
 						name="jpPerMinggu"
@@ -434,14 +429,15 @@
 		<h3 class="text-lg font-bold">Import Data Mata Pelajaran</h3>
 		<p class="text-base-content/70 mt-1 text-sm">
 			Gunakan template Excel agar kolom terbaca rapi. Kode mapel yang sama akan memperbarui data
-			lama.
+			lama. ID guru dapat disalin dari lembar Referensi Guru; warna dapat ditulis sebagai kode hex
+			atau diberikan sebagai warna isi sel.
 		</p>
 		<form method="POST" action="?/importExcel" enctype="multipart/form-data" class="mt-4 space-y-4">
 			<input
 				class="file-input file-input-bordered w-full"
 				type="file"
 				name="file"
-				accept=".xlsx"
+				accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 				required
 			/>
 			<div class="modal-action">

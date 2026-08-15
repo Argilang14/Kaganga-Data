@@ -4,7 +4,9 @@ import ExcelJS from 'exceljs';
 
 const {
 	buildPegawaiImportUpdatePayload,
+	addPegawaiExampleSheet,
 	configurePegawaiSheet,
+	PEGAWAI_EXCEL_COLUMNS,
 	parsePegawaiWorkbook,
 	resolvePegawaiImportRows
 } = (await import('./pegawai-excel' + '.ts')) as typeof import('./pegawai-excel');
@@ -42,6 +44,36 @@ test('template lengkap dapat dibaca kembali tanpa kehilangan nomor identitas', a
 	const headers = (sheet.getRow(1).values as unknown[]).map(String);
 	assert.equal(headers.includes('Kode Pegawai'), false);
 	assert.equal(headers.includes('Nomor Induk PPPK'), false);
+	const headerCell = (key: string) => sheet.getRow(1).getCell(sheet.getColumn(key).number);
+	assert.equal(headerCell('nama').fill.fgColor.argb, 'FF245EA8');
+	assert.equal(headerCell('telepon').fill.fgColor.argb, 'FF0F766E');
+	assert.equal(headerCell('statusKepegawaian').fill.fgColor.argb, 'FFA16207');
+	assert.equal(headerCell('catatan').fill.fgColor.argb, 'FF475569');
+});
+
+test('template pegawai memuat seluruh kolom biodata yang dapat diimport dan diekspor', () => {
+	const headers = PEGAWAI_EXCEL_COLUMNS.map((column) => column.header);
+	assert.deepEqual(headers.slice(0, 4), ['Nama', 'NIP', 'NIK', 'NUPTK']);
+	assert.equal(headers.includes('Kode Pegawai'), false);
+	assert.equal(headers.includes('Nomor Induk PPPK'), false);
+	assert.equal(headers.includes('Alamat'), true);
+	assert.equal(headers.includes('Nama Kontak Darurat'), true);
+	assert.equal(headers.includes('Status Kepegawaian'), true);
+	assert.equal(headers.includes('Nomor SK'), true);
+	assert.equal(headers.at(-1), 'Catatan');
+});
+
+test('template kosong memisahkan data resmi dari lembar contoh', () => {
+	const workbook: any = new ExcelJS.Workbook();
+	const dataSheet: any = workbook.addWorksheet('Data Pegawai');
+	configurePegawaiSheet(dataSheet);
+	const exampleSheet = addPegawaiExampleSheet(workbook);
+
+	assert.equal(dataSheet.actualRowCount, 1);
+	assert.equal(exampleSheet.name, 'Contoh Pengisian');
+	assert.equal(exampleSheet.actualRowCount, 2);
+	assert.equal(exampleSheet.getRow(2).getCell(1).text, 'Contoh Pegawai');
+	assert.equal(workbook.worksheets[0]?.name, 'Data Pegawai');
 });
 
 test('template delapan kolom lama tetap dikenali tanpa mengada-adakan kolom baru', async () => {

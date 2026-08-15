@@ -27,6 +27,7 @@
 		"check": "node node_modules/@sveltejs/kit/svelte-kit.js sync && node scripts/svelte-check-wrapper.mjs",
 		"check:watch": "svelte-kit sync && node scripts/svelte-check-wrapper.mjs --watch",
 		"test:jadwal": "node --test src/lib/jadwal-segments.test.ts src/lib/jadwal-slots.test.ts src/lib/jadwal-jp.test.ts",
+		"test:jadwal-db": "node scripts/test-jadwal-jp-target-copy.mjs",
 		"test:pegawai": "node --test src/lib/server/db/pegawai-foundation.test.ts src/lib/server/pegawai-excel.test.ts src/lib/server/pegawai-documents.test.ts",
 		"test:pegawai-copy": "node scripts/test-pegawai-foundation-copy.mjs",
 		"tes-bell": "node scripts/test-bell.mjs",

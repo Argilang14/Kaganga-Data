@@ -5,6 +5,7 @@ import { ensureJurnalMengajarSchema } from '$lib/server/db/ensure-jurnal-mengaja
 import {
 	tableJurnalMengajar,
 	tableKelas,
+	tableJadwalMapel,
 	tableMataPelajaran,
 	tableTujuanPembelajaran,
 	tableMurid,
@@ -37,12 +38,6 @@ export const GET = (async ({ locals, url }) => {
 
 	const tanggalMulai = url.searchParams.get('tanggal_mulai');
 	const tanggalSelesai = url.searchParams.get('tanggal_selesai');
-
-	// For guru mapel ('user' type), scope to their assigned subject only
-	const mataPelajaranFilter =
-		user?.type === 'user' && user?.mataPelajaranId
-			? eq(tableJurnalMengajar.mataPelajaranId, user.mataPelajaranId)
-			: undefined;
 
 	if (!tanggalMulai || !tanggalSelesai) {
 		throw error(400, 'Parameter tanggal_mulai dan tanggal_selesai wajib diisi');
@@ -79,19 +74,26 @@ export const GET = (async ({ locals, url }) => {
 			id: tableJurnalMengajar.id,
 			tanggal: tableJurnalMengajar.tanggal,
 			jamPelajaran: tableJurnalMengajar.jamPelajaran,
+			pukul: tableJurnalMengajar.pukul,
+			tahunAjaranId: tableJurnalMengajar.tahunAjaranId,
+			semesterId: tableJurnalMengajar.semesterId,
+			jenisJadwal: tableJurnalMengajar.jenisJadwal,
 			lingkupMateri: tableJurnalMengajar.lingkupMateri,
 			tujuanPembelajaranManual: tableJurnalMengajar.tujuanPembelajaranManual,
 			catatan: tableJurnalMengajar.catatan,
 			kelasId: tableJurnalMengajar.kelasId,
 			mataPelajaranId: tableJurnalMengajar.mataPelajaranId,
+			jadwalMapelId: tableJurnalMengajar.jadwalMapelId,
 			tujuanPembelajaranId: tableJurnalMengajar.tujuanPembelajaranId,
 			kelasNama: tableKelas.nama,
-			mapelNama: tableMataPelajaran.nama,
+			mapelNamaLegacy: tableMataPelajaran.nama,
+			mapelNamaJadwal: tableJadwalMapel.nama,
 			tpDeskripsi: tableTujuanPembelajaran.deskripsi
 		})
 		.from(tableJurnalMengajar)
 		.leftJoin(tableKelas, eq(tableJurnalMengajar.kelasId, tableKelas.id))
 		.leftJoin(tableMataPelajaran, eq(tableJurnalMengajar.mataPelajaranId, tableMataPelajaran.id))
+		.leftJoin(tableJadwalMapel, eq(tableJurnalMengajar.jadwalMapelId, tableJadwalMapel.id))
 		.leftJoin(
 			tableTujuanPembelajaran,
 			eq(tableJurnalMengajar.tujuanPembelajaranId, tableTujuanPembelajaran.id)
@@ -100,8 +102,7 @@ export const GET = (async ({ locals, url }) => {
 			and(
 				eq(tableJurnalMengajar.authUserId, user.id),
 				sql`${tableJurnalMengajar.tanggal} >= ${tanggalMulai}`,
-				sql`${tableJurnalMengajar.tanggal} <= ${tanggalSelesai}`,
-				...(mataPelajaranFilter ? [mataPelajaranFilter] : [])
+				sql`${tableJurnalMengajar.tanggal} <= ${tanggalSelesai}`
 			)
 		)
 		.orderBy(asc(tableJurnalMengajar.tanggal));
@@ -174,8 +175,9 @@ export const GET = (async ({ locals, url }) => {
 		return {
 			tanggal: row.tanggal,
 			kelas: row.kelasNama ?? '',
-			mataPelajaran: row.mapelNama ?? '',
+			mataPelajaran: row.mapelNamaJadwal ?? row.mapelNamaLegacy ?? '',
 			jamPelajaran: row.jamPelajaran,
+			pukul: row.pukul ?? '',
 			lingkupMateri: row.lingkupMateri,
 			tujuanPembelajaran: row.tpDeskripsi ?? row.tujuanPembelajaranManual ?? '',
 			hadir,
@@ -185,6 +187,24 @@ export const GET = (async ({ locals, url }) => {
 			catatan: row.catatan ?? ''
 		};
 	});
+
+	const storedYearIds = [
+		...new Set(rows.map((row) => row.tahunAjaranId).filter((id): id is number => !!id))
+	];
+	const storedSemesterIds = [
+		...new Set(rows.map((row) => row.semesterId).filter((id): id is number => !!id))
+	];
+	const [storedYears, storedSemesters] = await Promise.all([
+		storedYearIds.length
+			? db.query.tableTahunAjaran.findMany({ where: inArray(tableTahunAjaran.id, storedYearIds) })
+			: [],
+		storedSemesterIds.length
+			? db.query.tableSemester.findMany({ where: inArray(tableSemester.id, storedSemesterIds) })
+			: []
+	]);
+	const historicalYears = [...new Set(storedYears.map((item) => item.nama))];
+	const historicalSemesters = [...new Set(storedSemesters.map((item) => item.nama))];
+	const historicalJenis = [...new Set(rows.map((row) => row.jenisJadwal).filter(Boolean))];
 
 	// Get sekolah name + kepala sekolah + tempat tanda tangan
 	const sekolah = await db.query.tableSekolah.findFirst({
@@ -231,8 +251,18 @@ export const GET = (async ({ locals, url }) => {
 			nis: ''
 		},
 		periode: {
-			tahunPelajaran: semester?.tahunAjaranNama ?? '',
-			semester: semester?.tipe ?? '',
+			tahunPelajaran: historicalYears.join(', ') || semester?.tahunAjaranNama || '',
+			semester:
+				historicalSemesters.join(', ') ||
+				historicalJenis
+					.map((jenis) =>
+						jenis === 'persiapan'
+							? 'Masa Persiapan'
+							: `Semester ${jenis === 'ganjil' ? 'Ganjil' : 'Genap'}`
+					)
+					.join(', ') ||
+				semester?.tipe ||
+				'',
 			tanggalMulai: formatTanggal(tanggalMulai),
 			tanggalSelesai: formatTanggal(tanggalSelesai)
 		},

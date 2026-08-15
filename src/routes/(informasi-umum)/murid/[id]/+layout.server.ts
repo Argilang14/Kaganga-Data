@@ -5,12 +5,17 @@ import { tableKesehatanMurid, tableMurid } from '$lib/server/db/schema.js';
 import { error } from '@sveltejs/kit';
 import { and, desc, eq } from 'drizzle-orm';
 
-export const load: LayoutServerLoad = async ({ params }) => {
+export const load: LayoutServerLoad = async ({ params, locals }) => {
 	await ensureMuridWaliAsramaSchema();
 	await ensureKesehatanMuridSchema();
 
+	const sekolahId = locals.sekolah?.id;
+	if (!sekolahId) error(400, 'Sekolah aktif tidak ditemukan');
+	const muridId = Number(params.id);
+	if (!Number.isInteger(muridId) || muridId <= 0) error(400, 'Data murid tidak valid');
+
 	const murid = await db.query.tableMurid.findFirst({
-		where: eq(tableMurid.id, +params.id),
+		where: and(eq(tableMurid.id, muridId), eq(tableMurid.sekolahId, sekolahId)),
 		with: { kelas: true, alamat: true, ibu: true, ayah: true, wali: true }
 	});
 	if (!murid) error(404, `Data murid tidak ditemukan`);

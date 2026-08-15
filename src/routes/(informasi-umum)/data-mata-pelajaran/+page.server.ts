@@ -4,6 +4,7 @@ import db from '$lib/server/db';
 import { ensureJadwalKurikulumSchema } from '$lib/server/db/ensure-jadwal-kurikulum';
 import { tableJadwalMapel, tableJadwalPelajaran, tablePegawai } from '$lib/server/db/schema';
 import { requireJadwalManageAccess } from '$lib/server/jadwal';
+import { JADWAL_MAPEL_EXCEL_HEADERS } from '$lib/server/jadwal-mapel-excel';
 import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, eq, inArray, like, or, sql } from 'drizzle-orm';
 
@@ -27,6 +28,8 @@ type ExcelCellLike = {
 };
 type ExcelRowLike = { getCell(index: number): ExcelCellLike };
 
+const MAX_IMPORT_SIZE = 5 * 1024 * 1024;
+
 function normalizeText(value: FormDataEntryValue | null) {
 	const raw = value?.toString().trim() ?? '';
 	return raw.length ? raw : null;
@@ -38,7 +41,12 @@ function normalizeJenjang(value: FormDataEntryValue | string | null): JenjangOpt
 }
 
 function normalizeKategoriFilter(value: FormDataEntryValue | string | null): KategoriFilter {
-	const raw = value?.toString().trim().toLowerCase().replace(/[\s-]+/g, '_') ?? 'semua';
+	const raw =
+		value
+			?.toString()
+			.trim()
+			.toLowerCase()
+			.replace(/[\s-]+/g, '_') ?? 'semua';
 	return KATEGORI_OPTIONS.includes(raw as KategoriFilter) ? (raw as KategoriFilter) : 'semua';
 }
 
@@ -94,6 +102,17 @@ async function parseMapelWorkbook(file: File) {
 	await workbook.xlsx.load(Buffer.from(await file.arrayBuffer()));
 	const sheet = workbook.worksheets[0];
 	if (!sheet) return [];
+	const actualHeaders = JADWAL_MAPEL_EXCEL_HEADERS.map((_, index) =>
+		cellText(sheet.getRow(1).getCell(index + 1).value)
+	);
+	const invalidHeader = JADWAL_MAPEL_EXCEL_HEADERS.findIndex(
+		(header, index) => actualHeaders[index].toLowerCase() !== header.toLowerCase()
+	);
+	if (invalidHeader >= 0) {
+		throw new Error(
+			`Kolom ${invalidHeader + 1} harus bernama "${JADWAL_MAPEL_EXCEL_HEADERS[invalidHeader]}". Gunakan template terbaru.`
+		);
+	}
 
 	const rows: Array<{
 		kode: string;
@@ -113,14 +132,32 @@ async function parseMapelWorkbook(file: File) {
 		const kode = cellText(row.getCell(1).value).toUpperCase();
 		const nama = cellText(row.getCell(2).value);
 		if (!kode || !nama) return;
-		const guruPegawaiId = Number.parseInt(cellText(row.getCell(6).value), 10);
-		const jpPerMinggu = Number.parseInt(cellText(row.getCell(7).value), 10);
+		const rawJenjang = cellText(row.getCell(3).value).toLowerCase();
+		const rawKategori = cellText(row.getCell(5).value)
+			.toLowerCase()
+			.replace(/[\s-]+/g, '_');
+		if (!JENJANG_OPTIONS.includes(rawJenjang as JenjangOption)) {
+			throw new Error(`Baris ${rowNumber}: jenjang "${rawJenjang}" tidak valid.`);
+		}
+		if (!KATEGORI_OPTIONS.includes(rawKategori as KategoriFilter) || rawKategori === 'semua') {
+			throw new Error(`Baris ${rowNumber}: kategori "${rawKategori}" tidak valid.`);
+		}
+		const guruRaw = cellText(row.getCell(6).value);
+		const guruPegawaiId = Number.parseInt(guruRaw, 10);
+		if (guruRaw && (!Number.isInteger(guruPegawaiId) || guruPegawaiId <= 0)) {
+			throw new Error(`Baris ${rowNumber}: ID Guru harus berupa angka positif.`);
+		}
+		const jpRaw = cellText(row.getCell(7).value);
+		const jpPerMinggu = Number.parseInt(jpRaw, 10);
+		if (jpRaw && (!Number.isInteger(jpPerMinggu) || jpPerMinggu < 0)) {
+			throw new Error(`Baris ${rowNumber}: JP per Minggu harus berupa bilangan bulat minimal 0.`);
+		}
 		rows.push({
 			kode,
 			nama,
-			jenjang: normalizeJenjang(cellText(row.getCell(3).value)),
+			jenjang: rawJenjang as JenjangOption,
 			fase: cellText(row.getCell(4).value) || null,
-			kategori: normalizeKategori(cellText(row.getCell(5).value)),
+			kategori: rawKategori as KategoriOption,
 			guruPegawaiId: Number.isInteger(guruPegawaiId) && guruPegawaiId > 0 ? guruPegawaiId : null,
 			jpPerMinggu: Number.isInteger(jpPerMinggu) && jpPerMinggu >= 0 ? jpPerMinggu : 0,
 			warna: excelCellColor(row.getCell(8)),
@@ -341,10 +378,55 @@ export const actions = {
 		if (!(file instanceof File) || !file.size) {
 			return fail(400, { fail: 'Pilih file Excel Data Mata Pelajaran terlebih dahulu.' });
 		}
+		if (!file.name.toLowerCase().endsWith('.xlsx')) {
+			return fail(400, { fail: 'Format file harus .xlsx.' });
+		}
+		if (file.size > MAX_IMPORT_SIZE) {
+			return fail(400, { fail: 'Ukuran file Excel maksimal 5 MB.' });
+		}
 
-		const rows = await parseMapelWorkbook(file);
+		let rows: Awaited<ReturnType<typeof parseMapelWorkbook>>;
+		try {
+			rows = await parseMapelWorkbook(file);
+		} catch (error) {
+			return fail(400, {
+				fail: error instanceof Error ? error.message : 'File Excel tidak dapat dibaca.'
+			});
+		}
 		if (!rows.length)
 			return fail(400, { fail: 'Tidak ada data mata pelajaran valid di file Excel.' });
+
+		const duplicateCodes = rows
+			.map((row) => row.kode)
+			.filter((kode, index, all) => all.indexOf(kode) !== index);
+		if (duplicateCodes.length) {
+			return fail(400, {
+				fail: `Kode ganda di file Excel: ${[...new Set(duplicateCodes)].join(', ')}.`
+			});
+		}
+		const requestedGuruIds = [
+			...new Set(rows.map((row) => row.guruPegawaiId).filter((id): id is number => id !== null))
+		];
+		const validGuruIds = requestedGuruIds.length
+			? new Set(
+					(
+						await db.query.tablePegawai.findMany({
+							columns: { id: true },
+							where: and(
+								eq(tablePegawai.sekolahId, sekolahId),
+								eq(tablePegawai.status, 'aktif'),
+								inArray(tablePegawai.id, requestedGuruIds)
+							)
+						})
+					).map((guru) => guru.id)
+				)
+			: new Set<number>();
+		const invalidGuruIds = requestedGuruIds.filter((id) => !validGuruIds.has(id));
+		if (invalidGuruIds.length) {
+			return fail(400, {
+				fail: `ID Guru tidak ditemukan atau tidak aktif: ${invalidGuruIds.join(', ')}.`
+			});
+		}
 
 		let inserted = 0;
 		let updated = 0;
@@ -354,19 +436,7 @@ export const actions = {
 				columns: { id: true },
 				where: and(eq(tableJadwalMapel.sekolahId, sekolahId), eq(tableJadwalMapel.kode, row.kode))
 			});
-			const guruPegawaiId = row.guruPegawaiId
-				? await db.query.tablePegawai
-						.findFirst({
-							columns: { id: true },
-							where: and(
-								eq(tablePegawai.id, row.guruPegawaiId),
-								eq(tablePegawai.sekolahId, sekolahId),
-								eq(tablePegawai.status, 'aktif')
-							)
-						})
-						.then((guru) => guru?.id ?? null)
-				: null;
-			const payload = { sekolahId, ...row, guruPegawaiId, updatedAt: now };
+			const payload = { sekolahId, ...row, updatedAt: now };
 			if (existing) {
 				await db.update(tableJadwalMapel).set(payload).where(eq(tableJadwalMapel.id, existing.id));
 				updated += 1;

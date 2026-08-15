@@ -8,11 +8,13 @@
 	let {
 		pegawaiId,
 		pendidikan = $bindable(),
-		sertifikasi = $bindable()
+		sertifikasi = $bindable(),
+		mode = 'semua'
 	}: {
 		pegawaiId: number;
 		pendidikan: PendidikanPegawai[];
 		sertifikasi: SertifikasiPegawai[];
+		mode?: 'semua' | 'pendidikan' | 'sertifikasi';
 	} = $props();
 	let editingPendidikan = $state<PendidikanPegawai | null>(null);
 	let editingSertifikasi = $state<SertifikasiPegawai | null>(null);
@@ -74,6 +76,7 @@
 	}
 </script>
 
+{#if mode !== 'sertifikasi'}
 <section>
 	<h3 class="font-bold">Pendidikan Formal</h3>
 	<form
@@ -193,8 +196,10 @@
 		</table>
 	</div>
 </section>
+{/if}
 
-<section class="border-base-200 mt-6 border-t pt-5">
+{#if mode !== 'pendidikan'}
+<section class:border-t={mode === 'semua'} class:mt-6={mode === 'semua'} class:pt-5={mode === 'semua'} class="border-base-200">
 	<h3 class="font-bold">Sertifikasi dan Pelatihan</h3>
 	<form
 		method="POST"
@@ -325,3 +330,4 @@
 		</table>
 	</div>
 </section>
+{/if}

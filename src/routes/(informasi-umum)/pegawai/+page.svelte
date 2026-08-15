@@ -1,11 +1,12 @@
 <script lang="ts">
 	/* eslint-disable svelte/no-navigation-without-resolve -- halaman memakai link download dan form route lokal */
 	import { enhance } from '$app/forms';
-	import { page } from '$app/state';
+	import { preloadData, pushState } from '$app/navigation';
 	import Icon from '$lib/components/icon.svelte';
 	import DetailPegawai from '$lib/components/pegawai/DetailPegawai.svelte';
-	import { modalRoute } from '$lib/utils';
+	import { toast } from '$lib/components/toast.svelte';
 	import type { SubmitFunction } from '@sveltejs/kit';
+	import type { ComponentProps } from 'svelte';
 
 	type PegawaiRow = {
 		id: number;
@@ -41,12 +42,17 @@
 		foto: string | null;
 		catatan: string | null;
 	};
+	type DetailPegawaiData = ComponentProps<typeof DetailPegawai>['data'];
 
 	let { data, form } = $props();
 	let formDialog: HTMLDialogElement | null = $state(null);
+	let pegawaiForm: HTMLFormElement | null = $state(null);
 	let importDialog: HTMLDialogElement | null = $state(null);
+	let importForm: HTMLFormElement | null = $state(null);
 	let selectedPegawai = $state<PegawaiRow | null>(null);
+	let formActiveTab = $state(0);
 	let selectedIds = $state<number[]>([]);
+	const formTabs = ['Data Pegawai', 'Kontak & Alamat', 'Kepegawaian', 'Catatan'];
 	type ImportPreview = {
 		fileName: string;
 		legacyFormat: boolean;
@@ -58,6 +64,8 @@
 			rowNumber: number;
 			nama: string;
 			nip: string;
+			nik: string | null;
+			jenis: string;
 			action: 'baru' | 'perbarui' | 'bermasalah';
 			errors: string[];
 		}>;
@@ -65,6 +73,8 @@
 	let importPreview = $state<ImportPreview | null>(null);
 	let importError = $state('');
 	let importBusy = $state(false);
+	let openingDetailId = $state<number | null>(null);
+	let detailData = $state<DetailPegawaiData | null>(null);
 
 	const pegawaiList = $derived((data.pegawai ?? []) as PegawaiRow[]);
 	const failMessage = $derived(typeof form?.fail === 'string' ? form.fail : '');
@@ -96,18 +106,61 @@
 
 	function openCreateModal() {
 		selectedPegawai = null;
+		formActiveTab = 0;
 		formDialog?.showModal();
 	}
 
 	function openEditModal(pegawai: PegawaiRow) {
 		selectedPegawai = pegawai;
+		formActiveTab = 0;
 		formDialog?.showModal();
 	}
 
 	function openEditFromDetail(pegawai: PegawaiRow) {
-		history.back();
+		closeDetailModal();
 		selectedPegawai = pegawai;
+		formActiveTab = 0;
 		setTimeout(() => formDialog?.showModal(), 0);
+	}
+
+	async function openDetailModal(pegawai: PegawaiRow) {
+		if (openingDetailId !== null) return;
+		openingDetailId = pegawai.id;
+		try {
+			const href = `/pegawai/${pegawai.id}`;
+			const result = await preloadData(href);
+			if (result.type !== 'loaded' || result.status < 200 || result.status >= 300) {
+				throw new Error('Data pegawai tidak dapat dimuat.');
+			}
+			detailData = result.data as DetailPegawaiData;
+			pushState(href, { modal: { data: result.data, name: 'detail-pegawai' } });
+		} catch (error) {
+			toast({
+				message: error instanceof Error ? error.message : 'Data pegawai tidak dapat dimuat.',
+				type: 'error'
+			});
+		} finally {
+			openingDetailId = null;
+		}
+	}
+
+	function closeDetailModal() {
+		detailData = null;
+		if (location.pathname.startsWith('/pegawai/')) history.back();
+	}
+
+	function nextFormTab() {
+		if (formActiveTab === 0 && !pegawaiForm?.reportValidity()) return;
+		formActiveTab = Math.min(formActiveTab + 1, formTabs.length - 1);
+	}
+
+	function validatePegawaiForm(event: SubmitEvent) {
+		const nama = pegawaiForm?.elements.namedItem('nama') as HTMLInputElement | null;
+		const nip = pegawaiForm?.elements.namedItem('nip') as HTMLInputElement | null;
+		if (nama?.value.trim() && nip?.value.trim()) return;
+		event.preventDefault();
+		formActiveTab = 0;
+		requestAnimationFrame(() => pegawaiForm?.reportValidity());
 	}
 
 	function pageHref(pageNumber: number) {
@@ -214,6 +267,17 @@
 		importPreview = null;
 		importError = '';
 	}
+
+	function openImportDialog() {
+		importForm?.reset();
+		resetImportPreview();
+		importDialog?.showModal();
+	}
+
+	function closeImportDialog() {
+		importForm?.reset();
+		resetImportPreview();
+	}
 </script>
 
 <div class="space-y-6">
@@ -230,23 +294,20 @@
 				<Icon name="plus" />
 				Tambah Pegawai
 			</button>
-			<div class="dropdown dropdown-end">
-				<button type="button" tabindex="0" class="btn btn-soft shadow-none">
-					<Icon name="down" />
-					Data Excel
-				</button>
-				<ul
-					tabindex="-1"
-					class="dropdown-content menu bg-base-100 rounded-box border-base-300 z-10 mt-2 w-56 border p-2 shadow-lg"
+			<div class="join flex max-w-full overflow-x-auto" aria-label="Pengelolaan data Excel pegawai">
+				<a class="btn btn-soft join-item shrink-0 shadow-none" href="/api/pegawai/template">
+					<Icon name="download" /> Template
+				</a>
+				<button
+					class="btn btn-soft join-item shrink-0 shadow-none"
+					type="button"
+					onclick={openImportDialog}
 				>
-					<li><a href="/api/pegawai/template"><Icon name="download" /> Template Import</a></li>
-					<li>
-						<button type="button" onclick={() => importDialog?.showModal()}>
-							<Icon name="import" /> Import Data
-						</button>
-					</li>
-					<li><a href="/api/pegawai/export"><Icon name="export" /> Export Data</a></li>
-				</ul>
+					<Icon name="import" /> Import
+				</button>
+				<a class="btn btn-soft join-item shrink-0 shadow-none" href="/api/pegawai/export">
+					<Icon name="export" /> Export
+				</a>
 			</div>
 		</div>
 	</div>
@@ -412,15 +473,20 @@
 							</td>
 							<td>
 								<div class="flex flex-nowrap">
-									<a
+									<button
 										class="btn btn-sm btn-soft pointer-events-auto rounded-r-none shadow-none"
-										href="/pegawai/{pegawai.id}"
-										use:modalRoute={'detail-pegawai'}
+										type="button"
+										onclick={() => openDetailModal(pegawai)}
+										disabled={openingDetailId !== null}
 										title="Lihat informasi pegawai"
 										aria-label={'Lihat informasi ' + pegawai.nama}
 									>
-										<Icon name="eye" />
-									</a>
+										{#if openingDetailId === pegawai.id}
+											<span class="loading loading-spinner loading-xs"></span>
+										{:else}
+											<Icon name="eye" />
+										{/if}
+									</button>
 									<form method="POST" action="?/setStatus" use:enhance={tableActionEnhance}>
 										<input type="hidden" name="id" value={pegawai.id} />
 										<input
@@ -523,41 +589,52 @@
 	</div>
 </div>
 
-{#if page.state.modal?.name === 'detail-pegawai'}
+{#if detailData}
 	<dialog
 		class="modal"
 		open
-		onclose={() => history.back()}
-		onclick={(event) => {
-			const rect = event.currentTarget.querySelector('.modal-box')?.getBoundingClientRect();
-			if (
-				rect &&
-				(event.clientX < rect.left ||
-					event.clientX > rect.right ||
-					event.clientY < rect.top ||
-					event.clientY > rect.bottom)
-			) {
-				event.currentTarget.close();
-			}
-		}}
+		onclose={closeDetailModal}
 	>
-		<div class="modal-box max-h-[94vh] w-11/12 max-w-7xl p-5">
-			<DetailPegawai data={page.state.modal.data} onEdit={openEditFromDetail} />
+		<div class="modal-box max-h-[94vh] w-11/12 max-w-5xl p-5">
+			<DetailPegawai data={detailData} onEdit={openEditFromDetail} onClose={closeDetailModal} />
 		</div>
-		<form method="dialog" class="modal-backdrop"><button>Tutup</button></form>
+		<button type="button" class="modal-backdrop" onclick={closeDetailModal}>Tutup</button>
 	</dialog>
 {/if}
 
 <dialog class="modal" bind:this={formDialog}>
-	<div class="modal-box max-h-[92vh] w-11/12 max-w-6xl overflow-y-auto">
-		<h3 class="text-lg font-bold">{selectedPegawai ? 'Edit Pegawai' : 'Tambah Pegawai'}</h3>
+	<div class="modal-box flex max-h-[92vh] w-11/12 max-w-4xl flex-col overflow-hidden p-5">
+		<h3 class="text-xl font-bold">
+			{selectedPegawai ? 'Formulir Edit Pegawai Manual' : 'Formulir Tambah Pegawai Manual'}
+		</h3>
 		<p class="text-base-content/60 mt-1 text-sm">
 			Isi data pokok pegawai. Jika belum punya NIP, boleh isi tanda minus (-).
 		</p>
-		<form method="POST" action="?/save" use:enhance={saveEnhance} class="mt-5 space-y-4">
+		<div class="bg-base-200/55 mt-4 flex flex-wrap gap-1 rounded-md p-1" role="tablist">
+			{#each formTabs as tab, index}
+				<button
+					type="button"
+					role="tab"
+					aria-selected={formActiveTab === index}
+					class="btn btn-sm border-0 shadow-none"
+					class:btn-primary={formActiveTab === index}
+					class:btn-ghost={formActiveTab !== index}
+					onclick={() => (formActiveTab = index)}>{tab}</button
+				>
+			{/each}
+		</div>
+		<form
+			bind:this={pegawaiForm}
+			method="POST"
+			action="?/save"
+			use:enhance={saveEnhance}
+			novalidate
+			onsubmit={validatePegawaiForm}
+			class="mt-3 flex min-h-0 flex-1 flex-col"
+		>
 			<input type="hidden" name="id" value={selectedPegawai?.id ?? ''} />
-			<div class="grid gap-4 md:grid-cols-2">
-				<div class="border-base-200 md:col-span-2 border-b pb-2 font-bold">Identitas Pegawai</div>
+			<div class="min-h-0 flex-1 overflow-y-auto rounded-md border border-base-200 p-4">
+				<section class="grid gap-4 md:grid-cols-2" class:hidden={formActiveTab !== 0}>
 				<label class="form-control gap-2"
 					><span class="label-text font-medium">Nama Pegawai</span><input
 						class="input input-bordered w-full"
@@ -657,7 +734,8 @@
 							>{/each}</select
 					></label
 				>
-				<div class="border-base-200 mt-2 md:col-span-2 border-b pb-2 font-bold">Kepegawaian</div>
+				</section>
+				<section class="grid gap-4 md:grid-cols-2" class:hidden={formActiveTab !== 2}>
 				<label class="form-control gap-2"
 					><span class="label-text font-medium">Jabatan</span><input
 						class="input input-bordered w-full"
@@ -711,9 +789,8 @@
 						value={selectedPegawai?.tanggalSk ?? ''}
 					/></label
 				>
-				<div class="border-base-200 mt-2 md:col-span-2 border-b pb-2 font-bold">
-					Kontak dan Alamat
-				</div>
+				</section>
+				<section class="grid gap-4 md:grid-cols-2" class:hidden={formActiveTab !== 1}>
 				<label class="form-control gap-2"
 					><span class="label-text font-medium">Telepon</span><input
 						class="input input-bordered w-full"
@@ -773,7 +850,8 @@
 						inputmode="numeric"
 					/></label
 				>
-				<div class="border-base-200 mt-2 md:col-span-2 border-b pb-2 font-bold">Kontak Darurat</div>
+				</section>
+				<section class="grid gap-4 md:grid-cols-2" class:hidden={formActiveTab !== 3}>
 				<label class="form-control gap-2"
 					><span class="label-text font-medium">Nama Kontak</span><input
 						class="input input-bordered w-full"
@@ -803,23 +881,43 @@
 						>{selectedPegawai?.catatan ?? ''}</textarea
 					></label
 				>
+				</section>
 			</div>
-			<div class="modal-action">
-				<button class="btn btn-primary" type="submit"><Icon name="save" /> Simpan</button>
+			<div class="mt-4 flex items-center justify-between gap-3">
 				<button class="btn" type="button" onclick={() => formDialog?.close()}>Batal</button>
+				<div class="flex gap-2">
+					{#if formActiveTab > 0}
+						<button class="btn btn-soft" type="button" onclick={() => (formActiveTab -= 1)}>
+							<Icon name="left" /> Sebelumnya
+						</button>
+					{/if}
+					{#if formActiveTab < formTabs.length - 1}
+						<button class="btn btn-primary" type="button" onclick={nextFormTab}>
+							Selanjutnya <Icon name="right" />
+						</button>
+					{:else}
+						<button class="btn btn-primary" type="submit"><Icon name="save" /> Simpan</button>
+					{/if}
+				</div>
 			</div>
 		</form>
 	</div>
 	<form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
-<dialog class="modal" bind:this={importDialog} onclose={resetImportPreview}>
+<dialog class="modal" bind:this={importDialog} onclose={closeImportDialog}>
 	<div class="modal-box max-h-[92vh] w-11/12 max-w-5xl overflow-y-auto">
 		<h3 class="text-lg font-bold">Import Data Pegawai</h3>
 		<p class="text-base-content/70 mt-1 text-sm">
 			Periksa pratinjau sebelum menyimpan. Data lama dicocokkan melalui NIP, lalu NIK.
 		</p>
+		<div class="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+			<div class="bg-primary text-primary-content rounded-md px-2 py-2 font-semibold">1. Pilih File</div>
+			<div class="rounded-md px-2 py-2 font-semibold" class:bg-primary={!!importPreview} class:text-primary-content={!!importPreview} class:bg-base-200={!importPreview}>2. Periksa</div>
+			<div class="bg-base-200 rounded-md px-2 py-2 font-semibold">3. Simpan</div>
+		</div>
 		<form
+			bind:this={importForm}
 			method="POST"
 			action="?/previewImport"
 			use:enhance={importEnhance}
@@ -844,6 +942,9 @@
 				</div>
 			{/if}
 			{#if importPreview}
+				<p class="text-base-content/65 text-sm">
+					File: <strong>{importPreview.fileName}</strong>
+				</p>
 				<div class="border-base-200 rounded-md border">
 					<div class="border-base-200 grid grid-cols-2 gap-3 border-b p-3 sm:grid-cols-4">
 						<div>
@@ -871,7 +972,7 @@
 					<div class="max-h-72 overflow-auto">
 						<table class="table-sm table min-w-[720px]">
 							<thead
-								><tr><th>Baris</th><th>Nama</th><th>NIP</th><th>Status</th><th>Keterangan</th></tr
+								><tr><th>Baris</th><th>Nama</th><th>NIP/NIK</th><th>Jenis</th><th>Status</th><th>Keterangan</th></tr
 								></thead
 							>
 							<tbody>
@@ -879,7 +980,8 @@
 									<tr>
 										<td>{row.rowNumber}</td>
 										<td class="font-medium">{row.nama || '-'}</td>
-										<td>{row.nip}</td>
+										<td>{row.nip}<div class="text-base-content/55 text-xs">{row.nik || '-'}</div></td>
+										<td>{jenisLabels[row.jenis] ?? row.jenis}</td>
 										<td
 											><span
 												class:badge-success={row.action === 'baru'}

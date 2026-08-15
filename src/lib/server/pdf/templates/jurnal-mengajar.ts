@@ -19,6 +19,7 @@ export interface JurnalMengajarPrintData {
 		kelas: string;
 		mataPelajaran: string;
 		jamPelajaran: string;
+		pukul: string;
 		lingkupMateri: string;
 		tujuanPembelajaran: string;
 		hadir: number;
@@ -54,7 +55,7 @@ export function renderJurnalMengajarHTML(data: JurnalMengajarPrintData): string 
 			<td class="text-center">${formatValue(row.tanggal)}</td>
 			<td class="text-center">${formatValue(row.kelas)}</td>
 			<td>${formatValue(row.mataPelajaran)}</td>
-			<td class="text-center">${formatValue(row.jamPelajaran)}</td>
+			<td class="text-center">JP ${formatValue(row.jamPelajaran)}${row.pukul ? `<br><span class="time">${formatValue(row.pukul)}</span>` : ''}</td>
 			<td>${formatValue(row.lingkupMateri)}</td>
 			<td>${formatValue(row.tujuanPembelajaran)}</td>
 			<td class="text-center">${row.hadir}/${row.sakit}/${row.izin}/${row.alfa}</td>
@@ -130,6 +131,11 @@ tr.striped td {
 
 .text-center {
 	text-align: center;
+}
+
+.time {
+	font-size: 8pt;
+	color: #444;
 }
 
 .signature-section {

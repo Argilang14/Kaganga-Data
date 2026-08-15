@@ -24,6 +24,7 @@ import {
 	tableJadwalKegiatan,
 	tableJadwalMapel,
 	tableJadwalPelajaran,
+	tableJadwalTargetJp,
 	tableKegiatanCustom,
 	tableKelas
 } from '$lib/server/db/schema';
@@ -53,6 +54,7 @@ export const load: PageServerLoad = async ({ locals, depends, url }) => {
 			kegiatanCustom: [],
 			jadwalPelajaran: [],
 			daftarKelas: [],
+			targetJp: [],
 			daftarKodeMapel: [],
 			daftarKodeKokurikuler: []
 		};
@@ -73,6 +75,7 @@ export const load: PageServerLoad = async ({ locals, depends, url }) => {
 			jadwalJam: [],
 			daftarKelas: [],
 			daftarMapelItems: [],
+			targetJp: [],
 			daftarKegiatanItems: [],
 			tahunAjaranList: [],
 			jenisOptions: JADWAL_JENIS.map((value) => ({ value, label: JADWAL_JENIS_LABELS[value] })),
@@ -175,6 +178,14 @@ export const load: PageServerLoad = async ({ locals, depends, url }) => {
 			kategori: kegiatan.kategori,
 			warna: kegiatan.warna
 		}));
+	const targetJp = await db.query.tableJadwalTargetJp.findMany({
+		where: and(
+			eq(tableJadwalTargetJp.sekolahId, sekolahId),
+			eq(tableJadwalTargetJp.tahunAjaranId, context.tahunAjaranId),
+			eq(tableJadwalTargetJp.jenis, context.jenis)
+		),
+		columns: { kelasId: true, jadwalMapelId: true, jpPerMinggu: true }
+	});
 
 	return {
 		meta,
@@ -197,11 +208,108 @@ export const load: PageServerLoad = async ({ locals, depends, url }) => {
 		daftarKodeMapel: [...kodeSet].sort(),
 		daftarKodeKokurikuler: [],
 		daftarMapelItems: mapelItems,
+		targetJp,
 		daftarKegiatanItems: kegiatanItems
 	};
 };
 
 export const actions: Actions = {
+	saveJpTargets: async ({ request, locals }) => {
+		const sekolahId = locals.sekolah?.id;
+		if (!sekolahId) return fail(400, { fail: 'Pilih sekolah terlebih dahulu' });
+		if (locals.user?.type === 'user' || locals.user?.type === 'wali_asuh') {
+			return fail(403, { fail: 'Anda tidak memiliki izin' });
+		}
+
+		const formData = await request.formData();
+		const academic = await resolveSekolahAcademicContext(sekolahId);
+		const context = selectJadwalContext(academic, {
+			tahunAjaranId: formData.get('tahunAjaranId')?.toString(),
+			jenis: formData.get('jenis')?.toString()
+		});
+		if (!context.tahunAjaranId) return fail(400, { fail: 'Tahun ajaran belum tersedia.' });
+
+		let targets: Array<{ kelasId: number; jadwalMapelId: number; jpPerMinggu: number }>;
+		try {
+			targets = JSON.parse(formData.get('targets')?.toString() ?? '[]');
+		} catch {
+			return fail(400, { fail: 'Format target JP tidak valid.' });
+		}
+		if (!Array.isArray(targets) || targets.length > 5000) {
+			return fail(400, { fail: 'Jumlah target JP tidak valid.' });
+		}
+
+		const selectedYear = academic.tahunAjaranList.find((item) => item.id === context.tahunAjaranId);
+		const classSemesterId =
+			context.semesterId ??
+			selectedYear?.semester.find((item) => item.tipe === 'ganjil')?.id ??
+			null;
+		const [kelasRows, mapelRows] = await Promise.all([
+			db.query.tableKelas.findMany({
+				where: classSemesterId
+					? and(eq(tableKelas.sekolahId, sekolahId), eq(tableKelas.semesterId, classSemesterId))
+					: eq(tableKelas.sekolahId, sekolahId),
+				columns: { id: true, fase: true, nama: true }
+			}),
+			db.query.tableJadwalMapel.findMany({
+				where: eq(tableJadwalMapel.sekolahId, sekolahId),
+				columns: { id: true, jenjang: true, aktif: true }
+			})
+		]);
+		const kelasById = new Map(kelasRows.map((kelas) => [kelas.id, inferKelasJadwalJenjang(kelas)]));
+		const mapelById = new Map(
+			mapelRows.filter((mapel) => mapel.aktif).map((mapel) => [mapel.id, mapel])
+		);
+		const cleanTargets = new Map<string, (typeof targets)[number]>();
+		for (const raw of targets) {
+			const target = {
+				kelasId: Number(raw.kelasId),
+				jadwalMapelId: Number(raw.jadwalMapelId),
+				jpPerMinggu: Number(raw.jpPerMinggu)
+			};
+			const kelasJenjang = kelasById.get(target.kelasId);
+			const mapel = mapelById.get(target.jadwalMapelId);
+			if (
+				!kelasJenjang ||
+				!mapel ||
+				!mapelSesuaiJenjang(mapel.jenjang, kelasJenjang) ||
+				!Number.isInteger(target.jpPerMinggu) ||
+				target.jpPerMinggu < 0 ||
+				target.jpPerMinggu > 50
+			) {
+				return fail(400, { fail: 'Ada target JP yang tidak valid atau tidak sesuai jenjang.' });
+			}
+			cleanTargets.set(`${target.kelasId}|${target.jadwalMapelId}`, target);
+		}
+
+		const now = new Date().toISOString();
+		await db.transaction(async (tx) => {
+			for (const target of cleanTargets.values()) {
+				await tx
+					.delete(tableJadwalTargetJp)
+					.where(
+						and(
+							eq(tableJadwalTargetJp.sekolahId, sekolahId),
+							eq(tableJadwalTargetJp.tahunAjaranId, context.tahunAjaranId!),
+							eq(tableJadwalTargetJp.jenis, context.jenis),
+							eq(tableJadwalTargetJp.kelasId, target.kelasId),
+							eq(tableJadwalTargetJp.jadwalMapelId, target.jadwalMapelId)
+						)
+					);
+				await tx.insert(tableJadwalTargetJp).values({
+					sekolahId,
+					tahunAjaranId: context.tahunAjaranId!,
+					jenis: context.jenis,
+					...target,
+					createdAt: now,
+					updatedAt: now
+				});
+			}
+		});
+
+		return { message: `${cleanTargets.size} target JP berhasil disimpan.` };
+	},
+
 	saveSettings: async ({ request, locals }) => {
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(400, { fail: 'Pilih sekolah terlebih dahulu' });
@@ -337,7 +445,7 @@ export const actions: Actions = {
 			return fail(400, { fail: 'Format jadwal tidak valid' });
 		}
 
-		const [kelasRows, mapelRows, kegiatanRows, jamRows] = await Promise.all([
+		const [kelasRows, mapelRows, kegiatanRows, jamRows, targetJpRows] = await Promise.all([
 			db.query.tableKelas.findMany({
 				where: eq(tableKelas.sekolahId, sekolahId),
 				columns: { id: true, nama: true, fase: true, semesterId: true }
@@ -365,7 +473,15 @@ export const actions: Actions = {
 							inArray(tableJadwalJam.templateId, settingTemplateIds)
 						)
 					})
-				: []
+				: [],
+			db.query.tableJadwalTargetJp.findMany({
+				where: and(
+					eq(tableJadwalTargetJp.sekolahId, sekolahId),
+					eq(tableJadwalTargetJp.tahunAjaranId, context.tahunAjaranId),
+					eq(tableJadwalTargetJp.jenis, context.jenis)
+				),
+				columns: { kelasId: true, jadwalMapelId: true, jpPerMinggu: true }
+			})
 		]);
 		const kelasIds = new Set(kelasRows.map((row) => row.id));
 		const kelasNama = new Map(kelasRows.map((row) => [row.id, row.nama]));
@@ -512,7 +628,22 @@ export const actions: Actions = {
 					nama: mapel.nama,
 					jenjang: mapel.jenjang,
 					jpPerMinggu: mapel.jpPerMinggu ?? 0
-				})),
+				}))
+				.concat(
+					targetJpRows.flatMap((target) => {
+						const mapel = mapelRows.find((item) => item.id === target.jadwalMapelId);
+						if (!mapel?.aktif) return [];
+						return [
+							{
+								kelasId: target.kelasId,
+								kode: AGAMA_MAPEL_NAMES.has(mapel.nama) ? 'PAPB' : normalizeJadwalKode(mapel.kode),
+								nama: mapel.nama,
+								jenjang: mapel.jenjang,
+								jpPerMinggu: target.jpPerMinggu
+							}
+						];
+					})
+				),
 			slots: jamRows,
 			entries: resolved.map((entry) => ({
 				hari: entry.hari,

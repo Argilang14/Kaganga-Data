@@ -126,17 +126,17 @@ export function modalRoute(anchor: HTMLAnchorElement, name: string) {
 
 		// prevent navigation
 		e.preventDefault();
+		e.stopPropagation();
 
 		const href = anchor.href;
 
 		try {
 			anchor.setAttribute('data-preloading', 'true');
-			anchor.href = '#';
 
 			// run `load` functions (or rather, get the result of the `load` functions
 			// that are already running because of `data-sveltekit-preload-data`)
 			const result = await preloadData(href);
-			if (result.type === 'loaded' && result.status === 200) {
+			if (result.type === 'loaded' && result.status >= 200 && result.status < 300) {
 				/* eslint-disable-next-line svelte/no-navigation-without-resolve */
 				pushState(href, { modal: { data: result.data, name: name } });
 			} else {
@@ -146,7 +146,6 @@ export function modalRoute(anchor: HTMLAnchorElement, name: string) {
 			}
 		} finally {
 			anchor.removeAttribute('data-preloading');
-			anchor.href = href;
 		}
 	};
 }

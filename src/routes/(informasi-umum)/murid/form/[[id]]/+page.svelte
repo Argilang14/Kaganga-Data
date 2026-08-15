@@ -8,6 +8,10 @@
 	let { data } = $props();
 	let activeTab = $state(0);
 	const totalTabs = 6;
+	const formId = $derived(`form-murid-${data.murid?.id ?? 'baru'}`);
+	const saveAction = $derived(
+		data.murid?.id ? `/murid/form/${data.murid.id}?/save` : '/murid/form?/save'
+	);
 	const isLimitedWaliAsramaEdit = $derived.by(() => {
 		const u = page.data.user as { type?: string } | null | undefined;
 		return u?.type === 'wali_asrama';
@@ -19,11 +23,29 @@
 		}
 	});
 
+	function showFirstInvalidField(event: MouseEvent) {
+		const form = document.getElementById(formId) as HTMLFormElement | null;
+		const invalidField = form?.querySelector<HTMLElement>(':invalid');
+		if (!form || !invalidField) return;
+
+		event.preventDefault();
+		const tabContent = invalidField.closest('.tab-content');
+		const tabContents = Array.from(form.querySelectorAll('.tab-content'));
+		const tabIndex = tabContent ? tabContents.indexOf(tabContent) : -1;
+		if (tabIndex >= 0) activeTab = tabIndex;
+
+		requestAnimationFrame(() => {
+			invalidField.focus();
+			form.reportValidity();
+		});
+	}
+
 	// openDeleteModal removed — deletion moved to dedicated route/modal
 </script>
 
 <FormEnhance
-	action="?/save"
+	id={formId}
+	action={saveAction}
 	enctype="multipart/form-data"
 	init={data.murid}
 	onsuccess={async ({ data: res }) => {
@@ -38,11 +60,21 @@
 			const waliAsramaNip = res?.waliAsramaNip ?? null;
 			const waliAsuhNama = res?.waliAsuhNama ?? null;
 			const waliAsuhNip = res?.waliAsuhNip ?? null;
+			const murid = res?.murid ?? null;
 			// delay dispatch slightly so the detail modal can mount its listener
 			setTimeout(() => {
 				window.dispatchEvent(
 					new CustomEvent('murid:updated', {
-						detail: { id, foto, t, waliAsramaNama, waliAsramaNip, waliAsuhNama, waliAsuhNip }
+						detail: {
+							id,
+							foto,
+							t,
+							murid,
+							waliAsramaNama,
+							waliAsramaNip,
+							waliAsuhNama,
+							waliAsuhNip
+						}
 					})
 				);
 			}, 120);
@@ -224,9 +256,8 @@
 						<div class="flex flex-col gap-2 sm:flex-row">
 							<!-- Nama Ayah -->
 							<fieldset class="fieldset flex-1">
-								<legend class="fieldset-legend">Nama Ayah</legend>
+								<legend class="fieldset-legend">Nama Ayah (Opsional)</legend>
 								<input
-									required
 									type="text"
 									class="input validator bg-base-200 dark:bg-base-300 w-full dark:border-none"
 									placeholder="Contoh: Agus"
@@ -235,9 +266,8 @@
 							</fieldset>
 							<!-- Nama Ibu -->
 							<fieldset class="fieldset flex-1">
-								<legend class="fieldset-legend">Nama Ibu</legend>
+								<legend class="fieldset-legend">Nama Ibu (Opsional)</legend>
 								<input
-									required
 									type="text"
 									class="input validator bg-base-200 dark:bg-base-300 w-full dark:border-none"
 									placeholder="Contoh: Ratih"
@@ -248,9 +278,8 @@
 						<div class="flex flex-col gap-2 sm:flex-row">
 							<!-- Pekerjaan Ayah -->
 							<fieldset class="fieldset flex-1">
-								<legend class="fieldset-legend">Pekerjaan Ayah</legend>
+								<legend class="fieldset-legend">Pekerjaan Ayah (Opsional)</legend>
 								<input
-									required
 									type="text"
 									class="input validator bg-base-200 dark:bg-base-300 w-full dark:border-none"
 									placeholder="Contoh: Tani"
@@ -259,9 +288,8 @@
 							</fieldset>
 							<!-- Pekerjaan Ibu -->
 							<fieldset class="fieldset flex-1">
-								<legend class="fieldset-legend">Pekerjaan Ibu</legend>
+								<legend class="fieldset-legend">Pekerjaan Ibu (Opsional)</legend>
 								<input
-									required
 									type="text"
 									class="input validator bg-base-200 dark:bg-base-300 w-full dark:border-none"
 									placeholder="Contoh: IRT"
@@ -271,9 +299,8 @@
 						</div>
 						<!-- Kontak -->
 						<fieldset class="fieldset">
-							<legend class="fieldset-legend">Kontak</legend>
+							<legend class="fieldset-legend">Kontak (Opsional)</legend>
 							<input
-								required
 								type="text"
 								class="input validator bg-base-200 dark:bg-base-300 w-full dark:border-none"
 								placeholder="Nomor telepon atau WhatsApp"
@@ -507,7 +534,8 @@
 				<button
 					class="btn shadow-none {data.murid?.id ? 'btn-secondary' : 'btn-primary'}"
 					type="submit"
-					disabled={submitting || invalid}
+					disabled={submitting}
+					onclick={showFirstInvalidField}
 				>
 					{#if submitting}
 						<span class="loading loading-spinner"></span>

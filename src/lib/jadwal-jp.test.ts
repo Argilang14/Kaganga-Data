@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-const { calculateWeeklyJp, summarizeWeeklyJp } = (await import(
+const { calculateWeeklyJp, summarizeWeeklyJp, summarizeWeeklyJpBySubject } = (await import(
 	'./jadwal-jp' + '.ts'
 )) as typeof import('./jadwal-jp');
 
@@ -64,4 +64,61 @@ test('mendeteksi beban lebih dan meringkas status', () => {
 	assert.equal(results[0].status, 'lebih');
 	assert.equal(results[0].difference, 1);
 	assert.deepEqual(summarizeWeeklyJp(results), { kurang: 0, tepat: 0, lebih: 1 });
+});
+
+test('target khusus kelas menggantikan target default termasuk nilai nol', () => {
+	const result = calculateWeeklyJp({
+		classes: [classes[0], { id: 3, nama: 'V', jenjang: 'srd' }],
+		targets: [
+			{ ...targets[0], jpPerMinggu: 4 },
+			{ ...targets[0], kelasId: 1, jpPerMinggu: 2 },
+			{ ...targets[0], kelasId: 3, jpPerMinggu: 0 }
+		],
+		slots,
+		entries: [{ hari: 'senin', jamKe: 1, kelasId: 1, kode: 'BIND' }]
+	});
+
+	assert.deepEqual(
+		result.map(({ kelasId, target }) => ({ kelasId, target })),
+		[{ kelasId: 1, target: 2 }]
+	);
+});
+
+test('ringkasan mapel menjumlahkan sisa JP, bukan jumlah kelas', () => {
+	const summary = summarizeWeeklyJpBySubject([
+		{
+			kelasId: 1,
+			kelas: 'X.A',
+			jenjang: 'srma',
+			kode: 'GEO',
+			nama: 'Geografi',
+			target: 5,
+			actual: 3,
+			difference: -2,
+			status: 'kurang'
+		},
+		{
+			kelasId: 2,
+			kelas: 'X.B',
+			jenjang: 'srma',
+			kode: 'GEO',
+			nama: 'Geografi',
+			target: 5,
+			actual: 4,
+			difference: -1,
+			status: 'kurang'
+		}
+	]).get('GEO');
+
+	assert.deepEqual(summary, {
+		kode: 'GEO',
+		nama: 'Geografi',
+		actual: 7,
+		target: 10,
+		kurangJp: 3,
+		lebihJp: 0,
+		kurangKelas: 2,
+		tepatKelas: 0,
+		lebihKelas: 0
+	});
 });

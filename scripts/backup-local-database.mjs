@@ -10,7 +10,7 @@ if (!sourceUrl.startsWith('file:')) {
 
 const timestamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-');
 const label = (process.env.BACKUP_LABEL || 'manual').replace(/[^a-z0-9-]/gi, '-').toLowerCase();
-const backupDirectory = path.resolve('data');
+const backupDirectory = path.resolve(process.env.BACKUP_DIRECTORY || 'data');
 const backupPath = path.join(backupDirectory, `database-backup-${label}-${timestamp}.sqlite3`);
 const quotedBackupPath = backupPath.replaceAll('\\', '/').replaceAll("'", "''");
 

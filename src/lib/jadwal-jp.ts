@@ -7,6 +7,8 @@ export type WeeklyJpClass = {
 };
 
 export type WeeklyJpTarget = {
+	id?: number;
+	kelasId?: number | null;
 	kode: string;
 	nama: string;
 	jenjang: string;
@@ -66,15 +68,18 @@ export function calculateWeeklyJp(options: {
 	const results: WeeklyJpResult[] = [];
 
 	for (const kelas of options.classes) {
-		const classTargets = new Map<string, WeeklyJpTarget>();
+		const classTargets = new Map<string, { target: WeeklyJpTarget; specific: boolean }>();
 		for (const target of options.targets) {
-			if (target.jpPerMinggu <= 0 || !targetMatchesClass(target.jenjang, kelas.jenjang)) continue;
+			if (!targetMatchesClass(target.jenjang, kelas.jenjang)) continue;
+			if (target.kelasId != null && target.kelasId !== kelas.id) continue;
+			const specific = target.kelasId === kelas.id;
 			const existing = classTargets.get(target.kode);
-			if (!existing || target.jpPerMinggu > existing.jpPerMinggu)
-				classTargets.set(target.kode, target);
+			if (!existing || (specific && !existing.specific))
+				classTargets.set(target.kode, { target, specific });
 		}
 
-		for (const target of classTargets.values()) {
+		for (const { target } of classTargets.values()) {
+			if (target.jpPerMinggu <= 0) continue;
 			let actual = 0;
 			for (const slot of lessonSlots) {
 				if (
@@ -112,4 +117,45 @@ export function summarizeWeeklyJp(results: WeeklyJpResult[]) {
 		},
 		{ kurang: 0, tepat: 0, lebih: 0 }
 	);
+}
+
+export function summarizeWeeklyJpBySubject(results: WeeklyJpResult[]) {
+	const summaries = new Map<
+		string,
+		{
+			kode: string;
+			nama: string;
+			actual: number;
+			target: number;
+			kurangJp: number;
+			lebihJp: number;
+			kurangKelas: number;
+			tepatKelas: number;
+			lebihKelas: number;
+		}
+	>();
+	for (const result of results) {
+		const summary = summaries.get(result.kode) ?? {
+			kode: result.kode,
+			nama: result.nama,
+			actual: 0,
+			target: 0,
+			kurangJp: 0,
+			lebihJp: 0,
+			kurangKelas: 0,
+			tepatKelas: 0,
+			lebihKelas: 0
+		};
+		summary.actual += result.actual;
+		summary.target += result.target;
+		if (result.difference < 0) {
+			summary.kurangJp += Math.abs(result.difference);
+			summary.kurangKelas += 1;
+		} else if (result.difference > 0) {
+			summary.lebihJp += result.difference;
+			summary.lebihKelas += 1;
+		} else summary.tepatKelas += 1;
+		summaries.set(result.kode, summary);
+	}
+	return summaries;
 }

@@ -22,6 +22,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 		orderBy: asc(tablePegawai.nama)
 	});
 	const workbook: any = new ExcelJS.Workbook();
+	workbook.creator = 'Kaganga';
+	workbook.created = new Date();
 	const sheet: any = workbook.addWorksheet('Pegawai');
 	configurePegawaiSheet(sheet);
 	for (const row of rows) {
@@ -61,10 +63,12 @@ export const GET: RequestHandler = async ({ locals }) => {
 	addPegawaiInfoSheet(workbook);
 
 	const buffer = await workbook.xlsx.writeBuffer();
+	const exportDate = new Date().toISOString().slice(0, 10);
 	return new Response(buffer as unknown as BodyInit, {
 		headers: {
 			'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-			'content-disposition': 'attachment; filename="data-pegawai.xlsx"'
+			'content-disposition': `attachment; filename="data-pegawai-${exportDate}.xlsx"`,
+			'cache-control': 'no-store'
 		}
 	});
 };

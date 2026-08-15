@@ -58,6 +58,34 @@ export type PegawaiExcelValues = {
 
 export type PegawaiExcelKey = keyof PegawaiExcelValues;
 
+const PEGAWAI_EXCEL_GROUP_COLORS: ReadonlyArray<{
+	keys: readonly PegawaiExcelKey[];
+	color: string;
+}> = [
+	{
+		keys: [
+			'nama', 'nip', 'nik', 'nuptk', 'jenis', 'jabatan', 'status', 'jenisKelamin',
+			'tempatLahir', 'tanggalLahir', 'agama', 'statusPerkawinan'
+		],
+		color: 'FF245EA8'
+	},
+	{
+		keys: [
+			'telepon', 'email', 'alamat', 'desa', 'kecamatan', 'kabupaten', 'provinsi', 'kodePos',
+			'kontakDaruratNama', 'kontakDaruratHubungan', 'kontakDaruratTelepon'
+		],
+		color: 'FF0F766E'
+	},
+	{
+		keys: [
+			'statusKepegawaian', 'tanggalMulaiKerja', 'unitPenempatan', 'pangkatGolongan',
+			'nomorSk', 'tanggalSk'
+		],
+		color: 'FFA16207'
+	},
+	{ keys: ['catatan'], color: 'FF475569' }
+];
+
 type ColumnDefinition = {
 	key: PegawaiExcelKey;
 	header: string;
@@ -378,9 +406,18 @@ export function configurePegawaiSheet(sheet: any) {
 	sheet.autoFilter = { from: 'A1', to: `${sheet.getColumn(PEGAWAI_EXCEL_COLUMNS.length).letter}1` };
 	const header = sheet.getRow(1);
 	header.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-	header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF245EA8' } };
 	header.alignment = { vertical: 'middle', horizontal: 'center' };
 	header.height = 24;
+	for (const group of PEGAWAI_EXCEL_GROUP_COLORS) {
+		for (const key of group.keys) {
+			header.getCell(sheet.getColumn(key).number).fill = {
+				type: 'pattern',
+				pattern: 'solid',
+				fgColor: { argb: group.color }
+			};
+		}
+	}
+	sheet.properties.tabColor = { argb: 'FF245EA8' };
 	for (const column of PEGAWAI_EXCEL_COLUMNS) {
 		if (column.identifier) sheet.getColumn(column.key).numFmt = '@';
 	}
@@ -407,6 +444,45 @@ export function configurePegawaiSheet(sheet: any) {
 	}
 }
 
+export function addPegawaiExampleSheet(workbook: any) {
+	const sheet = workbook.addWorksheet('Contoh Pengisian');
+	configurePegawaiSheet(sheet);
+	sheet.addRow({
+		nama: 'Contoh Pegawai',
+		nip: '198001012006041001',
+		nik: '1701010101800001',
+		nuptk: '0012345678901234',
+		jenis: 'guru',
+		jabatan: 'Guru Matematika',
+		status: 'aktif',
+		jenisKelamin: 'laki-laki',
+		tempatLahir: 'Bengkulu',
+		tanggalLahir: '1980-01-01',
+		agama: 'Islam',
+		statusPerkawinan: 'Kawin',
+		telepon: '081234567890',
+		email: 'contoh@sekolah.id',
+		alamat: 'Jl. Pendidikan No. 1',
+		desa: 'Contoh Kelurahan',
+		kecamatan: 'Contoh Kecamatan',
+		kabupaten: 'Kota Bengkulu',
+		provinsi: 'Bengkulu',
+		kodePos: '38225',
+		kontakDaruratNama: 'Keluarga Pegawai',
+		kontakDaruratHubungan: 'Suami/Istri',
+		kontakDaruratTelepon: '081234567891',
+		statusKepegawaian: 'PNS',
+		tanggalMulaiKerja: '2006-04-01',
+		unitPenempatan: 'SRMA',
+		pangkatGolongan: 'III/c',
+		nomorSk: 'SK-001/2006',
+		tanggalSk: '2006-04-01',
+		catatan: 'Hapus atau abaikan lembar contoh ini saat mengisi data.'
+	});
+	sheet.getRow(2).alignment = { vertical: 'top', wrapText: true };
+	return sheet;
+}
+
 export function addPegawaiInfoSheet(workbook: any) {
 	const sheet = workbook.addWorksheet('Petunjuk');
 	sheet.columns = [
@@ -414,6 +490,11 @@ export function addPegawaiInfoSheet(workbook: any) {
 		{ header: 'Keterangan', key: 'keterangan', width: 90 }
 	];
 	sheet.addRows([
+		{
+			bagian: 'Kelompok warna',
+			keterangan:
+				'Biru: data pegawai, hijau: kontak dan alamat, kuning: kepegawaian, abu-abu: catatan.'
+		},
 		{
 			bagian: 'Kunci pembaruan',
 			keterangan: 'Urutan pencocokan: NIP, lalu NIK. Data tanpa keduanya dianggap pegawai baru.'

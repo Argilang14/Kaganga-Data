@@ -14,11 +14,20 @@
 		nama: string;
 		kode: string | null;
 	}
+	interface ScheduleOption {
+		value: string;
+		jadwalMapelId: number;
+		mataPelajaranId: number | null;
+		nama: string;
+		jamPelajaran: string;
+		pukul: string | null;
+	}
 
 	interface EditData {
 		id: number;
 		kelasId: number;
-		mataPelajaranId: number;
+		mataPelajaranId: number | null;
+		jadwalMapelId: number | null;
 		lingkupMateri: string;
 		tujuanPembelajaranId: number | null;
 		tujuanPembelajaranManual: string;
@@ -31,6 +40,9 @@
 		kelasId?: number;
 		mapelId?: number | null;
 		mataPelajaranList: MataPelajaranItem[];
+		scheduleOptions: ScheduleOption[];
+		jenisJadwal: string;
+		initialJadwalIds?: string;
 		tujuanPembelajaranList: TujuanPembelajaranItem[];
 		lingkupMateriList: string[];
 		userType: string;
@@ -44,6 +56,9 @@
 		kelasId,
 		mapelId,
 		mataPelajaranList,
+		scheduleOptions,
+		jenisJadwal,
+		initialJadwalIds = '',
 		tujuanPembelajaranList,
 		onAction,
 		onSuccess
@@ -52,10 +67,28 @@
 	type TujuanMode = 'data' | 'manual';
 
 	const defaultKelasId = $derived(editData?.kelasId ?? kelasId ?? 0);
-	const defaultMapelId = $derived(editData?.mataPelajaranId ?? mapelId ?? 0);
+	const defaultMapelId = $derived(editData ? (editData.jadwalMapelId ?? 0) : (mapelId ?? 0));
 
 	let formKelasId = $state(defaultKelasId);
-	let formMapelId = $state(defaultMapelId);
+	let formMapelId = $state(
+		initialJadwalIds
+			? (scheduleOptions.find((item) => item.value === initialJadwalIds)?.jadwalMapelId ??
+					defaultMapelId)
+			: defaultMapelId
+	);
+	let formJadwalIds = $state(
+		editData
+			? ''
+			: initialJadwalIds ||
+					(scheduleOptions.find((item) => item.jadwalMapelId === defaultMapelId)?.value ?? '')
+	);
+	let formLegacyMapelId = $state(
+		editData?.mataPelajaranId ??
+			scheduleOptions.find((item) =>
+				initialJadwalIds ? item.value === initialJadwalIds : item.jadwalMapelId === defaultMapelId
+			)?.mataPelajaranId ??
+			null
+	);
 	let formLingkupMateri = $state(editData?.lingkupMateri ?? '');
 	let formTujuanPembelajaranId = $state(editData?.tujuanPembelajaranId ?? null);
 	let formTujuanPembelajaranManual = $state(editData?.tujuanPembelajaranManual ?? '');
@@ -67,7 +100,7 @@
 	const filteredLingkupMateri = $derived.by(() => {
 		const values = new Set<string>();
 		for (const tp of tujuanPembelajaranList) {
-			if (formMapelId && tp.mataPelajaranId === formMapelId && tp.lingkupMateri) {
+			if (formLegacyMapelId && tp.mataPelajaranId === formLegacyMapelId && tp.lingkupMateri) {
 				values.add(tp.lingkupMateri);
 			}
 		}
@@ -76,7 +109,7 @@
 
 	const filteredTujuanPembelajaran = $derived.by(() =>
 		tujuanPembelajaranList.filter(
-			(tp) => tp.lingkupMateri === formLingkupMateri && tp.mataPelajaranId === formMapelId
+			(tp) => tp.lingkupMateri === formLingkupMateri && tp.mataPelajaranId === formLegacyMapelId
 		)
 	);
 
@@ -112,29 +145,41 @@
 		<input type="hidden" name="id" value={editData?.id ?? ''} />
 		<input type="hidden" name="kelasId" value={formKelasId} />
 		<input type="hidden" name="tanggal" value={tanggal ?? ''} />
+		<input type="hidden" name="jenisJadwal" value={jenisJadwal} />
+		<input type="hidden" name="jadwalIds" value={formJadwalIds} />
 
-		{#if mataPelajaranList.length > 0}
+		{#if !editData && scheduleOptions.length > 0}
 			<fieldset class="fieldset">
-				<legend class="fieldset-legend">Mata Pelajaran</legend>
+				<legend class="fieldset-legend">Mata Pelajaran dan Blok Jadwal</legend>
 				<select
 					class="select bg-base-200 dark:bg-base-300 w-full dark:border-none"
-					name="mataPelajaranId"
-					value={formMapelId}
+					value={formJadwalIds}
 					onchange={(e) => {
-						formMapelId = Number(e.currentTarget.value);
+						formJadwalIds = e.currentTarget.value;
+						const selected = scheduleOptions.find((item) => item.value === formJadwalIds);
+						formMapelId = selected?.jadwalMapelId ?? 0;
+						formLegacyMapelId = selected?.mataPelajaranId ?? null;
 						formLingkupMateri = '';
 						formTujuanPembelajaranId = null;
 						formTujuanPembelajaranManual = '';
 					}}
 					required
 				>
-					<option value="" disabled>Pilih Mata Pelajaran</option>
-					{#each mataPelajaranList as mp}
-						<option value={mp.id}>{mp.nama}</option>
+					<option value="" disabled>Pilih mata pelajaran dan jam</option>
+					{#each scheduleOptions as option}
+						<option value={option.value}>
+							{option.nama} · JP {option.jamPelajaran}{option.pukul ? ` · ${option.pukul}` : ''}
+						</option>
 					{/each}
 				</select>
 			</fieldset>
+		{:else if editData}
+			<div class="alert alert-soft text-sm">
+				Data jadwal (tanggal dan JP) dipertahankan. Materi, tujuan, dan catatan dapat diperbarui.
+			</div>
 		{/if}
+		<input type="hidden" name="jadwalMapelId" value={formMapelId} />
+		<input type="hidden" name="mataPelajaranId" value={formLegacyMapelId ?? ''} />
 
 		<fieldset class="fieldset">
 			<legend class="fieldset-legend">Lingkup Materi</legend>
@@ -160,8 +205,18 @@
 		<fieldset class="fieldset">
 			<legend class="fieldset-legend">Tujuan Pembelajaran</legend>
 			<div class="join mb-2 w-full" role="group" aria-label="Sumber tujuan pembelajaran">
-				<button type="button" class="btn join-item flex-1 shadow-none" class:btn-active={tujuanMode === 'data'} onclick={() => setTujuanMode('data')}>Pilih Data</button>
-				<button type="button" class="btn join-item flex-1 shadow-none" class:btn-active={tujuanMode === 'manual'} onclick={() => setTujuanMode('manual')}>Isi Manual</button>
+				<button
+					type="button"
+					class="btn join-item flex-1 shadow-none"
+					class:btn-active={tujuanMode === 'data'}
+					onclick={() => setTujuanMode('data')}>Pilih Data</button
+				>
+				<button
+					type="button"
+					class="btn join-item flex-1 shadow-none"
+					class:btn-active={tujuanMode === 'manual'}
+					onclick={() => setTujuanMode('manual')}>Isi Manual</button
+				>
 			</div>
 
 			{#if tujuanMode === 'data'}
@@ -193,8 +248,7 @@
 						formTujuanPembelajaranManual = e.currentTarget.value;
 					}}
 					placeholder="Tuliskan tujuan pembelajaran"
-					spellcheck="false"
-				></textarea>
+					spellcheck="false"></textarea>
 				<p class="label">{formTujuanPembelajaranManual.length}/500 karakter</p>
 			{/if}
 		</fieldset>
@@ -211,8 +265,7 @@
 					formCatatan = e.currentTarget.value;
 				}}
 				placeholder="Tuliskan catatan (maksimal 300 karakter)"
-				spellcheck="false"
-			></textarea>
+				spellcheck="false"></textarea>
 			<p class="label">{formCatatan.length}/300 karakter</p>
 		</fieldset>
 	{/snippet}

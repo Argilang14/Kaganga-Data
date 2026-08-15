@@ -1,15 +1,22 @@
-import { buildJpNumberBySlot, jadwalSlotKey } from '$lib/jadwal-slots';
 import db from '$lib/server/db';
 import { ensureJurnalMengajarSchema } from '$lib/server/db/ensure-jurnal-mengajar';
 import {
+	tableAuthUserKelas,
 	tableAuthUserMataPelajaran,
 	tableJadwalPelajaran,
-	tableJadwalJam,
+	tableJadwalMapel,
 	tableJurnalMengajar,
 	tableKelas,
 	tableMataPelajaran,
 	tableTujuanPembelajaran
 } from '$lib/server/db/schema';
+import {
+	describeJurnalSchedule,
+	findJurnalScheduleEntries,
+	loadJurnalScheduleContext,
+	splitJurnalScheduleBlocks
+} from '$lib/server/jurnal-mengajar';
+import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { buildKelasContext } from '$lib/server/route-utils';
@@ -37,6 +44,7 @@ export async function load({ locals, url, depends, parent }) {
 	const user = locals.user as {
 		id?: number;
 		type?: string;
+		pegawaiId?: number | null;
 		mataPelajaranId?: number | null;
 	} | null;
 
@@ -56,11 +64,14 @@ export async function load({ locals, url, depends, parent }) {
 			tujuanPembelajaranList: [],
 			lingkupMateriList: [],
 			mataPelajaranList: [],
+			scheduleOptions: [],
 			hasAnyMapel: false,
 			mapelId: null,
 			tanggal: null,
+			scheduleContext: null,
 			page: {
 				kelasId,
+				kelasNama: null,
 				currentPage: 1,
 				totalPages: 1,
 				totalItems: 0,
@@ -70,97 +81,39 @@ export async function load({ locals, url, depends, parent }) {
 	}
 
 	const userType = user?.type ?? '';
+	const requestedJenis = url.searchParams.get('jenis_jadwal');
+	const scheduleContext = academicContext
+		? await loadJurnalScheduleContext(sekolahId, academicContext, tanggal, requestedJenis)
+		: null;
 
 	// Determine which mataPelajaranIds are available
 	const kelasIdNum = kelasId ? Number(kelasId) : null;
 	const effectiveKelasIds = kelasIdNum ? [kelasIdNum] : kelasIds;
 
 	// Get all mata pelajaran for the relevant classes
-	let mataPelajaranList: Array<{ id: number; nama: string; kode: string | null }> = [];
+	let mataPelajaranList: Array<{
+		id: number;
+		jadwalMapelId: number;
+		mataPelajaranId: number | null;
+		nama: string;
+		kode: string | null;
+	}> = [];
+	let scheduleOptions: Array<{
+		value: string;
+		jadwalMapelId: number;
+		mataPelajaranId: number | null;
+		nama: string;
+		jamPelajaran: string;
+		pukul: string | null;
+	}> = [];
 	let mapelIds: number[] = [];
 
 	let hasAnyMapel = false;
 
-	if (userType === 'admin' || userType === 'wali_kelas') {
-		const dayNames = ['minggu', 'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu'];
-		const dateObj = tanggal ? new Date(tanggal + 'T00:00:00') : new Date();
-		const hari = dayNames[dateObj.getDay()];
-		const tambahanKode = new Set(['IST', 'PLG']);
-
-		const allMapelForClass = await db
-			.select({
-				id: tableMataPelajaran.id,
-				nama: tableMataPelajaran.nama,
-				kode: tableMataPelajaran.kode
-			})
-			.from(tableMataPelajaran)
-			.where(inArray(tableMataPelajaran.kelasId, effectiveKelasIds))
-			.orderBy(asc(tableMataPelajaran.nama));
-
-		hasAnyMapel = allMapelForClass.length > 0;
-
-		const jadwalEntries = await db.query.tableJadwalPelajaran.findMany({
-			columns: { kodeKegiatan: true },
-			where: and(
-				eq(tableJadwalPelajaran.sekolahId, sekolahId),
-				inArray(tableJadwalPelajaran.kelasId, effectiveKelasIds),
-				eq(tableJadwalPelajaran.hari, hari),
-				eq(tableJadwalPelajaran.tipe, 'pelajaran')
-			)
-		});
-
-		const uniqueKode = [
-			...new Set(
-				jadwalEntries.map((j) => j.kodeKegiatan).filter((k) => !tambahanKode.has(k.toUpperCase()))
-			)
-		];
-
-		if (uniqueKode.length > 0) {
-			const matchingMp = await db.query.tableMataPelajaran.findMany({
-				columns: { id: true, kode: true, nama: true },
-				where: and(
-					inArray(tableMataPelajaran.kelasId, effectiveKelasIds),
-					inArray(tableMataPelajaran.kode, uniqueKode)
-				)
-			});
-
-			const kodeToMpMap = new Map<string, { id: number; nama: string }>();
-			for (const mp of matchingMp) {
-				if (mp.kode) kodeToMpMap.set(mp.kode, { id: mp.id, nama: mp.nama });
-			}
-
-			if (uniqueKode.includes('PAPB') && !kodeToMpMap.has('PAPB')) {
-				const agamaMapelNames = [
-					'Pendidikan Agama dan Budi Pekerti',
-					'Pendidikan Agama Islam dan Budi Pekerti',
-					'Pendidikan Agama Kristen dan Budi Pekerti',
-					'Pendidikan Agama Katolik dan Budi Pekerti',
-					'Pendidikan Agama Buddha dan Budi Pekerti',
-					'Pendidikan Agama Hindu dan Budi Pekerti',
-					'Pendidikan Agama Konghuchu dan Budi Pekerti'
-				];
-				const agamaMp = await db.query.tableMataPelajaran.findMany({
-					columns: { id: true, nama: true },
-					where: and(
-						inArray(tableMataPelajaran.kelasId, effectiveKelasIds),
-						inArray(tableMataPelajaran.nama, agamaMapelNames)
-					)
-				});
-				if (agamaMp.length > 0) {
-					kodeToMpMap.set('PAPB', { id: agamaMp[0].id, nama: agamaMp[0].nama });
-				}
-			}
-
-			mataPelajaranList = uniqueKode
-				.map((kode) => kodeToMpMap.get(kode))
-				.filter((mp): mp is { id: number; nama: string } => !!mp)
-				.map((mp) => ({ ...mp, kode: null }));
-			mapelIds = mataPelajaranList.map((mp) => mp.id);
-		}
-	} else if (userType === 'user') {
+	if (userType === 'admin' || userType === 'wali_kelas' || userType === 'user') {
 		let userMpIds: number[] = [];
-		if (user?.mataPelajaranId) userMpIds.push(user.mataPelajaranId);
-		if (user?.id) {
+		if (userType === 'user' && user?.mataPelajaranId) userMpIds.push(user.mataPelajaranId);
+		if (userType === 'user' && user?.id) {
 			const extra = await db.query.tableAuthUserMataPelajaran.findMany({
 				columns: { mataPelajaranId: true },
 				where: eq(tableAuthUserMataPelajaran.authUserId, user.id)
@@ -170,121 +123,122 @@ export async function load({ locals, url, depends, parent }) {
 			}
 		}
 
-		const userMapels =
-			userMpIds.length > 0
-				? await db
-						.select({
-							id: tableMataPelajaran.id,
-							nama: tableMataPelajaran.nama,
-							kode: tableMataPelajaran.kode
-						})
-						.from(tableMataPelajaran)
-						.where(inArray(tableMataPelajaran.id, userMpIds))
-						.orderBy(asc(tableMataPelajaran.nama))
-				: [];
-
-		hasAnyMapel = userMapels.length > 0;
-
-		if (userMapels.length > 0) {
+		if (scheduleContext?.templateIds.length) {
 			const dayNames = ['minggu', 'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu'];
-			const dateObj = tanggal ? new Date(tanggal + 'T00:00:00') : new Date();
+			const dateObj = new Date(tanggal + 'T00:00:00');
 			const hari = dayNames[dateObj.getDay()];
 			const tambahanKode = new Set(['IST', 'PLG']);
 
 			const jadwalEntries = await db.query.tableJadwalPelajaran.findMany({
-				columns: { kodeKegiatan: true },
+				columns: { kodeKegiatan: true, mataPelajaranId: true, jadwalMapelId: true },
 				where: and(
 					eq(tableJadwalPelajaran.sekolahId, sekolahId),
 					inArray(tableJadwalPelajaran.kelasId, effectiveKelasIds),
 					eq(tableJadwalPelajaran.hari, hari),
-					eq(tableJadwalPelajaran.tipe, 'pelajaran')
+					eq(tableJadwalPelajaran.tipe, 'pelajaran'),
+					inArray(tableJadwalPelajaran.templateId, scheduleContext.templateIds)
 				)
 			});
-
+			const directGlobalIds = [
+				...new Set(jadwalEntries.map((j) => j.jadwalMapelId).filter((id): id is number => !!id))
+			];
+			const directLegacyIds = [
+				...new Set(jadwalEntries.map((j) => j.mataPelajaranId).filter((id): id is number => !!id))
+			];
 			const uniqueKode = [
 				...new Set(
 					jadwalEntries.map((j) => j.kodeKegiatan).filter((k) => !tambahanKode.has(k.toUpperCase()))
 				)
 			];
 
-			if (uniqueKode.length > 0) {
-				const matchingMp = await db.query.tableMataPelajaran.findMany({
+			if (directGlobalIds.length || directLegacyIds.length || uniqueKode.length) {
+				const globalMapels = await db.query.tableJadwalMapel.findMany({
+					columns: { id: true, kode: true, nama: true, guruPegawaiId: true },
+					where: and(
+						eq(tableJadwalMapel.sekolahId, sekolahId),
+						directGlobalIds.length && uniqueKode.length
+							? sql`(${inArray(tableJadwalMapel.id, directGlobalIds)} OR ${inArray(tableJadwalMapel.kode, uniqueKode)})`
+							: directGlobalIds.length
+								? inArray(tableJadwalMapel.id, directGlobalIds)
+								: inArray(tableJadwalMapel.kode, uniqueKode)
+					)
+				});
+				const legacyMapels = await db.query.tableMataPelajaran.findMany({
 					columns: { id: true, kode: true, nama: true },
 					where: and(
 						inArray(tableMataPelajaran.kelasId, effectiveKelasIds),
-						inArray(tableMataPelajaran.kode, uniqueKode)
+						directLegacyIds.length && uniqueKode.length
+							? sql`(${inArray(tableMataPelajaran.id, directLegacyIds)} OR ${inArray(tableMataPelajaran.kode, uniqueKode)})`
+							: directLegacyIds.length
+								? inArray(tableMataPelajaran.id, directLegacyIds)
+								: inArray(tableMataPelajaran.kode, uniqueKode)
 					)
 				});
-
-				const kodeToMpMap = new Map<string, { id: number; nama: string }>();
-				for (const mp of matchingMp) {
-					if (mp.kode) kodeToMpMap.set(mp.kode, { id: mp.id, nama: mp.nama });
-				}
-
-				// Always run agama fallback for PAPB to capture all variants (Kristen, Katolik, dll)
-				// even if a matchingMp entry with kode='PAPB' already exists, since
-				// a single 'PAPB' key in kodeToMpMap can only hold one subject.
-				if (uniqueKode.includes('PAPB')) {
-					const agamaMapelNames = [
-						'Pendidikan Agama dan Budi Pekerti',
-						'Pendidikan Agama Islam dan Budi Pekerti',
-						'Pendidikan Agama Kristen dan Budi Pekerti',
-						'Pendidikan Agama Katolik dan Budi Pekerti',
-						'Pendidikan Agama Buddha dan Budi Pekerti',
-						'Pendidikan Agama Hindu dan Budi Pekerti',
-						'Pendidikan Agama Konghuchu dan Budi Pekerti'
-					];
-					const agamaMp = await db.query.tableMataPelajaran.findMany({
-						columns: { id: true, nama: true },
-						where: and(
-							inArray(tableMataPelajaran.kelasId, effectiveKelasIds),
-							inArray(tableMataPelajaran.nama, agamaMapelNames)
-						)
-					});
-					for (const am of agamaMp) {
-						kodeToMpMap.set('PAPB-' + am.id, { id: am.id, nama: am.nama });
-					}
-				}
-
-				mataPelajaranList = uniqueKode
-					.flatMap((kode) => {
-						if (kode === 'PAPB') {
-							const result: Array<{ id: number; nama: string }> = [];
-							for (const [key, mp] of kodeToMpMap.entries()) {
-								if (key === 'PAPB' || key.startsWith('PAPB-')) {
-									result.push(mp);
-								}
-							}
-							return result;
-						}
-						const mp = kodeToMpMap.get(kode);
-						return mp ? [mp] : [];
+				const legacyByCode = new Map(
+					legacyMapels.filter((item) => item.kode).map((item) => [item.kode!, item])
+				);
+				mataPelajaranList = globalMapels
+					.filter(
+						(mp) =>
+							userType !== 'user' ||
+							!user?.pegawaiId ||
+							!mp.guruPegawaiId ||
+							mp.guruPegawaiId === user.pegawaiId
+					)
+					.map((mp) => {
+						const legacy = mp.kode ? legacyByCode.get(mp.kode) : null;
+						return {
+							id: mp.id,
+							jadwalMapelId: mp.id,
+							mataPelajaranId: legacy?.id ?? null,
+							nama: mp.nama,
+							kode: mp.kode
+						};
 					})
-					.filter((mp) => {
-						if (userMpIds.includes(mp.id)) return true;
-						return userMapels.some((u) => u.nama === mp.nama);
-					})
-					.map((mp) => ({ ...mp, kode: null }));
-
-				const seen = new Set<number>();
-				mataPelajaranList = mataPelajaranList.filter((mp) => {
-					if (seen.has(mp.id)) return false;
-					seen.add(mp.id);
-					return true;
-				});
-				mapelIds = mataPelajaranList.map((mp) => mp.id);
+					.sort((a, b) => a.nama.localeCompare(b.nama));
+				mapelIds = mataPelajaranList
+					.map((mp) => mp.mataPelajaranId)
+					.filter((id): id is number => !!id);
 			}
+		}
+		hasAnyMapel = mataPelajaranList.length > 0;
+		if (kelasIdNum && scheduleContext && mataPelajaranList.length) {
+			const options = await Promise.all(
+				mataPelajaranList.map(async (mapel) => {
+					const entries = await findJurnalScheduleEntries({
+						sekolahId,
+						kelasId: kelasIdNum,
+						tanggal,
+						templateIds: scheduleContext.templateIds,
+						jadwalMapelId: mapel.jadwalMapelId,
+						kode: mapel.kode
+					});
+					return Promise.all(
+						splitJurnalScheduleBlocks(entries).map(async (block) => {
+							const description = await describeJurnalSchedule(block);
+							return {
+								value: block.map((entry) => entry.id).join(','),
+								jadwalMapelId: mapel.jadwalMapelId,
+								mataPelajaranId: mapel.mataPelajaranId,
+								nama: mapel.nama,
+								jamPelajaran: description.jamPelajaran,
+								pukul: description.pukul
+							};
+						})
+					);
+				})
+			);
+			scheduleOptions = options.flat();
+			hasAnyMapel = scheduleOptions.length > 0;
 		}
 	}
 
 	// Get mapelId from URL param or default to first
 	const mapelIdParam = url.searchParams.get('mapel_id');
 	const mapelId =
-		mapelIdParam && mapelIds.some((id) => id === Number(mapelIdParam))
+		mapelIdParam && mataPelajaranList.some((item) => item.jadwalMapelId === Number(mapelIdParam))
 			? Number(mapelIdParam)
-			: mapelIds.length > 0
-				? mapelIds[0]
-				: null;
+			: (mataPelajaranList[0]?.jadwalMapelId ?? null);
 
 	// Load Tujuan Pembelajaran for lingkupMateri + TP dropdowns
 	const tujuanPembelajaranList = mapelIds.length
@@ -310,6 +264,7 @@ export async function load({ locals, url, depends, parent }) {
 	const countFilter = and(
 		eq(tableJurnalMengajar.authUserId, user?.id ?? 0),
 		tanggal ? eq(tableJurnalMengajar.tanggal, tanggal) : undefined,
+		scheduleContext ? eq(tableJurnalMengajar.jenisJadwal, scheduleContext.jenis) : undefined,
 		kelasIdNum
 			? eq(tableJurnalMengajar.kelasId, kelasIdNum)
 			: inArray(tableJurnalMengajar.kelasId, kelasIds)
@@ -341,12 +296,17 @@ export async function load({ locals, url, depends, parent }) {
 			id: tableJurnalMengajar.id,
 			tanggal: tableJurnalMengajar.tanggal,
 			jamPelajaran: tableJurnalMengajar.jamPelajaran,
+			pukul: tableJurnalMengajar.pukul,
+			jenisJadwal: tableJurnalMengajar.jenisJadwal,
 			lingkupMateri: tableJurnalMengajar.lingkupMateri,
 			tujuanPembelajaranManual: tableJurnalMengajar.tujuanPembelajaranManual,
 			catatan: tableJurnalMengajar.catatan,
 			mataPelajaranId: tableJurnalMengajar.mataPelajaranId,
+			jadwalMapelId: tableJurnalMengajar.jadwalMapelId,
+			jadwalPelajaranIds: tableJurnalMengajar.jadwalPelajaranIds,
 			kelasNama: tableKelas.nama,
-			mapelNama: tableMataPelajaran.nama,
+			mapelNamaLegacy: tableMataPelajaran.nama,
+			mapelNamaJadwal: tableJadwalMapel.nama,
 			tpDeskripsi: tableTujuanPembelajaran.deskripsi,
 			tpId: tableTujuanPembelajaran.id,
 			updatedAt: tableJurnalMengajar.updatedAt,
@@ -355,6 +315,7 @@ export async function load({ locals, url, depends, parent }) {
 		.from(tableJurnalMengajar)
 		.leftJoin(tableKelas, eq(tableJurnalMengajar.kelasId, tableKelas.id))
 		.leftJoin(tableMataPelajaran, eq(tableJurnalMengajar.mataPelajaranId, tableMataPelajaran.id))
+		.leftJoin(tableJadwalMapel, eq(tableJurnalMengajar.jadwalMapelId, tableJadwalMapel.id))
 		.leftJoin(
 			tableTujuanPembelajaran,
 			eq(tableJurnalMengajar.tujuanPembelajaranId, tableTujuanPembelajaran.id)
@@ -368,11 +329,15 @@ export async function load({ locals, url, depends, parent }) {
 		id: row.id,
 		tanggal: row.tanggal,
 		jamPelajaran: row.jamPelajaran,
+		pukul: row.pukul,
+		jenisJadwal: row.jenisJadwal,
 		lingkupMateri: row.lingkupMateri,
 		catatan: row.catatan ?? '',
 		mataPelajaranId: row.mataPelajaranId,
+		jadwalMapelId: row.jadwalMapelId,
+		jadwalPelajaranIds: row.jadwalPelajaranIds,
 		kelasNama: row.kelasNama ?? '',
-		mapelNama: row.mapelNama ?? '',
+		mapelNama: row.mapelNamaJadwal ?? row.mapelNamaLegacy ?? '',
 		tpDeskripsi: row.tpDeskripsi ?? row.tujuanPembelajaranManual ?? '',
 		tpId: row.tpId,
 		tujuanPembelajaranManual: row.tujuanPembelajaranManual ?? '',
@@ -388,12 +353,18 @@ export async function load({ locals, url, depends, parent }) {
 		tujuanPembelajaranList,
 		lingkupMateriList,
 		mataPelajaranList,
+		scheduleOptions,
 		hasAnyMapel,
 		mapelId,
 		tanggal,
+		scheduleContext,
 		userType,
 		page: {
 			kelasId,
+			kelasNama:
+				(parentData.daftarKelas as Array<{ id: number; nama?: string }> | undefined)?.find(
+					(item) => item.id === Number(kelasId)
+				)?.nama ?? null,
 			currentPage,
 			totalPages,
 			totalItems: total,
@@ -409,7 +380,12 @@ export const actions = {
 			return fail(401, { fail: 'Sekolah tidak ditemukan' });
 		}
 
-		const user = locals.user as { id?: number; type?: string } | null;
+		const user = locals.user as {
+			id?: number;
+			type?: string;
+			pegawaiId?: number | null;
+			mataPelajaranId?: number | null;
+		} | null;
 		if (!user?.id) {
 			return fail(401, { fail: 'Anda harus login terlebih dahulu' });
 		}
@@ -424,6 +400,7 @@ export const actions = {
 		const idRaw = formData.get('id');
 		const kelasIdRaw = formData.get('kelasId');
 		const mataPelajaranIdRaw = formData.get('mataPelajaranId');
+		const jadwalMapelIdRaw = formData.get('jadwalMapelId');
 		const lingkupMateri = ((formData.get('lingkupMateri') as string | null) ?? '').trim();
 		const tujuanPembelajaranIdRaw = formData.get('tujuanPembelajaranId');
 		const tujuanPembelajaranManual = (
@@ -431,10 +408,29 @@ export const actions = {
 		).trim();
 		const catatan = ((formData.get('catatan') as string | null) ?? '').trim();
 		const tanggal = (formData.get('tanggal') as string | null) ?? '';
+		const jenisJadwal = formData.get('jenisJadwal')?.toString() ?? null;
+		const jadwalIds = (formData.get('jadwalIds')?.toString() ?? '')
+			.split(',')
+			.map(Number)
+			.filter((value) => Number.isInteger(value) && value > 0);
 
 		const kelasId = Number(kelasIdRaw);
-		const mataPelajaranId = Number(mataPelajaranIdRaw);
+		const mataPelajaranId = mataPelajaranIdRaw ? Number(mataPelajaranIdRaw) : null;
+		const jadwalMapelId = jadwalMapelIdRaw ? Number(jadwalMapelIdRaw) : null;
 		const tujuanPembelajaranId = tujuanPembelajaranIdRaw ? Number(tujuanPembelajaranIdRaw) : null;
+		const id = idRaw ? Number(idRaw) : null;
+		const existing = id
+			? await db.query.tableJurnalMengajar.findFirst({
+					columns: {
+						id: true,
+						authUserId: true,
+						kelasId: true,
+						mataPelajaranId: true,
+						jadwalMapelId: true
+					},
+					where: eq(tableJurnalMengajar.id, id)
+				})
+			: null;
 
 		if (!lingkupMateri) {
 			return fail(400, { fail: 'Lingkup materi harus diisi' });
@@ -463,14 +459,46 @@ export const actions = {
 			return fail(400, { fail: 'Kelas tidak valid' });
 		}
 		const kelasCheck = await db.query.tableKelas.findFirst({
-			columns: { id: true, sekolahId: true },
+			columns: { id: true, sekolahId: true, tahunAjaranId: true, semesterId: true },
 			where: eq(tableKelas.id, kelasId)
 		});
 		if (!kelasCheck || kelasCheck.sekolahId !== sekolahId) {
 			return fail(400, { fail: 'Kelas tidak valid' });
 		}
-		if (!Number.isInteger(mataPelajaranId) || mataPelajaranId <= 0) {
+		if (!id && (!Number.isInteger(jadwalMapelId) || Number(jadwalMapelId) <= 0)) {
 			return fail(400, { fail: 'Mata pelajaran tidak valid' });
+		}
+		const effectiveJadwalMapelId = jadwalMapelId || existing?.jadwalMapelId || null;
+		const effectiveMataPelajaranId = mataPelajaranId || existing?.mataPelajaranId || null;
+		const jadwalMapel = effectiveJadwalMapelId
+			? await db.query.tableJadwalMapel.findFirst({
+					columns: { id: true, sekolahId: true, kode: true, nama: true, guruPegawaiId: true },
+					where: eq(tableJadwalMapel.id, effectiveJadwalMapelId)
+				})
+			: null;
+		if (!id && (!jadwalMapel || jadwalMapel.sekolahId !== sekolahId)) {
+			return fail(400, { fail: 'Mata pelajaran tidak terdaftar di sekolah ini' });
+		}
+		if (effectiveMataPelajaranId) {
+			const legacyMapel = await db.query.tableMataPelajaran.findFirst({
+				columns: { id: true, kelasId: true },
+				where: eq(tableMataPelajaran.id, effectiveMataPelajaranId)
+			});
+			if (!legacyMapel || legacyMapel.kelasId !== kelasId) {
+				return fail(400, { fail: 'Data tujuan pembelajaran tidak sesuai dengan kelas' });
+			}
+		}
+		if (!id && user.type === 'user') {
+			const kelasAssignments = await db.query.tableAuthUserKelas.findMany({
+				columns: { kelasId: true },
+				where: eq(tableAuthUserKelas.authUserId, user.id)
+			});
+			const allowedKelas = kelasAssignments.some((item) => item.kelasId === kelasId);
+			const allowedMapel =
+				!jadwalMapel?.guruPegawaiId || jadwalMapel.guruPegawaiId === user.pegawaiId;
+			if (!allowedKelas || !allowedMapel) {
+				return fail(403, { fail: 'Mata pelajaran atau kelas tidak termasuk penugasan Anda' });
+			}
 		}
 
 		if (tujuanPembelajaranId) {
@@ -480,7 +508,8 @@ export const actions = {
 			});
 			if (
 				!tujuanPembelajaran ||
-				tujuanPembelajaran.mataPelajaranId !== mataPelajaranId ||
+				!effectiveMataPelajaranId ||
+				tujuanPembelajaran.mataPelajaranId !== effectiveMataPelajaranId ||
 				tujuanPembelajaran.lingkupMateri !== lingkupMateri
 			) {
 				return fail(400, { fail: 'Tujuan pembelajaran tidak sesuai mata pelajaran dan materi' });
@@ -488,14 +517,7 @@ export const actions = {
 		}
 
 		const now = new Date().toISOString();
-		const id = idRaw ? Number(idRaw) : null;
-
 		if (id) {
-			// Edit existing — preserve original tanggal & jamPelajaran
-			const existing = await db.query.tableJurnalMengajar.findFirst({
-				columns: { id: true, authUserId: true },
-				where: eq(tableJurnalMengajar.id, id)
-			});
 			if (
 				!existing ||
 				(existing.authUserId !== user.id && user.type !== 'admin' && user.type !== 'wali_kelas')
@@ -507,7 +529,8 @@ export const actions = {
 				.update(tableJurnalMengajar)
 				.set({
 					kelasId,
-					mataPelajaranId,
+					mataPelajaranId: effectiveMataPelajaranId,
+					jadwalMapelId: effectiveJadwalMapelId,
 					lingkupMateri,
 					tujuanPembelajaranId,
 					tujuanPembelajaranManual: tujuanPembelajaranManual || null,
@@ -516,76 +539,57 @@ export const actions = {
 				})
 				.where(eq(tableJurnalMengajar.id, id));
 		} else {
-			// Create new — auto-derive tanggal & jamPelajaran
-			const dayNames = ['minggu', 'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu'];
-			if (!tanggal) {
+			if (!isValidDate(tanggal)) {
 				return fail(400, { fail: 'Tanggal tidak valid' });
 			}
-			const dateObj = new Date(tanggal + 'T00:00:00');
-			const hari = dayNames[dateObj.getDay()];
-
-			const mpRow = await db.query.tableMataPelajaran.findFirst({
-				columns: { kode: true, nama: true },
-				where: eq(tableMataPelajaran.id, mataPelajaranId)
+			if (!jadwalMapel) return fail(400, { fail: 'Mata pelajaran tidak valid' });
+			const academic = await resolveSekolahAcademicContext(sekolahId);
+			const context = await loadJurnalScheduleContext(sekolahId, academic, tanggal, jenisJadwal);
+			if (!context) return fail(400, { fail: 'Konteks tahun ajaran tidak ditemukan' });
+			const availableEntries = await findJurnalScheduleEntries({
+				sekolahId,
+				kelasId,
+				tanggal,
+				templateIds: context.templateIds,
+				jadwalMapelId: Number(jadwalMapelId),
+				mataPelajaranId: mataPelajaranId ?? undefined,
+				kode: jadwalMapel.kode
 			});
-
-			if (!mpRow?.kode) {
-				return fail(400, { fail: 'Mata pelajaran tidak memiliki kode jadwal' });
+			const jadwalEntries = availableEntries.filter((entry) => jadwalIds.includes(entry.id));
+			if (!jadwalIds.length || jadwalEntries.length !== jadwalIds.length) {
+				return fail(400, {
+					fail: 'Blok jadwal tidak valid atau sudah berubah. Muat ulang halaman.'
+				});
 			}
-
-			let jadwalEntries = await db.query.tableJadwalPelajaran.findMany({
-				columns: { jamKe: true, jamId: true },
-				where: and(
-					eq(tableJadwalPelajaran.sekolahId, sekolahId),
-					eq(tableJadwalPelajaran.kelasId, kelasId),
-					eq(tableJadwalPelajaran.hari, hari),
-					eq(tableJadwalPelajaran.tipe, 'pelajaran'),
-					eq(tableJadwalPelajaran.kodeKegiatan, mpRow.kode)
-				),
-				orderBy: [asc(tableJadwalPelajaran.jamKe)]
-			});
-
-			if (jadwalEntries.length === 0) {
-				const agamaMapelNames = [
-					'Pendidikan Agama dan Budi Pekerti',
-					'Pendidikan Agama Islam dan Budi Pekerti',
-					'Pendidikan Agama Kristen dan Budi Pekerti',
-					'Pendidikan Agama Katolik dan Budi Pekerti',
-					'Pendidikan Agama Buddha dan Budi Pekerti',
-					'Pendidikan Agama Hindu dan Budi Pekerti',
-					'Pendidikan Agama Konghuchu dan Budi Pekerti'
-				];
-				if (mpRow.nama && agamaMapelNames.includes(mpRow.nama)) {
-					jadwalEntries = await db.query.tableJadwalPelajaran.findMany({
-						columns: { jamKe: true, jamId: true },
-						where: and(
-							eq(tableJadwalPelajaran.sekolahId, sekolahId),
-							eq(tableJadwalPelajaran.kelasId, kelasId),
-							eq(tableJadwalPelajaran.hari, hari),
-							eq(tableJadwalPelajaran.tipe, 'pelajaran'),
-							eq(tableJadwalPelajaran.kodeKegiatan, 'PAPB')
-						),
-						orderBy: [asc(tableJadwalPelajaran.jamKe)]
-					});
-				}
-			}
-
-			if (jadwalEntries.length === 0) {
+			if (!jadwalEntries.length) {
 				return fail(400, { fail: 'Tidak ada jadwal untuk mata pelajaran ini hari ini' });
 			}
-
-			const jpNumbers = await resolveJpNumbers(jadwalEntries);
-			const jamPelajaran =
-				jpNumbers.length === 1
-					? String(jpNumbers[0])
-					: `${Math.min(...jpNumbers)}-${Math.max(...jpNumbers)}`;
+			const schedule = await describeJurnalSchedule(jadwalEntries);
+			const duplicate = await db.query.tableJurnalMengajar.findFirst({
+				columns: { id: true },
+				where: and(
+					eq(tableJurnalMengajar.authUserId, user.id),
+					eq(tableJurnalMengajar.kelasId, kelasId),
+					eq(tableJurnalMengajar.tanggal, tanggal),
+					eq(tableJurnalMengajar.jadwalPelajaranIds, schedule.jadwalPelajaranIds)
+				)
+			});
+			if (duplicate) return fail(409, { fail: 'Jurnal untuk blok jadwal ini sudah tersimpan' });
 
 			await db.insert(tableJurnalMengajar).values({
+				sekolahId,
 				authUserId: user.id,
 				kelasId,
 				mataPelajaranId,
+				jadwalMapelId: Number(jadwalMapelId),
+				tahunAjaranId: context.tahunAjaranId,
+				semesterId: context.semesterId,
+				jenisJadwal: context.jenis,
+				jadwalTemplateId: jadwalEntries[0]?.templateId ?? null,
+				jadwalPelajaranIds: schedule.jadwalPelajaranIds,
 				tanggal,
-				jamPelajaran,
+				jamPelajaran: schedule.jamPelajaran,
+				pukul: schedule.pukul,
 				lingkupMateri,
 				tujuanPembelajaranId,
 				tujuanPembelajaranManual: tujuanPembelajaranManual || null,
@@ -645,28 +649,3 @@ export const actions = {
 		return { message: 'Jurnal dihapus' };
 	}
 };
-async function resolveJpNumbers(entries: Array<{ jamId: number | null; jamKe: number }>) {
-	const jamIds = [
-		...new Set(entries.map((entry) => entry.jamId).filter((id): id is number => !!id))
-	];
-	if (!jamIds.length) return entries.map((entry) => entry.jamKe);
-
-	const selectedRows = await db.query.tableJadwalJam.findMany({
-		where: inArray(tableJadwalJam.id, jamIds)
-	});
-	const templateIds = [
-		...new Set(selectedRows.map((row) => row.templateId).filter((id): id is number => id !== null))
-	];
-	const allRows = templateIds.length
-		? await db.query.tableJadwalJam.findMany({
-				where: inArray(tableJadwalJam.templateId, templateIds)
-			})
-		: selectedRows;
-	const jpNumbers = buildJpNumberBySlot(allRows);
-	const selectedById = new Map(selectedRows.map((row) => [row.id, row]));
-
-	return entries.map((entry) => {
-		const slot = entry.jamId ? selectedById.get(entry.jamId) : null;
-		return slot ? (jpNumbers.get(jadwalSlotKey(slot)) ?? entry.jamKe) : entry.jamKe;
-	});
-}

@@ -4,29 +4,28 @@ import db from '$lib/server/db/index.js';
 import { ensureMuridWaliAsramaSchema } from '$lib/server/db/ensure-murid-wali-asrama';
 import { tableAlamat, tableKelas, tableMurid, tableWaliMurid } from '$lib/server/db/schema.js';
 import { unflattenFormData } from '$lib/utils.js';
+import { canEditMurid } from '$lib/murid-permissions';
 import { error, fail, redirect } from '@sveltejs/kit';
 import { and, eq, ne } from 'drizzle-orm';
-import { isAuthorizedUser } from '../../../../pengguna/permissions';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	await ensureMuridWaliAsramaSchema();
 
 	// Allow homeroom/full users to manage student data; wali_asrama gets limited edit access.
-	if (
-		locals.user?.type !== 'wali_kelas' &&
-		locals.user?.type !== 'wali_asuh' &&
-		locals.user?.type !== 'wali_asrama' &&
-		!isAuthorizedUser(['kelas_manage'], locals.user)
-	) {
+	if (!canEditMurid(locals.user)) {
 		redirect(303, '/forbidden?required=kelas_manage');
 	}
 
 	const meta: PageMeta = { title: 'Form Murid' };
 	if (!params.id) return { meta };
+	const sekolahId = locals.sekolah?.id;
+	if (!sekolahId) error(400, 'Sekolah aktif tidak ditemukan');
+	const muridId = Number(params.id);
+	if (!Number.isInteger(muridId) || muridId <= 0) error(400, 'Data murid tidak valid');
 
 	const murid = await db.query.tableMurid.findFirst({
-		where: eq(tableMurid.id, +params.id),
+		where: and(eq(tableMurid.id, muridId), eq(tableMurid.sekolahId, sekolahId)),
 		with: { alamat: true, ibu: true, ayah: true, wali: true }
 	});
 	if (!murid) error(404, `Data murid tidak ditemukan`);
@@ -38,13 +37,15 @@ export const actions: Actions = {
 		await ensureMuridWaliAsramaSchema();
 
 		// Allow homeroom/full users to manage student data; wali_asrama gets limited edit access.
-		if (
-			locals.user?.type !== 'wali_kelas' &&
-			locals.user?.type !== 'wali_asuh' &&
-			locals.user?.type !== 'wali_asrama' &&
-			!isAuthorizedUser(['kelas_manage'], locals.user)
-		) {
+		if (!canEditMurid(locals.user)) {
 			redirect(303, '/forbidden?required=kelas_manage');
+		}
+
+		const sekolahId = locals.sekolah?.id;
+		if (!sekolahId) return fail(400, { fail: 'Sekolah aktif tidak ditemukan.' });
+		const muridId = params.id ? Number(params.id) : null;
+		if (params.id && (!Number.isInteger(muridId) || Number(muridId) <= 0)) {
+			return fail(400, { fail: 'Data murid tidak valid.' });
 		}
 
 		const formData = await request.formData();
@@ -102,7 +103,7 @@ export const actions: Actions = {
 				if (i > 1000) throw error(500, 'Gagal membuat nama file unik');
 			}
 		}
-		formMurid.sekolahId = locals.sekolah!.id;
+		formMurid.sekolahId = sekolahId;
 
 		if (isLimitedWaliAsramaEdit) {
 			if (!params.id) {
@@ -110,10 +111,10 @@ export const actions: Actions = {
 			}
 
 			const murid = await db.query.tableMurid.findFirst({
-				where: eq(tableMurid.id, +params.id),
+				where: and(eq(tableMurid.id, Number(muridId)), eq(tableMurid.sekolahId, sekolahId)),
 				columns: { id: true, sekolahId: true, foto: true }
 			});
-			if (!murid || murid.sekolahId !== locals.sekolah!.id) {
+			if (!murid) {
 				error(404, 'Data murid tidak ditemukan');
 			}
 
@@ -126,7 +127,7 @@ export const actions: Actions = {
 					waliAsuhNip: formMurid.waliAsuhNip ?? null,
 					updatedAt: new Date().toISOString()
 				})
-				.where(eq(tableMurid.id, +params.id));
+				.where(and(eq(tableMurid.id, Number(muridId)), eq(tableMurid.sekolahId, sekolahId)));
 
 			return {
 				message: `Data wali asrama dan wali asuh berhasil disimpan`,
@@ -184,7 +185,7 @@ export const actions: Actions = {
 			if (params.id) {
 				// update
 				const murid = await db.query.tableMurid.findFirst({
-					where: eq(tableMurid.id, +params.id)
+					where: and(eq(tableMurid.id, Number(muridId)), eq(tableMurid.sekolahId, sekolahId))
 				});
 				if (!murid) error(404, `Data murid tidak ditemukan`);
 
@@ -251,7 +252,10 @@ export const actions: Actions = {
 					}
 				}
 
-				await db.update(tableMurid).set(formMurid).where(eq(tableMurid.id, +params.id));
+				await db
+					.update(tableMurid)
+					.set(formMurid)
+					.where(and(eq(tableMurid.id, Number(muridId)), eq(tableMurid.sekolahId, sekolahId)));
 			} else {
 				// insert
 				if (formMurid.alamat?.jalan) {
@@ -334,11 +338,20 @@ export const actions: Actions = {
 				}
 			}
 		});
-		// return the created/updated murid id and foto filename (if any)
+		const savedId = params.id ? Number(muridId) : formMurid.id;
+		const savedMurid = savedId
+			? await db.query.tableMurid.findFirst({
+					where: and(eq(tableMurid.id, savedId), eq(tableMurid.sekolahId, sekolahId)),
+					with: { kelas: true, alamat: true, ibu: true, ayah: true, wali: true }
+				})
+			: null;
+
+		// Return the complete row so the detail modal updates without showing stale data.
 		return {
 			message: `Data murid berhasil disimpan`,
-			id: formMurid.id,
-			foto: formMurid.foto ?? null,
+			id: savedId,
+			foto: savedMurid?.foto ?? null,
+			murid: savedMurid ?? null,
 			waliAsramaNama: formMurid.waliAsramaNama ?? null,
 			waliAsramaNip: formMurid.waliAsramaNip ?? null,
 			waliAsuhNama: formMurid.waliAsuhNama ?? null,
@@ -347,16 +360,33 @@ export const actions: Actions = {
 	}
 };
 
-async function upsertWaliMurid(db: DBTransaction, wali: WaliMurid, waliId?: number | null) {
+async function upsertWaliMurid(
+	db: DBTransaction,
+	wali: WaliMurid | null | undefined,
+	waliId?: number | null
+) {
+	const values = wali
+		? {
+				nama: String(wali.nama ?? '').trim(),
+				pekerjaan: String(wali.pekerjaan ?? '').trim(),
+				kontak: String(wali.kontak ?? '').trim() || null,
+				alamat: String(wali.alamat ?? '').trim() || null
+			}
+		: null;
+
+	if (!values || (!values.nama && !values.pekerjaan && !values.kontak && !values.alamat)) {
+		return null;
+	}
+
 	if (waliId) {
 		await db
 			.update(tableWaliMurid) //
-			.set(wali)
+			.set(values)
 			.where(eq(tableWaliMurid.id, waliId));
 	} else {
 		const [newWali] = await db
 			.insert(tableWaliMurid) //
-			.values(wali)
+			.values(values)
 			.returning({ id: tableWaliMurid.id });
 		waliId = newWali?.id;
 	}

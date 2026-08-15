@@ -33,6 +33,7 @@ vite.config.ts.timestamp-*
 /dev-server-*.pid
 /gh-auth.*.log
 /run-dev-*.cmd
+/vite-*.log
 
 # Our custom
 /src/lib/icons/__icons.d.ts

@@ -10,12 +10,12 @@
 	import { toast } from '$lib/components/toast.svelte';
 	import MuridPhotoUploadModal from '$lib/components/murid-photo-upload-modal.svelte';
 	import { page } from '$app/state';
+	import { canEditMurid } from '$lib/murid-permissions';
 
 	let { data } = $props();
 
 	const canEditData = $derived.by(() => {
-		const u = page.data.user as { type?: string } | null | undefined;
-		return u?.type !== 'wali_asuh';
+		return canEditMurid(page.data.user);
 	});
 	const canManagePhoto = $derived.by(() => {
 		const u = page.data.user as { type?: string } | null | undefined;
@@ -56,6 +56,10 @@
 				if (!detail) return;
 				// match by id
 				if (String(detail.id) === String(data?.murid?.id)) {
+					const savedMurid =
+						typeof detail.murid === 'object' && detail.murid !== null
+							? (detail.murid as typeof data.murid)
+							: null;
 					// include timestamp in foto field to bust cache when filename unchanged
 					const newFoto = detail?.foto ? `${detail.foto}${detail.t ? `?t=${detail.t}` : ''}` : null;
 					// reassign `data` so runes reactivity picks up change
@@ -76,7 +80,7 @@
 					data = {
 						...data,
 						murid: {
-							...(data.murid ?? {}),
+							...(savedMurid ?? data.murid ?? {}),
 							foto: newFoto,
 							waliAsramaNama,
 							waliAsramaNip,

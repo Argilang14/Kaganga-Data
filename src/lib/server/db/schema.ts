@@ -1367,6 +1367,40 @@ export const tableJadwalMapel = sqliteTable(
 	]
 );
 
+export const tableJadwalTargetJp = sqliteTable(
+	'jadwal_target_jp',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		tahunAjaranId: int()
+			.references(() => tableTahunAjaran.id, { onDelete: 'cascade' })
+			.notNull(),
+		jenis: text({ enum: ['persiapan', 'ganjil', 'genap'] }).notNull(),
+		kelasId: int()
+			.references(() => tableKelas.id, { onDelete: 'cascade' })
+			.notNull(),
+		jadwalMapelId: int()
+			.references(() => tableJadwalMapel.id, { onDelete: 'cascade' })
+			.notNull(),
+		jpPerMinggu: int('jp_per_minggu').default(0).notNull(),
+		...audit
+	},
+	(table) => [
+		unique().on(
+			table.sekolahId,
+			table.tahunAjaranId,
+			table.jenis,
+			table.kelasId,
+			table.jadwalMapelId
+		),
+		index('jadwal_target_jp_context_idx').on(table.sekolahId, table.tahunAjaranId, table.jenis),
+		index('jadwal_target_jp_kelas_idx').on(table.kelasId),
+		index('jadwal_target_jp_mapel_idx').on(table.jadwalMapelId)
+	]
+);
+
 export const tableJadwalPelajaran = sqliteTable(
 	'jadwal_pelajaran',
 	{
@@ -1512,7 +1546,27 @@ export const tableJadwalMapelRelations = relations(tableJadwalMapel, ({ one, man
 		fields: [tableJadwalMapel.guruPegawaiId],
 		references: [tablePegawai.id]
 	}),
-	jadwalPelajaran: many(tableJadwalPelajaran)
+	jadwalPelajaran: many(tableJadwalPelajaran),
+	targetJp: many(tableJadwalTargetJp)
+}));
+
+export const tableJadwalTargetJpRelations = relations(tableJadwalTargetJp, ({ one }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableJadwalTargetJp.sekolahId],
+		references: [tableSekolah.id]
+	}),
+	tahunAjaran: one(tableTahunAjaran, {
+		fields: [tableJadwalTargetJp.tahunAjaranId],
+		references: [tableTahunAjaran.id]
+	}),
+	kelas: one(tableKelas, {
+		fields: [tableJadwalTargetJp.kelasId],
+		references: [tableKelas.id]
+	}),
+	mapel: one(tableJadwalMapel, {
+		fields: [tableJadwalTargetJp.jadwalMapelId],
+		references: [tableJadwalMapel.id]
+	})
 }));
 
 export const tableJadwalPelajaranRelations = relations(tableJadwalPelajaran, ({ one }) => ({
@@ -1829,17 +1883,23 @@ export const tableJurnalMengajar = sqliteTable(
 	'jurnal_mengajar',
 	{
 		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int().references(() => tableSekolah.id, { onDelete: 'cascade' }),
 		authUserId: int()
 			.references(() => tableAuthUser.id, { onDelete: 'cascade' })
 			.notNull(),
 		kelasId: int()
 			.references(() => tableKelas.id, { onDelete: 'cascade' })
 			.notNull(),
-		mataPelajaranId: int()
-			.references(() => tableMataPelajaran.id, { onDelete: 'cascade' })
-			.notNull(),
+		mataPelajaranId: int().references(() => tableMataPelajaran.id, { onDelete: 'set null' }),
+		jadwalMapelId: int().references(() => tableJadwalMapel.id, { onDelete: 'set null' }),
+		tahunAjaranId: int().references(() => tableTahunAjaran.id, { onDelete: 'set null' }),
+		semesterId: int().references(() => tableSemester.id, { onDelete: 'set null' }),
+		jenisJadwal: text({ enum: ['persiapan', 'ganjil', 'genap'] }),
+		jadwalTemplateId: int().references(() => tableJadwalTemplate.id, { onDelete: 'set null' }),
+		jadwalPelajaranIds: text(),
 		tanggal: text().notNull(),
 		jamPelajaran: text().notNull(),
+		pukul: text(),
 		lingkupMateri: text().notNull(),
 		tujuanPembelajaranId: int().references(() => tableTujuanPembelajaran.id, {
 			onDelete: 'set null'
@@ -1848,10 +1908,23 @@ export const tableJurnalMengajar = sqliteTable(
 		catatan: text(),
 		...audit
 	},
-	(table) => [index('jurnal_mengajar_auth_user_idx').on(table.authUserId)]
+	(table) => [
+		index('jurnal_mengajar_auth_user_idx').on(table.authUserId),
+		index('jurnal_mengajar_context_idx').on(
+			table.sekolahId,
+			table.tahunAjaranId,
+			table.jenisJadwal,
+			table.tanggal
+		),
+		index('jurnal_mengajar_kelas_tanggal_idx').on(table.kelasId, table.tanggal)
+	]
 );
 
 export const tableJurnalMengajarRelations = relations(tableJurnalMengajar, ({ one }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableJurnalMengajar.sekolahId],
+		references: [tableSekolah.id]
+	}),
 	authUser: one(tableAuthUser, {
 		fields: [tableJurnalMengajar.authUserId],
 		references: [tableAuthUser.id]
@@ -1863,6 +1936,22 @@ export const tableJurnalMengajarRelations = relations(tableJurnalMengajar, ({ on
 	mataPelajaran: one(tableMataPelajaran, {
 		fields: [tableJurnalMengajar.mataPelajaranId],
 		references: [tableMataPelajaran.id]
+	}),
+	jadwalMapel: one(tableJadwalMapel, {
+		fields: [tableJurnalMengajar.jadwalMapelId],
+		references: [tableJadwalMapel.id]
+	}),
+	tahunAjaran: one(tableTahunAjaran, {
+		fields: [tableJurnalMengajar.tahunAjaranId],
+		references: [tableTahunAjaran.id]
+	}),
+	semester: one(tableSemester, {
+		fields: [tableJurnalMengajar.semesterId],
+		references: [tableSemester.id]
+	}),
+	jadwalTemplate: one(tableJadwalTemplate, {
+		fields: [tableJurnalMengajar.jadwalTemplateId],
+		references: [tableJadwalTemplate.id]
 	}),
 	tujuanPembelajaran: one(tableTujuanPembelajaran, {
 		fields: [tableJurnalMengajar.tujuanPembelajaranId],

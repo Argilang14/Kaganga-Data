@@ -641,6 +641,8 @@ export const actions: Actions = {
 					rowNumber: row.rowNumber,
 					nama: row.values.nama,
 					nip: row.values.nip,
+					nik: row.values.nik,
+					jenis: row.values.jenis,
 					action,
 					errors: row.errors
 				}))

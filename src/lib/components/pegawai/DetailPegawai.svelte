@@ -6,6 +6,7 @@
 	import PendidikanPegawaiSection from './PendidikanPegawai.svelte';
 	import DokumenPegawaiSection from './DokumenPegawai.svelte';
 	import type { DokumenPegawai, PendidikanPegawai, SertifikasiPegawai } from './types';
+	import PegawaiPhotoUploadModal from './PegawaiPhotoUploadModal.svelte';
 
 	type Assignment = {
 		id: number;
@@ -86,17 +87,19 @@
 
 	let {
 		data,
-		onEdit
+		onEdit,
+		onClose
 	}: {
 		data: DetailData;
 		onEdit?: (pegawai: Pegawai) => void;
+		onClose?: () => void;
 	} = $props();
 
 	let editingAssignment = $state<Assignment | null>(null);
-	let photoInput: HTMLInputElement | null = $state(null);
 	let photoVersion = $state(Date.now());
-	let uploadingPhoto = $state(false);
+	let isPhotoUploadOpen = $state(false);
 	let deletingPhoto = $state(false);
+	let activeTab = $state('data');
 	const photoSrc = $derived(
 		data.pegawai.foto ? `/api/pegawai-photo/${data.pegawai.id}?v=${photoVersion}` : null
 	);
@@ -215,37 +218,9 @@
 		};
 	};
 
-	async function uploadPhoto(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
-		if (!file) return;
-		if (!['image/png', 'image/jpeg'].includes(file.type) || file.size > 500 * 1024) {
-			toast({ message: 'Gunakan foto JPG/PNG maksimal 500 KB.', type: 'error' });
-			input.value = '';
-			return;
-		}
-		uploadingPhoto = true;
-		try {
-			const body = new FormData();
-			body.append('foto', file);
-			const response = await fetch(`/api/pegawai-photo/${data.pegawai.id}`, {
-				method: 'POST',
-				body
-			});
-			const result = await response.json().catch(() => ({}));
-			if (!response.ok) throw new Error(result.message || 'Foto gagal disimpan.');
-			data = { ...data, pegawai: { ...data.pegawai, foto: result.foto } };
-			photoVersion = Date.now();
-			toast({ message: 'Foto pegawai berhasil diperbarui.', type: 'success' });
-		} catch (error) {
-			toast({
-				message: error instanceof Error ? error.message : 'Foto gagal disimpan.',
-				type: 'error'
-			});
-		} finally {
-			uploadingPhoto = false;
-			input.value = '';
-		}
+	function handlePhotoUploaded(filename: string) {
+		data = { ...data, pegawai: { ...data.pegawai, foto: filename } };
+		photoVersion = Date.now();
 	}
 
 	async function deletePhoto() {
@@ -277,7 +252,7 @@
 
 <div class="flex items-start justify-between gap-4">
 	<div class="min-w-0">
-		<h2 class="truncate text-xl font-bold">Informasi Pegawai</h2>
+		<h2 class="truncate text-xl font-bold">Detail Data Pegawai</h2>
 		<p class="text-base-content/65 mt-1 truncate text-sm">{data.pegawai.nama}</p>
 	</div>
 	<span class:badge-success={data.pegawai.status === 'aktif'} class="badge badge-soft shrink-0">
@@ -287,8 +262,9 @@
 
 <div class="mt-5 max-h-[72vh] overflow-y-auto">
 	<div class="tabs tabs-box w-full">
-		<input type="radio" name="tab-detail-pegawai-v2" class="tab" aria-label="Profil" checked />
+		<input type="radio" name="tab-detail-pegawai-v2" class="tab" aria-label="Data Pegawai" value="data" bind:group={activeTab} />
 		<div class="tab-content bg-base-100 p-4">
+			{#if activeTab === 'data'}
 			<div class="grid gap-5 md:grid-cols-[180px_1fr]">
 				<div>
 					<div
@@ -309,19 +285,11 @@
 							</div>
 						{/if}
 					</div>
-					<input
-						bind:this={photoInput}
-						class="hidden"
-						type="file"
-						accept="image/png,image/jpeg"
-						onchange={uploadPhoto}
-					/>
 					<div class="mt-2 grid grid-cols-2 gap-2">
 						<button
 							class="btn btn-soft btn-sm"
 							type="button"
-							disabled={uploadingPhoto}
-							onclick={() => photoInput?.click()}><Icon name="edit" /> Ubah</button
+							onclick={() => (isPhotoUploadOpen = true)}><Icon name="edit" /> Ubah</button
 						>
 						<button
 							class="btn btn-error btn-soft btn-sm"
@@ -332,7 +300,7 @@
 					</div>
 					<p class="text-base-content/50 mt-2 text-center text-xs">JPG/PNG, maksimal 500 KB</p>
 				</div>
-				<div class="grid content-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
+				<div class="grid content-start gap-4 sm:grid-cols-2">
 					{@render field('Nama Lengkap', data.pegawai.nama)}
 					{@render field('NIP', data.pegawai.nip)}
 					{@render field('NIK', data.pegawai.nik)}
@@ -345,7 +313,13 @@
 					{@render field('Terdaftar Sejak', formatDate(data.pegawai.createdAt))}
 				</div>
 			</div>
-			<div class="border-base-200 mt-5 grid gap-4 border-t pt-4 sm:grid-cols-2 lg:grid-cols-3">
+			{/if}
+		</div>
+
+		<input type="radio" name="tab-detail-pegawai-v2" class="tab" aria-label="Kontak & Alamat" value="kontak" bind:group={activeTab} />
+		<div class="tab-content bg-base-100 p-4">
+			{#if activeTab === 'kontak'}
+			<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 				{@render field('Telepon', data.pegawai.telepon)}
 				{@render field('Email', data.pegawai.email)}
 				{@render field('Alamat', data.pegawai.alamat)}
@@ -358,10 +332,12 @@
 				{@render field('Hubungan', data.pegawai.kontakDaruratHubungan)}
 				{@render field('Telepon Darurat', data.pegawai.kontakDaruratTelepon)}
 			</div>
+			{/if}
 		</div>
 
-		<input type="radio" name="tab-detail-pegawai-v2" class="tab" aria-label="Kepegawaian" />
+		<input type="radio" name="tab-detail-pegawai-v2" class="tab" aria-label="Kepegawaian" value="kepegawaian" bind:group={activeTab} />
 		<div class="tab-content bg-base-100 p-4">
+			{#if activeTab === 'kepegawaian'}
 			<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 				{@render field('Jenis Pegawai', jenisLabels[data.pegawai.jenis] ?? data.pegawai.jenis)}
 				{@render field('Status Kepegawaian', data.pegawai.statusKepegawaian)}
@@ -374,10 +350,12 @@
 				{@render field('Status Data', data.pegawai.status === 'aktif' ? 'Aktif' : 'Nonaktif')}
 			</div>
 			<div class="mt-5">{@render field('Catatan', data.pegawai.catatan)}</div>
+			{/if}
 		</div>
 
-		<input type="radio" name="tab-detail-pegawai-v2" class="tab" aria-label="Penugasan" />
+		<input type="radio" name="tab-detail-pegawai-v2" class="tab" aria-label="Penugasan" value="penugasan" bind:group={activeTab} />
 		<div class="tab-content bg-base-100 p-4">
+			{#if activeTab === 'penugasan'}
 			<div class="alert alert-info alert-soft mb-4 text-sm">
 				<Icon name="info" /><span
 					>Riwayat penugasan tidak mengubah role akun, wali kelas aktif, atau kepala sekolah aktif.</span
@@ -569,24 +547,43 @@
 					</tbody>
 				</table>
 			</div>
+			{/if}
 		</div>
 
-		<input type="radio" name="tab-detail-pegawai-v2" class="tab" aria-label="Pendidikan" />
+		<input type="radio" name="tab-detail-pegawai-v2" class="tab" aria-label="Pendidikan" value="pendidikan" bind:group={activeTab} />
 		<div class="tab-content bg-base-100 p-4">
+			{#if activeTab === 'pendidikan'}
 			<PendidikanPegawaiSection
 				pegawaiId={data.pegawai.id}
 				bind:pendidikan={data.pendidikan}
 				bind:sertifikasi={data.sertifikasi}
+				mode="pendidikan"
 			/>
+			{/if}
 		</div>
 
-		<input type="radio" name="tab-detail-pegawai-v2" class="tab" aria-label="Dokumen" />
+		<input type="radio" name="tab-detail-pegawai-v2" class="tab" aria-label="Sertifikasi" value="sertifikasi" bind:group={activeTab} />
 		<div class="tab-content bg-base-100 p-4">
+			{#if activeTab === 'sertifikasi'}
+			<PendidikanPegawaiSection
+				pegawaiId={data.pegawai.id}
+				bind:pendidikan={data.pendidikan}
+				bind:sertifikasi={data.sertifikasi}
+				mode="sertifikasi"
+			/>
+			{/if}
+		</div>
+
+		<input type="radio" name="tab-detail-pegawai-v2" class="tab" aria-label="Dokumen" value="dokumen" bind:group={activeTab} />
+		<div class="tab-content bg-base-100 p-4">
+			{#if activeTab === 'dokumen'}
 			<DokumenPegawaiSection pegawaiId={data.pegawai.id} bind:dokumen={data.dokumen} />
+			{/if}
 		</div>
 
-		<input type="radio" name="tab-detail-pegawai-v2" class="tab" aria-label="Riwayat" />
+		<input type="radio" name="tab-detail-pegawai-v2" class="tab" aria-label="Riwayat" value="riwayat" bind:group={activeTab} />
 		<div class="tab-content bg-base-100 p-4">
+			{#if activeTab === 'riwayat'}
 			<h3 class="font-bold">Akun Sistem</h3>
 			{#if data.akun.length}<div class="mt-2 overflow-x-auto">
 					<table class="table-sm table">
@@ -614,12 +611,20 @@
 				</div>{:else}<p class="text-base-content/55 mt-2 text-sm">
 					Belum ada riwayat perubahan tercatat.
 				</p>{/if}
+			{/if}
 		</div>
 	</div>
 </div>
 
+<PegawaiPhotoUploadModal
+	bind:isOpen={isPhotoUploadOpen}
+	pegawaiId={data.pegawai.id}
+	pegawaiNama={data.pegawai.nama}
+	onSuccess={handlePhotoUploaded}
+/>
+
 <div class="mt-5 flex justify-end gap-2">
-	<button class="btn btn-soft" type="button" onclick={() => history.back()}
+	<button class="btn btn-soft" type="button" onclick={() => (onClose ? onClose() : history.back())}
 		><Icon name="close" /> Tutup</button
 	>
 	{#if onEdit}<button class="btn btn-primary" type="button" onclick={() => onEdit?.(data.pegawai)}

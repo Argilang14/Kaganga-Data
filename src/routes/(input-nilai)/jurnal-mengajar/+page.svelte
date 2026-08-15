@@ -39,6 +39,24 @@
 	const userType = $derived(page.data.user?.type ?? '');
 
 	const canEdit = $derived(userType !== 'wali_asuh');
+	const filledScheduleValues = $derived(
+		new Set(
+			data.daftarJurnal
+				.map((item) => {
+					try {
+						return JSON.parse(item.jadwalPelajaranIds ?? '[]').join(',');
+					} catch {
+						return '';
+					}
+				})
+				.filter(Boolean)
+		)
+	);
+	const pendingScheduleOptions = $derived(
+		currentPage === 1
+			? data.scheduleOptions.filter((option) => !filledScheduleValues.has(option.value))
+			: []
+	);
 
 	let selectedTanggal = $state(data.tanggal ?? '');
 
@@ -107,15 +125,19 @@
 		void gotoPage(pageNumber);
 	}
 
-	function openTambahModal(editData?: {
-		id: number;
-		kelasId: number;
-		mataPelajaranId: number;
-		lingkupMateri: string;
-		tujuanPembelajaranId: number | null;
-		tujuanPembelajaranManual: string;
-		catatan: string;
-	}) {
+	function openTambahModal(
+		editData?: {
+			id: number;
+			kelasId: number;
+			mataPelajaranId: number | null;
+			jadwalMapelId: number | null;
+			lingkupMateri: string;
+			tujuanPembelajaranId: number | null;
+			tujuanPembelajaranManual: string;
+			catatan: string;
+		},
+		initialJadwalIds = ''
+	) {
 		let actions: { submit: () => void };
 		showModal({
 			title: editData ? 'Edit Jurnal' : 'Tambah Jurnal',
@@ -126,6 +148,9 @@
 				tanggal: data.tanggal ?? undefined,
 				mapelId: data.mapelId,
 				mataPelajaranList: data.mataPelajaranList,
+				scheduleOptions: data.scheduleOptions,
+				jenisJadwal: data.scheduleContext?.jenis ?? 'ganjil',
+				initialJadwalIds,
 				tujuanPembelajaranList: data.tujuanPembelajaranList,
 				lingkupMateriList: data.lingkupMateriList,
 				userType: data.userType ?? '',
@@ -153,7 +178,7 @@
 			return;
 		}
 		if (!data.hasAnyMapel) {
-			toast('Tidak ada mata pelajaran yang tersedia', 'warning');
+			toast('Tidak ada mata pelajaran yang terjadwal pada tanggal dan jenis jadwal ini', 'warning');
 			return;
 		}
 		openTambahModal();
@@ -190,6 +215,11 @@
 					- <span class="text-primary">{tanggalLabel}</span>
 				{/if}
 			</h2>
+			{#if data.scheduleContext}
+				<p class="text-base-content/60 mt-1 text-sm">
+					{data.scheduleContext.tahunAjaranNama} · {data.scheduleContext.jenisLabel}
+				</p>
+			{/if}
 		</div>
 		<button
 			type="button"
@@ -203,31 +233,49 @@
 		</button>
 	</div>
 
-	<div class="join mb-4">
-		<input
-			type="date"
-			class="input bg-base-200 dark:bg-base-300 join-item w-full max-w-48 dark:border-none"
-			bind:value={selectedTanggal}
-		/>
-		<button
-			type="button"
-			class="btn btn-soft join-item shadow-none"
-			aria-label="Lihat jurnal"
-			title="Lihat jurnal"
-			onclick={viewDate}
-		>
-			<Icon name="eye" />
-		</button>
-		<button
-			type="button"
-			class="btn btn-soft join-item shadow-none"
-			aria-label="Kembali ke hari ini"
-			title="Kembali ke hari ini"
-			onclick={resetToToday}
-			disabled={!data.tanggal}
-		>
-			<Icon name="repeat" />
-		</button>
+	<div class="mb-4 flex flex-wrap items-end gap-2">
+		<label class="form-control gap-1">
+			<span class="label-text text-xs font-medium">Tanggal</span>
+			<div class="join">
+				<input
+					type="date"
+					class="input bg-base-200 dark:bg-base-300 join-item w-full max-w-48 dark:border-none"
+					bind:value={selectedTanggal}
+				/>
+				<button
+					type="button"
+					class="btn btn-soft join-item shadow-none"
+					aria-label="Lihat jurnal"
+					title="Lihat jurnal"
+					onclick={viewDate}
+				>
+					<Icon name="eye" />
+				</button>
+				<button
+					type="button"
+					class="btn btn-soft join-item shadow-none"
+					aria-label="Kembali ke hari ini"
+					title="Kembali ke hari ini"
+					onclick={resetToToday}
+					disabled={!data.tanggal}
+				>
+					<Icon name="repeat" />
+				</button>
+			</div>
+		</label>
+		<label class="form-control gap-1">
+			<span class="label-text text-xs font-medium">Jenis Jadwal</span>
+			<select
+				class="select bg-base-200 dark:bg-base-300 dark:border-none"
+				value={data.scheduleContext?.jenis ?? 'ganjil'}
+				onchange={(event) =>
+					applyNavigation((params) => params.set('jenis_jadwal', event.currentTarget.value))}
+			>
+				<option value="persiapan">Masa Persiapan</option>
+				<option value="ganjil">Semester Ganjil</option>
+				<option value="genap">Semester Genap</option>
+			</select>
+		</label>
 	</div>
 
 	<div
@@ -238,7 +286,8 @@
 				<tr class="bg-base-200 dark:bg-base-300 text-left font-bold">
 					<th style="width: 50px;">No</th>
 					<th style="min-width: 120px;">Mata Pelajaran</th>
-					<th style="width: 80px;">Jam</th>
+					<th style="min-width: 100px;">Kelas</th>
+					<th style="width: 120px;">JP / Waktu</th>
 					<th style="min-width: 140px;">Materi</th>
 					<th style="min-width: 140px;">Tujuan Pembelajaran</th>
 					<th style="width: 100px;">Aksi</th>
@@ -249,7 +298,11 @@
 					<tr>
 						<td class="align-top">{item.no}</td>
 						<td class="align-top">{item.mapelNama}</td>
-						<td class="align-top">{item.jamPelajaran}</td>
+						<td class="align-top">{item.kelasNama}</td>
+						<td class="align-top">
+							<div class="font-medium">JP {item.jamPelajaran}</div>
+							<div class="text-base-content/55 text-xs">{item.pukul || '-'}</div>
+						</td>
 						<td class="align-top">{item.lingkupMateri}</td>
 						<td class="max-w-[160px] truncate align-top" title={item.tpDeskripsi}>
 							{item.tpDeskripsi || '-'}
@@ -264,6 +317,7 @@
 											id: item.id,
 											kelasId: item.kelasId,
 											mataPelajaranId: item.mataPelajaranId,
+											jadwalMapelId: item.jadwalMapelId,
 											lingkupMateri: item.lingkupMateri,
 											tujuanPembelajaranId: item.tpId,
 											tujuanPembelajaranManual: item.tujuanPembelajaranManual,
@@ -295,13 +349,42 @@
 							</div>
 						</td>
 					</tr>
-				{:else}
-					<tr>
-						<td class="p-7 text-center italic opacity-60" colspan="6">
-							Belum ada jurnal mengajar
+				{/each}
+				{#each pendingScheduleOptions as option, index (`pending-${option.value}`)}
+					<tr class="bg-warning/5">
+						<td class="align-top">{data.daftarJurnal.length + index + 1}</td>
+						<td class="align-top font-medium">{option.nama}</td>
+						<td class="align-top">{data.page.kelasNama ?? '-'}</td>
+						<td class="align-top">
+							<div class="font-medium">JP {option.jamPelajaran}</div>
+							<div class="text-base-content/55 text-xs">{option.pukul || '-'}</div>
+						</td>
+						<td class="align-top"
+							><span class="badge badge-warning badge-soft">Belum diisi</span></td
+						>
+						<td class="text-base-content/50 align-top">-</td>
+						<td class="align-top">
+							<button
+								type="button"
+								class="btn btn-primary btn-soft btn-sm shadow-none"
+								onclick={() => openTambahModal(undefined, option.value)}
+								disabled={!canEdit}
+								title="Isi jurnal untuk blok ini"
+							>
+								<Icon name="edit" /> Isi
+							</button>
 						</td>
 					</tr>
 				{/each}
+				{#if data.daftarJurnal.length === 0 && pendingScheduleOptions.length === 0}
+					<tr>
+						<td class="p-7 text-center italic opacity-60" colspan="7">
+							{data.scheduleOptions.length
+								? 'Semua jurnal pada jadwal ini sudah diisi'
+								: 'Tidak ada mata pelajaran pada jadwal kelas ini'}
+						</td>
+					</tr>
+				{/if}
 			</tbody>
 		</table>
 	</div>

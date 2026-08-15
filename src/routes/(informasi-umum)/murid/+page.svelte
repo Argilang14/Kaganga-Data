@@ -8,6 +8,7 @@
 	import { modalRoute, searchQueryMarker } from '$lib/utils';
 	import { onDestroy } from 'svelte';
 	import MuridModals from '$lib/components/murid/modals.svelte';
+	import { canManageMurid } from '$lib/murid-permissions';
 
 	type BulkModalData = {
 		type: 'bulk';
@@ -21,11 +22,7 @@
 
 	let { data } = $props();
 
-	// Restrict editing for wali_asuh and user (guru mapel)
-	const canEdit = $derived.by(() => {
-		const u = page.data.user as { type?: string } | null | undefined;
-		return u?.type !== 'wali_asuh' && u?.type !== 'user';
-	});
+	const canEdit = $derived.by(() => canManageMurid(page.data.user));
 	let searchTerm = $state(data.page.search ?? '');
 	let searchTimer: ReturnType<typeof setTimeout> | undefined;
 	const currentPage = $derived.by(() => data.page.currentPage ?? 1);

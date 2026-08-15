@@ -1,5 +1,6 @@
 import db from '$lib/server/db';
 import { ensureSchema } from './ensure-helper';
+import { JADWAL_TARGET_JP_SCHEMA } from './jadwal-target-jp-schema';
 
 async function addColumnIfMissing(tableName: string, columnName: string, definition: string) {
 	const result = (await db.$client.execute(`PRAGMA table_info(${tableName})`)) as unknown as {
@@ -83,6 +84,7 @@ export async function ensureJadwalKurikulumSchema() {
 			"updated_at" text
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS "jadwal_mapel_sekolah_kode_unique" ON "jadwal_mata_pelajaran" ("sekolah_id", "kode")`,
+		...JADWAL_TARGET_JP_SCHEMA,
 		`CREATE TABLE IF NOT EXISTS "kalender_pendidikan" (
 			"id" integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 			"sekolah_id" integer NOT NULL,

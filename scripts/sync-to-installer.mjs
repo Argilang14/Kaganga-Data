@@ -67,7 +67,7 @@ async function main() {
 
 	// Also ensure installer-only files (like start-rapkumer.mjs) are placed into the staged application
 	try {
-		const stagedDir = path.join(root, 'dist', 'windows', 'stage', 'Rapkumer');
+		const stagedDir = path.join(root, 'dist', 'windows', 'stage', 'Kaganga');
 		const srcSpecial = path.join(root, 'installer', 'files', 'start-rapkumer.mjs');
 		const destSpecial = path.join(stagedDir, 'start-rapkumer.mjs');
 		if (existsSync(srcSpecial) && existsSync(stagedDir)) {

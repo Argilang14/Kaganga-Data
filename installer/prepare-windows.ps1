@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $absOutput = Join-Path $projectRoot $OutputDir
 $stageRoot = Join-Path $absOutput 'stage'
-$appName = 'Rapkumer'
+$appName = 'Kaganga'
 $appStage = Join-Path $stageRoot $appName
 
 Write-Host "Preparing Windows staging layout for $appName" -ForegroundColor Cyan
@@ -57,7 +57,7 @@ if (Test-Path $staticSource) {
 
 $iconSource = Join-Path $projectRoot 'static/logo.ico'
 if (Test-Path $iconSource) {
-    $iconTarget = Join-Path $appStage 'rapkumer.ico'
+    $iconTarget = Join-Path $appStage 'kaganga.ico'
     Copy-Item $iconSource -Destination $iconTarget -Force
 } else {
     Write-Warning 'File static/logo.ico tidak ditemukan; ikon installer tidak akan diperbarui.'

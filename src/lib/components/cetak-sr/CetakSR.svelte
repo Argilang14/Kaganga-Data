@@ -23,6 +23,13 @@
 	} from '$lib/rapor-params';
 	type Props = {
 		data: {
+			jurnalAccess?: {
+				canPrint: boolean;
+				requiresClass: boolean;
+				allowedSigners: readonly ('wali_kelas' | 'guru_mapel')[];
+				defaultScope: 'kelas' | 'mapel';
+				defaultSigner: 'wali_kelas' | 'guru_mapel';
+			};
 			academicContext?: unknown;
 			kelasId?: number | string | null;
 			tahunAjaranList?: Array<{
@@ -95,7 +102,8 @@
 		}
 		return documentOptions.filter(
 			(option) =>
-				(option.value !== 'kartu-absensi' &&
+				((option.value !== 'jurnal-mengajar' || data.jurnalAccess?.canPrint !== false) &&
+					option.value !== 'kartu-absensi' &&
 					option.value !== 'jadwal-pelajaran' &&
 					option.value !== 'kalender-pendidikan') ||
 				isSRVariant
@@ -117,13 +125,15 @@
 	let downloadLoading = $state(false);
 	let jurnalTanggalMulai = $state('');
 	let jurnalTanggalSelesai = $state('');
-	let jurnalScope = $state<'kelas' | 'mapel'>('kelas');
+	let jurnalScope = $state<'kelas' | 'mapel'>(data.jurnalAccess?.defaultScope ?? 'kelas');
 	let jurnalKelasId = $state<number | null>(data.kelasId ? Number(data.kelasId) : null);
 	let jurnalMapelId = $state<number | null>(null);
 	let jurnalJenis = $state<'persiapan' | 'ganjil' | 'genap'>(
 		data.activeSemesterTipe === 'genap' ? 'genap' : 'ganjil'
 	);
-	let jurnalPenandatangan = $state<'wali_kelas' | 'guru_mapel'>('wali_kelas');
+	let jurnalPenandatangan = $state<'wali_kelas' | 'guru_mapel'>(
+		data.jurnalAccess?.defaultSigner ?? 'wali_kelas'
+	);
 	let selectedJadwalOrientation = $state<'landscape' | 'portrait'>('landscape');
 	let selectedJadwalLayout = $state<'padat' | 'multi'>('padat');
 	let selectedJadwalJenjang = $state<'semua' | 'srd' | 'srmp' | 'srma'>('semua');
@@ -134,6 +144,15 @@
 	const pegawaiGuruList = $derived(data.pegawaiGuruList ?? []);
 	const jurnalKelasList = $derived(data.jurnalKelasList ?? []);
 	const jurnalMapelList = $derived(data.jurnalMapelList ?? []);
+	const jurnalAccess = $derived(
+		data.jurnalAccess ?? {
+			canPrint: true,
+			requiresClass: false,
+			allowedSigners: ['wali_kelas', 'guru_mapel'] as const,
+			defaultScope: 'kelas' as const,
+			defaultSigner: 'wali_kelas' as const
+		}
+	);
 	const jurnalKelas = $derived(jurnalKelasList.find((item) => item.id === jurnalKelasId) ?? null);
 	const jurnalMapel = $derived(jurnalMapelList.find((item) => item.id === jurnalMapelId) ?? null);
 	function initialWakaKurikulumId() {
@@ -294,7 +313,9 @@
 		() =>
 			Boolean(jurnalTanggalMulai && jurnalTanggalSelesai) &&
 			jurnalTanggalMulai <= jurnalTanggalSelesai &&
+			(!jurnalAccess.requiresClass || Boolean(jurnalKelasId)) &&
 			(jurnalScope === 'kelas' ? Boolean(jurnalKelasId) : Boolean(jurnalMapelId)) &&
+			jurnalAccess.allowedSigners.includes(jurnalPenandatangan) &&
 			(jurnalPenandatangan === 'wali_kelas'
 				? Boolean(jurnalKelas?.waliKelas)
 				: Boolean(jurnalMapel?.guru))
@@ -302,7 +323,10 @@
 
 	function changeJurnalScope(scope: 'kelas' | 'mapel') {
 		jurnalScope = scope;
-		jurnalPenandatangan = scope === 'kelas' ? 'wali_kelas' : 'guru_mapel';
+		jurnalPenandatangan =
+			scope === 'kelas' && jurnalAccess.allowedSigners.includes('wali_kelas')
+				? 'wali_kelas'
+				: 'guru_mapel';
 		if (scope === 'kelas') jurnalMapelId = null;
 	}
 	const documentNeedsMurid = $derived.by(
@@ -1083,12 +1107,18 @@
 				</div>
 			</fieldset>
 			<label class="form-control min-w-0">
-				<span class="label-text mb-1">Kelas{jurnalScope === 'mapel' ? ' (Opsional)' : ''}</span>
+				<span class="label-text mb-1"
+					>Kelas{jurnalScope === 'mapel' && !jurnalAccess.requiresClass ? ' (Opsional)' : ''}</span
+				>
 				<select
 					class="select select-bordered bg-base-100 w-full min-w-0"
 					bind:value={jurnalKelasId}
 				>
-					<option value={null}>{jurnalScope === 'mapel' ? 'Semua kelas' : 'Pilih kelas'}</option>
+					<option value={null}
+						>{jurnalScope === 'mapel' && !jurnalAccess.requiresClass
+							? 'Semua kelas'
+							: 'Pilih kelas'}</option
+					>
 					{#each jurnalKelasList as kelas}
 						<option value={kelas.id}>{kelas.nama} · {kelas.semester.nama}</option>
 					{/each}
@@ -1137,8 +1167,16 @@
 			<label class="form-control">
 				<span class="label-text mb-1">Penandatangan</span>
 				<select class="select select-bordered bg-base-100 w-full" bind:value={jurnalPenandatangan}>
-					<option value="wali_kelas" disabled={!jurnalKelasId}>Wali Kelas</option>
-					<option value="guru_mapel" disabled={!jurnalMapelId}>Guru Mata Pelajaran</option>
+					<option
+						value="wali_kelas"
+						disabled={!jurnalKelasId || !jurnalAccess.allowedSigners.includes('wali_kelas')}
+						>Wali Kelas</option
+					>
+					<option
+						value="guru_mapel"
+						disabled={!jurnalMapelId || !jurnalAccess.allowedSigners.includes('guru_mapel')}
+						>Guru Mata Pelajaran</option
+					>
 				</select>
 			</label>
 			<div class="flex items-end">

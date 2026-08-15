@@ -40,7 +40,7 @@ async function main() {
 	const installerPath = resolve(rootDir, 'installer/rapkumer.iss');
 	const installerRegex = /(#define\s+AppVersion\s+")([^"]+)(")/;
 
-	const stagePackagePath = resolve(rootDir, 'dist/windows/stage/Rapkumer/package.json');
+	const stagePackagePath = resolve(rootDir, 'dist/windows/stage/Kaganga/package.json');
 	const stageVersionRegex = /("version"\s*:\s*")([^"]+)(")/;
 
 	const updatedFiles = [];
@@ -84,7 +84,7 @@ async function main() {
 			}
 		})
 	) {
-		updatedFiles.push('dist/windows/stage/Rapkumer/package.json');
+		updatedFiles.push('dist/windows/stage/Kaganga/package.json');
 	}
 
 	if (updatedFiles.length === 0) {

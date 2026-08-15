@@ -13,7 +13,7 @@
 		{
 			title: 'Atribusi',
 			description:
-				'Cantumkan nama Rapkumer dan tautan repositori saat membagikan, serta sebutkan jika ada perubahan.'
+				'Cantumkan nama Kaganga dan tautan repositori saat membagikan, serta sebutkan jika ada perubahan.'
 		}
 	];
 </script>
@@ -22,9 +22,7 @@
 	<section class="rounded-box border-base-200/80 bg-base-100/95 border p-8 shadow-md sm:p-10">
 		<div class="space-y-3">
 			<span class="badge badge-outline badge-lg bg-base-100/70 text-primary shadow">Lisensi</span>
-			<h1 class="text-base-content text-3xl font-bold md:text-4xl">
-				Ketentuan Penggunaan Rapkumer
-			</h1>
+			<h1 class="text-base-content text-3xl font-bold md:text-4xl">Ketentuan Penggunaan Kaganga</h1>
 			<p class="text-base-content/80 text-base md:text-lg">
 				Repositori ini menggunakan lisensi khas (custom license) yang melindungi hak pengembang
 				sekaligus memberikan kebebasan maksimal untuk penggunaan nonkomersial. Dengan menggunakan
@@ -55,7 +53,7 @@
 					pribadi atau kontribusi ke repositori asli.
 				</li>
 				<li>
-					<span class="text-base-content font-medium">Atribusi:</span> sertakan nama Rapkumer dan tautan
+					<span class="text-base-content font-medium">Atribusi:</span> sertakan nama Kaganga dan tautan
 					repositori saat membagikan, serta sebutkan jika ada perubahan.
 				</li>
 				<li>

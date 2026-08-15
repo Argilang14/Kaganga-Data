@@ -38,7 +38,7 @@ function main() {
 
 	const absOutput = path.resolve(projectRoot, outputDir);
 	const stageRoot = path.join(absOutput, 'stage');
-	const appStage = path.join(stageRoot, 'Rapkumer');
+	const appStage = path.join(stageRoot, 'Kaganga');
 
 	const hasPnpm = hasCommand('pnpm');
 
@@ -80,7 +80,7 @@ function main() {
 	// 5) Copy icon
 	const icoPath = path.join(projectRoot, 'static', 'logo.ico');
 	if (fs.existsSync(icoPath)) {
-		fs.copyFileSync(icoPath, path.join(appStage, 'rapkumer.ico'));
+		fs.copyFileSync(icoPath, path.join(appStage, 'kaganga.ico'));
 	} else {
 		console.warn('File static/logo.ico tidak ditemukan; ikon installer tidak akan diperbarui.');
 	}

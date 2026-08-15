@@ -1,8 +1,25 @@
-import { sharedStyles, formatValue, getTutwuriBwDataUri } from './shared';
+import { formatValue as formatValueRaw, sharedStyles } from './shared';
+
+function escapeHtml(value: string | number | null | undefined): string {
+	return String(value ?? '')
+		.replaceAll('&', '&amp;')
+		.replaceAll('<', '&lt;')
+		.replaceAll('>', '&gt;')
+		.replaceAll('"', '&quot;')
+		.replaceAll("'", '&#39;');
+}
+
+function formatValue(value: string | number | null | undefined): string {
+	return escapeHtml(formatValueRaw(value));
+}
 
 export interface JurnalMengajarPrintData {
 	sekolah: {
 		nama: string;
+		npsn: string;
+		alamat: string;
+		logoUrl: string | null;
+		logoDinasUrl: string | null;
 	};
 	filter: {
 		label: string;
@@ -48,6 +65,12 @@ export interface JurnalMengajarPrintData {
 
 export function renderJurnalMengajarHTML(data: JurnalMengajarPrintData): string {
 	const rows = data.rows ?? [];
+	const title =
+		data.filter.label === 'Kelas'
+			? 'Jurnal Mengajar Per Kelas'
+			: 'Jurnal Mengajar Per Mata Pelajaran';
+	const logo = (src: string | null, alt: string) =>
+		src ? `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" />` : '';
 
 	const tableRows = rows
 		.map(
@@ -74,60 +97,122 @@ ${sharedStyles()}
 
 @page {
 	size: A4 landscape;
-	margin: 15mm;
+	margin: 10mm;
+	@bottom-right {
+		content: "Halaman " counter(page) " dari " counter(pages);
+		font-size: 7pt;
+		color: #64748b;
+	}
 }
 
 body {
-	font-size: 10pt;
+	margin: 0;
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 9pt;
+	color: #111827;
+	-webkit-print-color-adjust: exact;
+	print-color-adjust: exact;
 }
 
-.header {
+.document-header {
+	display: grid;
+	grid-template-columns: 25mm minmax(0, 1fr) 25mm;
+	align-items: center;
+	gap: 4mm;
+	margin-bottom: 5mm;
+	padding-bottom: 3mm;
+	border-bottom: 1.4px solid #111;
+}
+
+.header-logo {
+	display: flex;
+	width: 25mm;
+	height: 24mm;
+	align-items: center;
+	justify-content: center;
+}
+
+.header-logo img {
+	display: block;
+	max-width: 22mm;
+	max-height: 22mm;
+	object-fit: contain;
+}
+
+.header-text {
 	text-align: center;
-	margin-bottom: 12px;
+	text-transform: uppercase;
 }
 
-.header h2 {
-	font-size: 14pt;
-	margin-bottom: 4px;
+.header-text h1 {
+	margin: 0;
+	font-size: 18pt;
+	line-height: 1.1;
 }
 
-.header p {
-	font-size: 10pt;
-	margin: 2px 0;
-	color: #444;
+.header-text .school {
+	margin-top: 2px;
+	font-size: 13pt;
+	font-weight: 800;
+}
+
+.header-text .identity,
+.header-text .address {
+	margin-top: 2px;
+	font-size: 8pt;
+	text-transform: none;
+	color: #334155;
 }
 
 .filter-info {
-	margin-bottom: 10px;
-	font-size: 9pt;
-	color: #555;
-}
-
-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 9pt;
-}
-
-table, th, td {
-	border: 1px solid #333;
-}
-
-th {
-	background-color: #e0e0e0;
-	font-weight: bold;
-	text-align: center;
-	padding: 5px 4px;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2mm 7mm;
+	margin-bottom: 3mm;
+	padding: 2.5mm 3mm;
+	border: 1px solid #64748b;
+	background: #f8fafc;
 	font-size: 8.5pt;
 }
 
-td {
-	padding: 4px;
-	vertical-align: top;
+.journal-table {
+	width: 100%;
+	border-collapse: collapse;
+	table-layout: fixed;
+	font-size: 8pt;
 }
 
-tr.striped td {
-	background-color: #f5f5f5;
+.journal-table thead {
+	display: table-header-group;
+}
+
+.journal-table th,
+.journal-table td {
+	border: 1.2px solid #000;
+}
+
+.journal-table th {
+	background-color: #155bb7;
+	color: #fff;
+	font-weight: bold;
+	text-align: center;
+	padding: 2mm 1.2mm;
+	font-size: 7.5pt;
+}
+
+.journal-table td {
+	padding: 1.5mm;
+	vertical-align: top;
+	overflow-wrap: anywhere;
+}
+
+.journal-table tr {
+	break-inside: avoid;
+	page-break-inside: avoid;
+}
+
+.journal-table tr.striped td {
+	background-color: #f1f5f9;
 }
 
 .text-center {
@@ -140,7 +225,9 @@ tr.striped td {
 }
 
 .signature-section {
-	margin-top: 24pt;
+	margin-top: 9mm;
+	break-inside: avoid;
+	page-break-inside: avoid;
 }
 
 .signature-table {
@@ -170,7 +257,7 @@ tr.striped td {
 }
 
 .signature-table .h-24 {
-	height: 4rem;
+	height: 22mm;
 }
 
 .signature-table .h-4 {
@@ -179,19 +266,25 @@ tr.striped td {
 </style>
 </head>
 <body>
-	<div class="header">
-		<h2>JURNAL MENGAJAR</h2>
-		<p><strong>${formatValue(data.sekolah.nama)}</strong></p>
-		<p>Tahun Ajaran ${formatValue(data.periode.tahunPelajaran)} - Semester ${formatValue(data.periode.semester)}</p>
+	<div class="document-header">
+		<div class="header-logo">${logo(data.sekolah.logoDinasUrl, 'Logo pemda atau kementerian')}</div>
+		<div class="header-text">
+			<h1>${formatValue(title)}</h1>
+			<div class="school">${formatValue(data.sekolah.nama)}</div>
+			<div class="identity">NPSN ${formatValue(data.sekolah.npsn)} &bull; Tahun Ajaran ${formatValue(data.periode.tahunPelajaran)} &bull; ${formatValue(data.filter.jenisJadwal)}</div>
+			${data.sekolah.alamat ? `<div class="address">${formatValue(data.sekolah.alamat)}</div>` : ''}
+		</div>
+		<div class="header-logo">${logo(data.sekolah.logoUrl, 'Logo sekolah')}</div>
 	</div>
 
 	<div class="filter-info">
-		<strong>${formatValue(data.filter.label)}:</strong> ${formatValue(data.filter.value)} &nbsp;&nbsp;
-		<strong>Jenis Jadwal:</strong> ${formatValue(data.filter.jenisJadwal)} &nbsp;&nbsp;
-		<strong>Periode:</strong> ${formatValue(data.periode.tanggalMulai)} s.d. ${formatValue(data.periode.tanggalSelesai)}
+		<span><strong>${formatValue(data.filter.label)}:</strong> ${formatValue(data.filter.value)}</span>
+		<span><strong>Semester:</strong> ${formatValue(data.periode.semester)}</span>
+		<span><strong>Periode:</strong> ${formatValue(data.periode.tanggalMulai)} s.d. ${formatValue(data.periode.tanggalSelesai)}</span>
+		<span><strong>Penandatangan:</strong> ${formatValue(data.guruLabel)} &bull; ${formatValue(data.guru.nama)}</span>
 	</div>
 
-	<table>
+	<table class="journal-table">
 		<thead>
 			<tr>
 				<th style="width: 8%;">Tanggal</th>
@@ -233,8 +326,8 @@ tr.striped td {
 					<td class="font-bold underline">${formatValue(data.guru.nama)}</td>
 				</tr>
 				<tr>
-					<td class="text-center">${data.kepalaSekolah.nip ?? ''}</td>
-					<td class="text-center">${data.guru.nip ? `${data.guru.nip}` : ''}</td>
+					<td class="text-center">${escapeHtml(data.kepalaSekolah.nip)}</td>
+					<td class="text-center">${escapeHtml(data.guru.nip)}</td>
 				</tr>
 			</tbody>
 		</table>

@@ -170,7 +170,7 @@ export async function buildJadwalWorkbook(
 	mode: 'template' | 'export'
 ) {
 	const workbook = new ExcelJS.Workbook() as any;
-	workbook.creator = 'Rapkumer';
+	workbook.creator = 'Kaganga';
 	const sheet = workbook.addWorksheet('Jadwal Pelajaran', {
 		views: [{ state: 'frozen', ySplit: 4, showGridLines: false }]
 	});

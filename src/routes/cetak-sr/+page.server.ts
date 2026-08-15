@@ -13,6 +13,15 @@ import { buildKelasContext, fetchMuridList } from '$lib/server/route-utils';
 export async function load({ locals, url, depends, parent }) {
 	depends('app:cetak-sr');
 
+	const user = locals.user as { type?: string; pegawaiId?: number | null } | null;
+	const jurnalAccess = {
+		canPrint: ['admin', 'wali_kelas', 'user'].includes(user?.type ?? ''),
+		requiresClass: user?.type !== 'admin',
+		allowedSigners:
+			user?.type === 'user' ? (['guru_mapel'] as const) : (['wali_kelas', 'guru_mapel'] as const),
+		defaultScope: user?.type === 'user' ? ('mapel' as const) : ('kelas' as const),
+		defaultSigner: user?.type === 'user' ? ('guru_mapel' as const) : ('wali_kelas' as const)
+	};
 	const parentData = await parent();
 	const { sekolahId, kelasId, kelasIds, academicContext } = await buildKelasContext(
 		locals,
@@ -93,7 +102,16 @@ export async function load({ locals, url, depends, parent }) {
 						guruPegawaiId: true
 					},
 					with: { guru: { columns: { id: true, nama: true, nip: true } } },
-					where: and(eq(tableJadwalMapel.sekolahId, sekolahId), eq(tableJadwalMapel.aktif, true)),
+					where: and(
+						eq(tableJadwalMapel.sekolahId, sekolahId),
+						eq(tableJadwalMapel.aktif, true),
+						user?.type === 'user'
+							? user.pegawaiId
+								? eq(tableJadwalMapel.guruPegawaiId, user.pegawaiId)
+								: eq(tableJadwalMapel.id, -1)
+							: undefined,
+						jurnalAccess.canPrint ? undefined : eq(tableJadwalMapel.id, -1)
+					),
 					orderBy: [asc(tableJadwalMapel.nama)]
 				})
 			])
@@ -109,6 +127,7 @@ export async function load({ locals, url, depends, parent }) {
 			pegawaiGuruList,
 			jurnalKelasList,
 			jurnalMapelList,
+			jurnalAccess,
 			...printContext,
 			...jurnalPeriod
 		};
@@ -145,6 +164,7 @@ export async function load({ locals, url, depends, parent }) {
 		pegawaiGuruList,
 		jurnalKelasList,
 		jurnalMapelList,
+		jurnalAccess,
 		...printContext,
 		...jurnalPeriod
 	};

@@ -13,11 +13,19 @@ import {
 	tableSemester,
 	tableTahunAjaran,
 	tableSekolah,
-	tablePegawai
+	tablePegawai,
+	tableAuthUserKelas
 } from '$lib/server/db/schema';
+import { getJurnalPrintAccessError } from '$lib/server/jurnal-print-access';
 import { renderPDF } from '$lib/server/pdf/pagedpdf';
 import { renderJurnalMengajarHTML } from '$lib/server/pdf/templates/jurnal-mengajar';
-import { formatTanggal } from '$lib/server/pdf/preview-utils';
+import {
+	composeAlamat,
+	fallbackTempat,
+	formatTanggal,
+	getLogoDinasSrc,
+	getLogoSrc
+} from '$lib/server/pdf/preview-utils';
 import type { RequestHandler } from './$types';
 
 export const GET = (async ({ locals, url }) => {
@@ -39,7 +47,7 @@ export const GET = (async ({ locals, url }) => {
 	const tanggalMulai = url.searchParams.get('tanggal_mulai');
 	const tanggalSelesai = url.searchParams.get('tanggal_selesai');
 	const lingkup = url.searchParams.get('lingkup') === 'mapel' ? 'mapel' : 'kelas';
-	const jenisJadwal = url.searchParams.get('jenis_jadwal');
+	const jenisJadwalParam = url.searchParams.get('jenis_jadwal');
 	const penandatangan =
 		url.searchParams.get('penandatangan') === 'guru_mapel' ? 'guru_mapel' : 'wali_kelas';
 	const kelasId = Number(url.searchParams.get('kelas_id')) || null;
@@ -49,9 +57,10 @@ export const GET = (async ({ locals, url }) => {
 		throw error(400, 'Parameter tanggal_mulai dan tanggal_selesai wajib diisi');
 	}
 	if (tanggalMulai > tanggalSelesai) throw error(400, 'Rentang tanggal jurnal tidak valid');
-	if (!jenisJadwal || !['persiapan', 'ganjil', 'genap'].includes(jenisJadwal)) {
+	if (!jenisJadwalParam || !['persiapan', 'ganjil', 'genap'].includes(jenisJadwalParam)) {
 		throw error(400, 'Jenis jadwal tidak valid');
 	}
+	const jenisJadwal = jenisJadwalParam as 'persiapan' | 'ganjil' | 'genap';
 	if (lingkup === 'kelas' && !kelasId) throw error(400, 'Pilih kelas yang akan dicetak');
 	if (lingkup === 'mapel' && !jadwalMapelId) {
 		throw error(400, 'Pilih mata pelajaran yang akan dicetak');
@@ -84,6 +93,43 @@ export const GET = (async ({ locals, url }) => {
 	}
 	if (!schoolClasses.length) throw error(400, 'Data kelas belum tersedia');
 
+	let hasClassAccess = user.type === 'admin';
+	if (selectedKelas && user.type === 'wali_kelas') {
+		hasClassAccess =
+			selectedKelas.waliKelasId === user.pegawaiId || selectedKelas.id === user.kelasId;
+	} else if (selectedKelas && user.type === 'user') {
+		const [directAccess, assignedClasses] = await Promise.all([
+			db.query.tableAuthUserKelas.findFirst({
+				columns: { id: true },
+				where: and(
+					eq(tableAuthUserKelas.authUserId, user.id),
+					eq(tableAuthUserKelas.kelasId, selectedKelas.id)
+				)
+			}),
+			db.query.tableAuthUserKelas.findMany({
+				columns: {},
+				where: eq(tableAuthUserKelas.authUserId, user.id),
+				with: { kelas: { columns: { nama: true } } }
+			})
+		]);
+		hasClassAccess =
+			Boolean(directAccess) ||
+			assignedClasses.some((item) => item.kelas?.nama === selectedKelas.nama);
+	}
+	const hasSubjectAccess =
+		user.type === 'admin' ||
+		(user.type === 'user' && selectedMapel?.guruPegawaiId === user.pegawaiId);
+	const accessError = getJurnalPrintAccessError({
+		userType: user.type,
+		lingkup,
+		penandatangan,
+		hasSelectedClass: Boolean(selectedKelas),
+		hasClassAccess,
+		hasSelectedSubject: Boolean(selectedMapel),
+		hasSubjectAccess
+	});
+	if (accessError) throw error(403, accessError);
+
 	const signer = penandatangan === 'wali_kelas' ? selectedKelas?.waliKelas : selectedMapel?.guru;
 	if (!signer) {
 		throw error(
@@ -107,7 +153,8 @@ export const GET = (async ({ locals, url }) => {
 		.limit(1)
 		.then((r) => r[0]);
 
-	// Admin dapat menyusun rekap sekolah; akun lain tetap dibatasi pada jurnal miliknya.
+	// Admin dan wali kelas dapat merekap konteks yang menjadi tanggung jawabnya.
+	// Guru mata pelajaran hanya melihat jurnal yang dibuat oleh akunnya sendiri.
 	const rows = await db
 		.select({
 			id: tableJurnalMengajar.id,
@@ -145,7 +192,7 @@ export const GET = (async ({ locals, url }) => {
 				),
 				jadwalMapelId ? eq(tableJurnalMengajar.jadwalMapelId, jadwalMapelId) : undefined,
 				eq(tableJurnalMengajar.jenisJadwal, jenisJadwal),
-				user.type === 'admin' ? undefined : eq(tableJurnalMengajar.authUserId, user.id),
+				user.type === 'user' ? eq(tableJurnalMengajar.authUserId, user.id) : undefined,
 				sql`${tableJurnalMengajar.tanggal} >= ${tanggalMulai}`,
 				sql`${tableJurnalMengajar.tanggal} <= ${tanggalSelesai}`
 			)
@@ -218,7 +265,7 @@ export const GET = (async ({ locals, url }) => {
 		const hadir = Math.max(0, total - absences.sakit - absences.izin - absences.alfa);
 
 		return {
-			tanggal: row.tanggal,
+			tanggal: formatTanggal(row.tanggal),
 			kelas: row.kelasNama ?? '',
 			mataPelajaran: row.mapelNamaJadwal ?? row.mapelNamaLegacy ?? '',
 			jamPelajaran: row.jamPelajaran,
@@ -255,6 +302,7 @@ export const GET = (async ({ locals, url }) => {
 	const sekolah = await db.query.tableSekolah.findFirst({
 		columns: {
 			nama: true,
+			npsn: true,
 			kepalaSekolahId: true,
 			lokasiTandaTangan: true,
 			statusKepalaSekolah: true
@@ -278,7 +326,13 @@ export const GET = (async ({ locals, url }) => {
 	const isWaliKelas = penandatangan === 'wali_kelas';
 	const guruLabel = isWaliKelas ? 'Wali Kelas' : 'Guru Mata Pelajaran';
 
-	const tempatTtd = sekolah?.lokasiTandaTangan ?? '';
+	const [logoUrl, logoDinasUrl] = await Promise.all([
+		getLogoSrc(sekolahId),
+		getLogoDinasSrc(sekolahId)
+	]);
+	const tempatTtd = locals.sekolah
+		? fallbackTempat(locals.sekolah)
+		: (sekolah?.lokasiTandaTangan ?? '');
 	const tanggalTtd = new Date().toLocaleDateString('id-ID', {
 		day: 'numeric',
 		month: 'long',
@@ -287,7 +341,11 @@ export const GET = (async ({ locals, url }) => {
 
 	const printData = {
 		sekolah: {
-			nama: sekolah?.nama ?? ''
+			nama: sekolah?.nama ?? '',
+			npsn: sekolah?.npsn ?? '',
+			alamat: locals.sekolah ? composeAlamat(locals.sekolah) : '',
+			logoUrl,
+			logoDinasUrl
 		},
 		filter: {
 			label: lingkup === 'kelas' ? 'Kelas' : 'Mata Pelajaran',

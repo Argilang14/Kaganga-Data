@@ -64,7 +64,7 @@
 			</p>
 		{/if}
 		<p class="label text-wrap">
-			Jika belum memiliki token, silakan dukung pengembangan Rapkumer melalui tombol Traktir agar
+			Jika belum memiliki token, silakan dukung pengembangan Kaganga melalui tombol Traktir agar
 			fitur ini dapat kami buka.
 		</p>
 	</fieldset>

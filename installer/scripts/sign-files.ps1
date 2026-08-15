@@ -1,4 +1,4 @@
-# Code Signing Script for Rapkumer
+# Code Signing Script for Kaganga
 # Signs executables and installer files using Windows signtool
 param(
     [Parameter(Mandatory = $false)]
@@ -133,7 +133,7 @@ function Get-FilesToProcess {
     # Base directory paths
     $projectRoot = Resolve-Path "$PSScriptRoot\..\.."
     $distPath = "$projectRoot\dist\windows"
-    $stagePath = "$distPath\stage\Rapkumer"
+    $stagePath = "$distPath\stage\Kaganga"
     
     if ($SignExecutables -or (-not $FilesToSign -and -not $SignInstaller)) {
         # Sign executables in the staging area
@@ -150,7 +150,7 @@ function Get-FilesToProcess {
     
     if ($SignInstaller) {
         # Sign the installer
-        $installerPath = "$distPath\RapkumerSetup.exe"
+        $installerPath = "$distPath\KagangaSetup.exe"
         if (Test-Path $installerPath) {
             $files += $installerPath
             Write-ColorMessage "Found installer to sign: $installerPath" "Cyan"
@@ -175,7 +175,7 @@ function Get-FilesToProcess {
 }
 
 # Main execution
-Write-ColorMessage "[CODE SIGNING] Rapkumer Code Signing Script" "Cyan"
+Write-ColorMessage "[CODE SIGNING] Kaganga Code Signing Script" "Cyan"
 Write-ColorMessage "=============================================" "Cyan"
 
 # Check if certificate is available

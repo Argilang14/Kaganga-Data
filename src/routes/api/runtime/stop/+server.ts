@@ -16,7 +16,7 @@ function requestShutdown() {
 	}
 
 	setTimeout(() => {
-		console.warn('Memaksa penghentian Rapkumer karena sinyal tidak tersedia.');
+		console.warn('Memaksa penghentian Kaganga karena sinyal tidak tersedia.');
 		process.exit(0);
 	}, 200);
 }
@@ -36,5 +36,5 @@ export const POST = async (event: RequestEvent) => {
 	}
 
 	requestShutdown();
-	return json({ message: 'Server akan dihentikan. Tutup jendela Rapkumer ini.' });
+	return json({ message: 'Server akan dihentikan. Tutup jendela Kaganga ini.' });
 };

@@ -1,6 +1,6 @@
-#define AppName "Kaganga - Administrasi dan Informasi Data Sekolah"
-#define AppVersion "2.0.5"
-#define StagePath "..\\dist\\windows\\stage\\Rapkumer"
+#define AppName "Kaganga"
+#define AppVersion "2.0.6"
+#define StagePath "..\\dist\\windows\\stage\\Kaganga"
 
 [Setup]
 AppId={{06E10F9F-0AD2-4F31-A64B-7C3B36F2D0D6}}
@@ -22,9 +22,9 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 ; Do not require administrator privileges when installing to per-user LocalAppData
 PrivilegesRequired=lowest
-UninstallDisplayIcon={app}\rapkumer.ico
+UninstallDisplayIcon={app}\kaganga.ico
 VersionInfoVersion={#AppVersion}
-SetupIconFile={#StagePath}\rapkumer.ico
+SetupIconFile={#StagePath}\kaganga.ico
 LicenseFile="..\LICENSE"
 ; Code signing configuration (commented out by default)
 ; Uncomment and configure these lines if you want Inno Setup to sign the installer
@@ -41,8 +41,8 @@ Type: files; Name: "{autodesktop}\Rapkumer.lnk"
 Type: filesandordirs; Name: "{autoprograms}\Rapkumer"
 
 [Icons]
-Name:"{autoprograms}\Kaganga\Kaganga"; Filename:"{sys}\cmd.exe"; Parameters:"/c ""node ""{app}\start-rapkumer.mjs"""; WorkingDir:"{app}"; IconFilename:"{app}\rapkumer.ico"
-Name:"{autodesktop}\Kaganga"; Filename:"{sys}\cmd.exe"; Parameters:"/c ""node ""{app}\start-rapkumer.mjs"""; WorkingDir:"{app}"; IconFilename:"{app}\rapkumer.ico"
+Name:"{autoprograms}\Kaganga\Kaganga"; Filename:"{sys}\cmd.exe"; Parameters:"/c ""node ""{app}\start-rapkumer.mjs"""; WorkingDir:"{app}"; IconFilename:"{app}\kaganga.ico"
+Name:"{autodesktop}\Kaganga"; Filename:"{sys}\cmd.exe"; Parameters:"/c ""node ""{app}\start-rapkumer.mjs"""; WorkingDir:"{app}"; IconFilename:"{app}\kaganga.ico"
 
 [Code]
 

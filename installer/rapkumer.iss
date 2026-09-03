@@ -1,5 +1,5 @@
 #define AppName "Kaganga"
-#define AppVersion "2.0.6"
+#define AppVersion "2.1.0"
 #define StagePath "..\\dist\\windows\\stage\\Kaganga"
 
 [Setup]
@@ -14,7 +14,7 @@ DefaultDirName={localappdata}\Kaganga
 DefaultGroupName=Kaganga
 DisableProgramGroupPage=yes
 OutputDir=..\dist\windows
-OutputBaseFilename=KagangaSetup
+OutputBaseFilename=KagangaSetup-v{#AppVersion}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern

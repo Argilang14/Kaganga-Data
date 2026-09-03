@@ -40,6 +40,7 @@
 		<form
 			method="POST"
 			action="?/create"
+			enctype="multipart/form-data"
 			class="collapse-content grid gap-3 md:grid-cols-2 xl:grid-cols-3"
 		>
 			{#if data.isAdmin}
@@ -66,6 +67,16 @@
 					name="maksud"
 					required></textarea></label
 			>
+			<label class="form-control md:col-span-2 xl:col-span-3">
+				<span class="label-text mb-1">Undangan (opsional)</span>
+				<input
+					class="file-input file-input-bordered w-full"
+					type="file"
+					name="undangan"
+					accept=".pdf,application/pdf"
+				/>
+				<span class="mt-1 text-xs opacity-55">PDF maksimal 10 MB.</span>
+			</label>
 			<label class="form-control"
 				><span class="label-text mb-1">Tempat Tujuan</span><input
 					class="input input-bordered"
@@ -126,7 +137,12 @@
 						<td class="max-w-md"
 							><strong>{item.maksud}</strong>
 							<div class="text-sm opacity-70">{item.tempatTujuan}</div>
-							{#if item.catatan}<div class="mt-1 text-xs opacity-60">{item.catatan}</div>{/if}</td
+							{#if item.catatan}<div class="mt-1 text-xs opacity-60">{item.catatan}</div>{/if}
+							{#if item.undanganFile}<a
+									class="link link-primary mt-1 inline-block text-xs"
+									href={`/api/dinas-luar/file/${item.undanganFile}`}
+									target="_blank">Lihat undangan</a
+								>{/if}</td
 						>
 						<td class="whitespace-nowrap"
 							>{formatDate(item.tanggalBerangkat)}
@@ -141,7 +157,7 @@
 						>
 						<td
 							><div class="flex justify-end gap-1">
-								{#if item.status === 'diajukan'}
+								{#if item.status === 'diajukan' && data.isAdmin}
 									<form method="POST" action="?/setStatus">
 										<input type="hidden" name="id" value={item.id} /><input
 											type="hidden"
@@ -158,6 +174,8 @@
 											value="ditolak"
 										/><button class="btn btn-soft btn-error btn-sm" type="submit">Tolak</button>
 									</form>
+								{/if}
+								{#if item.status === 'diajukan' && (data.isAdmin || item.pegawai.id === data.pegawaiAktifId)}
 									<form method="POST" action="?/delete">
 										<input type="hidden" name="id" value={item.id} /><button
 											class="btn btn-ghost btn-sm"
@@ -165,7 +183,8 @@
 											aria-label="Hapus pengajuan"><Icon name="del" /></button
 										>
 									</form>
-								{:else if item.status === 'disetujui'}
+								{/if}
+								{#if item.status === 'disetujui' && data.isAdmin}
 									<form method="POST" action="?/setStatus">
 										<input type="hidden" name="id" value={item.id} /><input
 											type="hidden"
@@ -175,6 +194,55 @@
 											><Icon name="check" /> Selesai</button
 										>
 									</form>
+								{/if}
+								{#if item.sppd}
+									<a
+										class="btn btn-soft btn-sm"
+										href={`/api/pdf/sppd?id=${item.sppd.id}`}
+										target="_blank"
+										aria-label="Cetak SPPD"><Icon name="print" /></a
+									>
+									{#if data.isAdmin || item.pegawai.id === data.pegawaiAktifId}
+										<details class="dropdown dropdown-end">
+											<summary class="btn btn-soft btn-sm"><Icon name="image" /> Bukti</summary>
+											<div
+												class="dropdown-content bg-base-100 border-base-300 z-20 mt-2 w-72 rounded border p-3 shadow-xl"
+											>
+												<form
+													method="POST"
+													action="?/uploadBukti"
+													enctype="multipart/form-data"
+													class="space-y-2"
+												>
+													<input type="hidden" name="sppdId" value={item.sppd.id} />
+													<input
+														class="file-input file-input-bordered file-input-sm w-full"
+														type="file"
+														name="bukti"
+														accept=".pdf,image/jpeg,image/png,image/webp"
+														required
+													/>
+													<button class="btn btn-primary btn-sm w-full" type="submit">Unggah</button
+													>
+												</form>
+												{#each item.sppd.bukti as proof}
+													<div class="mt-2 flex items-center justify-between gap-2 text-xs">
+														<a
+															class="link truncate"
+															href={`/api/dinas-luar/file/${proof.namaFile}`}
+															target="_blank">{proof.jenis} {proof.id}</a
+														>
+														<form method="POST" action="?/deleteBukti">
+															<input type="hidden" name="id" value={proof.id} /><button
+																class="btn btn-error btn-ghost btn-xs"
+																type="submit"><Icon name="del" /></button
+															>
+														</form>
+													</div>
+												{/each}
+											</div>
+										</details>
+									{/if}
 								{/if}
 							</div></td
 						>

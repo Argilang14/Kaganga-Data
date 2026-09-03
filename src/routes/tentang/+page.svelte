@@ -37,8 +37,8 @@
 				<div class="rounded-box border-base-200/80 bg-base-100/90 border p-4 shadow-md">
 					<h3 class="text-secondary font-semibold">Ekspor Nilai ke Dapodik</h3>
 					<p class="text-base-content/80 text-sm">
-						Integrasi nilai ke Dapodik sedang dalam tahap riset agar format ekspor aman dipakai.
-						Dukungan donasi membantu percepatan pengembangan.
+						Periksa data masuk dan nilai keluar melalui pratinjau sebelum operator menerapkan atau
+						mengirimkannya ke Dapodik.
 					</p>
 				</div>
 			</div>
@@ -90,8 +90,8 @@
 				</p>
 				<p class="text-base-content/90">
 					Selain itu, Kaganga dirancang untuk membantu operator sekolah mempersiapkan data yang
-					diperlukan Dapodik. Fitur <span class="font-medium">ekspor nilai ke Dapodik</span> sedang disempurnakan
-					agar proses validasi dan format sesuai kebutuhan downstream.
+					diperlukan Dapodik. Integrasi menyediakan pratinjau dan konfirmasi operator sebelum data
+					masuk diterapkan atau nilai dikirim.
 				</p>
 				<p class="text-base-content/90">
 					Harapan kami, aplikasi ini menjadi solusi praktis bagi tenaga pendidik dalam menerapkan

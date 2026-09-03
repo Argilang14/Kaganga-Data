@@ -1,5 +1,6 @@
 import type { KalenderPendidikanPrintData } from '../../../../routes/cetak/kalender-pendidikan/preview-data';
 import { onePageFitScript, onePageFitStyles } from './one-page-fit';
+import { renderSchoolLetterhead, schoolLetterheadStyles } from './school-letterhead.ts';
 
 function escapeHtml(value: string | number | null | undefined): string {
 	return String(value ?? '')
@@ -152,9 +153,10 @@ export function renderKalenderPendidikanHTML(data: KalenderPendidikanPrintData):
 		orientation +
 		';margin:7mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
 		onePageFitStyles(orientation) +
+		schoolLetterheadStyles() +
 		'body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#020617;background:#fff;font-size:' +
 		(portrait ? '7.5px' : '8px') +
-		'}.document-header{display:grid;grid-template-columns:24mm minmax(0,1fr) 24mm;align-items:center;gap:3mm;margin-bottom:4mm}.header-logo{display:flex;width:24mm;height:22mm;align-items:center;justify-content:center}.header-logo img{display:block;max-width:20mm;max-height:20mm;object-fit:contain}.header{text-align:center}.header h1{margin:0 0 2px;font-size:21px;line-height:1.15}.header .school{font-size:12px;font-weight:700;text-transform:uppercase}.header .period{margin-top:2px;color:#334155;font-size:10.5px}' +
+		'}.document-header{display:grid;grid-template-columns:24mm minmax(0,1fr) 24mm;align-items:center;gap:3mm;margin-bottom:4mm}.header-logo{display:flex;width:24mm;height:22mm;align-items:center;justify-content:center}.header-logo img{display:block;max-width:20mm;max-height:20mm;object-fit:contain}.header{margin-bottom:4mm;text-align:center}.header h1{margin:0 0 2px;font-size:21px;line-height:1.15}.header .school{font-size:12px;font-weight:700;text-transform:uppercase}.header .period{margin-top:2px;color:#334155;font-size:10.5px}' +
 		'.month-grid{display:grid;grid-template-columns:repeat(' +
 		monthColumns +
 		',1fr);gap:' +
@@ -173,22 +175,12 @@ export function renderKalenderPendidikanHTML(data: KalenderPendidikanPrintData):
 		'.summary{display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin-top:4mm}.summary div{border:.7px solid #e2e8f0;border-radius:5px;padding:3mm;font-size:9px}.summary strong{font-weight:700}.signatures{margin-top:6mm;break-inside:avoid;font-size:10px;line-height:1.4}.signature-table{width:100%;border-collapse:collapse;table-layout:fixed}.signature-table col{width:50%}.signature-table td{border:0;padding:1px 6mm;text-align:center;vertical-align:top}.signature-heading{font-weight:700}.signature-table .signature-space{height:15mm}.signature-name{font-size:10.5px;font-weight:700;text-decoration:underline}' +
 		'</style>' +
 		onePageFitScript() +
-		'</head><body><main class="print-page"><section class="fit-content"><div class="document-header"><div class="header-logo">' +
-		(data.sekolah.logoDinasUrl
-			? '<img src="' +
-				escapeHtml(data.sekolah.logoDinasUrl) +
-				'" alt="Logo pemda atau kementerian" />'
-			: '') +
-		'</div><div class="header"><h1>Kalender Pendidikan</h1><div class="school">' +
-		escapeHtml(data.sekolah.nama) +
-		'</div><div class="period">' +
+		'</head><body><main class="print-page"><section class="fit-content">' +
+		renderSchoolLetterhead(data.sekolah, true) +
+		'<div class="header"><h1>Kalender Pendidikan</h1><div class="period">' +
 		escapeHtml(data.periode.label || data.periode.tahunPelajaran || '') +
 		' - ' +
 		escapeHtml(data.jenjangLabel) +
-		'</div></div><div class="header-logo">' +
-		(data.sekolah.logoUrl
-			? '<img src="' + escapeHtml(data.sekolah.logoUrl) + '" alt="Logo sekolah" />'
-			: '') +
 		'</div></div><div class="month-grid">' +
 		data.months.map((month) => renderMonth(data, month)).join('') +
 		'</div><div class="summary"><div><strong>Hari Pembelajaran Efektif</strong> = ' +

@@ -8,6 +8,7 @@
 	import { isAuthorizedUser } from '../pengguna/permissions';
 
 	let user = $derived(page.data.user);
+	const isAdmin = $derived(user?.type === 'admin');
 	import { toast } from '$lib/components/toast.svelte';
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types';
@@ -27,6 +28,13 @@
 	let showCurrentPassword = $state(false);
 	let showNewPassword = $state(false);
 	let showConfirmPassword = $state(false);
+	let showAiKey = $state(false);
+	const initialAiProvider = () => data.ai?.provider ?? 'gemini';
+	const initialAiModel = () => data.ai?.model ?? 'gemini-2.5-flash';
+	const initialAiBaseUrl = () => data.ai?.baseUrl ?? 'https://generativelanguage.googleapis.com';
+	let aiProvider = $state<'gemini' | 'openai_compatible'>(initialAiProvider());
+	let aiModel = $state(initialAiModel());
+	let aiBaseUrl = $state(initialAiBaseUrl());
 
 	onMount(() => {
 		if (!appAddress && browser) {
@@ -167,6 +175,96 @@
 		</a>
 	</div>
 </section>
+
+{#if isAdmin}
+	<section class="card bg-base-100 mt-5 rounded-lg border border-none p-6 shadow-md">
+		<FormEnhance action="?/save-ai-settings">
+			{#snippet children({ submitting, invalid })}
+				<header class="mb-4 space-y-2">
+					<h2 class="text-xl font-semibold">Generator Tujuan Pembelajaran</h2>
+					<p class="text-base-content/70 text-sm">
+						Konfigurasi ini berlaku hanya untuk sekolah aktif. Kunci API dipakai di server dan
+						tidak dikirim kembali ke peramban.
+					</p>
+					{#if data.ai?.configured}
+						<div class="alert alert-success py-2" role="status">
+							<Icon name="success" />
+							<span>
+								Layanan AI aktif{data.ai.maskedKey ? `: ${data.ai.maskedKey}` : ' dari konfigurasi server'}.
+							</span>
+						</div>
+					{:else}
+						<div class="alert alert-warning alert-soft py-2" role="status">
+							<Icon name="warning" />
+							<span>Generator belum aktif.</span>
+						</div>
+					{/if}
+				</header>
+
+				<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+					<fieldset class="fieldset">
+						<legend class="fieldset-legend">Penyedia</legend>
+						<select class="select bg-base-200 w-full" name="provider" bind:value={aiProvider}>
+							<option value="gemini">Google Gemini</option>
+							<option value="openai_compatible">OpenAI Compatible</option>
+						</select>
+					</fieldset>
+					<fieldset class="fieldset">
+						<legend class="fieldset-legend">Model</legend>
+						<input class="input bg-base-200 w-full" name="model" bind:value={aiModel} required maxlength="100" />
+					</fieldset>
+				</div>
+
+				<fieldset class="fieldset">
+					<legend class="fieldset-legend">Base URL HTTPS</legend>
+					<input class="input bg-base-200 w-full" type="url" name="baseUrl" bind:value={aiBaseUrl} required maxlength="300" />
+				</fieldset>
+
+				<fieldset class="fieldset">
+					<legend class="fieldset-legend">Kunci API baru</legend>
+					<label class="input bg-base-200 w-full">
+						<Icon name="key" />
+						<input
+							type={showAiKey ? 'text' : 'password'}
+							name="apiKey"
+							required
+							minlength="10"
+							maxlength="500"
+							autocomplete="new-password"
+							placeholder="Masukkan kunci API"
+						/>
+						<button type="button" class="btn btn-ghost btn-sm btn-square" onclick={() => (showAiKey = !showAiKey)} title={showAiKey ? 'Sembunyikan kunci' : 'Tampilkan kunci'}>
+							<Icon name={showAiKey ? 'eye-off' : 'eye'} />
+						</button>
+					</label>
+					<p class="text-base-content/60 mt-1 text-xs">
+						Mengisi formulir ini akan mengganti kunci yang tersimpan untuk sekolah aktif.
+					</p>
+				</fieldset>
+
+				<div class="mt-5 flex flex-wrap justify-end gap-2">
+					<button class="btn btn-primary" type="submit" disabled={submitting || invalid}>
+						<Icon name="save" />
+						{submitting ? 'Menyimpan...' : 'Simpan Pengaturan AI'}
+					</button>
+				</div>
+			{/snippet}
+		</FormEnhance>
+
+		{#if data.ai?.stored}
+			<FormEnhance action="?/clear-ai-settings">
+				{#snippet children({ submitting })}
+					<div class="mt-2 flex justify-end">
+						<button class="btn btn-soft btn-error" type="submit" disabled={submitting}>
+							<Icon name="del" />
+							{submitting ? 'Menghapus...' : 'Hapus Konfigurasi AI'}
+						</button>
+					</div>
+				{/snippet}
+			</FormEnhance>
+		{/if}
+	</section>
+{/if}
 
 <section class="card bg-base-100 mt-5 rounded-lg border border-none p-6 shadow-md">
 	<!-- Change Admin Username -->

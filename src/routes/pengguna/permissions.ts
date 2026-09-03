@@ -39,7 +39,11 @@ export const groupedUserPermissions = {
 		description: 'Data Kelas'
 	},
 	administrasi: {
-		values: [['absensi', 'Kelola Absensi Digital dan Kegiatan']],
+		values: [
+			['absensi', 'Kelola Absensi Digital dan Kegiatan'],
+			['buku_tamu', 'Kelola Buku Tamu Digital'],
+			['presensi_pegawai', 'Kelola Presensi Pegawai']
+		],
 		description: 'Administrasi'
 	},
 	surat: {

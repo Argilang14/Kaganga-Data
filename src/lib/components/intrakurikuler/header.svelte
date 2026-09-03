@@ -9,6 +9,9 @@
 		importTooltip,
 		isImportDisabled,
 		onOpenImport,
+		onGenerate,
+		isGenerateDisabled = false,
+		generateTooltip = undefined,
 		showAgamaSelect,
 		isAgamaSelectLocked = false,
 		agamaSelectId,
@@ -127,6 +130,19 @@
 				{/each}
 			</select>
 		</div>
+	{/if}
+
+	{#if onGenerate}
+		<button
+			class="btn btn-soft btn-info shadow-none sm:max-w-40"
+			type="button"
+			onclick={() => onGenerate()}
+			disabled={isGenerateDisabled}
+			title={generateTooltip}
+		>
+			<Icon name="sparkles" />
+			Generate
+		</button>
 	{/if}
 
 	<button

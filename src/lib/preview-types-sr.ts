@@ -9,7 +9,10 @@ export type DocumentType =
 	| 'kartu-absensi'
 	| 'jadwal-pelajaran'
 	| 'kalender-pendidikan'
-	| 'jurnal-mengajar';
+	| 'jurnal-mengajar'
+	| 'martikulasi-sk'
+	| 'martikulasi-raport'
+	| 'martikulasi-sttm';
 
 export type MuridData = {
 	id: number;

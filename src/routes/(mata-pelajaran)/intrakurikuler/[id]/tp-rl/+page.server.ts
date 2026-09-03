@@ -445,6 +445,81 @@ export const actions = {
 		return { message: `Tujuan pembelajaran berhasil diperbarui` };
 	},
 
+	async aigenerate({ params, request, locals }) {
+		const userType = locals.user?.type;
+		if (
+			userType !== 'admin' &&
+			userType !== 'user' &&
+			userType !== 'wali_kelas' &&
+			userType !== 'wali_asuh'
+		) {
+			authority('rapor_manage');
+		}
+		const mataPelajaranId = Number(params.id);
+		const sekolahId = locals.sekolah?.id;
+		if (!Number.isInteger(mataPelajaranId) || !sekolahId) {
+			return fail(400, { fail: 'Mata pelajaran tidak valid.' });
+		}
+		const mapel = await db.query.tableMataPelajaran.findFirst({
+			columns: { id: true },
+			where: eq(tableMataPelajaran.id, mataPelajaranId),
+			with: { kelas: { columns: { sekolahId: true } } }
+		});
+		if (!mapel || mapel.kelas.sekolahId !== sekolahId) {
+			return fail(404, { fail: 'Mata pelajaran tidak ditemukan.' });
+		}
+
+		const formData = await request.formData();
+		const grouped = new Map<number, { lingkupMateri: string; deskripsi: Map<number, string> }>();
+		for (const [key, value] of formData.entries()) {
+			const match = key.match(/^groups\.(\d+)\.(lingkupMateri|deskripsi\.(\d+))$/);
+			if (!match) continue;
+			const groupIndex = Number(match[1]);
+			if (groupIndex >= 12) continue;
+			const group = grouped.get(groupIndex) ?? { lingkupMateri: '', deskripsi: new Map() };
+			const text = normalizeCell(value);
+			if (match[2] === 'lingkupMateri') group.lingkupMateri = text.slice(0, 150);
+			else if (match[3] != null && Number(match[3]) < 12) {
+				group.deskripsi.set(Number(match[3]), text.slice(0, 100));
+			}
+			grouped.set(groupIndex, group);
+		}
+		const groups = [...grouped.values()]
+			.map((group) => ({
+				lingkupMateri: group.lingkupMateri.trim(),
+				deskripsi: [...group.deskripsi.values()].map((value) => value.trim()).filter(Boolean)
+			}))
+			.filter((group) => group.lingkupMateri && group.deskripsi.length);
+		if (!groups.length) return fail(400, { fail: 'Tidak ada hasil yang dapat disimpan.' });
+
+		const existing = await db.query.tableTujuanPembelajaran.findMany({
+			columns: { lingkupMateri: true, deskripsi: true },
+			where: eq(tableTujuanPembelajaran.mataPelajaranId, mataPelajaranId)
+		});
+		const keys = new Set(
+			existing.map((entry) => `${normalizeText(entry.lingkupMateri)}::${normalizeText(entry.deskripsi)}`)
+		);
+		const values: Array<{ lingkupMateri: string; deskripsi: string; mataPelajaranId: number }> = [];
+		let duplicateCount = 0;
+		for (const group of groups) {
+			for (const deskripsi of group.deskripsi) {
+				const key = `${normalizeText(group.lingkupMateri)}::${normalizeText(deskripsi)}`;
+				if (keys.has(key)) {
+					duplicateCount += 1;
+					continue;
+				}
+				keys.add(key);
+				values.push({ lingkupMateri: group.lingkupMateri, deskripsi, mataPelajaranId });
+			}
+		}
+		if (values.length) await db.insert(tableTujuanPembelajaran).values(values);
+		return {
+			message: values.length
+				? `${values.length} tujuan pembelajaran berhasil ditambahkan.${duplicateCount ? ` ${duplicateCount} duplikat dilewati.` : ''}`
+				: 'Semua hasil sudah tersedia dan tidak disimpan ulang.'
+		};
+	},
+
 	async delete({ request, locals }) {
 		await ensureMataPelajaranSchema();
 		// Allow admin, wali_kelas, wali_asuh, rapor_manage permission holders, and guru mapel

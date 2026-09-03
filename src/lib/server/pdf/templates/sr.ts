@@ -1133,7 +1133,7 @@ function renderSRAcademicRows(data: RaporPrintData): string {
 		kelompokMap[jenis].items.push(row);
 	}
 
-	return ['wajib', 'pilihan', 'kejuruan', 'mulok']
+	return ['wajib', 'pilihan', 'kejuruan', 'pemberdayaan', 'mulok']
 		.filter((jenis) => kelompokMap[jenis]?.items.length)
 		.map((jenis) => {
 			const group = kelompokMap[jenis];

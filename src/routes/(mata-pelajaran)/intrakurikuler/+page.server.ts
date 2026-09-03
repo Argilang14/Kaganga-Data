@@ -290,22 +290,24 @@ export async function load({ depends, url, parent }) {
 		(item) => !AGAMA_VARIANT_NAME_SET.has(item.nama) && !PKS_VARIANT_NAME_SET.has(item.nama)
 	);
 
-	const { daftarWajib, daftarPilihan, daftarMulok, daftarKejuruan } = mapelTampil.reduce(
+	const { daftarWajib, daftarPilihan, daftarMulok, daftarKejuruan, daftarPemberdayaan } = mapelTampil.reduce(
 		(acc, item) => {
 			if (item.jenis === 'wajib') acc.daftarWajib.push(item);
 			else if (item.jenis === 'pilihan') acc.daftarPilihan.push(item);
 			else if (item.jenis === 'mulok') acc.daftarMulok.push(item);
 			else if (item.jenis === 'kejuruan') acc.daftarKejuruan.push(item);
+			else if (item.jenis === 'pemberdayaan') acc.daftarPemberdayaan.push(item);
 			return acc;
 		},
 		{
 			daftarWajib: <MataPelajaranList>[],
 			daftarPilihan: <MataPelajaranList>[],
 			daftarMulok: <MataPelajaranList>[],
-			daftarKejuruan: <MataPelajaranList>[]
+			daftarKejuruan: <MataPelajaranList>[],
+			daftarPemberdayaan: <MataPelajaranList>[]
 		}
 	);
-	return { kelasId, mapel: { daftarWajib, daftarPilihan, daftarMulok, daftarKejuruan } };
+	return { kelasId, mapel: { daftarWajib, daftarPilihan, daftarMulok, daftarKejuruan, daftarPemberdayaan } };
 }
 
 import { readBufferToAoA, writeAoaToBuffer } from '$lib/utils/excel.js';

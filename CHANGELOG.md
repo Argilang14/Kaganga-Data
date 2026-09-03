@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.1.0 - 2026-09-04
+
+### Fitur dan perbaikan
+
+- Menambahkan Buku Tamu digital dengan tautan tamu, tanda tangan, dan pemisahan data per sekolah.
+- Menambahkan Presensi Pegawai beserta rekap dan dokumen cetaknya.
+- Menambahkan sinkronisasi Dapodik yang tervalidasi serta dokumentasi penggunaan untuk Kaganga.
+- Menambahkan bantuan AI opsional untuk menyusun Tujuan Pembelajaran tanpa mengubah data otomatis.
+- Menyempurnakan Surat Menyurat, termasuk SPPD dan Dinas Luar, dengan penyimpanan lampiran yang aman.
+- Menambahkan asesmen dan dokumen Martikulasi: SK Tim, Raport Hasil, serta STTM dengan snapshot dokumen.
+- Menyeragamkan kop Jadwal Pelajaran, Kalender Pendidikan, Jurnal Mengajar, dan dokumen Martikulasi berdasarkan Data Sekolah.
+- Menyempurnakan pengaturan presensi, rekap absensi, keamanan login, izin pengguna, bantuan kontekstual, dan tampilan menu.
+
+### Catatan pembaruan
+
+- Cadangkan database sebelum memasang pembaruan.
+- Installer tetap menggunakan port aplikasi `1206` dan lokasi data `%LOCALAPPDATA%\Kaganga-data`.
+- Saat pertama dijalankan, Kaganga membuat backup sebelum migrasi versi `2.1.0`.
+- Migrasi tabel baru dijalankan secara idempoten dan tidak menghapus data sekolah yang sudah ada.
+- Direktori lama `%LOCALAPPDATA%\Rapkumer-data` hanya digunakan sebagai sumber migrasi jika database Kaganga belum tersedia.
+
 ## 2.0.4 - 2026-08-07
 
 ### Fitur dan perbaikan

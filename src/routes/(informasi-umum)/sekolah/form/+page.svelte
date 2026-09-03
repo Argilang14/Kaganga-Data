@@ -355,6 +355,12 @@
 
 			<!-- Back and Save -->
 			<div class="mt-6 flex flex-col justify-end gap-2 sm:flex-row">
+				{#if initialSekolah?.id}
+					<a class="btn btn-soft btn-info shadow-none sm:w-auto" href="/sekolah/form/sync-dapodik">
+						<Icon name="dapodik" />
+						Sinkron Dapodik
+					</a>
+				{/if}
 				{#if !data.isInit}
 					<a class="btn btn-soft shadow-none sm:w-auto" href="/sekolah" aria-label="kembali">
 						<Icon name="left" />

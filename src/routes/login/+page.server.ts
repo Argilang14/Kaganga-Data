@@ -6,6 +6,12 @@ import { tableKelas, tableMataPelajaran } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
+import {
+	clearLoginFailures,
+	getLoginGuard,
+	pruneLoginAttempts,
+	recordLoginFailure
+} from '$lib/server/login-guard';
 
 function resolveRedirectTarget(value: string | null) {
 	if (!value) return null;
@@ -40,10 +46,11 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const username = String(formData.get('username') ?? '').trim();
 		const password = String(formData.get('password') ?? '');
+		const clientAddress = getClientAddress();
 
 		logLoginEvent('Attempt received', {
 			username,
-			client: getClientAddress(),
+			client: clientAddress,
 			origin: request.headers.get('origin') ?? undefined,
 			referer: request.headers.get('referer') ?? undefined
 		});
@@ -53,15 +60,31 @@ export const actions: Actions = {
 			return fail(400, { message: 'Nama pengguna dan kata sandi wajib diisi.' });
 		}
 
+		const guard = await getLoginGuard(username, clientAddress);
+		if (guard.blocked) {
+			return fail(429, {
+				message: `Terlalu banyak percobaan masuk. Coba lagi dalam ${Math.max(1, Math.ceil(guard.retryAfterSeconds / 60))} menit.`
+			});
+		}
+
 		const user = await authenticateUser(username, password);
 		if (!user) {
+			const failure = await recordLoginFailure(username, clientAddress);
 			logLoginEvent('Invalid credentials', { username });
-			return fail(401, { message: 'Nama pengguna atau kata sandi tidak valid.' });
+			return fail(failure.blocked ? 429 : 401, {
+				message: failure.blocked
+					? 'Terlalu banyak percobaan masuk. Akses dikunci sementara selama 15 menit.'
+					: 'Nama pengguna atau kata sandi tidak valid.'
+			});
 		}
+		await Promise.all([
+			clearLoginFailures(username, clientAddress),
+			pruneLoginAttempts()
+		]);
 
 		const session = await createSession(user.id, {
 			userAgent: request.headers.get('user-agent'),
-			ipAddress: getClientAddress()
+			ipAddress: clientAddress
 		});
 
 		logLoginEvent('Authentication success', {

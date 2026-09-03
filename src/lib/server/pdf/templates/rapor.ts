@@ -40,7 +40,7 @@ export interface RaporPrintData {
 		mataPelajaran: string;
 		nilaiAkhir: string;
 		deskripsi: string;
-		jenis?: 'wajib' | 'pilihan' | 'mulok' | 'kejuruan';
+		jenis?: 'wajib' | 'pilihan' | 'mulok' | 'kejuruan' | 'pemberdayaan';
 	}>;
 	kokurikuler: string;
 	hasKokurikuler: boolean;
@@ -97,7 +97,7 @@ export function renderRaporHTML(data: RaporPrintData): string {
 		kejuruan: 'Mata Pelajaran Kejuruan',
 		mulok: 'Muatan Lokal'
 	};
-	const jenisOrder = ['wajib', 'pilihan', 'kejuruan', 'mulok'];
+	const jenisOrder = ['wajib', 'pilihan', 'kejuruan', 'pemberdayaan', 'mulok'];
 
 	const kepalaStatus =
 		data.kepalaSekolah.statusKepalaSekolah === 'plt' ? 'Plt. Kepala Sekolah' : 'Kepala Sekolah';

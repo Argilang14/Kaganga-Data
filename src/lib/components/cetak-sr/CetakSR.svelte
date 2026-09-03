@@ -93,7 +93,10 @@
 		{ value: 'kartu-absensi', label: 'Kartu Absensi Murid' },
 		{ value: 'jadwal-pelajaran', label: 'Jadwal Pelajaran' },
 		{ value: 'kalender-pendidikan', label: 'Kalender Pendidikan' },
-		{ value: 'jurnal-mengajar', label: 'Jurnal Mengajar' }
+		{ value: 'jurnal-mengajar', label: 'Jurnal Mengajar' },
+		{ value: 'martikulasi-sk', label: 'Masa Persiapan - SK Tim Martikulasi' },
+		{ value: 'martikulasi-raport', label: 'Masa Persiapan - Raport Hasil Martikulasi' },
+		{ value: 'martikulasi-sttm', label: 'Masa Persiapan - STTM' }
 	];
 	const currentUserType = $derived((page.data.user as { type?: string } | null | undefined)?.type);
 	const visibleDocumentOptions = $derived.by(() => {
@@ -102,11 +105,12 @@
 		}
 		return documentOptions.filter(
 			(option) =>
-				((option.value !== 'jurnal-mengajar' || data.jurnalAccess?.canPrint !== false) &&
+				(!option.value.startsWith('martikulasi-') || isSRVariant) &&
+				(((option.value !== 'jurnal-mengajar' || data.jurnalAccess?.canPrint !== false) &&
 					option.value !== 'kartu-absensi' &&
 					option.value !== 'jadwal-pelajaran' &&
 					option.value !== 'kalender-pendidikan') ||
-				isSRVariant
+					isSRVariant)
 		);
 	});
 
@@ -308,6 +312,12 @@
 	const isJadwalSelected = $derived.by(() => selectedDocument === 'jadwal-pelajaran');
 	const isKalenderSelected = $derived.by(() => selectedDocument === 'kalender-pendidikan');
 	const isJurnalSelected = $derived.by(() => selectedDocument === 'jurnal-mengajar');
+	const isMartikulasiSkSelected = $derived.by(() => selectedDocument === 'martikulasi-sk');
+	const isMartikulasiSelected = $derived.by(() =>
+		selectedDocument === 'martikulasi-sk' ||
+		selectedDocument === 'martikulasi-raport' ||
+		selectedDocument === 'martikulasi-sttm'
+	);
 	const qrNotReadyCount = $derived((qrReadiness?.missing ?? 0) + (qrReadiness?.outdated ?? 0));
 	const hasValidJurnalPeriod = $derived.by(
 		() =>
@@ -333,7 +343,8 @@
 		() =>
 			selectedDocument !== 'jadwal-pelajaran' &&
 			selectedDocument !== 'kalender-pendidikan' &&
-			selectedDocument !== 'jurnal-mengajar'
+			selectedDocument !== 'jurnal-mengajar' &&
+			selectedDocument !== 'martikulasi-sk'
 	);
 	const navigationMuridIds = $derived.by(() => {
 		if (isPiagamSelected) {
@@ -352,6 +363,7 @@
 	const hasSelectionOptions = $derived.by(() => {
 		if (isJadwalSelected || isKalenderSelected) return true;
 		if (isJurnalSelected) return hasValidJurnalPeriod;
+		if (isMartikulasiSkSelected) return Boolean(selectedPrintTahunAjaranId);
 		return isPiagamSelected ? hasPiagamRankingOptions : hasMurid;
 	});
 	const canNavigateMurid = $derived.by(() => {
@@ -464,6 +476,7 @@
 				? 'Preview PDF Jurnal Mengajar'
 				: 'Pilih rentang tanggal jurnal yang valid';
 		}
+		if (isMartikulasiSelected) return 'Preview PDF dokumen Martikulasi';
 		return `Download PDF ${selectedDocumentEntry?.label ?? 'dokumen'} untuk ${selectedMurid?.nama ?? ''}`;
 	});
 
@@ -514,7 +527,8 @@
 		if (
 			documentType === 'jadwal-pelajaran' ||
 			documentType === 'kalender-pendidikan' ||
-			documentType === 'jurnal-mengajar'
+			documentType === 'jurnal-mengajar' ||
+			documentType === 'martikulasi-sk'
 		) {
 			await loadPdf(null);
 			return;
@@ -536,11 +550,46 @@
 		pdfViewerEl?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	}
 
+	async function responseErrorMessage(response: Response, fallback: string) {
+		const text = await response.text();
+		try {
+			const payload = JSON.parse(text) as { message?: string; error?: string };
+			return payload.message || payload.error || fallback;
+		} catch {
+			return text || fallback;
+		}
+	}
+
 	async function loadPdf(murid: MuridData | null) {
 		const documentType = selectedDocument;
 		if (!documentType) return;
 		downloadLoading = true;
 		try {
+			if (
+				documentType === 'martikulasi-sk' ||
+				documentType === 'martikulasi-raport' ||
+				documentType === 'martikulasi-sttm'
+			) {
+				const jenis = documentType === 'martikulasi-sk' ? 'sk' : documentType === 'martikulasi-raport' ? 'raport' : 'sttm';
+				const params = new URLSearchParams({
+					jenis,
+					tahun_ajaran_id: String(selectedPrintTahunAjaranId ?? '')
+				});
+				if (data.kelasId) params.set('kelas_id', String(data.kelasId));
+				if (murid) params.set('murid_id', String(murid.id));
+				if (documentType === 'martikulasi-sttm' && murid) params.set('draft', '1');
+				const pdfRes = await fetch(`/api/pdf/martikulasi?${params}`);
+				if (!pdfRes.ok) {
+					throw new Error(await responseErrorMessage(pdfRes, 'Gagal memuat dokumen Martikulasi'));
+				}
+				const blob = await pdfRes.blob();
+				if (pdfViewerUrl) URL.revokeObjectURL(pdfViewerUrl);
+				pdfViewerUrl = URL.createObjectURL(blob);
+				pdfViewerTitle = selectedDocumentEntry?.label ?? 'Dokumen Martikulasi';
+				await scrollToViewer();
+				toast('PDF Martikulasi berhasil dimuat', 'success');
+				return;
+			}
 			if (documentType === 'jurnal-mengajar') {
 				const params = new URLSearchParams({
 					tanggal_mulai: jurnalTanggalMulai,
@@ -706,6 +755,39 @@
 			return;
 		}
 		if (!isPreviewableDocument(documentType)) {
+			return;
+		}
+		if (
+			documentType === 'martikulasi-raport' ||
+			documentType === 'martikulasi-sttm'
+		) {
+			downloadLoading = true;
+			try {
+				const params = new URLSearchParams({
+					jenis: documentType === 'martikulasi-raport' ? 'raport' : 'sttm',
+					tahun_ajaran_id: String(selectedPrintTahunAjaranId ?? ''),
+					massal: '1'
+				});
+				if (data.kelasId) params.set('kelas_id', String(data.kelasId));
+				const response = await fetch(`/api/pdf/martikulasi?${params}`);
+				if (!response.ok) {
+					throw new Error(
+						await responseErrorMessage(response, 'Gagal membuat PDF Martikulasi massal')
+					);
+				}
+				const blob = await response.blob();
+				const url = URL.createObjectURL(blob);
+				const anchor = document.createElement('a');
+				anchor.href = url;
+				anchor.download = `${documentType === 'martikulasi-raport' ? 'Raport-Hasil-Martikulasi' : 'STTM'}-${selectedPrintTahun?.nama?.replace('/', '-') ?? 'tahun-ajaran'}.pdf`;
+				anchor.click();
+				setTimeout(() => URL.revokeObjectURL(url), 1000);
+				toast('PDF Martikulasi massal berhasil dibuat', 'success');
+			} catch (err) {
+				toast(err instanceof Error ? err.message : 'Gagal membuat PDF Martikulasi massal', 'error');
+			} finally {
+				downloadLoading = false;
+			}
 			return;
 		}
 
@@ -1195,6 +1277,30 @@
 			{/if}
 		</div>
 	{/if}
+
+	{#if isMartikulasiSelected}
+		<div class="border-base-300 bg-base-200/30 mt-3 grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(0,260px)_1fr_auto_auto] md:items-end">
+			<label class="form-control min-w-0">
+				<span class="label-text mb-1">Tahun Ajaran</span>
+				<select class="select select-bordered bg-base-100 w-full" bind:value={selectedPrintTahunAjaranId}>
+					{#each tahunAjaranList as tahun}
+						<option value={tahun.id}>{tahun.nama}</option>
+					{/each}
+				</select>
+			</label>
+			<div class="text-base-content/65 text-sm">
+				{#if selectedDocument === 'martikulasi-sk'}
+					SK menggunakan susunan tim dan nomor pada Pengaturan Martikulasi.
+				{:else if selectedDocument === 'martikulasi-raport'}
+					Pilih murid untuk preview atau gunakan Semua Murid untuk satu PDF massal.
+				{:else}
+					STTM hanya mencetak hasil lengkap. Terbitkan nomor sebelum cetak final.
+				{/if}
+			</div>
+			<a class="btn btn-outline" href="/martikulasi/pengaturan">Pengaturan</a>
+			<a class="btn btn-outline" href="/asesmen-martikulasi">Input Nilai</a>
+		</div>
+	{/if}
 	<PreviewFooter
 		{hasMurid}
 		{muridCount}
@@ -1204,6 +1310,7 @@
 		isBiodataSelected={selectedDocument === 'biodata'}
 		isKeasramaanSelected={selectedDocument === 'keasramaan'}
 		isJadwalSelected={selectedDocument === 'jadwal-pelajaran'}
+		doesNotNeedMurid={!documentNeedsMurid}
 		showParentSignatureSelect={isSRVariant && selectedDocument === 'rapor'}
 		{parentSignature}
 		onParentSignatureChange={(value: ParentSignatureChoice) => {

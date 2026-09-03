@@ -53,6 +53,11 @@ export const appMenuItems: MenuItem[] = [
 			{
 				title: 'Jurnal Mengajar',
 				path: '/jurnal-mengajar'
+			},
+			{
+				title: 'Pengaturan Martikulasi',
+				path: '/martikulasi/pengaturan',
+				tags: ['masa persiapan', 'tim martikulasi', 'sttm']
 			}
 		]
 	},
@@ -109,6 +114,11 @@ export const appMenuItems: MenuItem[] = [
 			{
 				title: 'Keasramaan',
 				path: '/asesmen-keasramaan'
+			},
+			{
+				title: 'Martikulasi',
+				path: '/asesmen-martikulasi',
+				tags: ['masa persiapan', 'matrikulasi', 'raport martikulasi']
 			}
 		]
 	},
@@ -140,6 +150,18 @@ export const appMenuItems: MenuItem[] = [
 				title: 'Status Akhir',
 				path: '/status-akhir',
 				tags: ['kenaikan', 'kelulusan', 'rapor', 'semester genap']
+			},
+			{
+				title: 'Buku Tamu',
+				path: '/buku-tamu',
+				permission: 'administrasi_buku_tamu',
+				tags: ['tamu', 'kunjungan', 'resepsionis']
+			},
+			{
+				title: 'Presensi Pegawai',
+				path: '/presensi-pegawai',
+				permission: 'administrasi_presensi_pegawai',
+				tags: ['presensi guru', 'kehadiran pegawai', 'izin', 'sakit', 'cuti']
 			}
 		]
 	},

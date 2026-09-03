@@ -7,8 +7,8 @@ const source = readFileSync(new URL('./jurnal-mengajar.ts', import.meta.url), 'u
 test('template jurnal memiliki kop dua logo, judul dinamis, dan tabel multipage', () => {
 	assert.match(source, /Jurnal Mengajar Per Kelas/);
 	assert.match(source, /Jurnal Mengajar Per Mata Pelajaran/);
-	assert.match(source, /logoDinasUrl/);
-	assert.match(source, /logoUrl/);
+	assert.match(source, /renderSchoolLetterhead\(data\.sekolah\)/);
+	assert.match(source, /schoolLetterheadStyles\(\)/);
 	assert.match(source, /display: table-header-group/);
 	assert.match(source, /page-break-inside: avoid/);
 });

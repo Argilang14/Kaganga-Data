@@ -25,6 +25,7 @@ import {
 	type JadwalJenjang
 } from '$lib/server/jadwal';
 import {
+	composeAlamat,
 	formatTanggal,
 	getLogoDinasSrc,
 	getLogoSrc,
@@ -71,7 +72,8 @@ export async function getJadwalPelajaranPreviewPayload({
 	url: URL;
 }) {
 	requireJadwalAccess(locals.user);
-	const sekolahId = locals.sekolah?.id;
+	const sekolahAktif = locals.sekolah;
+	const sekolahId = sekolahAktif?.id;
 	if (!sekolahId || !locals.user) throw redirect(303, '/login');
 
 	const academic = await resolveSekolahAcademicContext(sekolahId);
@@ -242,7 +244,10 @@ export async function getJadwalPelajaranPreviewPayload({
 		meta: { title: 'Jadwal Pelajaran - ' + jenjangLabel },
 		jadwalPelajaranData: {
 			sekolah: {
-				nama: sekolah?.nama ?? locals.sekolah?.nama ?? 'Sekolah',
+				nama: sekolah?.nama ?? sekolahAktif.nama ?? 'Sekolah',
+				naungan: sekolahAktif.naungan,
+				alamat: composeAlamat(sekolahAktif),
+				email: sekolahAktif.email,
 				lokasiTandaTangan: sekolah?.lokasiTandaTangan ?? '',
 				logoUrl,
 				logoDinasUrl,

@@ -201,7 +201,9 @@ const authGuard: Handle = async ({ event, resolve }) => {
 	}
 
 	const routeId = event.route.id;
-	const isPublicRoute = !routeId || PUBLIC_ROUTE_IDS.has(routeId);
+	const isBukuTamuPublic =
+		event.url.pathname.startsWith('/tamu/') || event.url.pathname.startsWith('/api/buku-tamu/');
+	const isPublicRoute = !routeId || PUBLIC_ROUTE_IDS.has(routeId) || isBukuTamuPublic;
 	const isLoginPath = event.url.pathname === '/login';
 
 	if (event.locals.user && isLoginPath) {

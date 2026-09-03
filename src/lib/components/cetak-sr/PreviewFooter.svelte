@@ -22,6 +22,7 @@
 		isBiodataSelected = false,
 		isKeasramaanSelected = false,
 		isJadwalSelected = false,
+		doesNotNeedMurid = false,
 		showBgLogo = false,
 		onToggleBgLogo = () => {},
 		showParentSignatureSelect = false,
@@ -43,6 +44,7 @@
 		isBiodataSelected?: boolean;
 		isKeasramaanSelected?: boolean;
 		isJadwalSelected?: boolean;
+		doesNotNeedMurid?: boolean;
 		showBgLogo?: boolean;
 		onToggleBgLogo?: (value: boolean) => void;
 		showParentSignatureSelect?: boolean;
@@ -140,6 +142,8 @@
 			Jadwal pelajaran dicetak sebagai dokumen sekolah/jenjang. Gunakan pilihan orientasi untuk
 			preview A4 landscape atau portrait.
 		</p>
+	{:else if doesNotNeedMurid}
+		<p>Dokumen ini dicetak berdasarkan data sekolah dan pilihan pengaturan di atas.</p>
 	{:else if hasMurid}
 		<p>
 			Terdapat <strong>{muridCount}</strong> murid di kelas ini. Download dokumen dalam bentuk PDF bisa

@@ -437,7 +437,7 @@ export async function getRaporPreviewPayload({ locals, url }: RaporContext) {
 			mataPelajaran: entry.displayName,
 			nilaiAkhir: entry.nilaiAkhir,
 			deskripsi: entry.deskripsi,
-			jenis: entry.mapel.jenis as 'wajib' | 'pilihan' | 'mulok' | 'kejuruan'
+			jenis: entry.mapel.jenis as 'wajib' | 'pilihan' | 'mulok' | 'kejuruan' | 'pemberdayaan'
 		}));
 
 	const ekstrakurikulerGrouped = new Map<

@@ -7,6 +7,12 @@ import { ensureJurnalMengajarSchema } from './ensure-jurnal-mengajar';
 import { ensurePegawaiSchema, resetPegawaiSchemaEnsure } from './ensure-pegawai';
 import { ensurePresensiSettingsSchema } from './ensure-presensi-settings';
 import { ensureSuratMenyuratSchema } from './ensure-surat-menyurat';
+import { ensureBukuTamuSchema } from './ensure-buku-tamu';
+import { ensurePresensiPegawaiSchema } from './ensure-presensi-pegawai';
+import { ensureLoginAttemptSchema } from './ensure-login-attempt';
+import { ensureAiSettingsSchema } from './ensure-ai-settings';
+import { ensureMartikulasiSchema } from './ensure-martikulasi';
+import { ensureDapodikSchema } from './ensure-dapodik';
 
 let startupPromise: Promise<void> | null = null;
 
@@ -18,6 +24,12 @@ async function applyStartupEnsures() {
 	await ensureJadwalKurikulumSchema();
 	await ensureJurnalMengajarSchema();
 	await ensureSuratMenyuratSchema();
+	await ensureBukuTamuSchema();
+	await ensurePresensiPegawaiSchema();
+	await ensureLoginAttemptSchema();
+	await ensureAiSettingsSchema();
+	await ensureMartikulasiSchema();
+	await ensureDapodikSchema();
 	await ensureDefaultAdmin();
 }
 

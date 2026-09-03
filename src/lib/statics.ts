@@ -21,7 +21,10 @@ export const jenjangPendidikanSederajat: Record<
 		{ key: 'srma', label: 'Sekolah Rakyat Menengah Atas (SRMA)' }
 	],
 	slb: [{ key: 'slb', label: 'Sekolah Luar Biasa (SLB)' }],
-	pkbm: [{ key: 'pkbm', label: 'Pusat Kegiatan Belajar Masyarakat (PKBM)' }],
+	pkbm: [
+		{ key: 'pkbm', label: 'Pusat Kegiatan Belajar Masyarakat (PKBM)' },
+		{ key: 'skb', label: 'Sanggar Kegiatan Belajar (SKB)' }
+	],
 	srt: [{ key: 'srt', label: 'Sekolah Rakyat Terintegrasi (SRT)' }]
 };
 
@@ -56,8 +59,33 @@ export const jenisMapel: Record<MataPelajaran['jenis'], string> = {
 	wajib: 'Mata Pelajaran Wajib',
 	pilihan: 'Mata Pelajaran Pilihan',
 	mulok: 'Muatan Lokal',
-	kejuruan: 'Kejuruan'
+	kejuruan: 'Kejuruan',
+	pemberdayaan: 'Muatan Pemberdayaan dan Keterampilan'
 };
+
+export function getKopSuratLines(input: {
+	jenjangVariant?: string | null;
+	naungan?: NauganKey | null;
+	kabupaten: string;
+	provinsi?: string | null;
+}): string[] {
+	const variant = input.jenjangVariant ?? '';
+	const upper = (value: string | null | undefined) => value?.toUpperCase() || '-';
+	const kabupaten = upper(input.kabupaten);
+	const provinsi = upper(input.provinsi);
+	const naungan = upper(nauganLabelByKey[input.naungan ?? 'kemendikbud']);
+	if (['srd', 'srmp', 'srma', 'srt'].includes(variant)) return [naungan];
+	if (['slb', 'sma', 'smk'].includes(variant)) {
+		return [
+			`PEMERINTAH ${provinsi === '-' ? kabupaten : provinsi}`,
+			'DINAS PENDIDIKAN DAN KEBUDAYAAN'
+		];
+	}
+	if (['mi', 'mts', 'ma', 'mak'].includes(variant)) {
+		return [naungan, `KANTOR KEMENAG ${kabupaten}`];
+	}
+	return [`PEMERINTAH ${kabupaten}`, 'DINAS PENDIDIKAN DAN KEBUDAYAAN'];
+}
 
 export const agamaMapelOptions = [
 	{ key: 'umum', label: 'Umum', name: 'Pendidikan Agama dan Budi Pekerti' },

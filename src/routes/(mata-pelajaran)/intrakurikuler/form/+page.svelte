@@ -95,6 +95,12 @@
 			if (key === 'kejuruan' && jenjangVariant?.toUpperCase() !== 'SMK') {
 				continue;
 			}
+			if (
+				key === 'pemberdayaan' &&
+				!['PKBM', 'SKB'].includes(jenjangVariant?.toUpperCase() ?? '')
+			) {
+				continue;
+			}
 			result[key] = getJenisMapelLabel(key);
 		}
 		return result;

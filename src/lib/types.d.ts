@@ -132,7 +132,7 @@ interface RaporPrintData {
 		mataPelajaran: string;
 		nilaiAkhir: string;
 		deskripsi: string;
-		jenis?: 'wajib' | 'pilihan' | 'mulok' | 'kejuruan';
+		jenis?: 'wajib' | 'pilihan' | 'mulok' | 'kejuruan' | 'pemberdayaan';
 	}>;
 	kokurikuler: string;
 	hasKokurikuler: boolean;

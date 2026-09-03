@@ -56,12 +56,17 @@
 		return jenjangVariant?.toUpperCase() === 'SMK';
 	}
 
+	function shouldShowPemberdayaan(): boolean {
+		return ['PKBM', 'SKB'].includes(jenjangVariant?.toUpperCase() ?? '');
+	}
+
 	const totalMapel = $derived.by(
 		() =>
 			data.mapel.daftarWajib.length +
 			data.mapel.daftarPilihan.length +
 			data.mapel.daftarMulok.length +
-			(shouldShowKejuruan() ? data.mapel.daftarKejuruan.length : 0)
+			(shouldShowKejuruan() ? data.mapel.daftarKejuruan.length : 0) +
+			(shouldShowPemberdayaan() ? data.mapel.daftarPemberdayaan.length : 0)
 	);
 
 	function formatKkm(kkm: number | null | undefined) {
@@ -273,6 +278,12 @@
 				<div class="stat-value text-2xl">{data.mapel.daftarKejuruan.length}</div>
 			</div>
 		{/if}
+		{#if shouldShowPemberdayaan()}
+			<div class="stat place-items-start">
+				<div class="stat-title">Pemberdayaan</div>
+				<div class="stat-value text-2xl">{data.mapel.daftarPemberdayaan.length}</div>
+			</div>
+		{/if}
 		<div class="stat place-items-start">
 			<div class="stat-title">Total Mapel</div>
 			<div class="stat-value text-2xl">{totalMapel}</div>
@@ -298,7 +309,7 @@
 		</div>
 	{/if}
 
-	{#each [{ key: 'wajib', title: `Mata Pelajaran ${getWajibLabel()}`, items: data.mapel.daftarWajib }, { key: 'pilihan', title: 'Mata Pelajaran Pilihan', items: data.mapel.daftarPilihan }, { key: 'mulok', title: 'Muatan Lokal', items: data.mapel.daftarMulok }, ...(shouldShowKejuruan() ? [{ key: 'kejuruan', title: 'Mata Pelajaran Kejuruan', items: data.mapel.daftarKejuruan }] : [])] as section (section.key)}
+	{#each [{ key: 'wajib', title: `Mata Pelajaran ${getWajibLabel()}`, items: data.mapel.daftarWajib }, { key: 'pilihan', title: 'Mata Pelajaran Pilihan', items: data.mapel.daftarPilihan }, { key: 'mulok', title: 'Muatan Lokal', items: data.mapel.daftarMulok }, ...(shouldShowKejuruan() ? [{ key: 'kejuruan', title: 'Mata Pelajaran Kejuruan', items: data.mapel.daftarKejuruan }] : []), ...(shouldShowPemberdayaan() ? [{ key: 'pemberdayaan', title: 'Muatan Pemberdayaan dan Keterampilan', items: data.mapel.daftarPemberdayaan }] : [])] as section (section.key)}
 		<fieldset class="fieldset mt-8">
 			<legend class="fieldset-legend">{section.title}</legend>
 			<div

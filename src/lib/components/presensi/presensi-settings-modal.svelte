@@ -19,6 +19,7 @@
 		jenisPresensi?: string;
 		liburNasional?: string;
 		liburSemester?: string;
+		presensiPegawaiEnabled?: boolean;
 		onAction?: (actions: { submit: () => Promise<void>; cancel: () => void }) => void;
 	}
 
@@ -31,6 +32,7 @@
 		jenisPresensi = 'wali_kelas_saja',
 		liburNasional = '[]',
 		liburSemester = '[]',
+		presensiPegawaiEnabled = true,
 		onAction
 	}: Props = $props();
 
@@ -40,6 +42,8 @@
 	let hariSekolahValue = $state(String(hariSekolah));
 	let tipePresensiValue = $state(tipePresensi);
 	let jenisPresensiValue = $state(jenisPresensi);
+	const initialPresensiPegawaiEnabled = () => presensiPegawaiEnabled;
+	let presensiPegawaiEnabledValue = $state(initialPresensiPegawaiEnabled());
 
 	let liburDates = $state<string[]>([]);
 	try {
@@ -171,6 +175,7 @@
 		formData.append('hariSekolah', hariSekolahValue);
 		formData.append('tipePresensi', tipePresensiValue);
 		formData.append('jenisPresensi', jenisPresensiValue);
+		formData.append('presensiPegawaiEnabled', presensiPegawaiEnabledValue ? '1' : '0');
 		formData.append('liburNasional', JSON.stringify(liburDates));
 		formData.append(
 			'liburSemester',
@@ -225,6 +230,10 @@
 </script>
 
 <div class="not-prose flex flex-col gap-2">
+	<label class="border-base-300 bg-base-200 flex items-center justify-between gap-4 rounded-md border p-3">
+		<span><strong class="block text-sm">Presensi Pegawai</strong><span class="text-xs opacity-65">Aktifkan pencatatan kehadiran guru dan pegawai.</span></span>
+		<input class="toggle toggle-primary" type="checkbox" bind:checked={presensiPegawaiEnabledValue} />
+	</label>
 	<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 		<label class="fieldset flex flex-col gap-1">
 			<span class="fieldset-legend text-sm font-semibold">Jam Masuk</span>

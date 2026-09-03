@@ -13,6 +13,14 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { networkInterfaces } from 'node:os';
 import { isIPv4 } from 'node:net';
+import {
+	clearAiSettings,
+	DEFAULT_AI_BASE_URL,
+	DEFAULT_AI_MODEL,
+	getStoredAiSettings,
+	maskApiKey,
+	saveAiSettings
+} from '$lib/server/ai';
 
 interface AddressEntry {
 	name: string;
@@ -87,7 +95,25 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 		addresses.push(hostWithPort);
 	}
 
-	return { meta, appAddresses: addresses, protocol, appVersion: getAppVersion() };
+	const sekolahId = locals.sekolah?.id;
+	const storedAi = locals.user?.type === 'admin' && sekolahId
+		? await getStoredAiSettings(sekolahId)
+		: null;
+
+	return {
+		meta,
+		appAddresses: addresses,
+		protocol,
+		appVersion: getAppVersion(),
+		ai: {
+			configured: Boolean(storedAi || process.env.GEMINI_API_KEY),
+			stored: Boolean(storedAi),
+			maskedKey: storedAi ? maskApiKey(storedAi.apiKey) : null,
+			provider: storedAi?.provider ?? 'gemini',
+			model: storedAi?.model ?? DEFAULT_AI_MODEL,
+			baseUrl: storedAi?.baseUrl ?? DEFAULT_AI_BASE_URL
+		}
+	};
 };
 
 export const actions: Actions = {
@@ -193,5 +219,43 @@ export const actions: Actions = {
 			.where(eq(tableAuthUser.id, locals.user.id));
 
 		return { message: 'Username berhasil diperbarui.' };
+	},
+	'save-ai-settings': async ({ request, locals }) => {
+		if (locals.user?.type !== 'admin') {
+			return fail(403, { message: 'Hanya admin yang dapat mengatur layanan AI.' });
+		}
+		const sekolahId = locals.sekolah?.id;
+		if (!sekolahId) return fail(400, { message: 'Sekolah aktif tidak ditemukan.' });
+		const form = await request.formData();
+		const provider = String(form.get('provider') ?? '');
+		const apiKey = String(form.get('apiKey') ?? '').trim();
+		const model = String(form.get('model') ?? '').trim();
+		const baseUrl = String(form.get('baseUrl') ?? '').trim();
+		if (provider !== 'gemini' && provider !== 'openai_compatible') {
+			return fail(400, { message: 'Penyedia AI tidak valid.' });
+		}
+		if (apiKey.length < 10 || apiKey.length > 500) {
+			return fail(400, { message: 'Kunci API wajib diisi dengan format yang valid.' });
+		}
+		if (!/^[A-Za-z0-9._:/-]{2,100}$/.test(model)) {
+			return fail(400, { message: 'Nama model tidak valid.' });
+		}
+		try {
+			await saveAiSettings(sekolahId, { provider, apiKey, model, baseUrl });
+			return { message: 'Pengaturan AI berhasil disimpan untuk sekolah aktif.' };
+		} catch (error) {
+			return fail(400, {
+				message: error instanceof Error ? error.message : 'Pengaturan AI tidak dapat disimpan.'
+			});
+		}
+	},
+	'clear-ai-settings': async ({ locals }) => {
+		if (locals.user?.type !== 'admin') {
+			return fail(403, { message: 'Hanya admin yang dapat menghapus pengaturan AI.' });
+		}
+		const sekolahId = locals.sekolah?.id;
+		if (!sekolahId) return fail(400, { message: 'Sekolah aktif tidak ditemukan.' });
+		await clearAiSettings(sekolahId);
+		return { message: 'Pengaturan AI sekolah aktif berhasil dihapus.' };
 	}
 };

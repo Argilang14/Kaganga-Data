@@ -9,6 +9,7 @@ import {
 } from '$lib/server/absensi-digital';
 import { requireJadwalAccess } from '$lib/server/jadwal';
 import {
+	composeAlamat,
 	fallbackTempat,
 	formatTanggal,
 	getLogoDinasSrc,
@@ -282,9 +283,7 @@ export async function getKalenderPendidikanPreviewPayload({
 	if (selectedJenjang === 'semua') {
 		whereParts.push(eq(tableKalenderPendidikan.jenjang, 'semua'));
 	} else {
-		whereParts.push(
-			inArray(tableKalenderPendidikan.jenjang, ['semua', selectedJenjang])
-		);
+		whereParts.push(inArray(tableKalenderPendidikan.jenjang, ['semua', selectedJenjang]));
 	}
 
 	const [kalenderList, semester] = await Promise.all([
@@ -338,6 +337,9 @@ export async function getKalenderPendidikanPreviewPayload({
 		kalenderPendidikanData: {
 			sekolah: {
 				nama: sekolah.nama,
+				naungan: sekolah.naungan,
+				alamat: composeAlamat(sekolah),
+				email: sekolah.email,
 				logoUrl,
 				logoDinasUrl,
 				wakaKurikulum,

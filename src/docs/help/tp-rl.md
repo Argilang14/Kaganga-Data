@@ -4,6 +4,7 @@ title: Petunjuk
 
 Khusus mata pelajaran Pendidikan Agama dan Budi Pekerti, pilih agama yang ingin ditambahkan Tujuan Pembelajarannya terlebih dahulu.<br>
 Satu Lingkup Materi biasanya terdiri atas beberapa Tujuan Pembelajaran.<br>
+Tombol <kbd class="kbd">Generate</kbd> dapat menyusun rancangan Lingkup Materi dan TP dari Capaian Pembelajaran. Periksa dan sunting seluruh hasil sebelum menekan Simpan Hasil karena keluaran AI dapat kurang tepat.<br>
 Untuk import Tujuan Pembelajaran dari excel, gunakan format seperti gambar di bawah.
 ![import tp](/importtp.png)
 

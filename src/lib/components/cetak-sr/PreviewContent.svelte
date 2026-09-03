@@ -10,7 +10,10 @@
 		| 'kartu-absensi'
 		| 'jadwal-pelajaran'
 		| 'kalender-pendidikan'
-	| 'jurnal-mengajar';
+	| 'jurnal-mengajar'
+	| 'martikulasi-sk'
+	| 'martikulasi-raport'
+	| 'martikulasi-sttm';
 
 	type PreviewPayload = {
 		meta?: { title?: string | null } | null;

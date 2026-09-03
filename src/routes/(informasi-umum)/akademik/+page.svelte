@@ -261,6 +261,7 @@
 				jenisPresensi: existing?.jenisPresensi ?? 'wali_kelas_saja',
 				liburNasional: existing?.liburNasional ?? '[]',
 				liburSemester: existing?.liburSemester ?? '[]',
+				presensiPegawaiEnabled: existing?.presensiPegawaiEnabled ?? true,
 				onAction: (a: { submit: () => Promise<void>; cancel: () => void }) => {
 					actions = a;
 				}

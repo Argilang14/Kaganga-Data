@@ -49,3 +49,10 @@ export function isSaturday(year: number, month: number, day: number) {
 export function dateStr(year: number, month: number, day: number) {
 	return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
+
+/** Convert a stored ISO timestamp to the calendar date in the server's local timezone. */
+export function waktuToLocalDate(waktu: string) {
+	const date = new Date(waktu);
+	if (Number.isNaN(date.getTime())) return waktu.slice(0, 10);
+	return dateStr(date.getFullYear(), date.getMonth() + 1, date.getDate());
+}

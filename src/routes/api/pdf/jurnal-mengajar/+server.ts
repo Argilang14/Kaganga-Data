@@ -303,6 +303,8 @@ export const GET = (async ({ locals, url }) => {
 		columns: {
 			nama: true,
 			npsn: true,
+			naungan: true,
+			email: true,
 			kepalaSekolahId: true,
 			lokasiTandaTangan: true,
 			statusKepalaSekolah: true
@@ -343,7 +345,9 @@ export const GET = (async ({ locals, url }) => {
 		sekolah: {
 			nama: sekolah?.nama ?? '',
 			npsn: sekolah?.npsn ?? '',
+			naungan: sekolah?.naungan ?? 'kemendikbud',
 			alamat: locals.sekolah ? composeAlamat(locals.sekolah) : '',
+			email: sekolah?.email ?? '',
 			logoUrl,
 			logoDinasUrl
 		},

@@ -2,6 +2,7 @@ import type { JadwalPelajaranPrintData } from '../../../../routes/cetak/jadwal-p
 import { buildJadwalSegments, type JadwalSegment } from '../../../jadwal-segments';
 import { buildJpNumberBySlot, jadwalSlotKey } from '../../../jadwal-slots';
 import { onePageFitScript, onePageFitStyles } from './one-page-fit';
+import { renderSchoolLetterhead, schoolLetterheadStyles } from './school-letterhead.ts';
 
 function escapeHtml(value: string | number | null | undefined): string {
 	return String(value ?? '')
@@ -259,20 +260,8 @@ function renderSchedule(
 
 type PageOrientation = 'landscape' | 'portrait';
 
-function renderLogo(src: string | null, alt: string) {
-	return src ? `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" />` : '';
-}
-
-function renderDocumentHeader(data: JadwalPelajaranPrintData) {
-	return `<div class="document-header">
-		<div class="header-logo authority-logo">${renderLogo(data.sekolah.logoDinasUrl, 'Logo pemda atau kementerian')}</div>
-		<div class="header">
-			<h1>Jadwal Pelajaran</h1>
-			<div class="school">${escapeHtml(data.sekolah.nama)}</div>
-			<div class="meta">${escapeHtml(data.jenjangLabel)} - ${escapeHtml(data.jenisLabel)} - Tahun Ajaran ${escapeHtml(data.periode.tahunPelajaran)}</div>
-		</div>
-		<div class="header-logo school-logo">${renderLogo(data.sekolah.logoUrl, 'Logo sekolah')}</div>
-	</div>`;
+function renderDocumentHeader(data: JadwalPelajaranPrintData, compact: boolean) {
+	return `${renderSchoolLetterhead(data.sekolah, compact)}<div class="document-title"><h1>Jadwal Pelajaran</h1><div>${escapeHtml(data.jenjangLabel)} - ${escapeHtml(data.jenisLabel)} - Tahun Ajaran ${escapeHtml(data.periode.tahunPelajaran)}</div></div>`;
 }
 function renderStyles(
 	orientation: PageOrientation,
@@ -283,6 +272,7 @@ function renderStyles(
 	const isMulti = layoutMode === 'multi';
 	const legendWidth = orientation === 'landscape' ? '52mm' : '40mm';
 	return (
+		schoolLetterheadStyles() +
 		'@page{size:A4 ' +
 		orientation +
 		';margin:' +
@@ -292,6 +282,11 @@ function renderStyles(
 		'body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#111827;background:#fff;font-size:' +
 		(isMulti ? '9.5px' : '8px') +
 		'}' +
+		'.document-title{margin:-1mm 0 4mm;text-align:center;text-transform:uppercase}.document-title h1{margin:0;font-size:' +
+		(isMulti ? '18px' : '15px') +
+		';line-height:1.15}.document-title div{margin-top:1mm;font-size:' +
+		(isMulti ? '10px' : '8px') +
+		';color:#334155}' +
 		(isMulti
 			? '.multi-document,.schedule-sheet{width:100%}' +
 				'.document-header{display:grid;grid-template-columns:30mm minmax(90mm,165mm) 30mm;justify-content:center;align-items:center;column-gap:5mm;margin:0 auto 6mm;padding-bottom:4mm;border-bottom:1.2px solid #111827}.header-logo{display:flex;width:30mm;height:29mm;align-items:center;justify-content:center}.header-logo img{display:block;max-width:27mm;max-height:27mm;object-fit:contain}.header{text-align:center;text-transform:uppercase}.header h1{margin:0;font-size:24px;line-height:1.1}.header .school{margin-top:3px;font-size:16px;font-weight:800}.header .meta{margin-top:3px;font-size:11px;color:#334155}'
@@ -356,12 +351,12 @@ export function renderJadwalPelajaranHTML(data: JadwalPelajaranPrintData): strin
 
 	if (layoutMode === 'multi') {
 		const sheet = `<section class="schedule-sheet">
-			${renderDocumentHeader(data)}
+			${renderDocumentHeader(data, false)}
 			<div class="print-main"><div class="schedule-wrap">${renderSchedule(data)}</div></div>
 			<div class="multi-support">${renderLegend(data)}${renderSignature(data)}<div class="footer"><span>Dicetak dari Kaganga</span><span>${orientation === 'landscape' ? 'Landscape' : 'Portrait'} - Multi Halaman</span></div></div>
 		</section>`;
 		return `<!doctype html><html lang="id"><head><meta charset="utf-8" />${title}<style>${styles}</style></head><body><main class="multi-document">${sheet}</main></body></html>`;
 	}
 
-	return `<!doctype html><html lang="id"><head><meta charset="utf-8" />${title}<style>${styles}</style>${onePageFitScript()}</head><body><main class="print-page"><section class="sheet fit-content">${renderDocumentHeader(data)}<div class="print-main"><div class="schedule-wrap">${renderSchedule(data)}</div>${renderLegend(data)}</div><div class="after-table">${renderSignature(data)}</div><div class="footer"><span>Dicetak dari Kaganga</span><span>Orientasi: ${orientation === 'landscape' ? 'Landscape' : 'Portrait'}</span></div></section></main></body></html>`;
+	return `<!doctype html><html lang="id"><head><meta charset="utf-8" />${title}<style>${styles}</style>${onePageFitScript()}</head><body><main class="print-page"><section class="sheet fit-content">${renderDocumentHeader(data, true)}<div class="print-main"><div class="schedule-wrap">${renderSchedule(data)}</div>${renderLegend(data)}</div><div class="after-table">${renderSignature(data)}</div><div class="footer"><span>Dicetak dari Kaganga</span><span>Orientasi: ${orientation === 'landscape' ? 'Landscape' : 'Portrait'}</span></div></section></main></body></html>`;
 }

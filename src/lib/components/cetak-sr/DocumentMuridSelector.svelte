@@ -10,7 +10,10 @@
 		| 'kartu-absensi'
 		| 'jadwal-pelajaran'
 		| 'kalender-pendidikan'
-	| 'jurnal-mengajar';
+		| 'jurnal-mengajar'
+		| 'martikulasi-sk'
+		| 'martikulasi-raport'
+		| 'martikulasi-sttm';
 	type RaporPeriode = 'rts' | 'ras';
 
 	type MuridData = {
@@ -43,7 +46,10 @@
 			{ value: 'kartu-absensi', label: 'Kartu Absensi Murid' },
 			{ value: 'jadwal-pelajaran', label: 'Jadwal Pelajaran' },
 			{ value: 'kalender-pendidikan', label: 'Kalender Pendidikan' },
-			{ value: 'jurnal-mengajar', label: 'Jurnal Mengajar' }
+			{ value: 'jurnal-mengajar', label: 'Jurnal Mengajar' },
+			{ value: 'martikulasi-sk', label: 'Masa Persiapan - SK Tim Martikulasi' },
+			{ value: 'martikulasi-raport', label: 'Masa Persiapan - Raport Hasil Martikulasi' },
+			{ value: 'martikulasi-sttm', label: 'Masa Persiapan - STTM' }
 		],
 		onDownload,
 		onBulkDownload,
@@ -70,6 +76,7 @@
 	const isJadwalSelected = $derived.by(() => selectedDocument === 'jadwal-pelajaran');
 	const isKalenderSelected = $derived.by(() => selectedDocument === 'kalender-pendidikan');
 	const isJurnalSelected = $derived.by(() => selectedDocument === 'jurnal-mengajar');
+	const isMartikulasiSkSelected = $derived.by(() => selectedDocument === 'martikulasi-sk');
 	const hasMurid = $derived.by(() => daftarMurid.length > 0);
 	const hasPiagamRankingOptions = $derived.by(() => piagamRankingOptions.length > 0);
 
@@ -93,7 +100,7 @@
 	);
 
 	const hasSelectionOptions = $derived.by(() => {
-		if (isJadwalSelected || isKalenderSelected || isJurnalSelected) return true;
+		if (isJadwalSelected || isKalenderSelected || isJurnalSelected || isMartikulasiSkSelected) return true;
 		return isPiagamSelected ? hasPiagamRankingOptions : hasMurid;
 	});
 </script>
@@ -142,7 +149,7 @@
 				<option value={option.value}>{option.label}</option>
 			{/each}
 		</select>
-	{:else if !isJadwalSelected && !isKalenderSelected && !isJurnalSelected}
+	{:else if !isJadwalSelected && !isKalenderSelected && !isJurnalSelected && !isMartikulasiSkSelected}
 		<select
 			class="select bg-base-200 w-full dark:border-none"
 			bind:value={selectedMuridId}
@@ -199,7 +206,8 @@
 							!hasSelectionOptions ||
 							isJadwalSelected ||
 							isKalenderSelected ||
-							isJurnalSelected}
+							isJurnalSelected ||
+							isMartikulasiSkSelected}
 					>
 						{isKartuAbsensiSelected ? 'Semua Murid (A4)' : 'Semua Murid'}
 					</button>

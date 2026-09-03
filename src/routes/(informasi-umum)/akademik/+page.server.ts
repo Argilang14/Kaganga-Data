@@ -1245,6 +1245,7 @@ export const actions: Actions = {
 		}
 
 		const jenisPresensi = formData.get('jenisPresensi')?.toString().trim() ?? 'wali_kelas_saja';
+		const presensiPegawaiEnabled = formData.get('presensiPegawaiEnabled') !== '0';
 		const jenisPresensiEnum = jenisPresensi as 'wali_kelas_saja' | 'tiap_mapel';
 		if (!['wali_kelas_saja', 'tiap_mapel'].includes(jenisPresensiEnum)) {
 			return fail(400, { fail: 'Jenis presensi tidak valid' });
@@ -1281,6 +1282,7 @@ export const actions: Actions = {
 				jenisPresensi: jenisPresensiEnum,
 				liburNasional,
 				liburSemester,
+				presensiPegawaiEnabled,
 				updatedAt: new Date().toISOString()
 			})
 			.onConflictDoUpdate({
@@ -1293,6 +1295,7 @@ export const actions: Actions = {
 					jenisPresensi: jenisPresensiEnum,
 					liburNasional,
 					liburSemester,
+					presensiPegawaiEnabled,
 					updatedAt: new Date().toISOString()
 				}
 			});

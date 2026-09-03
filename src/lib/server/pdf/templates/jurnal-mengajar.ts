@@ -1,4 +1,9 @@
 import { formatValue as formatValueRaw, sharedStyles } from './shared';
+import {
+	renderSchoolLetterhead,
+	schoolLetterheadStyles,
+	type SchoolLetterheadData
+} from './school-letterhead.ts';
 
 function escapeHtml(value: string | number | null | undefined): string {
 	return String(value ?? '')
@@ -14,12 +19,8 @@ function formatValue(value: string | number | null | undefined): string {
 }
 
 export interface JurnalMengajarPrintData {
-	sekolah: {
-		nama: string;
+	sekolah: SchoolLetterheadData & {
 		npsn: string;
-		alamat: string;
-		logoUrl: string | null;
-		logoDinasUrl: string | null;
 	};
 	filter: {
 		label: string;
@@ -69,9 +70,6 @@ export function renderJurnalMengajarHTML(data: JurnalMengajarPrintData): string 
 		data.filter.label === 'Kelas'
 			? 'Jurnal Mengajar Per Kelas'
 			: 'Jurnal Mengajar Per Mata Pelajaran';
-	const logo = (src: string | null, alt: string) =>
-		src ? `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" />` : '';
-
 	const tableRows = rows
 		.map(
 			(row, i) => `
@@ -94,6 +92,7 @@ export function renderJurnalMengajarHTML(data: JurnalMengajarPrintData): string 
 <meta charset="utf-8">
 <style>
 ${sharedStyles()}
+${schoolLetterheadStyles()}
 
 @page {
 	size: A4 landscape;
@@ -140,6 +139,7 @@ body {
 }
 
 .header-text {
+	margin-bottom: 4mm;
 	text-align: center;
 	text-transform: uppercase;
 }
@@ -266,15 +266,10 @@ body {
 </style>
 </head>
 <body>
-	<div class="document-header">
-		<div class="header-logo">${logo(data.sekolah.logoDinasUrl, 'Logo pemda atau kementerian')}</div>
-		<div class="header-text">
-			<h1>${formatValue(title)}</h1>
-			<div class="school">${formatValue(data.sekolah.nama)}</div>
-			<div class="identity">NPSN ${formatValue(data.sekolah.npsn)} &bull; Tahun Ajaran ${formatValue(data.periode.tahunPelajaran)} &bull; ${formatValue(data.filter.jenisJadwal)}</div>
-			${data.sekolah.alamat ? `<div class="address">${formatValue(data.sekolah.alamat)}</div>` : ''}
-		</div>
-		<div class="header-logo">${logo(data.sekolah.logoUrl, 'Logo sekolah')}</div>
+	${renderSchoolLetterhead(data.sekolah)}
+	<div class="header-text">
+		<h1>${formatValue(title)}</h1>
+		<div class="identity">NPSN ${formatValue(data.sekolah.npsn)} &bull; Tahun Ajaran ${formatValue(data.periode.tahunPelajaran)} &bull; ${formatValue(data.filter.jenisJadwal)}</div>
 	</div>
 
 	<div class="filter-info">

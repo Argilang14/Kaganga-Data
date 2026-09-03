@@ -44,7 +44,10 @@ const DOCUMENT_PATHS: Record<DocumentType, string> = {
 	'kartu-absensi': '/cetak/kartu-absensi',
 	'jadwal-pelajaran': '/cetak/jadwal-pelajaran',
 	'kalender-pendidikan': '/cetak/kalender-pendidikan',
-	'jurnal-mengajar': '/api/pdf/jurnal-mengajar'
+	'jurnal-mengajar': '/api/pdf/jurnal-mengajar',
+	'martikulasi-sk': '/api/pdf/martikulasi',
+	'martikulasi-raport': '/api/pdf/martikulasi',
+	'martikulasi-sttm': '/api/pdf/martikulasi'
 };
 
 /**

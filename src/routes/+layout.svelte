@@ -17,6 +17,7 @@
 	let stoppingServer = $state(false);
 	let loggingOut = $state(false);
 	const isLoginPage = $derived(page.url.pathname === '/login');
+	const isPublicGuestPage = $derived(page.url.pathname.startsWith('/tamu/'));
 
 	const readonlyRoutes = [
 		'/murid',
@@ -126,7 +127,7 @@
 	<title>{appName}{page.data.meta.title ? ' - ' + page.data.meta.title : ''}</title>
 </svelte:head>
 
-{#if isLoginPage}
+{#if isLoginPage || isPublicGuestPage}
 	<div class="bg-base-200 flex min-h-screen flex-col items-center justify-center p-6">
 		{@render children()}
 	</div>

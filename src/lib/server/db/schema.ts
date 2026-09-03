@@ -51,6 +51,22 @@ export const tableAuthSession = sqliteTable(
 	(table) => [unique().on(table.tokenHash), index('auth_session_user_id_idx').on(table.userId)]
 );
 
+export const tableLoginAttempt = sqliteTable(
+	'login_attempt',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		keyHash: text().notNull(),
+		failedCount: int().notNull().default(0),
+		windowStartedAt: text().notNull(),
+		blockedUntil: text(),
+		...audit
+	},
+	(table) => [
+		unique('login_attempt_key_hash_unique').on(table.keyHash),
+		index('login_attempt_blocked_until_idx').on(table.blockedUntil)
+	]
+);
+
 export const tableAlamat = sqliteTable('alamat', {
 	id: int().primaryKey({ autoIncrement: true }),
 	jalan: text().notNull(),
@@ -73,6 +89,7 @@ export const tablePegawai = sqliteTable(
 		nik: text(),
 		nomorIndukPppk: text(),
 		nuptk: text(),
+		dapodikPtkId: text(),
 		jenis: text({
 			enum: [
 				'guru',
@@ -168,6 +185,7 @@ export const tableSekolah = sqliteTable('sekolah', {
 	statusKepalaSekolah: text({ enum: ['definitif', 'plt'] })
 		.default('definitif')
 		.notNull(),
+	dapodikSekolahId: text(),
 	...audit
 });
 
@@ -198,6 +216,7 @@ export const tableTahunAjaran = sqliteTable(
 		tanggalMulai: text(),
 		tanggalSelesai: text(),
 		isAktif: int({ mode: 'boolean' }).default(false).notNull(),
+		dapodikTahunAjaranId: text(),
 		...audit
 	},
 	(table) => [unique().on(table.sekolahId, table.nama)]
@@ -217,6 +236,7 @@ export const tableSemester = sqliteTable(
 		tanggalBagiRaport: text(),
 		tanggalMasuk: text(),
 		isAktif: int({ mode: 'boolean' }).default(false).notNull(),
+		dapodikSemesterId: text(),
 		...audit
 	},
 	(table) => [unique().on(table.tahunAjaranId, table.tipe)]
@@ -240,6 +260,7 @@ export const tableKelas = sqliteTable(
 		waliKelasId: int().references(() => tablePegawai.id, { onDelete: 'set null' }),
 		waliAsramaId: int().references(() => tablePegawai.id, { onDelete: 'set null' }),
 		waliAsuhId: int().references(() => tablePegawai.id, { onDelete: 'set null' }),
+		dapodikRombonganBelajarId: text(),
 		...audit
 	},
 	(table) => [unique().on(table.sekolahId, table.semesterId, table.nama)]
@@ -403,9 +424,129 @@ export const tableMurid = sqliteTable(
 		waliAsuhNama: text(),
 		waliAsuhNip: text(),
 		qrToken: text(),
+		dapodikPesertaDidikId: text(),
+		dapodikAnggotaRombelId: text(),
+		nik: text(),
+		anakKe: int(),
 		...audit
 	},
 	(t) => [unique().on(t.sekolahId, t.semesterId, t.nis)]
+);
+
+export const tableDapodikSettings = sqliteTable(
+	'dapodik_settings',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		url: text().notNull(),
+		token: text().notNull(),
+		npsn: text(),
+		semesterIdDapodikTerakhir: text(),
+		lastSyncAt: text(),
+		lastPreviewAt: text(),
+		lastPreviewFingerprint: text(),
+		lastNilaiPreviewAt: text(),
+		lastNilaiPreviewFingerprint: text(),
+		...audit
+	},
+	(table) => [unique().on(table.sekolahId)]
+);
+
+export const tableDapodikSyncLog = sqliteTable(
+	'dapodik_sync_log',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		semesterDapodik: text(),
+		action: text({ enum: ['test', 'preview', 'apply', 'preview_nilai', 'send_nilai'] }).notNull(),
+		status: text({ enum: ['success', 'failed'] }).notNull(),
+		summary: text({ mode: 'json' }).$type<Record<string, unknown>>(),
+		message: text(),
+		...audit
+	},
+	(table) => [
+		index('dapodik_sync_log_sekolah_idx').on(table.sekolahId),
+		index('dapodik_sync_log_created_idx').on(table.createdAt)
+	]
+);
+
+export const tableDapodikMataPelajaran = sqliteTable(
+	'dapodik_mata_pelajaran',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		semesterId: int()
+			.references(() => tableSemester.id, { onDelete: 'cascade' })
+			.notNull(),
+		mataPelajaranId: text().notNull(),
+		nama: text().notNull(),
+		jurusanId: text(),
+		pilihanSekolah: int({ mode: 'boolean' }).default(false).notNull(),
+		pilihanBuku: int({ mode: 'boolean' }).default(false).notNull(),
+		pilihanKepengawasan: int({ mode: 'boolean' }).default(false).notNull(),
+		pilihanEvaluasi: int({ mode: 'boolean' }).default(false).notNull(),
+		...audit
+	},
+	(table) => [
+		unique().on(table.sekolahId, table.semesterId, table.mataPelajaranId),
+		index('dapodik_mapel_context_idx').on(table.sekolahId, table.semesterId)
+	]
+);
+
+export const tableDapodikPembelajaran = sqliteTable(
+	'dapodik_pembelajaran',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		kelasId: int()
+			.references(() => tableKelas.id, { onDelete: 'cascade' })
+			.notNull(),
+		pembelajaranId: text().notNull(),
+		mataPelajaranId: text(),
+		nama: text().notNull(),
+		ptkId: text(),
+		...audit
+	},
+	(table) => [
+		unique().on(table.kelasId, table.pembelajaranId),
+		index('dapodik_pembelajaran_kelas_idx').on(table.kelasId)
+	]
+);
+
+export const tableDapodikNilaiKirim = sqliteTable(
+	'dapodik_nilai_kirim',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		semesterId: int()
+			.references(() => tableSemester.id, { onDelete: 'cascade' })
+			.notNull(),
+		mataPelajaranId: int()
+			.references(() => tableMataPelajaran.id, { onDelete: 'cascade' })
+			.notNull(),
+		muridId: int()
+			.references(() => tableMurid.id, { onDelete: 'cascade' })
+			.notNull(),
+		dapodikNilaiId: text().notNull(),
+		dapodikIdEvaluasi: text().notNull(),
+		payloadHash: text().notNull(),
+		status: text({ enum: ['sent', 'failed'] }).notNull(),
+		message: text(),
+		sentAt: text(),
+		...audit
+	},
+	(table) => [
+		unique().on(table.sekolahId, table.semesterId, table.mataPelajaranId, table.muridId),
+		index('dapodik_nilai_kirim_context_idx').on(table.sekolahId, table.semesterId),
+		index('dapodik_nilai_kirim_status_idx').on(table.status)
+	]
 );
 
 export const tableCatatanWaliKelas = sqliteTable(
@@ -855,10 +996,15 @@ export const tableMataPelajaran = sqliteTable(
 			.references(() => tableKelas.id)
 			.notNull(),
 		nama: text().notNull(),
+		namaLokal: text(),
 		// optional short code for subjects (e.g. PAPB for Pendidikan Agama dan Budi Pekerti)
 		kode: text(),
 		kkm: int().notNull().default(0),
-		jenis: text({ enum: ['wajib', 'pilihan', 'mulok', 'kejuruan'] }).notNull(),
+		jenis: text({ enum: ['wajib', 'pilihan', 'mulok', 'kejuruan', 'pemberdayaan'] }).notNull(),
+		pengampuId: int().references(() => tablePegawai.id, { onDelete: 'set null' }),
+		dapodikPembelajaranId: text(),
+		dapodikMataPelajaranId: text(),
+		dapodikIndukPembelajaranId: text(),
 		...audit
 	},
 	(table) => [unique().on(table.kelasId, table.nama)]
@@ -1778,6 +1924,7 @@ export const tablePresensiSettings = sqliteTable(
 		jenisPresensi: text({ enum: ['wali_kelas_saja', 'tiap_mapel'] })
 			.notNull()
 			.default('wali_kelas_saja'),
+		presensiPegawaiEnabled: int({ mode: 'boolean' }).notNull().default(true),
 		...audit
 	},
 	(table) => [unique().on(table.sekolahId, table.tahunAjaranId)]
@@ -1815,6 +1962,60 @@ export const tableKetidakhadiranHarian = sqliteTable(
 		)
 	]
 );
+
+export const tablePresensiPegawai = sqliteTable(
+	'presensi_pegawai',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		tahunAjaranId: int().references(() => tableTahunAjaran.id, { onDelete: 'set null' }),
+		semesterId: int().references(() => tableSemester.id, { onDelete: 'set null' }),
+		pegawaiId: int().references(() => tablePegawai.id, { onDelete: 'set null' }),
+		namaPegawai: text().notNull(),
+		tanggal: text().notNull(),
+		status: text({ enum: ['hadir', 'izin', 'sakit', 'dinas_luar', 'cuti'] }).notNull(),
+		waktuMasuk: text(),
+		waktuPulang: text(),
+		tandaTangan: text(),
+		keterangan: text(),
+		petugasUserId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		...audit
+	},
+	(table) => [
+		unique('presensi_pegawai_sekolah_pegawai_tanggal_unique').on(
+			table.sekolahId,
+			table.pegawaiId,
+			table.tanggal
+		),
+		index('presensi_pegawai_sekolah_tanggal_idx').on(table.sekolahId, table.tanggal),
+		index('presensi_pegawai_pegawai_idx').on(table.pegawaiId)
+	]
+);
+
+export const tablePresensiPegawaiRelations = relations(tablePresensiPegawai, ({ one }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tablePresensiPegawai.sekolahId],
+		references: [tableSekolah.id]
+	}),
+	pegawai: one(tablePegawai, {
+		fields: [tablePresensiPegawai.pegawaiId],
+		references: [tablePegawai.id]
+	}),
+	tahunAjaran: one(tableTahunAjaran, {
+		fields: [tablePresensiPegawai.tahunAjaranId],
+		references: [tableTahunAjaran.id]
+	}),
+	semester: one(tableSemester, {
+		fields: [tablePresensiPegawai.semesterId],
+		references: [tableSemester.id]
+	}),
+	petugas: one(tableAuthUser, {
+		fields: [tablePresensiPegawai.petugasUserId],
+		references: [tableAuthUser.id]
+	})
+}));
 
 export const tableKetidakhadiranHarianRelations = relations(
 	tableKetidakhadiranHarian,
@@ -2185,6 +2386,12 @@ export const tableSppd = sqliteTable(
 			.notNull()
 			.default('draft'),
 		keterangan: text(),
+		lamanya: text(),
+		keteranganPengikut: text(),
+		kodeRekening: text(),
+		tingkatBiaya: text(),
+		keteranganLain: text(),
+		undanganFile: text(),
 		...audit
 	},
 	(table) => [
@@ -2192,6 +2399,39 @@ export const tableSppd = sqliteTable(
 		index('surat_sppd_pegawai_idx').on(table.pegawaiId),
 		index('surat_sppd_tanggal_berangkat_idx').on(table.tanggalBerangkat)
 	]
+);
+
+export const tableSppdPegawai = sqliteTable(
+	'surat_sppd_pegawai',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sppdId: int()
+			.references(() => tableSppd.id, { onDelete: 'cascade' })
+			.notNull(),
+		pegawaiId: int().references(() => tablePegawai.id, { onDelete: 'set null' }),
+		nama: text().notNull(),
+		urutan: int().notNull().default(0),
+		...audit
+	},
+	(table) => [
+		unique('surat_sppd_pegawai_unique').on(table.sppdId, table.pegawaiId),
+		index('surat_sppd_pegawai_sppd_idx').on(table.sppdId)
+	]
+);
+
+export const tableSppdPengikut = sqliteTable(
+	'surat_sppd_pengikut',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sppdId: int()
+			.references(() => tableSppd.id, { onDelete: 'cascade' })
+			.notNull(),
+		nama: text().notNull(),
+		tempatLahir: text().notNull(),
+		tanggalLahir: text().notNull(),
+		...audit
+	},
+	(table) => [index('surat_sppd_pengikut_sppd_idx').on(table.sppdId)]
 );
 
 export const tableDinasLuarPermohonan = sqliteTable(
@@ -2213,6 +2453,7 @@ export const tableDinasLuarPermohonan = sqliteTable(
 			.notNull()
 			.default('diajukan'),
 		catatan: text(),
+		undanganFile: text(),
 		...audit
 	},
 	(table) => [
@@ -2220,6 +2461,78 @@ export const tableDinasLuarPermohonan = sqliteTable(
 		index('surat_dinas_luar_pegawai_idx').on(table.pegawaiId),
 		index('surat_dinas_luar_status_idx').on(table.status)
 	]
+);
+
+export const tableDinasLuarBukti = sqliteTable(
+	'surat_dinas_luar_bukti',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sppdId: int()
+			.references(() => tableSppd.id, { onDelete: 'cascade' })
+			.notNull(),
+		authUserId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		jenis: text({ enum: ['pdf', 'foto'] }).notNull(),
+		namaFile: text().notNull(),
+		...audit
+	},
+	(table) => [index('surat_dinas_luar_bukti_sppd_idx').on(table.sppdId)]
+);
+
+export const tableBukuTamu = sqliteTable(
+	'buku_tamu',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		tahunAjaranId: int().references(() => tableTahunAjaran.id, { onDelete: 'set null' }),
+		semesterId: int().references(() => tableSemester.id, { onDelete: 'set null' }),
+		nama: text().notNull(),
+		asalInstansi: text().notNull(),
+		nip: text(),
+		keperluan: text().notNull(),
+		pesanKesan: text(),
+		tandaTangan: text(),
+		...audit
+	},
+	(table) => [
+		index('buku_tamu_sekolah_idx').on(table.sekolahId),
+		index('buku_tamu_tanggal_idx').on(table.createdAt)
+	]
+);
+
+export const tableBukuTamuSettings = sqliteTable(
+	'buku_tamu_settings',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		publicToken: text().notNull(),
+		passkeyHash: text(),
+		passkeySalt: text(),
+		unlockToken: text(),
+		...audit
+	},
+	(table) => [unique().on(table.sekolahId), unique().on(table.publicToken)]
+);
+
+export const tableAiSettings = sqliteTable(
+	'ai_settings',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		provider: text({ enum: ['gemini', 'openai_compatible'] })
+			.default('gemini')
+			.notNull(),
+		apiKey: text().notNull(),
+		model: text().notNull(),
+		baseUrl: text().notNull(),
+		...audit
+	},
+	(table) => [unique('ai_settings_sekolah_unique').on(table.sekolahId)]
 );
 
 export const tableSppdRelations = relations(tableSppd, ({ one, many }) => ({
@@ -2239,7 +2552,30 @@ export const tableSppdRelations = relations(tableSppd, ({ one, many }) => ({
 		fields: [tableSppd.semesterId],
 		references: [tableSemester.id]
 	}),
-	permohonan: many(tableDinasLuarPermohonan)
+	permohonan: many(tableDinasLuarPermohonan),
+	pelaksana: many(tableSppdPegawai),
+	pengikut: many(tableSppdPengikut),
+	bukti: many(tableDinasLuarBukti)
+}));
+
+export const tableSppdPegawaiRelations = relations(tableSppdPegawai, ({ one }) => ({
+	sppd: one(tableSppd, { fields: [tableSppdPegawai.sppdId], references: [tableSppd.id] }),
+	pegawai: one(tablePegawai, {
+		fields: [tableSppdPegawai.pegawaiId],
+		references: [tablePegawai.id]
+	})
+}));
+
+export const tableSppdPengikutRelations = relations(tableSppdPengikut, ({ one }) => ({
+	sppd: one(tableSppd, { fields: [tableSppdPengikut.sppdId], references: [tableSppd.id] })
+}));
+
+export const tableDinasLuarBuktiRelations = relations(tableDinasLuarBukti, ({ one }) => ({
+	sppd: one(tableSppd, { fields: [tableDinasLuarBukti.sppdId], references: [tableSppd.id] }),
+	authUser: one(tableAuthUser, {
+		fields: [tableDinasLuarBukti.authUserId],
+		references: [tableAuthUser.id]
+	})
 }));
 
 export const tableDinasLuarPermohonanRelations = relations(tableDinasLuarPermohonan, ({ one }) => ({
@@ -2254,5 +2590,214 @@ export const tableDinasLuarPermohonanRelations = relations(tableDinasLuarPermoho
 	sppd: one(tableSppd, {
 		fields: [tableDinasLuarPermohonan.sppdId],
 		references: [tableSppd.id]
+	})
+}));
+
+export const tableBukuTamuRelations = relations(tableBukuTamu, ({ one }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableBukuTamu.sekolahId],
+		references: [tableSekolah.id]
+	}),
+	tahunAjaran: one(tableTahunAjaran, {
+		fields: [tableBukuTamu.tahunAjaranId],
+		references: [tableTahunAjaran.id]
+	}),
+	semester: one(tableSemester, {
+		fields: [tableBukuTamu.semesterId],
+		references: [tableSemester.id]
+	})
+}));
+
+export const tableBukuTamuSettingsRelations = relations(tableBukuTamuSettings, ({ one }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableBukuTamuSettings.sekolahId],
+		references: [tableSekolah.id]
+	})
+}));
+
+export const tableAiSettingsRelations = relations(tableAiSettings, ({ one }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableAiSettings.sekolahId],
+		references: [tableSekolah.id]
+	})
+}));
+
+export const tableMartikulasiSettings = sqliteTable(
+	'martikulasi_settings',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		tahunAjaranId: int()
+			.references(() => tableTahunAjaran.id, { onDelete: 'cascade' })
+			.notNull(),
+		periodeMulai: text(),
+		periodeSelesai: text(),
+		nomorSk: text(),
+		tanggalSk: text(),
+		lokasiPenetapan: text(),
+		formatNomorSttm: text().notNull().default('{urut}/STTM/SR/{bulan_romawi}/{tahun}'),
+		nomorUrutSttmBerikutnya: int().notNull().default(1),
+		sekolahNamaSnapshot: text(),
+		npsnSnapshot: text(),
+		naunganSnapshot: text(),
+		alamatSnapshot: text(),
+		emailSnapshot: text(),
+		kepalaSekolahNamaSnapshot: text(),
+		kepalaSekolahNipSnapshot: text(),
+		kepalaSekolahStatusSnapshot: text(),
+		...audit
+	},
+	(table) => [
+		unique('martikulasi_settings_sekolah_tahun_unique').on(table.sekolahId, table.tahunAjaranId),
+		index('martikulasi_settings_sekolah_idx').on(table.sekolahId)
+	]
+);
+
+export const tableMartikulasiTim = sqliteTable(
+	'martikulasi_tim',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		settingsId: int()
+			.references(() => tableMartikulasiSettings.id, { onDelete: 'cascade' })
+			.notNull(),
+		pegawaiId: int().references(() => tablePegawai.id, { onDelete: 'set null' }),
+		namaSnapshot: text().notNull(),
+		nipSnapshot: text(),
+		jabatanTim: text().notNull(),
+		tugas: text(),
+		urutan: int().notNull().default(0),
+		...audit
+	},
+	(table) => [index('martikulasi_tim_settings_idx').on(table.settingsId)]
+);
+
+export const tableMartikulasiHasil = sqliteTable(
+	'martikulasi_hasil',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		tahunAjaranId: int()
+			.references(() => tableTahunAjaran.id, { onDelete: 'cascade' })
+			.notNull(),
+		kelasId: int()
+			.references(() => tableKelas.id, { onDelete: 'cascade' })
+			.notNull(),
+		muridId: int()
+			.references(() => tableMurid.id, { onDelete: 'cascade' })
+			.notNull(),
+		statusKelengkapan: text({ enum: ['belum_lengkap', 'lengkap'] })
+			.notNull()
+			.default('belum_lengkap'),
+		levelPenempatan: text({ enum: ['dasar', 'madya', 'mahir'] }),
+		rekomendasi: text(),
+		catatanUmum: text(),
+		nomorSttm: text(),
+		tanggalSttm: text(),
+		muridNamaSnapshot: text(),
+		nisSnapshot: text(),
+		nisnSnapshot: text(),
+		kelasNamaSnapshot: text(),
+		jenjangSnapshot: text(),
+		waliKelasNamaSnapshot: text(),
+		waliKelasNipSnapshot: text(),
+		sekolahNamaSnapshot: text(),
+		npsnSnapshot: text(),
+		naunganSnapshot: text(),
+		alamatSnapshot: text(),
+		emailSnapshot: text(),
+		kepalaSekolahNamaSnapshot: text(),
+		kepalaSekolahNipSnapshot: text(),
+		kepalaSekolahStatusSnapshot: text(),
+		lokasiPenetapanSnapshot: text(),
+		levelPenempatanSnapshot: text(),
+		...audit
+	},
+	(table) => [
+		unique('martikulasi_hasil_sekolah_tahun_murid_unique').on(
+			table.sekolahId,
+			table.tahunAjaranId,
+			table.muridId
+		),
+		index('martikulasi_hasil_sekolah_tahun_idx').on(table.sekolahId, table.tahunAjaranId),
+		index('martikulasi_hasil_kelas_idx').on(table.kelasId)
+	]
+);
+
+export const tableMartikulasiNilai = sqliteTable(
+	'martikulasi_nilai',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		hasilId: int()
+			.references(() => tableMartikulasiHasil.id, { onDelete: 'cascade' })
+			.notNull(),
+		aspekKode: text().notNull(),
+		kelompok: text({ enum: ['akademik', 'karakter'] }).notNull(),
+		capaianAwal: text(),
+		capaianAkhir: text(),
+		ketuntasan: text({ enum: ['tuntas', 'belum_tuntas', 'perlu_pendampingan'] }),
+		catatan: text(),
+		deskripsiCapaian: text(),
+		...audit
+	},
+	(table) => [
+		unique('martikulasi_nilai_hasil_aspek_unique').on(table.hasilId, table.aspekKode),
+		index('martikulasi_nilai_hasil_idx').on(table.hasilId)
+	]
+);
+
+export const tableMartikulasiSettingsRelations = relations(
+	tableMartikulasiSettings,
+	({ one, many }) => ({
+		sekolah: one(tableSekolah, {
+			fields: [tableMartikulasiSettings.sekolahId],
+			references: [tableSekolah.id]
+		}),
+		tahunAjaran: one(tableTahunAjaran, {
+			fields: [tableMartikulasiSettings.tahunAjaranId],
+			references: [tableTahunAjaran.id]
+		}),
+		tim: many(tableMartikulasiTim)
+	})
+);
+
+export const tableMartikulasiTimRelations = relations(tableMartikulasiTim, ({ one }) => ({
+	settings: one(tableMartikulasiSettings, {
+		fields: [tableMartikulasiTim.settingsId],
+		references: [tableMartikulasiSettings.id]
+	}),
+	pegawai: one(tablePegawai, {
+		fields: [tableMartikulasiTim.pegawaiId],
+		references: [tablePegawai.id]
+	})
+}));
+
+export const tableMartikulasiHasilRelations = relations(tableMartikulasiHasil, ({ one, many }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableMartikulasiHasil.sekolahId],
+		references: [tableSekolah.id]
+	}),
+	tahunAjaran: one(tableTahunAjaran, {
+		fields: [tableMartikulasiHasil.tahunAjaranId],
+		references: [tableTahunAjaran.id]
+	}),
+	kelas: one(tableKelas, {
+		fields: [tableMartikulasiHasil.kelasId],
+		references: [tableKelas.id]
+	}),
+	murid: one(tableMurid, {
+		fields: [tableMartikulasiHasil.muridId],
+		references: [tableMurid.id]
+	}),
+	nilai: many(tableMartikulasiNilai)
+}));
+
+export const tableMartikulasiNilaiRelations = relations(tableMartikulasiNilai, ({ one }) => ({
+	hasil: one(tableMartikulasiHasil, {
+		fields: [tableMartikulasiNilai.hasilId],
+		references: [tableMartikulasiHasil.id]
 	})
 }));

@@ -7,6 +7,7 @@
 	import DeleteEntryDialog from '$lib/components/tp-rl/delete-entry-dialog.svelte';
 	import DeleteGroupDialog from '$lib/components/tp-rl/delete-group-dialog.svelte';
 	import ImportDialog from '$lib/components/tp-rl/import-dialog.svelte';
+	import GenerateTpModal from '$lib/components/tp-rl/generate-tp-modal.svelte';
 	import GroupDisplayRow from '$lib/components/tp-rl/group-display-row.svelte';
 	import GroupFormRow from '$lib/components/tp-rl/group-form-row.svelte';
 	import type {
@@ -167,6 +168,7 @@
 	let selectAllCheckbox = $state<HTMLInputElement | null>(null);
 	let agamaSelectElement = $state<HTMLSelectElement | null>(null);
 	let importDialogOpen = $state(false);
+	let generateDialogOpen = $state(false);
 
 	// track kelas aktif id so we can react to "Pindah Kelas" and reload TP data
 	let lastKelasId = $state<number | null>(data.kelasAktif ? (data.kelasAktif.id as number) : null);
@@ -239,6 +241,16 @@
 		if (requiresAgamaSelection && !hasActiveAgamaSelection) {
 			return 'Pilih agama terlebih dahulu sebelum mengimpor tujuan pembelajaran.';
 		}
+		return undefined;
+	});
+	const isGenerateDisabled = $derived(
+		(requiresAgamaSelection && !hasActiveAgamaSelection) || isInteractionLocked
+	);
+	const generateTooltip = $derived.by(() => {
+		if (isEditingBobot) return 'Selesaikan pengaturan bobot sebelum menggunakan Generate.';
+		if (isEditModeActive) return 'Selesaikan perubahan TP sebelum menggunakan Generate.';
+		if (isCreateModeActive) return 'Batalkan penambahan TP sebelum menggunakan Generate.';
+		if (requiresAgamaSelection && !hasActiveAgamaSelection) return 'Pilih agama terlebih dahulu.';
 		return undefined;
 	});
 
@@ -489,6 +501,19 @@
 				dismissible: false
 			});
 		}
+	}
+
+	function openGenerateDialog() {
+		if (isGenerateDisabled) {
+			toast(generateTooltip ?? 'Generator belum dapat dibuka.', 'warning');
+			return;
+		}
+		generateDialogOpen = true;
+	}
+
+	async function handleGenerateSuccess() {
+		generateDialogOpen = false;
+		await invalidate('app:mapel_tp-rl');
 	}
 
 	function openEditForm(group: TujuanPembelajaranGroup) {
@@ -881,6 +906,9 @@
 		{importTooltip}
 		{isImportDisabled}
 		onOpenImport={openImportDialog}
+		onGenerate={openGenerateDialog}
+		{isGenerateDisabled}
+		{generateTooltip}
 		{showAgamaSelect}
 		{agamaSelectId}
 		{agamaOptions}
@@ -991,6 +1019,16 @@
 
 {#if importDialogOpen}
 	<ImportDialog onCancel={handleImportCancel} onSuccess={handleImportSuccess} />
+{/if}
+
+{#if generateDialogOpen}
+	<GenerateTpModal
+		mapelId={data.mapel.id}
+		mapelName={mapelDisplayName}
+		kelasLabel={kelasAktifLabel ?? data.mapel.kelas.nama}
+		onCancel={() => (generateDialogOpen = false)}
+		onSuccess={handleGenerateSuccess}
+	/>
 {/if}
 
 {#if deleteEntryDialog && groupForm}

@@ -25,7 +25,10 @@ export type DocumentType =
 	| 'kartu-absensi'
 	| 'jadwal-pelajaran'
 	| 'kalender-pendidikan'
-	| 'jurnal-mengajar';
+	| 'jurnal-mengajar'
+	| 'martikulasi-sk'
+	| 'martikulasi-raport'
+	| 'martikulasi-sttm';
 
 export type { PreviewPayload } from '$lib/preview-types-sr';
 
@@ -59,7 +62,10 @@ const DOCUMENT_PATHS: Record<DocumentType, string> = {
 	'kartu-absensi': '/cetak/kartu-absensi',
 	'jadwal-pelajaran': '/cetak/jadwal-pelajaran',
 	'kalender-pendidikan': '/cetak/kalender-pendidikan',
-	'jurnal-mengajar': '/api/pdf/jurnal-mengajar'
+	'jurnal-mengajar': '/api/pdf/jurnal-mengajar',
+	'martikulasi-sk': '/api/pdf/martikulasi',
+	'martikulasi-raport': '/api/pdf/martikulasi',
+	'martikulasi-sttm': '/api/pdf/martikulasi'
 };
 
 const DOCUMENT_LABELS: Record<DocumentType, string> = {
@@ -71,7 +77,10 @@ const DOCUMENT_LABELS: Record<DocumentType, string> = {
 	'kartu-absensi': 'Kartu Absensi Murid',
 	'jadwal-pelajaran': 'Jadwal Pelajaran',
 	'kalender-pendidikan': 'Kalender Pendidikan',
-	'jurnal-mengajar': 'Jurnal Mengajar'
+	'jurnal-mengajar': 'Jurnal Mengajar',
+	'martikulasi-sk': 'SK Tim Martikulasi',
+	'martikulasi-raport': 'Raport Hasil Martikulasi',
+	'martikulasi-sttm': 'Surat Tanda Tamat Martikulasi'
 };
 
 export async function loadSinglePreview(
@@ -134,7 +143,10 @@ export function isPreviewableDocument(value: DocumentType | ''): value is Docume
 		value === 'kartu-absensi' ||
 		value === 'jadwal-pelajaran' ||
 		value === 'kalender-pendidikan' ||
-		value === 'jurnal-mengajar'
+		value === 'jurnal-mengajar' ||
+		value === 'martikulasi-sk' ||
+		value === 'martikulasi-raport' ||
+		value === 'martikulasi-sttm'
 	);
 }
 

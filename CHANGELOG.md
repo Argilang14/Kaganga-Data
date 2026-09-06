@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.1.3 - 2026-09-06
+
+### Fitur dan perbaikan
+
+- Menyempurnakan formulir SPPD dan Dinas Luar serta merapikan pengelompokan menu Surat Menyurat.
+- Memindahkan Buku Tamu ke Surat Menyurat dan Presensi Pegawai ke menu Absensi.
+- Menambahkan pilihan latar dokumen pada Jurnal Mengajar serta dokumen Martikulasi.
+- Menyempurnakan penilaian Martikulasi, termasuk input massal dan level penempatan Dasar, Madya, atau Mahir.
+- Memperbarui pengelolaan mata pelajaran intrakurikuler, impor, ekspor, dan pembatasan akses berdasarkan penugasan.
+- Merapikan halaman Pengaturan dan memperkuat manajemen pengguna, keamanan kata sandi, izin khusus, serta pemulihan akses.
+- Menambahkan dukungan drag-and-drop sentuh pada Jadwal Pelajaran dan pengurutan mata pelajaran.
+- Mempertahankan seluruh validasi kelas, jenjang, slot pelajaran, kegiatan non-JP, merge jadwal, dan target JP mingguan.
+
+### Catatan pembaruan
+
+- Cadangkan database sebelum memasang pembaruan.
+- Installer tetap menggunakan port aplikasi `1206` dan lokasi data `%LOCALAPPDATA%\Kaganga-data`.
+- Saat pertama dijalankan, Kaganga membuat backup database sebelum migrasi versi `2.1.3`.
+- Migrasi bersifat idempoten dan tidak menghapus data sekolah, pengguna, pegawai, murid, nilai, atau jadwal yang sudah ada.
+- Installer tetap memakai `AppId` Kaganga yang sama agar pemasangan memperbarui aplikasi sebelumnya.
+
 ## 2.1.0 - 2026-09-04
 
 ### Fitur dan perbaikan

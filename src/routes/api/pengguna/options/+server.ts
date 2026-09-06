@@ -1,14 +1,15 @@
 import db from '$lib/server/db';
 import { ensurePenggunaIdentitySchema } from '$lib/server/db/ensure-pengguna';
 import { tableAuthUser, tableKelas, tableMataPelajaran, tablePegawai } from '$lib/server/db/schema';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import { authority } from '../../../pengguna/utils.server';
 
-export async function GET({ locals }) {
+export async function GET({ locals, url }) {
 	authority('user_add');
 	await ensurePenggunaIdentitySchema();
 
 	const sekolahId = locals.sekolah?.id;
+	const includeUserId = Number(url.searchParams.get('includeUserId'));
 	if (!sekolahId)
 		return Response.json({ message: 'Sekolah aktif tidak ditemukan' }, { status: 400 });
 
@@ -28,7 +29,9 @@ export async function GET({ locals }) {
 				and(
 					eq(tablePegawai.sekolahId, sekolahId),
 					eq(tablePegawai.status, 'aktif'),
-					isNull(tableAuthUser.id)
+					Number.isInteger(includeUserId) && includeUserId > 0
+						? or(isNull(tableAuthUser.id), eq(tableAuthUser.id, includeUserId))
+						: isNull(tableAuthUser.id)
 				)
 			)
 			.orderBy(asc(tablePegawai.nama)),

@@ -5,9 +5,10 @@ import {
 	updateUserPassword,
 	verifyUserPassword
 } from '$lib/server/auth';
+import { validatePassword } from '$lib/password-policy';
 import db from '$lib/server/db';
-import { tableAuthUser } from '$lib/server/db/schema';
-import { eq } from 'drizzle-orm';
+import { tableAuthUser, tablePegawai } from '$lib/server/db/schema';
+import { and, eq } from 'drizzle-orm';
 import { getAppVersion } from '$lib/server/app-info';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
@@ -15,247 +16,174 @@ import { networkInterfaces } from 'node:os';
 import { isIPv4 } from 'node:net';
 import {
 	clearAiSettings,
+	clearUserAiSettings,
 	DEFAULT_AI_BASE_URL,
 	DEFAULT_AI_MODEL,
 	getStoredAiSettings,
+	getStoredUserAiSettings,
 	maskApiKey,
-	saveAiSettings
+	saveAiSettings,
+	saveUserAiSettings
 } from '$lib/server/ai';
+import { getOrCreateBukuTamuSettings, setBukuTamuPasskey } from '$lib/server/buku-tamu-pass';
+import { getStorageInfo, saveStorageRoot } from '$lib/server/storage-settings';
 
-interface AddressEntry {
-	name: string;
-	address: string;
-	raw: string;
-}
+type AddressEntry = { name: string; address: string; raw: string };
 
-function collectIpv4Addresses(port: string | null): AddressEntry[] {
-	const interfaces = networkInterfaces();
-	const collected: AddressEntry[] = [];
-
-	for (const [name, entries] of Object.entries(interfaces)) {
-		for (const entry of entries ?? []) {
-			if (entry.family === 'IPv4' && !entry.internal && entry.address) {
-				const address = port ? `${entry.address}:${port}` : entry.address;
-				collected.push({ name, address, raw: entry.address });
+function collectAddresses(port: string, currentHost: string) {
+	const entries: AddressEntry[] = [];
+	for (const [name, values] of Object.entries(networkInterfaces())) {
+		for (const item of values ?? []) {
+			if (item.family === 'IPv4' && !item.internal && item.address) {
+				entries.push({ name, raw: item.address, address: `${item.address}:${port}` });
 			}
 		}
 	}
-
-	return collected;
+	const current = isIPv4(currentHost) ? entries.filter((entry) => entry.raw === currentHost) : [];
+	const privateEntries = entries.filter(
+		(entry) => entry.raw.startsWith('10.') || entry.raw.startsWith('192.168.') || /^172\.(1[6-9]|2\d|3[01])\./.test(entry.raw)
+	);
+	return [...new Set((current.length ? current : privateEntries.length ? privateEntries : entries).map((entry) => entry.address))];
 }
 
-function filterAddresses(entries: AddressEntry[], currentHost: string) {
-	const hostIpv4 = isIPv4(currentHost) ? currentHost : null;
+function requireUser(locals: App.Locals) {
+	if (!locals.user) throw redirect(303, '/login');
+	return locals.user;
+}
 
-	if (hostIpv4) {
-		const primaryInterfaces = new Set(
-			entries.filter((entry) => entry.raw === hostIpv4).map((entry) => entry.name)
-		);
-		if (primaryInterfaces.size > 0) {
-			const filtered = entries.filter((entry) => primaryInterfaces.has(entry.name));
-			if (filtered.length) return filtered;
-		}
+function parseAi(form: FormData) {
+	const provider = String(form.get('provider') ?? '');
+	const apiKey = String(form.get('apiKey') ?? '').trim();
+	const model = String(form.get('model') ?? '').trim();
+	const baseUrl = String(form.get('baseUrl') ?? '').trim();
+	if (provider !== 'gemini' && provider !== 'openai_compatible') {
+		throw new Error('Penyedia AI tidak valid.');
 	}
-
-	const privateRanges = entries.filter((entry) => {
-		if (entry.raw.startsWith('192.168.')) return true;
-		const match172 = entry.raw.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./);
-		return Boolean(match172);
-	});
-
-	if (privateRanges.length) {
-		return privateRanges;
-	}
-
-	return entries;
+	if (apiKey.length < 10 || apiKey.length > 500) throw new Error('Kunci API tidak valid.');
+	if (!/^[A-Za-z0-9._:/-]{2,100}$/.test(model)) throw new Error('Nama model tidak valid.');
+	return { provider, apiKey, model, baseUrl } as const;
 }
 
 export const load: PageServerLoad = async ({ url, locals }) => {
-	const meta: PageMeta = {
-		title: 'Pengaturan',
-		description: 'Pengaturan Aplikasi Administrasi Guru Terpadu'
-	};
-
-	const secure = locals.requestIsSecure ?? url.protocol === 'https:';
-	const protocol = secure ? 'https:' : 'http:';
-	const port = url.port || (secure ? '443' : '80');
-	const collected = collectIpv4Addresses(port);
-	const filtered = filterAddresses(collected, url.hostname);
-	const seen = new Set<string>();
-	const addresses = filtered
-		.map((entry) => entry.address)
-		.filter((address) => {
-			if (seen.has(address)) return false;
-			seen.add(address);
-			return true;
-		});
-
-	const hostWithPort = url.port ? url.host : `${url.hostname}:${port}`;
-	if (isIPv4(url.hostname) && hostWithPort && !addresses.includes(hostWithPort)) {
-		addresses.push(hostWithPort);
-	}
+	const user = requireUser(locals);
+	const protocol = url.protocol === 'https:' ? 'https:' : 'http:';
+	const port = url.port || (protocol === 'https:' ? '443' : '80');
+	const addresses = collectAddresses(port, url.hostname);
+	if (isIPv4(url.hostname) && !addresses.includes(url.host)) addresses.push(url.host);
 
 	const sekolahId = locals.sekolah?.id;
-	const storedAi = locals.user?.type === 'admin' && sekolahId
-		? await getStoredAiSettings(sekolahId)
+	const isAdmin = user.type === 'admin';
+	const schoolAi = isAdmin && sekolahId ? await getStoredAiSettings(sekolahId) : null;
+	const personalAi = await getStoredUserAiSettings(user.id);
+	const guestBook = isAdmin && sekolahId ? await getOrCreateBukuTamuSettings(sekolahId) : null;
+	const profile = user.pegawaiId && sekolahId
+		? await db.query.tablePegawai.findFirst({
+			columns: { id: true, nama: true, nip: true, jenis: true, jabatan: true, foto: true },
+			where: and(eq(tablePegawai.id, user.pegawaiId), eq(tablePegawai.sekolahId, sekolahId))
+		})
 		: null;
 
 	return {
-		meta,
+		meta: { title: 'Pengaturan', description: 'Pengaturan Kaganga' } satisfies PageMeta,
 		appAddresses: addresses,
 		protocol,
 		appVersion: getAppVersion(),
-		ai: {
-			configured: Boolean(storedAi || process.env.GEMINI_API_KEY),
-			stored: Boolean(storedAi),
-			maskedKey: storedAi ? maskApiKey(storedAi.apiKey) : null,
-			provider: storedAi?.provider ?? 'gemini',
-			model: storedAi?.model ?? DEFAULT_AI_MODEL,
-			baseUrl: storedAi?.baseUrl ?? DEFAULT_AI_BASE_URL
+		mustChangePassword: Boolean(user.mustChangePassword),
+		profile,
+		storage: isAdmin ? await getStorageInfo() : null,
+		guestBook: guestBook ? {
+			publicUrl: `${protocol}//${url.host}/tamu/${guestBook.publicToken}`,
+			passkeySet: Boolean(guestBook.passkeyHash && guestBook.passkeySalt)
+		} : null,
+		schoolAi: {
+			visible: isAdmin,
+			configured: Boolean(schoolAi || process.env.GEMINI_API_KEY),
+			stored: Boolean(schoolAi),
+			maskedKey: schoolAi ? maskApiKey(schoolAi.apiKey) : null,
+			provider: schoolAi?.provider ?? 'gemini',
+			model: schoolAi?.model ?? DEFAULT_AI_MODEL,
+			baseUrl: schoolAi?.baseUrl ?? DEFAULT_AI_BASE_URL
+		},
+		personalAi: {
+			stored: Boolean(personalAi),
+			maskedKey: personalAi ? maskApiKey(personalAi.apiKey) : null,
+			provider: personalAi?.provider ?? 'gemini',
+			model: personalAi?.model ?? DEFAULT_AI_MODEL,
+			baseUrl: personalAi?.baseUrl ?? DEFAULT_AI_BASE_URL
 		}
 	};
 };
 
 export const actions: Actions = {
 	'change-password': async ({ request, locals, cookies, getClientAddress, url }) => {
-		const logContext = {
-			userId: locals.user?.id,
-			client: getClientAddress(),
-			origin: request.headers.get('origin') ?? undefined,
-			referer: request.headers.get('referer') ?? undefined
-		};
-		if (!locals.user) {
-			console.warn('[change-password] user missing', logContext);
-			throw redirect(303, '/login');
-		}
-
-		const formData = await request.formData();
-		const currentPassword = String(formData.get('currentPassword') ?? '');
-		const newPassword = String(formData.get('newPassword') ?? '');
-		const confirmPassword = String(formData.get('confirmPassword') ?? '');
-
-		if (!currentPassword || !newPassword || !confirmPassword) {
-			console.warn('[change-password] missing fields', logContext);
-			return fail(400, { message: 'Semua kolom kata sandi wajib diisi.' });
-		}
-
-		if (newPassword.length < 8) {
-			console.warn('[change-password] password too short', logContext);
-			return fail(400, { message: 'Kata sandi baru minimal 8 karakter.' });
-		}
-
-		if (newPassword !== confirmPassword) {
-			console.warn('[change-password] confirmation mismatch', logContext);
-			return fail(400, { message: 'Konfirmasi kata sandi tidak cocok.' });
-		}
-
-		const valid = await verifyUserPassword(locals.user.id, currentPassword);
-		if (!valid) {
-			console.warn('[change-password] invalid current password', logContext);
-			return fail(400, { message: 'Kata sandi lama tidak sesuai.' });
-		}
-
-		await updateUserPassword(locals.user.id, newPassword);
-		await deleteSessionsForUser(locals.user.id);
-		const session = await createSession(locals.user.id, {
-			userAgent: request.headers.get('user-agent'),
-			ipAddress: getClientAddress()
-		});
-
-		console.info('[change-password] success', {
-			...logContext,
-			sessionExpiresAt: session.expiresAt
-		});
-
-		const secure = locals.requestIsSecure ?? url.protocol === 'https:';
-		applySessionCookie(cookies, session.token, session.expiresAt, secure);
-
+		const user = requireUser(locals);
+		const form = await request.formData();
+		const currentPassword = String(form.get('currentPassword') ?? '');
+		const newPassword = String(form.get('newPassword') ?? '');
+		const confirmPassword = String(form.get('confirmPassword') ?? '');
+		if (!(await verifyUserPassword(user.id, currentPassword))) return fail(400, { message: 'Kata sandi lama tidak sesuai.' });
+		const validation = validatePassword(newPassword);
+		if (!validation.valid) return fail(400, { message: validation.message });
+		if (newPassword !== confirmPassword) return fail(400, { message: 'Konfirmasi kata sandi tidak cocok.' });
+		await updateUserPassword(user.id, newPassword);
+		await deleteSessionsForUser(user.id);
+		const session = await createSession(user.id, { userAgent: request.headers.get('user-agent'), ipAddress: getClientAddress() });
+		applySessionCookie(cookies, session.token, session.expiresAt, locals.requestIsSecure ?? url.protocol === 'https:');
 		return { message: 'Kata sandi berhasil diperbarui.' };
 	},
 	'change-admin-username': async ({ request, locals }) => {
-		const logContext = { userId: locals.user?.id };
-		if (!locals.user) {
-			console.warn('[change-admin-username] user missing', logContext);
-			return fail(403, { message: 'Autentikasi diperlukan.' });
-		}
-
-		// Allow the currently authenticated user to change their own username.
-		// Require current password for confirmation and ensure username uniqueness.
+		const user = requireUser(locals);
 		const form = await request.formData();
-		const newUsername = String(form.get('adminUsername') ?? '').trim();
-		const currentPassword = String(form.get('adminPassword') ?? '');
-
-		if (!newUsername) return fail(400, { message: 'Username baru wajib diisi.' });
-		if (!currentPassword)
-			return fail(400, { message: 'Masukkan kata sandi Anda untuk konfirmasi.' });
-
-		// Verify current password
-		const valid = await verifyUserPassword(locals.user.id, currentPassword);
-		if (!valid) return fail(400, { message: 'Kata sandi konfirmasi tidak sesuai.' });
-
-		// Server-side validation: match client-side pattern (letters, numbers, dot, underscore, dash) and min length 3
-		const usernamePattern = /^[A-Za-z0-9._-]{3,}$/;
-		if (!usernamePattern.test(newUsername)) {
-			return fail(400, {
-				message:
-					'Username tidak valid. Gunakan huruf, angka, titik, underscore atau minus. Minimal 3 karakter.'
-			});
-		}
-
-		const normalized = newUsername.trim().toLowerCase();
-
-		// Check uniqueness excluding current user
-		const existing = await db.query.tableAuthUser.findFirst({
-			where: eq(tableAuthUser.usernameNormalized, normalized)
-		});
-		if (existing && existing.id !== locals.user.id)
-			return fail(400, { message: 'Username sudah digunakan.' });
-
-		const now = new Date().toISOString();
-
-		await db
-			.update(tableAuthUser)
-			.set({ username: newUsername, usernameNormalized: normalized, updatedAt: now })
-			.where(eq(tableAuthUser.id, locals.user.id));
-
-		return { message: 'Username berhasil diperbarui.' };
+		const username = String(form.get('adminUsername') ?? '').trim();
+		const password = String(form.get('adminPassword') ?? '');
+		if (!/^[A-Za-z0-9._-]{3,}$/.test(username)) return fail(400, { message: 'Nama pengguna minimal 3 karakter dan hanya boleh memuat huruf, angka, titik, garis bawah, atau minus.' });
+		if (!(await verifyUserPassword(user.id, password))) return fail(400, { message: 'Kata sandi konfirmasi tidak sesuai.' });
+		const normalized = username.toLowerCase();
+		const existing = await db.query.tableAuthUser.findFirst({ where: eq(tableAuthUser.usernameNormalized, normalized) });
+		if (existing && existing.id !== user.id) return fail(400, { message: 'Nama pengguna sudah digunakan.' });
+		await db.update(tableAuthUser).set({ username, usernameNormalized: normalized, updatedAt: new Date().toISOString() }).where(eq(tableAuthUser.id, user.id));
+		return { message: 'Nama pengguna berhasil diperbarui.' };
 	},
 	'save-ai-settings': async ({ request, locals }) => {
-		if (locals.user?.type !== 'admin') {
-			return fail(403, { message: 'Hanya admin yang dapat mengatur layanan AI.' });
-		}
-		const sekolahId = locals.sekolah?.id;
-		if (!sekolahId) return fail(400, { message: 'Sekolah aktif tidak ditemukan.' });
-		const form = await request.formData();
-		const provider = String(form.get('provider') ?? '');
-		const apiKey = String(form.get('apiKey') ?? '').trim();
-		const model = String(form.get('model') ?? '').trim();
-		const baseUrl = String(form.get('baseUrl') ?? '').trim();
-		if (provider !== 'gemini' && provider !== 'openai_compatible') {
-			return fail(400, { message: 'Penyedia AI tidak valid.' });
-		}
-		if (apiKey.length < 10 || apiKey.length > 500) {
-			return fail(400, { message: 'Kunci API wajib diisi dengan format yang valid.' });
-		}
-		if (!/^[A-Za-z0-9._:/-]{2,100}$/.test(model)) {
-			return fail(400, { message: 'Nama model tidak valid.' });
-		}
-		try {
-			await saveAiSettings(sekolahId, { provider, apiKey, model, baseUrl });
-			return { message: 'Pengaturan AI berhasil disimpan untuk sekolah aktif.' };
-		} catch (error) {
-			return fail(400, {
-				message: error instanceof Error ? error.message : 'Pengaturan AI tidak dapat disimpan.'
-			});
-		}
+		const user = requireUser(locals);
+		if (user.type !== 'admin' || !locals.sekolah?.id) return fail(403, { message: 'Akses ditolak.' });
+		try { await saveAiSettings(locals.sekolah.id, parseAi(await request.formData())); }
+		catch (error) { return fail(400, { message: error instanceof Error ? error.message : 'Pengaturan AI gagal disimpan.' }); }
+		return { message: 'AI sekolah aktif berhasil disimpan.' };
 	},
 	'clear-ai-settings': async ({ locals }) => {
-		if (locals.user?.type !== 'admin') {
-			return fail(403, { message: 'Hanya admin yang dapat menghapus pengaturan AI.' });
+		const user = requireUser(locals);
+		if (user.type !== 'admin' || !locals.sekolah?.id) return fail(403, { message: 'Akses ditolak.' });
+		await clearAiSettings(locals.sekolah.id);
+		return { message: 'AI sekolah berhasil dihapus.' };
+	},
+	'save-personal-ai': async ({ request, locals }) => {
+		const user = requireUser(locals);
+		try { await saveUserAiSettings(user.id, parseAi(await request.formData())); }
+		catch (error) { return fail(400, { message: error instanceof Error ? error.message : 'AI pribadi gagal disimpan.' }); }
+		return { message: 'AI pribadi berhasil disimpan.' };
+	},
+	'clear-personal-ai': async ({ locals }) => {
+		const user = requireUser(locals);
+		await clearUserAiSettings(user.id);
+		return { message: 'AI pribadi berhasil dihapus; konfigurasi sekolah akan digunakan.' };
+	},
+	'set-guest-passkey': async ({ request, locals }) => {
+		const user = requireUser(locals);
+		if (user.type !== 'admin' || !locals.sekolah?.id) return fail(403, { message: 'Akses ditolak.' });
+		const passkey = String((await request.formData()).get('passkey') ?? '').trim();
+		if (passkey && (passkey.length < 4 || passkey.length > 64)) return fail(400, { message: 'Passkey harus terdiri dari 4-64 karakter.' });
+		await setBukuTamuPasskey(locals.sekolah.id, passkey || null);
+		return { message: passkey ? 'Passkey Buku Tamu diperbarui.' : 'Passkey Buku Tamu dinonaktifkan.' };
+	},
+	'save-storage': async ({ request, locals }) => {
+		const user = requireUser(locals);
+		if (user.type !== 'admin') return fail(403, { message: 'Akses ditolak.' });
+		try {
+			const result = await saveStorageRoot(String((await request.formData()).get('dataRoot') ?? ''));
+			return { message: `Lokasi disimpan dan ${result.copied} berkas disalin. Mulai ulang Kaganga untuk mengaktifkannya.` };
+		} catch (error) {
+			return fail(400, { message: error instanceof Error ? error.message : 'Lokasi tidak dapat disimpan.' });
 		}
-		const sekolahId = locals.sekolah?.id;
-		if (!sekolahId) return fail(400, { message: 'Sekolah aktif tidak ditemukan.' });
-		await clearAiSettings(sekolahId);
-		return { message: 'Pengaturan AI sekolah aktif berhasil dihapus.' };
 	}
 };

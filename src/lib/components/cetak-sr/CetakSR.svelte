@@ -221,7 +221,8 @@
 			jurnalJenis,
 			jurnalTanggalMulai,
 			jurnalTanggalSelesai,
-			jurnalPenandatangan
+			jurnalPenandatangan,
+			showBgLogo
 		].join('|')
 	);
 	let previousJurnalSelectionKey = $state('');
@@ -578,6 +579,7 @@
 				if (data.kelasId) params.set('kelas_id', String(data.kelasId));
 				if (murid) params.set('murid_id', String(murid.id));
 				if (documentType === 'martikulasi-sttm' && murid) params.set('draft', '1');
+				params.set('bg_logo', showBgLogo ? '1' : '0');
 				const pdfRes = await fetch(`/api/pdf/martikulasi?${params}`);
 				if (!pdfRes.ok) {
 					throw new Error(await responseErrorMessage(pdfRes, 'Gagal memuat dokumen Martikulasi'));
@@ -600,6 +602,7 @@
 				});
 				if (jurnalKelasId) params.set('kelas_id', String(jurnalKelasId));
 				if (jurnalMapelId) params.set('mapel_id', String(jurnalMapelId));
+				params.set('bg_logo', showBgLogo ? '1' : '0');
 				const pdfRes = await fetch(`/api/pdf/jurnal-mengajar?${params}`);
 				if (!pdfRes.ok) {
 					const message = await pdfRes.text();
@@ -769,6 +772,7 @@
 					massal: '1'
 				});
 				if (data.kelasId) params.set('kelas_id', String(data.kelasId));
+				params.set('bg_logo', showBgLogo ? '1' : '0');
 				const response = await fetch(`/api/pdf/martikulasi?${params}`);
 				if (!response.ok) {
 					throw new Error(
@@ -1310,6 +1314,7 @@
 		isBiodataSelected={selectedDocument === 'biodata'}
 		isKeasramaanSelected={selectedDocument === 'keasramaan'}
 		isJadwalSelected={selectedDocument === 'jadwal-pelajaran'}
+		showStandaloneBgToggle={isJurnalSelected || isMartikulasiSelected}
 		doesNotNeedMurid={!documentNeedsMurid}
 		showParentSignatureSelect={isSRVariant && selectedDocument === 'rapor'}
 		{parentSignature}
@@ -1323,6 +1328,11 @@
 		{showBgLogo}
 		onToggleBgLogo={(value: boolean) => {
 			showBgLogo = value;
+			if (pdfViewerUrl) {
+				URL.revokeObjectURL(pdfViewerUrl);
+				pdfViewerUrl = '';
+				pdfViewerTitle = '';
+			}
 		}}
 		onSetKriteria={(cukup: number, baik: number) => {
 			// optimistic update in UI

@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { invalidate } from '$app/navigation';
-	import { showModal, hideModal } from '$lib/components/global-modal.svelte';
+	import {
+		showModal,
+		setModalDragging,
+		hideModalIf
+	} from '$lib/components/global-modal.svelte';
 	import { toast } from '$lib/components/toast.svelte';
 	import { computeNextEventMessage } from '$lib/utils/next-event-message';
 	import BellStatus from '$lib/components/jadwal-bell/bell-status.svelte';
@@ -11,6 +15,7 @@
 	import TambahKegiatanModal from '$lib/components/jadwal-bell/tambah-kegiatan-modal.svelte';
 	import SimulasiModal from '$lib/components/jadwal-bell/simulasi-modal.svelte';
 	import { jadwalIsEditing } from '$lib/stores/jadwal-edit';
+	import { touchDragSource, dropTarget } from '$lib/touch-drag.svelte';
 	import type { PageData } from './$types';
 
 	type BellSettingsRow = typeof import('$lib/server/db/schema').tableBellSettings.$inferSelect;
@@ -515,7 +520,8 @@
 				canManage: canManage && isEditing,
 				onHapusKegiatan: handleHapusKegiatan,
 				onEditKegiatan: openEditKegiatan,
-				onDrag: () => requestAnimationFrame(() => hideModal())
+				onDrag: () => setModalDragging(true),
+				onDragEnd: () => hideModalIf(KodeKegiatan)
 			},
 			onNegative: { label: 'Tutup' },
 			dismissible: true
@@ -1041,7 +1047,16 @@
 												dragSource = { hari, jamKe, kode: allSame! };
 												e.dataTransfer!.setData('text/plain', allSame!);
 											}}
+											ondragend={() => (dragSource = null)}
 											draggable={canManage && isEditing && allSame !== null}
+											use:touchDragSource={{
+												enabled: canManage && isEditing && allSame !== null,
+												dragData: () => ({ kode: allSame! }),
+												onDragStart: () => {
+													dragSource = { hari, jamKe, kode: allSame! };
+												}
+											}}
+											use:dropTarget={{ enabled: canManage && isEditing }}
 										>
 											<div class="flex h-full w-full items-center justify-center">
 												{#if canManage && isEditing}
@@ -1088,12 +1103,21 @@
 												class="text-center {canManage && isEditing && kode ? 'cursor-grab' : ''}"
 												ondragover={(e) => e.preventDefault()}
 												ondrop={(e) => handleDrop(e, hari, jamKe, kelas.id)}
-												ondragstart={(e) => {
-													if (!canManage || !isEditing || !kode) return;
+											ondragstart={(e) => {
+												if (!canManage || !isEditing || !kode) return;
+												dragSource = { hari, jamKe, kelasId: kelas.id, kode };
+												e.dataTransfer!.setData('text/plain', kode);
+											}}
+											ondragend={() => (dragSource = null)}
+											draggable={canManage && isEditing && kode !== ''}
+											use:touchDragSource={{
+												enabled: canManage && isEditing && kode !== '',
+												dragData: () => ({ kode, kelasId: kelas.id }),
+												onDragStart: () => {
 													dragSource = { hari, jamKe, kelasId: kelas.id, kode };
-													e.dataTransfer!.setData('text/plain', kode);
-												}}
-												draggable={canManage && isEditing && kode !== ''}
+												}
+											}}
+											use:dropTarget={{ enabled: canManage && isEditing }}
 											>
 												{#if canManage && isEditing}
 													{#if kode}

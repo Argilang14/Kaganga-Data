@@ -2,7 +2,6 @@ export const martikulasiAspekAkademik = [
 	{ kode: 'literasi', label: 'Literasi' },
 	{ kode: 'numerasi', label: 'Numerasi' },
 	{ kode: 'sains', label: 'Sains' },
-	{ kode: 'bahasa_indonesia', label: 'Bahasa Indonesia' },
 	{ kode: 'bahasa_inggris', label: 'Bahasa Inggris' }
 ] as const;
 

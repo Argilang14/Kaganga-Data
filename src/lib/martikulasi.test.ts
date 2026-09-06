@@ -20,6 +20,13 @@ const karakterLengkap = martikulasiAspekKarakter.map(() => ({
 	deskripsiCapaian: 'Menunjukkan perkembangan baik.'
 }));
 
+test('aspek akademik tidak menduplikasi Bahasa Indonesia di luar Literasi', () => {
+	assert.deepEqual(
+		martikulasiAspekAkademik.map((aspek) => aspek.kode),
+		['literasi', 'numerasi', 'sains', 'bahasa_inggris']
+	);
+});
+
 test('status lengkap hanya jika seluruh aspek dan level penempatan terisi', () => {
 	assert.equal(
 		hitungStatusKelengkapanMartikulasi({

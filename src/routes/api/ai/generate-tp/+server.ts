@@ -81,7 +81,7 @@ export const POST = async ({ request, locals }) => {
 		if (!assigned) return json({ message: 'Mata pelajaran belum ditugaskan kepada Anda.' }, { status: 403 });
 	}
 
-	const settings = await getAiSettings(sekolahId);
+	const settings = await getAiSettings(sekolahId, user.id);
 	if (!settings) {
 		return json({ message: 'Generator AI belum dikonfigurasi oleh admin.' }, { status: 400 });
 	}

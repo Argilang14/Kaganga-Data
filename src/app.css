@@ -60,3 +60,9 @@ a[data-preloading] {
 [data-theme='dark'] .badge-neutral {
 	color: white;
 }
+
+/* Keep the grabbing cursor stable while the pointer crosses nested controls. */
+html.kaganga-dragging,
+html.kaganga-dragging * {
+	cursor: grabbing !important;
+}

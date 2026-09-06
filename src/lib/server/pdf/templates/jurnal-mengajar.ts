@@ -19,6 +19,7 @@ function formatValue(value: string | number | null | undefined): string {
 }
 
 export interface JurnalMengajarPrintData {
+	backgroundLogoUrl?: string | null;
 	sekolah: SchoolLetterheadData & {
 		npsn: string;
 	};
@@ -266,6 +267,7 @@ body {
 </style>
 </head>
 <body>
+	${data.backgroundLogoUrl ? `<img src="${escapeHtml(data.backgroundLogoUrl)}" alt="" class="watermark">` : ''}
 	${renderSchoolLetterhead(data.sekolah)}
 	<div class="header-text">
 		<h1>${formatValue(title)}</h1>

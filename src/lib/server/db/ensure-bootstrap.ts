@@ -13,11 +13,13 @@ import { ensureLoginAttemptSchema } from './ensure-login-attempt';
 import { ensureAiSettingsSchema } from './ensure-ai-settings';
 import { ensureMartikulasiSchema } from './ensure-martikulasi';
 import { ensureDapodikSchema } from './ensure-dapodik';
+import { ensureAccountSettingsSchema } from './ensure-account-settings';
 
 let startupPromise: Promise<void> | null = null;
 
 async function applyStartupEnsures() {
 	await ensureCoreSchema();
+	await ensureAccountSettingsSchema();
 	await ensurePegawaiSchema();
 	await ensureJadwalBellSchema();
 	await ensurePresensiSettingsSchema();

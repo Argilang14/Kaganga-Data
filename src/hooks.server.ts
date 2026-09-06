@@ -154,6 +154,7 @@ const authGuard: Handle = async ({ event, resolve }) => {
 				kelasId: resolved.user.kelasId,
 				pegawaiId: resolved.user.pegawaiId,
 				sekolahId: resolved.user.sekolahId,
+				mustChangePassword: resolved.user.mustChangePassword,
 				// preferred/assigned mata pelajaran for 'user' accounts (may be undefined)
 				mataPelajaranId:
 					(resolved.user as unknown as { mataPelajaranId?: number }).mataPelajaranId ?? null
@@ -205,10 +206,19 @@ const authGuard: Handle = async ({ event, resolve }) => {
 		event.url.pathname.startsWith('/tamu/') || event.url.pathname.startsWith('/api/buku-tamu/');
 	const isPublicRoute = !routeId || PUBLIC_ROUTE_IDS.has(routeId) || isBukuTamuPublic;
 	const isLoginPath = event.url.pathname === '/login';
+	const isPasswordSettings = event.url.pathname === '/pengaturan';
 
 	if (event.locals.user && isLoginPath) {
 		const redirectTarget = resolveRedirectTarget(event.url.searchParams.get('redirect')) ?? '/';
 		throw redirect(303, redirectTarget);
+	}
+
+	if (
+		event.locals.user?.mustChangePassword &&
+		!isPasswordSettings &&
+		!event.url.pathname.startsWith('/logout')
+	) {
+		throw redirect(303, '/pengaturan?ganti_password=1');
 	}
 
 	if (!event.locals.user && !isPublicRoute) {

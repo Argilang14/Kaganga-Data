@@ -30,6 +30,7 @@ export const tableAuthUser = sqliteTable(
 		kelasId: int().references(() => tableKelas.id),
 		// untuk akun tipe 'user' kita simpan pilihan mata pelajaran yang diassign saat pembuatan akun
 		mataPelajaranId: int().references(() => tableMataPelajaran.id),
+		mustChangePassword: int({ mode: 'boolean' }).notNull().default(false),
 		...audit
 	},
 	(table) => [unique().on(table.usernameNormalized)]
@@ -1000,7 +1001,10 @@ export const tableMataPelajaran = sqliteTable(
 		// optional short code for subjects (e.g. PAPB for Pendidikan Agama dan Budi Pekerti)
 		kode: text(),
 		kkm: int().notNull().default(0),
-		jenis: text({ enum: ['wajib', 'pilihan', 'mulok', 'kejuruan', 'pemberdayaan'] }).notNull(),
+		jenis: text({
+			enum: ['belum_dipetakan', 'wajib', 'pilihan', 'mulok', 'kejuruan', 'pemberdayaan']
+		}).notNull(),
+		urutan: int(),
 		pengampuId: int().references(() => tablePegawai.id, { onDelete: 'set null' }),
 		dapodikPembelajaranId: text(),
 		dapodikMataPelajaranId: text(),
@@ -2535,6 +2539,22 @@ export const tableAiSettings = sqliteTable(
 	(table) => [unique('ai_settings_sekolah_unique').on(table.sekolahId)]
 );
 
+export const tableUserAiSettings = sqliteTable(
+	'user_ai_settings',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		authUserId: int()
+			.references(() => tableAuthUser.id, { onDelete: 'cascade' })
+			.notNull(),
+		provider: text({ enum: ['gemini', 'openai_compatible'] }).default('gemini').notNull(),
+		apiKey: text().notNull(),
+		model: text().notNull(),
+		baseUrl: text().notNull(),
+		...audit
+	},
+	(table) => [unique('user_ai_settings_user_unique').on(table.authUserId)]
+);
+
 export const tableSppdRelations = relations(tableSppd, ({ one, many }) => ({
 	sekolah: one(tableSekolah, {
 		fields: [tableSppd.sekolahId],
@@ -2619,6 +2639,13 @@ export const tableAiSettingsRelations = relations(tableAiSettings, ({ one }) => 
 	sekolah: one(tableSekolah, {
 		fields: [tableAiSettings.sekolahId],
 		references: [tableSekolah.id]
+	})
+}));
+
+export const tableUserAiSettingsRelations = relations(tableUserAiSettings, ({ one }) => ({
+	user: one(tableAuthUser, {
+		fields: [tableUserAiSettings.authUserId],
+		references: [tableAuthUser.id]
 	})
 }));
 

@@ -99,6 +99,7 @@ export async function ensureDapodikSchema() {
 		['murid', 'nik', 'TEXT'],
 		['murid', 'anak_ke', 'INTEGER'],
 		['mata_pelajaran', 'nama_lokal', 'TEXT'],
+		['mata_pelajaran', 'urutan', 'INTEGER'],
 		['mata_pelajaran', 'pengampu_id', 'INTEGER REFERENCES pegawai(id) ON DELETE SET NULL'],
 		['mata_pelajaran', 'dapodik_pembelajaran_id', 'TEXT'],
 		['mata_pelajaran', 'dapodik_mata_pelajaran_id', 'TEXT'],

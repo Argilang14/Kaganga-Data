@@ -11,6 +11,11 @@
 		modalShown = false;
 		isLoading = false;
 		handler?.();
+		modal?.classList.remove('modal-dragging');
+		modal?.style.removeProperty('pointer-events');
+		modal?.style.removeProperty('opacity');
+		const backdrop = modal?.querySelector('.modal-backdrop');
+		if (backdrop instanceof HTMLElement) backdrop.style.removeProperty('pointer-events');
 	}
 
 	export function showModal<BodyProps extends Record<string, unknown>>(
@@ -44,6 +49,22 @@
 		if (!modal) return;
 		modal.close();
 		clearModal();
+	}
+
+	/** Keep a drag source mounted while allowing the schedule below to receive the drop. */
+	export function setModalDragging(state: boolean) {
+		if (!modal) return;
+		modal.classList.toggle('modal-dragging', state);
+		const backdrop = modal.querySelector('.modal-backdrop') as HTMLElement | null;
+		if (backdrop) backdrop.style.pointerEvents = state ? 'none' : '';
+		modal.style.pointerEvents = state ? 'none' : '';
+		modal.style.opacity = state ? '0' : '';
+	}
+
+	/** Do not close a newer modal opened by the schedule's drop handler. */
+	export function hideModalIf(body: unknown) {
+		if (modalProps.body !== body) return;
+		hideModal();
 	}
 
 	export function setLoading(state: boolean) {
@@ -153,3 +174,14 @@
 		{/if}
 	</dialog>
 {/if}
+
+<style>
+	:global(dialog.modal-dragging) {
+		background: transparent !important;
+	}
+
+	:global(dialog.modal-dragging .modal-box),
+	:global(dialog.modal-dragging .modal-backdrop) {
+		opacity: 0;
+	}
+</style>

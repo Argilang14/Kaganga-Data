@@ -1,5 +1,7 @@
 <script lang="ts">
 	import Icon from '$lib/components/icon.svelte';
+	import { showModal } from '$lib/components/global-modal.svelte';
+	import SppdCreateForm from '$lib/components/sppd-create-form.svelte';
 	import SppdFormFields from '$lib/components/sppd-form-fields.svelte';
 
 	let { data, form } = $props();
@@ -8,6 +10,15 @@
 		terbit: 'badge-info',
 		selesai: 'badge-success'
 	};
+
+	function openCreateModal() {
+		showModal({
+			title: 'Tambah Draft SPPD',
+			body: SppdCreateForm,
+			bodyProps: { employees: data.pegawai },
+			dismissible: false
+		});
+	}
 
 	function formatDate(value: string | null) {
 		if (!value) return '-';
@@ -23,167 +34,19 @@
 			<h2 class="text-2xl font-bold">Surat Perintah Perjalanan Dinas</h2>
 			<p class="text-base-content/65 text-sm">Data SPPD terpisah untuk setiap sekolah aktif.</p>
 		</div>
-		<nav class="tabs tabs-boxed w-fit" aria-label="Surat menyurat">
-			<a class="tab tab-active" href="/surat-menyurat/sppd">SPPD</a>
-			<a class="tab" href="/surat-menyurat/dinas-luar">Dinas Luar</a>
-		</nav>
+		<div class="flex flex-wrap items-center gap-2">
+			<nav class="tabs tabs-boxed w-fit" aria-label="Surat menyurat">
+				<a class="tab tab-active" href="/surat-menyurat/sppd">SPPD</a>
+				<a class="tab" href="/surat-menyurat/dinas-luar">Dinas Luar</a>
+			</nav>
+			<button class="btn btn-primary btn-soft shadow-none" type="button" onclick={openCreateModal}>
+				<Icon name="plus" /> Tambah Draft
+			</button>
+		</div>
 	</header>
 
 	{#if form?.fail}<div class="alert alert-error py-2">{form.fail}</div>{/if}
 	{#if form?.message}<div class="alert alert-success py-2">{form.message}</div>{/if}
-
-	<details class="collapse-arrow bg-base-100 border-base-300 collapse border">
-		<summary class="collapse-title flex items-center gap-2 font-semibold">
-			<Icon name="plus" /> Tambah Draft SPPD
-		</summary>
-		<form
-			method="POST"
-			action="?/create"
-			class="collapse-content grid gap-3 md:grid-cols-2 xl:grid-cols-3"
-		>
-			<fieldset class="form-control md:col-span-2 xl:col-span-3">
-				<legend class="label-text mb-1 font-medium">Pegawai Pelaksana</legend>
-				<div
-					class="bg-base-200 grid max-h-44 gap-1 overflow-y-auto rounded border p-2 sm:grid-cols-2"
-				>
-					{#each data.pegawai as pegawai}
-						<label
-							class="hover:bg-base-100 flex cursor-pointer items-center gap-2 rounded px-2 py-1.5"
-						>
-							<input
-								class="checkbox checkbox-primary checkbox-sm"
-								type="checkbox"
-								name="pegawaiIds"
-								value={pegawai.id}
-							/>
-							<span class="text-sm"
-								><strong>{pegawai.nama}</strong>
-								<span class="opacity-55">{pegawai.nip || '-'}</span></span
-							>
-						</label>
-					{/each}
-				</div>
-				<p class="mt-1 text-xs opacity-55">Pilih satu atau lebih pegawai aktif.</p>
-			</fieldset>
-			<label class="form-control"
-				><span class="label-text mb-1">Nomor Surat</span><input
-					class="input input-bordered"
-					name="nomorSurat"
-				/></label
-			>
-			<label class="form-control"
-				><span class="label-text mb-1">Tanggal Surat</span><input
-					class="input input-bordered"
-					type="date"
-					name="tanggalSurat"
-				/></label
-			>
-			<label class="form-control md:col-span-2"
-				><span class="label-text mb-1">Dasar Surat</span><input
-					class="input input-bordered"
-					name="dasarSurat"
-				/></label
-			>
-			<label class="form-control md:col-span-2 xl:col-span-3"
-				><span class="label-text mb-1">Maksud Perjalanan</span><textarea
-					class="textarea textarea-bordered"
-					name="maksud"
-					required></textarea></label
-			>
-			<label class="form-control"
-				><span class="label-text mb-1">Tempat Berangkat</span><input
-					class="input input-bordered"
-					name="tempatBerangkat"
-				/></label
-			>
-			<label class="form-control"
-				><span class="label-text mb-1">Tempat Tujuan</span><input
-					class="input input-bordered"
-					name="tempatTujuan"
-					required
-				/></label
-			>
-			<label class="form-control"
-				><span class="label-text mb-1">Alat Angkut</span><input
-					class="input input-bordered"
-					name="alatAngkut"
-				/></label
-			>
-			<label class="form-control"
-				><span class="label-text mb-1">Tanggal Berangkat</span><input
-					class="input input-bordered"
-					type="date"
-					name="tanggalBerangkat"
-					required
-				/></label
-			>
-			<label class="form-control"
-				><span class="label-text mb-1">Tanggal Kembali</span><input
-					class="input input-bordered"
-					type="date"
-					name="tanggalKembali"
-					required
-				/></label
-			>
-			<label class="form-control"
-				><span class="label-text mb-1">Keterangan</span><input
-					class="input input-bordered"
-					name="keterangan"
-				/></label
-			>
-			<label class="form-control"
-				><span class="label-text mb-1">Lamanya Perjalanan</span><input
-					class="input input-bordered"
-					name="lamanya"
-					placeholder="Contoh: 2 hari"
-				/></label
-			>
-			<label class="form-control"
-				><span class="label-text mb-1">Kode Rekening</span><input
-					class="input input-bordered"
-					name="kodeRekening"
-				/></label
-			>
-			<label class="form-control"
-				><span class="label-text mb-1">Tingkat Biaya</span><input
-					class="input input-bordered"
-					name="tingkatBiaya"
-				/></label
-			>
-			<label class="form-control md:col-span-2 xl:col-span-3"
-				><span class="label-text mb-1">Keterangan Lain</span><textarea
-					class="textarea textarea-bordered"
-					name="keteranganLain"></textarea></label
-			>
-			<details class="collapse-arrow bg-base-200 collapse md:col-span-2 xl:col-span-3">
-				<summary class="collapse-title py-3 font-medium">Tambahkan Pengikut (opsional)</summary>
-				<div class="collapse-content grid gap-2 md:grid-cols-3">
-					{#each [1, 2, 3] as row}
-						<input
-							class="input input-bordered"
-							name="pengikutNama"
-							placeholder={`Nama pengikut ${row}`}
-						/>
-						<input
-							class="input input-bordered"
-							name="pengikutTempatLahir"
-							placeholder="Tempat lahir"
-						/>
-						<input class="input input-bordered" type="date" name="pengikutTanggalLahir" />
-					{/each}
-					<label class="form-control md:col-span-3"
-						><span class="label-text mb-1">Keterangan Pengikut</span><input
-							class="input input-bordered"
-							name="keteranganPengikut"
-						/></label
-					>
-				</div>
-			</details>
-			<div class="md:col-span-2 xl:col-span-3 flex justify-end">
-				<button class="btn btn-primary" type="submit"><Icon name="save" /> Simpan Draft</button>
-			</div>
-		</form>
-	</details>
 
 	<div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
 		<table class="table table-zebra">
@@ -248,11 +111,11 @@
 											<form
 												method="POST"
 												action="?/update"
-												class="grid max-h-[72vh] gap-3 overflow-y-auto md:grid-cols-2 xl:grid-cols-3"
+												class="grid max-h-[72vh] w-full items-start gap-5 overflow-y-auto md:grid-cols-2"
 											>
 												<input type="hidden" name="id" value={item.id} />
 												<SppdFormFields employees={data.pegawai} {item} />
-												<div class="flex justify-end md:col-span-2 xl:col-span-3">
+												<div class="flex justify-end md:col-span-2">
 													<button class="btn btn-primary btn-sm" type="submit"
 														><Icon name="save" /> Simpan Perubahan</button
 													>

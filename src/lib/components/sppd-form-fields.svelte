@@ -32,8 +32,8 @@
 	}
 </script>
 
-<fieldset class="form-control md:col-span-2 xl:col-span-3">
-	<legend class="label-text mb-1 font-medium">Pegawai Pelaksana</legend>
+<fieldset class="grid min-w-0 gap-1.5 md:col-span-2">
+	<legend class="text-sm font-semibold">Pegawai Pelaksana</legend>
 	<div class="bg-base-200 grid max-h-48 gap-1 overflow-y-auto rounded border p-2 sm:grid-cols-2">
 		{#each employees as employee}
 			<label class="hover:bg-base-100 flex cursor-pointer items-center gap-2 rounded px-2 py-1.5">
@@ -54,100 +54,100 @@
 	<p class="text-base-content/55 mt-1 text-xs">Pilih satu atau lebih pegawai aktif.</p>
 </fieldset>
 
-<label class="form-control"
-	><span class="label-text mb-1">Nomor Surat Tugas</span><input
-		class="input input-bordered"
+<label class="grid min-w-0 gap-1.5"
+	><span class="text-sm font-medium">Nomor Surat Tugas</span><input
+		class="input input-bordered w-full"
 		name="nomorSurat"
 		value={item?.nomorSurat ?? ''}
 	/></label
 >
-<label class="form-control"
-	><span class="label-text mb-1">Tanggal Surat</span><input
-		class="input input-bordered"
+<label class="grid min-w-0 gap-1.5"
+	><span class="text-sm font-medium">Tanggal Surat</span><input
+		class="input input-bordered w-full"
 		type="date"
 		name="tanggalSurat"
 		value={item?.tanggalSurat ?? ''}
 	/></label
 >
-<label class="form-control md:col-span-2 xl:col-span-3"
-	><span class="label-text mb-1">Dasar Surat</span><textarea
-		class="textarea textarea-bordered"
+<label class="grid min-w-0 gap-1.5 md:col-span-2"
+	><span class="text-sm font-medium">Dasar Surat</span><textarea
+		class="textarea textarea-bordered min-h-20 w-full resize-y"
 		name="dasarSurat"
 		rows="2">{item?.dasarSurat ?? ''}</textarea
 	></label
 >
-<label class="form-control md:col-span-2 xl:col-span-3"
-	><span class="label-text mb-1">Maksud Perjalanan</span><textarea
-		class="textarea textarea-bordered"
+<label class="grid min-w-0 gap-1.5 md:col-span-2"
+	><span class="text-sm font-medium">Maksud Perjalanan</span><textarea
+		class="textarea textarea-bordered min-h-24 w-full resize-y"
 		name="maksud"
 		required
 		rows="2">{item?.maksud ?? ''}</textarea
 	></label
 >
-<label class="form-control"
-	><span class="label-text mb-1">Tempat Berangkat</span><input
-		class="input input-bordered"
+<label class="grid min-w-0 gap-1.5"
+	><span class="text-sm font-medium">Tempat Berangkat</span><input
+		class="input input-bordered w-full"
 		name="tempatBerangkat"
 		value={item?.tempatBerangkat ?? ''}
 	/></label
 >
-<label class="form-control"
-	><span class="label-text mb-1">Tempat Tujuan</span><input
-		class="input input-bordered"
+<label class="grid min-w-0 gap-1.5"
+	><span class="text-sm font-medium">Tempat Tujuan</span><input
+		class="input input-bordered w-full"
 		name="tempatTujuan"
 		value={item?.tempatTujuan ?? ''}
 		required
 	/></label
 >
-<label class="form-control"
-	><span class="label-text mb-1">Alat Angkut</span><input
-		class="input input-bordered"
+<label class="grid min-w-0 gap-1.5"
+	><span class="text-sm font-medium">Alat Angkut</span><input
+		class="input input-bordered w-full"
 		name="alatAngkut"
 		value={item?.alatAngkut ?? ''}
 	/></label
 >
-<label class="form-control"
-	><span class="label-text mb-1">Lamanya Perjalanan</span><input
-		class="input input-bordered"
+<label class="grid min-w-0 gap-1.5"
+	><span class="text-sm font-medium">Lamanya Perjalanan</span><input
+		class="input input-bordered w-full"
 		name="lamanya"
 		value={item?.lamanya ?? ''}
 		placeholder="Contoh: 2 hari"
 	/></label
 >
-<label class="form-control"
-	><span class="label-text mb-1">Tanggal Berangkat</span><input
-		class="input input-bordered"
+<label class="grid min-w-0 gap-1.5"
+	><span class="text-sm font-medium">Tanggal Berangkat</span><input
+		class="input input-bordered w-full"
 		type="date"
 		name="tanggalBerangkat"
 		value={item?.tanggalBerangkat ?? ''}
 		required
 	/></label
 >
-<label class="form-control"
-	><span class="label-text mb-1">Tanggal Kembali</span><input
-		class="input input-bordered"
+<label class="grid min-w-0 gap-1.5"
+	><span class="text-sm font-medium">Tanggal Kembali</span><input
+		class="input input-bordered w-full"
 		type="date"
 		name="tanggalKembali"
 		value={item?.tanggalKembali ?? ''}
 		required
 	/></label
 >
-<label class="form-control"
-	><span class="label-text mb-1">Kode Rekening</span><input
-		class="input input-bordered"
+<label class="grid min-w-0 gap-1.5"
+	><span class="text-sm font-medium">Kode Rekening</span><input
+		class="input input-bordered w-full"
 		name="kodeRekening"
 		value={item?.kodeRekening ?? ''}
 	/></label
 >
-<label class="form-control"
-	><span class="label-text mb-1">Tingkat Biaya</span><input
-		class="input input-bordered"
+<label class="grid min-w-0 gap-1.5"
+	><span class="text-sm font-medium">Tingkat Biaya</span><input
+		class="input input-bordered w-full"
 		name="tingkatBiaya"
 		value={item?.tingkatBiaya ?? ''}
 	/></label
 >
 
-<section class="border-base-300 rounded border p-3 md:col-span-2 xl:col-span-3">
+<section class="border-base-300 rounded-md border p-3 md:col-span-2">
 	<div class="flex items-center justify-between gap-2">
 		<div>
 			<h3 class="font-semibold">Pengikut</h3>
@@ -162,21 +162,21 @@
 	</div>
 	<div class="mt-3 space-y-2">
 		{#each followers as follower, index}
-			<div class="grid gap-2 sm:grid-cols-[1fr_1fr_180px_auto]">
+			<div class="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px_auto]">
 				<input
-					class="input input-bordered"
+					class="input input-bordered w-full"
 					name="pengikutNama"
 					bind:value={follower.nama}
 					placeholder="Nama"
 				/>
 				<input
-					class="input input-bordered"
+					class="input input-bordered w-full"
 					name="pengikutTempatLahir"
 					bind:value={follower.tempatLahir}
 					placeholder="Tempat lahir"
 				/>
 				<input
-					class="input input-bordered"
+					class="input input-bordered w-full"
 					type="date"
 					name="pengikutTanggalLahir"
 					bind:value={follower.tanggalLahir}
@@ -193,16 +193,16 @@
 	</div>
 </section>
 
-<label class="form-control md:col-span-2"
-	><span class="label-text mb-1">Keterangan Pengikut</span><input
-		class="input input-bordered"
+<label class="grid min-w-0 gap-1.5 md:col-span-2"
+	><span class="text-sm font-medium">Keterangan Pengikut</span><input
+		class="input input-bordered w-full"
 		name="keteranganPengikut"
 		value={item?.keteranganPengikut ?? ''}
 	/></label
 >
-<label class="form-control md:col-span-2 xl:col-span-3"
-	><span class="label-text mb-1">Keterangan Lain</span><textarea
-		class="textarea textarea-bordered"
+<label class="grid min-w-0 gap-1.5 md:col-span-2"
+	><span class="text-sm font-medium">Keterangan Lain</span><textarea
+		class="textarea textarea-bordered min-h-20 w-full resize-y"
 		name="keteranganLain"
 		rows="2">{item?.keteranganLain ?? item?.keterangan ?? ''}</textarea
 	></label

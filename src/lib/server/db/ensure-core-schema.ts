@@ -36,6 +36,7 @@ export async function ensureCoreSchema() {
 			pegawai_id INTEGER REFERENCES pegawai(id),
 			kelas_id INTEGER REFERENCES kelas(id),
 			mata_pelajaran_id INTEGER REFERENCES mata_pelajaran(id),
+			must_change_password INTEGER NOT NULL DEFAULT 0,
 			created_at TEXT NOT NULL,
 			updated_at TEXT,
 			UNIQUE(username_normalized)

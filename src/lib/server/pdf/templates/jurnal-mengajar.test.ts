@@ -20,3 +20,9 @@ test('template jurnal mengamankan nilai HTML dan menaruh tanda tangan di akhir',
 	assert.match(source, /Kepala Sekolah/);
 	assert.match(source, /guruLabel/);
 });
+
+test('template jurnal menyediakan watermark logo sekolah yang dapat dimatikan', () => {
+	assert.match(source, /backgroundLogoUrl\?/);
+	assert.match(source, /data\.backgroundLogoUrl \? `<img/);
+	assert.match(source, /class="watermark"/);
+});

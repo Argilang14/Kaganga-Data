@@ -1,0 +1,9 @@
+<script lang="ts">
+	import FormEnhance from '$lib/components/form-enhance.svelte'; import Icon from '$lib/components/icon.svelte'; import { toast } from '$lib/components/toast.svelte';
+	let { publicUrl, passkeySet }=$props<{publicUrl:string;passkeySet:boolean}>(); let show=$state(false);
+	async function copy(){try{await navigator.clipboard.writeText(publicUrl);toast('Tautan Buku Tamu disalin.','success')}catch{toast('Tautan tidak dapat disalin.','error')}}
+</script>
+<section class="bg-base-100 rounded-lg p-5 shadow-md"><h2 class="text-lg font-semibold">Akses Buku Tamu</h2><p class="text-base-content/65 mb-3 text-sm">Atur kode akses publik untuk sekolah aktif.</p>
+<div class="join mb-3 w-full"><input class="input join-item bg-base-200 min-w-0 flex-1" value={publicUrl} readonly /><button class="btn btn-info btn-soft join-item" type="button" onclick={copy}><Icon name="copy" />Salin</button></div>
+<FormEnhance action="?/set-guest-passkey">{#snippet children({submitting,invalid})}<fieldset class="fieldset"><legend class="fieldset-legend">{passkeySet?'Ganti atau kosongkan passkey':'Aktifkan passkey'}</legend><label class="input bg-base-200 w-full"><Icon name="key" /><input name="passkey" type={show?'text':'password'} minlength="4" maxlength="64" placeholder={passkeySet?'Kosongkan untuk menonaktifkan':'4-64 karakter'} /><button class="btn btn-ghost btn-xs btn-square" type="button" onclick={()=>show=!show}><Icon name={show?'eye-off':'eye'} /></button></label></fieldset><div class="mt-3 flex justify-end"><button class="btn btn-primary" disabled={submitting}><Icon name="save" />Simpan</button></div>{/snippet}</FormEnhance>
+</section>

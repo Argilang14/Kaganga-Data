@@ -27,6 +27,39 @@ import {
 	uniqueDapodikPembelajaran
 } from '$lib/dapodik-utils';
 
+export function normMapelName(name: string): string {
+	return name
+		.toLowerCase()
+		.replace(/\(.*?\)/g, '')
+		.replace(/\bkatholik\b/g, 'katolik')
+		.replace(/\s+/g, ' ')
+		.trim();
+}
+
+export function pilihIndukPembelajaran<
+	T extends { nama?: string | null; mataPelajaranId?: string | null }
+>(pbRows: T[]): T | null {
+	return (
+		pbRows.find((p) => normMapelName(p.nama ?? '').startsWith('guru kelas')) ??
+		(pbRows.length === 1 ? pbRows[0] : null) ??
+		pbRows.find((p) => p.mataPelajaranId) ??
+		null
+	);
+}
+
+export async function resolveReferensiMapelId(nama: string): Promise<string | null> {
+	const exact = await db.query.tableDapodikMataPelajaran.findFirst({
+		where: eq(tableDapodikMataPelajaran.nama, nama)
+	});
+	if (exact) return String(exact.mataPelajaranId);
+	const rows = await db
+		.select({ id: tableDapodikMataPelajaran.mataPelajaranId, nama: tableDapodikMataPelajaran.nama })
+		.from(tableDapodikMataPelajaran);
+	const target = normMapelName(nama);
+	const match = rows.find((row) => normMapelName(row.nama) === target);
+	return match ? String(match.id) : null;
+}
+
 type Row = Record<string, unknown>;
 type SyncAction = 'test' | 'preview' | 'apply';
 export type DapodikCategory =

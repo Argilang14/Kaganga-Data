@@ -1,5 +1,5 @@
 import db from '$lib/server/db';
-import { tableAiSettings } from '$lib/server/db/schema';
+import { tableAiSettings, tableUserAiSettings } from '$lib/server/db/schema';
 import {
 	parseGeneratedTpPayload,
 	validateAiBaseUrl,
@@ -33,7 +33,17 @@ export async function getStoredAiSettings(sekolahId: number): Promise<AiSettings
 	};
 }
 
-export async function getAiSettings(sekolahId: number): Promise<AiSettings | null> {
+export async function getStoredUserAiSettings(authUserId: number): Promise<AiSettings | null> {
+	const row = await db.query.tableUserAiSettings.findFirst({
+		where: eq(tableUserAiSettings.authUserId, authUserId)
+	});
+	if (!row?.apiKey) return null;
+	return { provider: row.provider, apiKey: row.apiKey, model: row.model, baseUrl: row.baseUrl };
+}
+
+export async function getAiSettings(sekolahId: number, authUserId?: number): Promise<AiSettings | null> {
+	const personal = authUserId ? await getStoredUserAiSettings(authUserId) : null;
+	if (personal) return personal;
 	const stored = await getStoredAiSettings(sekolahId);
 	if (stored) return stored;
 	const apiKey = process.env.GEMINI_API_KEY?.trim();
@@ -74,6 +84,23 @@ export async function saveAiSettings(
 
 export async function clearAiSettings(sekolahId: number) {
 	await db.delete(tableAiSettings).where(eq(tableAiSettings.sekolahId, sekolahId));
+}
+
+export async function saveUserAiSettings(authUserId: number, settings: AiSettings) {
+	const validated = validateAiBaseUrl(settings.baseUrl);
+	if (!validated.valid) throw new Error(validated.message);
+	const now = new Date().toISOString();
+	const existing = await db.query.tableUserAiSettings.findFirst({
+		columns: { id: true },
+		where: eq(tableUserAiSettings.authUserId, authUserId)
+	});
+	const values = { ...settings, baseUrl: validated.url, updatedAt: now };
+	if (existing) await db.update(tableUserAiSettings).set(values).where(eq(tableUserAiSettings.id, existing.id));
+	else await db.insert(tableUserAiSettings).values({ authUserId, ...values, createdAt: now });
+}
+
+export async function clearUserAiSettings(authUserId: number) {
+	await db.delete(tableUserAiSettings).where(eq(tableUserAiSettings.authUserId, authUserId));
 }
 
 export function maskApiKey(apiKey: string) {

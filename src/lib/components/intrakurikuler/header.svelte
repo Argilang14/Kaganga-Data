@@ -9,9 +9,6 @@
 		importTooltip,
 		isImportDisabled,
 		onOpenImport,
-		onGenerate,
-		isGenerateDisabled = false,
-		generateTooltip = undefined,
 		showAgamaSelect,
 		isAgamaSelectLocked = false,
 		agamaSelectId,
@@ -23,6 +20,9 @@
 		handlePrimaryActionClick,
 		isTambahTpDisabled,
 		tambahTpTooltip,
+		onGenerate,
+		isGenerateDisabled = false,
+		generateTooltip = undefined,
 		hasSelection,
 		isInteractionLocked,
 		isCreateModeActive,
@@ -136,7 +136,7 @@
 		<button
 			class="btn btn-soft btn-info shadow-none sm:max-w-40"
 			type="button"
-			onclick={() => onGenerate()}
+			onclick={() => onGenerate && onGenerate()}
 			disabled={isGenerateDisabled}
 			title={generateTooltip}
 		>

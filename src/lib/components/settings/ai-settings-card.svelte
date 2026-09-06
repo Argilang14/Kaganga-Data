@@ -1,0 +1,12 @@
+<script lang="ts">
+	import FormEnhance from '$lib/components/form-enhance.svelte';
+	import Icon from '$lib/components/icon.svelte';
+	type Config={stored:boolean;maskedKey:string|null;provider:'gemini'|'openai_compatible';model:string;baseUrl:string;configured?:boolean};
+	let {title,description,config,saveAction,clearAction}=$props<{title:string;description:string;config:Config;saveAction:string;clearAction:string}>();
+	let provider=$state(config.provider),model=$state(config.model),baseUrl=$state(config.baseUrl),show=$state(false);
+</script>
+<section class="bg-base-100 rounded-lg p-5 shadow-md"><h2 class="text-lg font-semibold">{title}</h2><p class="text-base-content/65 mb-3 text-sm">{description}</p>
+{#if config.stored}<div class="alert alert-success alert-soft mb-3 py-2"><Icon name="success" /><span>Aktif {config.maskedKey}</span></div>{/if}
+<FormEnhance action={saveAction}>{#snippet children({submitting,invalid})}<div class="grid gap-3 sm:grid-cols-2"><fieldset class="fieldset"><legend class="fieldset-legend">Penyedia</legend><select class="select bg-base-200 w-full" name="provider" bind:value={provider}><option value="gemini">Google Gemini</option><option value="openai_compatible">OpenAI Compatible</option></select></fieldset><fieldset class="fieldset"><legend class="fieldset-legend">Model</legend><input class="input bg-base-200 w-full" name="model" bind:value={model} required /></fieldset></div><fieldset class="fieldset"><legend class="fieldset-legend">Base URL HTTPS</legend><input class="input bg-base-200 w-full" type="url" name="baseUrl" bind:value={baseUrl} required /></fieldset><fieldset class="fieldset"><legend class="fieldset-legend">Kunci API baru</legend><label class="input bg-base-200 w-full"><Icon name="key" /><input name="apiKey" type={show?'text':'password'} minlength="10" maxlength="500" required /><button class="btn btn-ghost btn-xs btn-square" type="button" onclick={()=>show=!show}><Icon name={show?'eye-off':'eye'} /></button></label></fieldset><div class="mt-3 flex justify-end gap-2"><button class="btn btn-primary" disabled={submitting||invalid}><Icon name="save" />Simpan</button></div>{/snippet}</FormEnhance>
+{#if config.stored}<FormEnhance action={clearAction}>{#snippet children({submitting})}<div class="mt-2 flex justify-end"><button class="btn btn-error btn-soft" disabled={submitting}><Icon name="del" />Hapus</button></div>{/snippet}</FormEnhance>{/if}
+</section>

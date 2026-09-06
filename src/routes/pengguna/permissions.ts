@@ -56,7 +56,16 @@ export const groupedUserPermissions = {
 } as const;
 
 export const userPermissions = Object.entries(groupedUserPermissions) //
-	.flatMap(([key, { values }]) => values.map((value) => <UserPermission>`${key}_${value[0]}`));
+	.flatMap(([key, { values }]) => values.map((value) => `${key}_${value[0]}` as UserPermission));
+
+export function defaultPermissionsForType(
+	type: AuthUser['type'],
+	options: { kelasCount?: number } = {}
+): UserPermission[] {
+	if (type === 'admin') return [...userPermissions];
+	if (type === 'user' && (options.kelasCount ?? 0) > 1) return ['kelas_pindah'];
+	return [];
+}
 
 export function isAuthorizedUser(
 	allowedPermissions: UserPermission[],

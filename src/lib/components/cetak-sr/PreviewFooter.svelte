@@ -25,6 +25,7 @@
 		doesNotNeedMurid = false,
 		showBgLogo = false,
 		onToggleBgLogo = () => {},
+		showStandaloneBgToggle = false,
 		showParentSignatureSelect = false,
 		parentSignature = 'auto',
 		onParentSignatureChange = () => {}
@@ -47,6 +48,7 @@
 		doesNotNeedMurid?: boolean;
 		showBgLogo?: boolean;
 		onToggleBgLogo?: (value: boolean) => void;
+		showStandaloneBgToggle?: boolean;
 		showParentSignatureSelect?: boolean;
 		parentSignature?: 'auto' | 'ayah' | 'ibu' | 'wali';
 		onParentSignatureChange?: (value: 'auto' | 'ayah' | 'ibu' | 'wali') => void;
@@ -254,31 +256,10 @@
 					<option value="compact">Compact TP</option>
 					<option value="full-desc">Full desc</option>
 				</select>
-				{#if showBgLogo !== undefined}
-					<label class="swap whitespace-nowrap shadow-none">
-						<input
-							type="checkbox"
-							checked={showBgLogo}
-							onchange={(e) => onToggleBgLogo((e.currentTarget as HTMLInputElement).checked)}
-						/>
-						<div
-							class="btn btn-soft swap-on btn-sm shadow-none"
-							title="Tambahkan watermark logo sekolah"
-						>
-							BG OFF
-						</div>
-						<div
-							class="btn btn-soft swap-off btn-sm shadow-none"
-							title="Hapus watermark logo sekolah"
-						>
-							BG ON
-						</div>
-					</label>
-				{/if}
 			</div>
 		{/if}
 
-		{#if isBiodataSelected}
+		{#if isRaporSelected || isKeasramaanSelected || isBiodataSelected || showStandaloneBgToggle}
 			<label class="swap whitespace-nowrap shadow-none">
 				<input
 					type="checkbox"

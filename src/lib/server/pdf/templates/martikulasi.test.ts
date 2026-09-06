@@ -99,3 +99,16 @@ test('SK memuat nomor dan snapshot anggota tim', () => {
 	assert.match(html, /Pusat Pendidikan, Pelatihan dan Pengembangan Profesi/);
 	assert.match(html, /Alamat sekolah \| Email: sekolah@example\.id/);
 });
+
+test('watermark Martikulasi hanya muncul saat background diaktifkan', () => {
+	const withoutBackground = renderSkMartikulasiHTML({ school, settings, tim: [] });
+	const withBackground = renderSkMartikulasiHTML({
+		school: { ...school, backgroundLogoUrl: 'data:image/png;base64,dGVzdA==' },
+		settings,
+		tim: []
+	});
+
+	assert.doesNotMatch(withoutBackground, /class="document-watermark"/);
+	assert.match(withBackground, /class="document-watermark"/);
+	assert.match(withBackground, /data:image\/png;base64,dGVzdA==/);
+});

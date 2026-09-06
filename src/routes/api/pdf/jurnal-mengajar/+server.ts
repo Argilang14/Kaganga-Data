@@ -52,6 +52,7 @@ export const GET = (async ({ locals, url }) => {
 		url.searchParams.get('penandatangan') === 'guru_mapel' ? 'guru_mapel' : 'wali_kelas';
 	const kelasId = Number(url.searchParams.get('kelas_id')) || null;
 	const jadwalMapelId = Number(url.searchParams.get('mapel_id')) || null;
+	const showBgLogo = url.searchParams.get('bg_logo') === '1';
 
 	if (!tanggalMulai || !tanggalSelesai) {
 		throw error(400, 'Parameter tanggal_mulai dan tanggal_selesai wajib diisi');
@@ -342,6 +343,7 @@ export const GET = (async ({ locals, url }) => {
 	});
 
 	const printData = {
+		backgroundLogoUrl: showBgLogo ? logoUrl : null,
 		sekolah: {
 			nama: sekolah?.nama ?? '',
 			npsn: sekolah?.npsn ?? '',

@@ -1,27 +1,85 @@
-﻿import db from '$lib/server/db';
-import { ensureMataPelajaranSchema } from '$lib/server/db/ensure-mata-pelajaran';
+import db from '$lib/server/db';
+import { normMapelName, pilihIndukPembelajaran } from '$lib/server/dapodik';
 import { ensureAgamaMapelForClasses } from '$lib/server/mapel-agama';
+import { getAksesMapelUser, needsMapelFilter } from '$lib/server/mapel-access';
 import {
 	tableMataPelajaran,
 	tableTujuanPembelajaran,
 	tableKelas,
-	tableAuthUserMataPelajaran
+	tableAuthUserMataPelajaran,
+	tableDapodikPembelajaran
 } from '$lib/server/db/schema';
 import { agamaVariantNames, pksVariantNames } from '$lib/statics';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 
 type MataPelajaranBase = Omit<MataPelajaran, 'tujuanPembelajaran'>;
-type MataPelajaranWithTp = MataPelajaranBase & { tpCount: number; editTpMapelId?: number };
-type MataPelajaranList = MataPelajaranWithTp[];
+type MataPelajaranWithTp = MataPelajaranBase & {
+	tpCount: number;
+	editTpMapelId?: number;
+	/** Keterangan posisi Dapodik: "Mapel Induk" / "Sub-mapel induk: X". Null bila tak ada data Dapodik. */
+	keteranganDapodik?: string | null;
+};
 
 const AGAMA_VARIANT_NAME_SET = new Set<string>(agamaVariantNames);
 const PKS_VARIANT_NAME_SET = new Set<string>(pksVariantNames);
 const AGAMA_PARENT_NAME = 'Pendidikan Agama dan Budi Pekerti';
 const PKS_PARENT_NAME = 'Pendalaman Kitab Suci';
 
+function canManageImportUrutan(userType?: string) {
+	return userType === 'admin' || userType === 'kepala_sekolah' || userType === 'wali_kelas';
+}
+
+type MapelRow = { id: number; nama: string | null };
+
+/** Kembalikan [induk, ...varian] — induk SELALU elemen pertama (urutan `rows` DB tak tentu). */
+function mapelGroupSiblings(
+	rows: MapelRow[],
+	parentName: string,
+	variantSet: Set<string>
+): MapelRow[] {
+	const parent = rows.find((r) => r.nama === parentName);
+	if (!parent) return [];
+	const variants = rows.filter(
+		(r) => r.nama !== parentName && r.nama !== null && variantSet.has(r.nama)
+	);
+	return [parent, ...variants];
+}
+
+/**
+ * Samakan urutan varian tersembunyi (agama & PKS) dengan induknya. Posisi induk
+ * dibaca dari `idList` (urutan = index + 1 — yang baru saja dialokasikan),
+ * bukan dibaca ulang dari DB di dalam transaksi.
+ */
+async function assignSiblingUrutan(
+	tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+	group: MapelRow[],
+	idList: number[]
+) {
+	if (!group.length) return;
+	const parentIdx = idList.indexOf(group[0].id);
+	if (parentIdx === -1) return;
+	const variantIds = group.slice(1).map((g) => g.id);
+	if (variantIds.length) {
+		await tx
+			.update(tableMataPelajaran)
+			.set({ urutan: parentIdx + 1 })
+			.where(inArray(tableMataPelajaran.id, variantIds));
+	}
+}
+
+// Urutan tampil jenis mapel pada tabel gabungan (belum dipetakan paling atas
+// agar segera terlihat dan dipetakan admin).
+const JENIS_URUTAN = [
+	'belum_dipetakan',
+	'wajib',
+	'pilihan',
+	'kejuruan',
+	'pemberdayaan',
+	'mulok'
+] as const;
+
 export async function load({ depends, url, parent }) {
 	depends('app:mapel');
-	await ensureMataPelajaranSchema();
 	const { kelasAktif, daftarKelas, user } = await parent();
 	const daftarKelasEntries = daftarKelas as Array<{ id: number }> | undefined;
 	const kelasIdsForEnsure = daftarKelasEntries?.map((kelas) => kelas.id) ?? [];
@@ -41,119 +99,28 @@ export async function load({ depends, url, parent }) {
 			})
 		: [];
 
-	// If the current user is a 'user' role, filter to show only assigned mata pelajaran.
-	// First check join table auth_user_mata_pelajaran for multi-mapel support,
-	// then fallback to legacy mataPelajaranId field if join table is empty.
-	// IMPORTANT: We match by mapel ID AND by mapel name (since same subject can exist in different classes)
-	if (
-		user &&
-		(user as unknown as { id?: number; type?: string; mataPelajaranId?: number }).type === 'user'
-	) {
-		const userId = (user as unknown as { id?: number }).id;
-		if (userId) {
+	// If the current user is a 'user' role OR a 'wali_kelas' accessing a non-owned kelas,
+	// filter to show only assigned mata pelajaran (ID, nama lintas kelas,
+	// keluarga agama/PKS, dan sub pembelajaran induknya).
+	const u = user as unknown as {
+		id?: number;
+		type?: string;
+		mataPelajaranId?: number;
+		kelasId?: number | null;
+	};
+	if (needsMapelFilter(u, kelasId)) {
+		if (u.id) {
 			try {
-				// Try to fetch from join table (multi-mapel)
-				const assignedMapels = await db.query.tableAuthUserMataPelajaran.findMany({
-					columns: { mataPelajaranId: true },
-					where: eq(tableAuthUserMataPelajaran.authUserId, userId)
-				});
-
-				if (assignedMapels.length > 0) {
-					// User has multi-mapel assignments
-					// Fetch the actual mapel records to get their names
-					const assignedMapelRecords = await db.query.tableMataPelajaran.findMany({
-						columns: { id: true, nama: true },
-						where: inArray(
-							tableMataPelajaran.id,
-							assignedMapels.map((m) => m.mataPelajaranId)
-						)
-					});
-
-					// Build a set of allowed mapel names (normalize for comparison)
-					const allowedNames = new Set(
-						assignedMapelRecords.map((m) => (m.nama || '').trim().toLowerCase())
-					);
-
-					// Check if any assigned mapel is an agama variant
-					let hasAgamaVariant = false;
-					let hasPksVariant = false;
-					for (const record of assignedMapelRecords) {
-						const norm = (record.nama || '').trim().toLowerCase();
-						if (norm.startsWith('pendidikan agama') && norm !== AGAMA_PARENT_NAME.toLowerCase()) {
-							hasAgamaVariant = true;
-						}
-						if (
-							norm.startsWith('pendalaman kitab suci') &&
-							norm !== PKS_PARENT_NAME.toLowerCase()
-						) {
-							hasPksVariant = true;
-						}
-					}
-
-					// If has agama variant, also add the parent agama mapel name
-					if (hasAgamaVariant) {
-						allowedNames.add(AGAMA_PARENT_NAME.toLowerCase());
-					}
-					// If has PKS variant, also add the parent PKS mapel name
-					if (hasPksVariant) {
-						allowedNames.add(PKS_PARENT_NAME.toLowerCase());
-					}
-
-					// Filter current kelas' mapel by name match
-					mapel = mapel.filter((m) => {
-						const mNorm = (m.nama || '').trim().toLowerCase();
-						return allowedNames.has(mNorm);
-					});
-				} else {
-					// Fallback: check legacy single mataPelajaranId
-					const assignedId = (user as unknown as { mataPelajaranId?: number }).mataPelajaranId;
-					if (assignedId) {
-						try {
-							// fetch the assigned mapel to obtain its name
-							const assigned = await db.query.tableMataPelajaran.findFirst({
-								columns: { id: true, nama: true, kelasId: true },
-								where: eq(tableMataPelajaran.id, Number(assignedId))
-							});
-							if (assigned && assigned.nama) {
-								const norm = (assigned.nama || '').trim().toLowerCase();
-								// If the assigned subject is a variant of agama (eg. Pendidikan Agama Islam ...),
-								// allow showing the parent mapel as well so the teacher can access the parent
-								// intrakurikuler page which contains agama-select.
-								const assignedIsAgamaVariant =
-									norm.startsWith('pendidikan agama') && norm !== AGAMA_PARENT_NAME.toLowerCase();
-								const assignedIsPksVariant =
-									norm.startsWith('pendalaman kitab suci') &&
-									norm !== PKS_PARENT_NAME.toLowerCase();
-
-								if (assignedIsAgamaVariant) {
-									mapel = mapel.filter((m) => {
-										const n = (m.nama || '').trim().toLowerCase();
-										return n === norm || n === AGAMA_PARENT_NAME.toLowerCase();
-									});
-								} else if (assignedIsPksVariant) {
-									mapel = mapel.filter((m) => {
-										const n = (m.nama || '').trim().toLowerCase();
-										return n === norm || n === PKS_PARENT_NAME.toLowerCase();
-									});
-								} else {
-									mapel = mapel.filter((m) => (m.nama || '').trim().toLowerCase() === norm);
-								}
-							} else {
-								// fallback: if assigned mapel not found, keep original restrictive id-match
-								const allowedId = Number(assignedId);
-								if (Number.isInteger(allowedId)) {
-									mapel = mapel.filter((m) => m.id === allowedId);
-								}
-							}
-						} catch (err) {
-							// on error, don't block page — fallback to existing mapel list
-							console.warn('[intrakurikuler] Failed to resolve assigned mapel name', err);
-						}
-					}
-				}
+				const akses = await getAksesMapelUser(
+					{ id: u.id, mataPelajaranId: u.mataPelajaranId },
+					kelasId
+				);
+				mapel = mapel.filter(
+					(m) => akses.ids.has(m.id) || akses.names.has((m.nama || '').trim().toLowerCase())
+				);
 			} catch (err) {
 				// on error, don't block page — fallback to existing mapel list
-				console.warn('[intrakurikuler] Failed to fetch assigned mapel from join table', err);
+				console.warn('[intrakurikuler] Failed to resolve assigned mapel', err);
 			}
 		}
 	}
@@ -286,28 +253,66 @@ export async function load({ depends, url, parent }) {
 				: item.id
 	}));
 
+	// Keterangan posisi Dapodik per mapel (kolom mata pelajaran):
+	// terdaftar sebagai pembelajaran → "Mapel Induk"; selain itu → sub dengan induknya.
+	const indukMirrorRows = kelasId
+		? await db
+				.select({
+					nama: tableDapodikPembelajaran.nama,
+					pembelajaranId: tableDapodikPembelajaran.pembelajaranId
+				})
+				.from(tableDapodikPembelajaran)
+				.where(eq(tableDapodikPembelajaran.kelasId, kelasId))
+		: [];
+	const defaultIndukNama = pilihIndukPembelajaran(indukMirrorRows)?.nama ?? null;
+	for (const item of mapelWithIndicator) {
+		if (indukMirrorRows.length === 0) {
+			item.keteranganDapodik = null;
+			continue;
+		}
+		const terdaftar = indukMirrorRows.some(
+			(r) => r.nama === item.nama || normMapelName(r.nama) === normMapelName(item.nama)
+		);
+		if (terdaftar) {
+			item.keteranganDapodik = 'Mapel Induk';
+			continue;
+		}
+		const eksplisitNama = item.dapodikIndukPembelajaranId
+			? indukMirrorRows.find((r) => r.pembelajaranId === item.dapodikIndukPembelajaranId)?.nama
+			: null;
+		const indukNama = eksplisitNama ?? defaultIndukNama;
+		item.keteranganDapodik = indukNama ? `Sub - ${indukNama}` : null;
+	}
+
 	const mapelTampil = mapelWithIndicator.filter(
 		(item) => !AGAMA_VARIANT_NAME_SET.has(item.nama) && !PKS_VARIANT_NAME_SET.has(item.nama)
 	);
 
-	const { daftarWajib, daftarPilihan, daftarMulok, daftarKejuruan, daftarPemberdayaan } = mapelTampil.reduce(
-		(acc, item) => {
-			if (item.jenis === 'wajib') acc.daftarWajib.push(item);
-			else if (item.jenis === 'pilihan') acc.daftarPilihan.push(item);
-			else if (item.jenis === 'mulok') acc.daftarMulok.push(item);
-			else if (item.jenis === 'kejuruan') acc.daftarKejuruan.push(item);
-			else if (item.jenis === 'pemberdayaan') acc.daftarPemberdayaan.push(item);
-			return acc;
-		},
-		{
-			daftarWajib: <MataPelajaranList>[],
-			daftarPilihan: <MataPelajaranList>[],
-			daftarMulok: <MataPelajaranList>[],
-			daftarKejuruan: <MataPelajaranList>[],
-			daftarPemberdayaan: <MataPelajaranList>[]
-		}
-	);
-	return { kelasId, mapel: { daftarWajib, daftarPilihan, daftarMulok, daftarKejuruan, daftarPemberdayaan } };
+	const jenisIndex = (jenis: string | null | undefined) => {
+		const idx = JENIS_URUTAN.indexOf((jenis ?? 'wajib') as (typeof JENIS_URUTAN)[number]);
+		return idx === -1 ? JENIS_URUTAN.length : idx;
+	};
+	// Urutan manual (kolom `urutan`) menang; mapel tanpa nomor jatuh ke urutan lama (jenis → nama).
+	const daftarMapel = [...mapelTampil].sort((a, b) => {
+		const ua = a.urutan ?? Number.POSITIVE_INFINITY;
+		const ub = b.urutan ?? Number.POSITIVE_INFINITY;
+		if (ua !== ub) return ua - ub;
+		return (
+			jenisIndex(a.jenis) - jenisIndex(b.jenis) || (a.nama ?? '').localeCompare(b.nama ?? '', 'id')
+		);
+	});
+
+	const [referensiDapodik, pembelajaranDapodik] = await Promise.all([
+		db.query.tableDapodikMataPelajaran.findFirst({ columns: { mataPelajaranId: true } }),
+		db.query.tableDapodikPembelajaran.findFirst({ columns: { id: true } })
+	]);
+	const adaDataDapodik = Boolean(referensiDapodik || pembelajaranDapodik);
+
+	return {
+		kelasId,
+		mapel: { daftarMapel },
+		adaDataDapodik
+	};
 }
 
 import { readBufferToAoA, writeAoaToBuffer } from '$lib/utils/excel.js';
@@ -331,6 +336,12 @@ function isXlsxMime(type: string | null | undefined) {
 
 export const actions = {
 	async import_mapel({ request, cookies, locals }) {
+		const user = locals.user as { type?: string } | null;
+		const userType = user?.type;
+		if (!canManageImportUrutan(userType)) {
+			return fail(403, { fail: 'Anda tidak memiliki akses untuk mengimpor mata pelajaran.' });
+		}
+
 		const kelasIdCookie = cookies.get(cookieNames.ACTIVE_KELAS_ID) || null;
 		const kelasId = kelasIdCookie ? Number(kelasIdCookie) : null;
 		if (!kelasId || !Number.isFinite(kelasId)) {
@@ -499,6 +510,9 @@ export const actions = {
 				mapelByName.set(nameLower, m.id);
 			}
 
+			// Mapel baru selalu diletakkan di nomor urut paling bawah.
+			let nextUrutan = Math.max(0, ...existingMapel.map((m) => m.urutan ?? 0)) + 1;
+
 			for (const [mapelName, meta] of parsed.entries()) {
 				const lower = mapelName.toLowerCase();
 				let mapelId = mapelByName.get(lower) ?? null;
@@ -506,9 +520,10 @@ export const actions = {
 					// create the mapel automatically using provided jenis/kkm if available
 					const insertValues = {
 						nama: mapelName,
-						jenis: (meta.jenis as 'wajib' | 'pilihan' | 'mulok') ?? 'wajib',
+						jenis: (meta.jenis as MataPelajaran['jenis']) ?? 'wajib',
 						kkm: typeof meta.kkm === 'number' ? meta.kkm : 0,
 						kelasId,
+						urutan: nextUrutan++,
 						kode:
 							meta.kode ??
 							((mapelName || '').toLowerCase().startsWith('pendidikan agama') ? 'PAPB' : null)
@@ -693,7 +708,75 @@ export const actions = {
 		});
 	},
 
+	async simpan_urutan({ request, cookies, locals }) {
+		const user = locals.user as { type?: string } | null;
+		const userType = user?.type;
+		if (!canManageImportUrutan(userType)) {
+			return fail(403, { fail: 'Anda tidak memiliki akses untuk mengubah urutan.' });
+		}
+
+		const kelasIdCookie = cookies.get(cookieNames.ACTIVE_KELAS_ID) || null;
+		const kelasId = kelasIdCookie ? Number(kelasIdCookie) : null;
+		if (!kelasId || !Number.isFinite(kelasId)) {
+			return fail(400, { fail: 'Pilih kelas aktif terlebih dahulu.' });
+		}
+
+		const sekolahId = locals.sekolah?.id;
+		if (!sekolahId) return fail(400, { fail: 'Pilih sekolah aktif terlebih dahulu.' });
+
+		const formData = await request.formData();
+		let ids: unknown;
+		try {
+			ids = JSON.parse(String(formData.get('urutan') ?? ''));
+		} catch {
+			return fail(400, { fail: 'Data urutan tidak valid.' });
+		}
+		if (!Array.isArray(ids) || !ids.every((id) => Number.isFinite(Number(id)))) {
+			return fail(400, { fail: 'Data urutan tidak valid.' });
+		}
+
+		// Pastikan kelas milik sekolah aktif (cookie bisa dimanipulasi klien).
+		const kelas = await db.query.tableKelas.findFirst({
+			columns: { id: true },
+			where: and(eq(tableKelas.id, kelasId), eq(tableKelas.sekolahId, sekolahId))
+		});
+		if (!kelas) return fail(404, { fail: 'Kelas tidak ditemukan.' });
+
+		const existing = await db.query.tableMataPelajaran.findMany({
+			columns: { id: true, nama: true },
+			where: eq(tableMataPelajaran.kelasId, kelasId)
+		});
+		const knownIds = new Set(existing.map((m) => m.id));
+		// Buang ID asing di luar kelas ini; mapel yang tidak ikut di-drag tetap diberi urutan di belakang.
+		const idList = [...new Set(ids.map(Number))].filter((id) => knownIds.has(id));
+		for (const m of existing) if (!idList.includes(m.id)) idList.push(m.id);
+
+		const agamaGroup = mapelGroupSiblings(existing, AGAMA_PARENT_NAME, AGAMA_VARIANT_NAME_SET);
+		const pksGroup = mapelGroupSiblings(existing, PKS_PARENT_NAME, PKS_VARIANT_NAME_SET);
+
+		await db.transaction(async (tx) => {
+			for (let i = 0; i < idList.length; i++) {
+				await tx
+					.update(tableMataPelajaran)
+					.set({ urutan: i + 1 })
+					.where(eq(tableMataPelajaran.id, idList[i]));
+			}
+
+			// Varian tersembunyi ikut nomor urut induknya (agama & PKS).
+			await assignSiblingUrutan(tx, agamaGroup, idList);
+			await assignSiblingUrutan(tx, pksGroup, idList);
+		});
+
+		return { success: 'Urutan mata pelajaran berhasil disimpan.' };
+	},
+
 	async tambah_pks({ cookies, locals }) {
+		const user = locals.user as { type?: string } | null;
+		const userType = user?.type;
+		if (!canManageImportUrutan(userType)) {
+			return fail(403, { fail: 'Anda tidak memiliki akses untuk menambahkan PKS.' });
+		}
+
 		const kelasIdCookie = cookies.get(cookieNames.ACTIVE_KELAS_ID) || null;
 		const kelasId = kelasIdCookie ? Number(kelasIdCookie) : null;
 		if (!kelasId || !Number.isFinite(kelasId)) {

@@ -150,26 +150,20 @@ export const appMenuItems: MenuItem[] = [
 				title: 'Status Akhir',
 				path: '/status-akhir',
 				tags: ['kenaikan', 'kelulusan', 'rapor', 'semester genap']
-			},
-			{
-				title: 'Buku Tamu',
-				path: '/buku-tamu',
-				permission: 'administrasi_buku_tamu',
-				tags: ['tamu', 'kunjungan', 'resepsionis']
-			},
-			{
-				title: 'Presensi Pegawai',
-				path: '/presensi-pegawai',
-				permission: 'administrasi_presensi_pegawai',
-				tags: ['presensi guru', 'kehadiran pegawai', 'izin', 'sakit', 'cuti']
 			}
 		]
 	},
 	{
 		title: 'Absensi',
 		icon: 'activity',
-		tags: ['qr', 'absensi digital', 'scan'],
+		tags: ['qr', 'absensi digital', 'scan', 'presensi pegawai', 'kehadiran pegawai'],
 		subMenu: [
+			{
+				title: 'Presensi Pegawai',
+				path: '/presensi-pegawai',
+				permission: 'administrasi_presensi_pegawai',
+				tags: ['presensi guru', 'kehadiran pegawai', 'izin', 'sakit', 'cuti']
+			},
 			{
 				title: 'Scan QR',
 				path: '/administrasi/absensi/scan'
@@ -195,8 +189,14 @@ export const appMenuItems: MenuItem[] = [
 	{
 		title: 'Surat Menyurat',
 		icon: 'briefcase',
-		tags: ['surat', 'sppd', 'dinas luar', 'perjalanan dinas'],
+		tags: ['surat', 'sppd', 'dinas luar', 'perjalanan dinas', 'tamu', 'kunjungan'],
 		subMenu: [
+			{
+				title: 'Buku Tamu',
+				path: '/buku-tamu',
+				permission: 'administrasi_buku_tamu',
+				tags: ['tamu', 'kunjungan', 'resepsionis']
+			},
 			{
 				title: 'SPPD',
 				path: '/surat-menyurat/sppd',

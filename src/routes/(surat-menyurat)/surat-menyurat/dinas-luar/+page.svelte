@@ -1,5 +1,7 @@
 <script lang="ts">
 	import Icon from '$lib/components/icon.svelte';
+	import { showModal } from '$lib/components/global-modal.svelte';
+	import DinasLuarCreateForm from '$lib/components/dinas-luar-create-form.svelte';
 
 	let { data, form } = $props();
 	const statusClass: Record<string, string> = {
@@ -8,6 +10,19 @@
 		ditolak: 'badge-error',
 		selesai: 'badge-success'
 	};
+
+	function openCreateModal() {
+		showModal({
+			title: 'Tambah Pengajuan Dinas Luar',
+			body: DinasLuarCreateForm,
+			bodyProps: {
+				employees: data.pegawai,
+				isAdmin: data.isAdmin,
+				activeEmployeeId: data.pegawaiAktifId
+			},
+			dismissible: false
+		});
+	}
 
 	function formatDate(value: string) {
 		return new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' }).format(
@@ -24,98 +39,19 @@
 				Pengajuan perjalanan dinas pegawai pada sekolah aktif.
 			</p>
 		</div>
-		<nav class="tabs tabs-boxed w-fit" aria-label="Surat menyurat">
-			<a class="tab" href="/surat-menyurat/sppd">SPPD</a>
-			<a class="tab tab-active" href="/surat-menyurat/dinas-luar">Dinas Luar</a>
-		</nav>
+		<div class="flex flex-wrap items-center gap-2">
+			<nav class="tabs tabs-boxed w-fit" aria-label="Surat menyurat">
+				<a class="tab" href="/surat-menyurat/sppd">SPPD</a>
+				<a class="tab tab-active" href="/surat-menyurat/dinas-luar">Dinas Luar</a>
+			</nav>
+			<button class="btn btn-primary btn-soft shadow-none" type="button" onclick={openCreateModal}>
+				<Icon name="plus" /> Tambah Pengajuan
+			</button>
+		</div>
 	</header>
 
 	{#if form?.fail}<div class="alert alert-error py-2">{form.fail}</div>{/if}
 	{#if form?.message}<div class="alert alert-success py-2">{form.message}</div>{/if}
-
-	<details class="collapse-arrow bg-base-100 border-base-300 collapse border">
-		<summary class="collapse-title flex items-center gap-2 font-semibold"
-			><Icon name="plus" /> Tambah Pengajuan</summary
-		>
-		<form
-			method="POST"
-			action="?/create"
-			enctype="multipart/form-data"
-			class="collapse-content grid gap-3 md:grid-cols-2 xl:grid-cols-3"
-		>
-			{#if data.isAdmin}
-				<label class="form-control md:col-span-2 xl:col-span-3"
-					><span class="label-text mb-1">Pegawai</span><select
-						class="select select-bordered w-full"
-						name="pegawaiId"
-						required
-						><option value="">Pilih pegawai</option>{#each data.pegawai as pegawai}<option
-								value={pegawai.id}>{pegawai.nama} - {pegawai.nip}</option
-							>{/each}</select
-					></label
-				>
-			{:else if data.pegawaiAktifId}
-				<input type="hidden" name="pegawaiId" value={data.pegawaiAktifId} />
-			{:else}
-				<div class="alert alert-warning md:col-span-2 xl:col-span-3">
-					Akun ini belum terhubung dengan Data Pegawai.
-				</div>
-			{/if}
-			<label class="form-control md:col-span-2 xl:col-span-3"
-				><span class="label-text mb-1">Maksud Perjalanan</span><textarea
-					class="textarea textarea-bordered"
-					name="maksud"
-					required></textarea></label
-			>
-			<label class="form-control md:col-span-2 xl:col-span-3">
-				<span class="label-text mb-1">Undangan (opsional)</span>
-				<input
-					class="file-input file-input-bordered w-full"
-					type="file"
-					name="undangan"
-					accept=".pdf,application/pdf"
-				/>
-				<span class="mt-1 text-xs opacity-55">PDF maksimal 10 MB.</span>
-			</label>
-			<label class="form-control"
-				><span class="label-text mb-1">Tempat Tujuan</span><input
-					class="input input-bordered"
-					name="tempatTujuan"
-					required
-				/></label
-			>
-			<label class="form-control"
-				><span class="label-text mb-1">Tanggal Berangkat</span><input
-					class="input input-bordered"
-					type="date"
-					name="tanggalBerangkat"
-					required
-				/></label
-			>
-			<label class="form-control"
-				><span class="label-text mb-1">Tanggal Kembali</span><input
-					class="input input-bordered"
-					type="date"
-					name="tanggalKembali"
-					required
-				/></label
-			>
-			<label class="form-control md:col-span-2 xl:col-span-3"
-				><span class="label-text mb-1">Catatan</span><input
-					class="input input-bordered"
-					name="catatan"
-				/></label
-			>
-			<div class="md:col-span-2 xl:col-span-3 flex justify-end">
-				<button
-					class="btn btn-primary"
-					type="submit"
-					disabled={!data.isAdmin && !data.pegawaiAktifId}
-					><Icon name="save" /> Simpan Pengajuan</button
-				>
-			</div>
-		</form>
-	</details>
 
 	<div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
 		<table class="table table-zebra">

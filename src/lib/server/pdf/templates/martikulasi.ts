@@ -20,6 +20,7 @@ const esc = (value: string | number | null | undefined) =>
 const value = (input: string | number | null | undefined) => esc(input || '-');
 
 export type MartikulasiSchoolPrint = SchoolLetterheadData & {
+	backgroundLogoUrl?: string | null;
 	npsn: string;
 	kepalaSekolah: { nama: string; nip: string | null; status: string | null };
 };
@@ -63,8 +64,10 @@ ${schoolLetterheadStyles()}
 @page { size: A4 portrait; margin: 14mm 15mm; }
 * { box-sizing: border-box; }
 body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 10pt; line-height: 1.35; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-.page { break-after: page; page-break-after: always; min-height: 267mm; }
+.page { position: relative; break-after: page; page-break-after: always; min-height: 267mm; }
 .page:last-child { break-after: auto; page-break-after: auto; }
+.document-watermark { position: absolute; top: 50%; left: 50%; width: 45%; max-height: 60%; transform: translate(-50%, -50%); object-fit: contain; opacity: .12; z-index: 0; pointer-events: none; }
+.page > :not(.document-watermark) { position: relative; z-index: 1; }
 .kop { display: grid; grid-template-columns: 24mm 1fr 24mm; gap: 4mm; align-items: center; padding-bottom: 3mm; margin-bottom: 6mm; border-bottom: 2px solid #b91c1c; }
 .kop-logo { width: 24mm; height: 22mm; display: flex; align-items: center; justify-content: center; }
 .kop-logo img { max-width: 21mm; max-height: 21mm; object-fit: contain; }
@@ -111,7 +114,13 @@ h1 { margin: 0 0 1mm; text-align: center; font-size: 14pt; text-transform: upper
 }
 
 function head(school: MartikulasiSchoolPrint) {
-	return renderSchoolLetterhead(school, true);
+	return `${watermark(school)}${renderSchoolLetterhead(school, true)}`;
+}
+
+function watermark(school: MartikulasiSchoolPrint) {
+	return school.backgroundLogoUrl
+		? `<img src="${esc(school.backgroundLogoUrl)}" alt="" class="document-watermark">`
+		: '';
 }
 
 function signature(

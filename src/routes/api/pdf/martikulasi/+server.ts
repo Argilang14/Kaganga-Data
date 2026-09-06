@@ -49,6 +49,7 @@ export const GET = (async ({ locals, url }) => {
 	const kelasId = optionalInteger('kelas_id', url.searchParams.get('kelas_id'));
 	const muridId = optionalInteger('murid_id', url.searchParams.get('murid_id'));
 	const draft = url.searchParams.get('draft') === '1';
+	const showBgLogo = url.searchParams.get('bg_logo') === '1';
 	if (jenis === 'sttm' && draft && !muridId) {
 		throw error(400, 'Pratinjau draf STTM harus memilih satu murid.');
 	}
@@ -88,6 +89,7 @@ export const GET = (async ({ locals, url }) => {
 		where: and(eq(tablePegawai.id, sekolah.kepalaSekolahId), eq(tablePegawai.sekolahId, sekolahId))
 	});
 	const schoolPrint = {
+		backgroundLogoUrl: showBgLogo ? logoUrl : null,
 		nama: settings.sekolahNamaSnapshot || sekolah.nama,
 		npsn: settings.npsnSnapshot || sekolah.npsn,
 		naungan: settings.naunganSnapshot || sekolah.naungan,
@@ -175,6 +177,7 @@ export const GET = (async ({ locals, url }) => {
 							naungan: item.naunganSnapshot || schoolPrint.naungan,
 							alamat: item.alamatSnapshot || schoolPrint.alamat,
 							email: item.emailSnapshot || schoolPrint.email,
+							backgroundLogoUrl: schoolPrint.backgroundLogoUrl,
 							logoUrl: schoolPrint.logoUrl,
 							logoDinasUrl: schoolPrint.logoDinasUrl,
 							kepalaSekolah: {

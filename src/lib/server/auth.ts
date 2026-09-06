@@ -96,6 +96,7 @@ export async function ensureDefaultAdmin() {
 			passwordUpdatedAt: timestamp,
 			permissions: defaultAdminAccount.permissions,
 			type: 'admin',
+			mustChangePassword: true,
 			createdAt: timestamp,
 			updatedAt: timestamp
 		})
@@ -217,6 +218,7 @@ export async function updateUserPassword(userId: number, newPassword: string) {
 			passwordHash: hash,
 			passwordSalt: salt,
 			passwordUpdatedAt: timestamp,
+			mustChangePassword: false,
 			updatedAt: timestamp
 		})
 		.where(eq(tableAuthUser.id, userId));

@@ -16,7 +16,7 @@ export const groupedUserPermissions = {
 		description: 'Dashboard'
 	},
 	sekolah: {
-		values: [['manage', 'Kelola Identitas Sekolah']],
+		values: [['lihat', 'Lihat Data Sekolah'], ['manage', 'Kelola Identitas Sekolah']],
 		description: 'Sekolah'
 	},
 	app: {
@@ -31,8 +31,13 @@ export const groupedUserPermissions = {
 		values: [['manage', 'Kelola Akademik']],
 		description: 'Akademik'
 	},
+	kurikulum: {
+		values: [['rpm', 'Buat dan cetak RPM']],
+		description: 'Kurikulum'
+	},
 	kelas: {
 		values: [
+			['lihat', 'Lihat Daftar Kelas'],
 			['manage', 'Kelola Data Kelas'],
 			['pindah', 'Pindah dan akses kelas lain']
 		],
@@ -45,6 +50,18 @@ export const groupedUserPermissions = {
 			['presensi_pegawai', 'Kelola Presensi Pegawai']
 		],
 		description: 'Administrasi'
+	},
+	mata_pelajaran: {
+		values: [['keasramaan', 'Ekspor Mata Evaluasi Keasramaan pada Kelas Ditugaskan']],
+		description: 'Ekspor Keasramaan'
+	},
+	keasramaan: {
+		values: [
+			['lihat', 'Lihat Menu dan Rekap Keasramaan'],
+			['manage', 'Kelola Mata Evaluasi dan Catatan Keasramaan'],
+			['input', 'Input Nilai Keasramaan']
+		],
+		description: 'Keasramaan - Pengecualian Akses Sesuai Penugasan'
 	},
 	surat: {
 		values: [

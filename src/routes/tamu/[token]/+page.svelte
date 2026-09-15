@@ -106,15 +106,15 @@
 <main class="bg-base-100 border-base-300 w-full max-w-2xl overflow-hidden rounded-lg border shadow-lg">
 	<header class="border-base-300 flex items-center gap-4 border-b px-5 py-5 sm:px-7">
 		{#if data.sekolah?.logoUrl}
-			<img class="h-14 w-14 object-contain" src={data.sekolah.logoUrl} alt="Logo sekolah" />
+			<img class="h-14 w-14 shrink-0 object-contain" src={data.sekolah.logoUrl} alt="Logo sekolah" />
 		{:else}
-			<div class="bg-primary/10 text-primary flex h-14 w-14 items-center justify-center rounded-md">
+			<div class="bg-primary/10 text-primary flex h-14 w-14 shrink-0 items-center justify-center rounded-md">
 				<Icon name="school" class="h-7 w-7" />
 			</div>
 		{/if}
 		<div class="min-w-0">
 			<h1 class="text-xl font-bold sm:text-2xl">Buku Tamu</h1>
-			<p class="text-base-content/65 truncate text-sm">{data.sekolah?.nama ?? 'Kaganga'}</p>
+			<p class="text-base-content/65 mt-1 text-sm break-words">{data.sekolah?.nama ?? 'Kaganga'}</p>
 		</div>
 	</header>
 
@@ -139,7 +139,7 @@
 				<button class="btn btn-primary mt-6" type="button" onclick={() => (submitted = false)}><Icon name="plus" /> Isi Kunjungan Lain</button>
 			</div>
 		{:else}
-			<form bind:this={formEl} class="grid gap-4 md:grid-cols-2" onsubmit={submitGuest}>
+			<form bind:this={formEl} class="guest-form grid gap-x-4 gap-y-5 sm:grid-cols-2" onsubmit={submitGuest}>
 				<label class="form-control"><span class="label-text mb-1 font-medium">Nama *</span><input class="input input-bordered" name="nama" maxlength="120" required /></label>
 				<label class="form-control"><span class="label-text mb-1 font-medium">Asal / Instansi *</span><input class="input input-bordered" name="asalInstansi" maxlength="160" required /></label>
 				<label class="form-control"><span class="label-text mb-1 font-medium">NIP (opsional)</span><input class="input input-bordered" name="nip" maxlength="40" /></label>
@@ -150,8 +150,40 @@
 					<canvas bind:this={canvasEl} class="border-base-300 h-36 w-full touch-none rounded-md border bg-white" onpointerdown={startDraw} onpointermove={draw} onpointerup={endDraw} onpointercancel={endDraw} aria-label="Area tanda tangan"></canvas>
 				</div>
 				{#if message}<div class="alert alert-error py-2 md:col-span-2"><Icon name="error" /><span>{message}</span></div>{/if}
-				<div class="flex justify-end md:col-span-2"><button class="btn btn-primary min-w-36" type="submit" disabled={submitting}>{#if submitting}<span class="loading loading-spinner loading-sm"></span>{:else}<Icon name="save" />{/if} Simpan</button></div>
+				<div class="guest-footer border-base-300 flex justify-end border-t pt-5"><button class="btn btn-primary w-full sm:w-auto sm:min-w-36" type="submit" disabled={submitting}>{#if submitting}<span class="loading loading-spinner loading-sm"></span>{:else}<Icon name="save" />{/if} Simpan</button></div>
 			</form>
 		{/if}
 	</section>
 </main>
+
+<style>
+	.form-control {
+		display: flex;
+		min-width: 0;
+		flex-direction: column;
+		gap: 0.375rem;
+	}
+
+	.label-text {
+		margin-bottom: 0;
+		font-size: 0.875rem;
+	}
+
+	.form-control input,
+	.form-control textarea {
+		width: 100%;
+		min-width: 0;
+	}
+
+	.form-control textarea {
+		resize: vertical;
+	}
+
+	.guest-form > :nth-child(n + 3) {
+		grid-column: 1 / -1;
+	}
+
+	canvas {
+		display: block;
+	}
+</style>

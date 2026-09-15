@@ -2,6 +2,7 @@ import { exec, execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import db from '$lib/server/db';
+import { isDatabaseMaintenanceActive } from '$lib/server/database-maintenance';
 import {
 	tableBellSettings,
 	tableJadwalPelajaran,
@@ -123,6 +124,7 @@ async function getSekolahKelasMap(sekolahId: number): Promise<Array<{ id: number
 }
 
 async function tick() {
+	if (isDatabaseMaintenanceActive()) return;
 	const now = new Date();
 	const dayIdx = now.getDay();
 	const today = dayNameMap[dayIdx];

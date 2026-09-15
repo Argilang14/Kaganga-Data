@@ -2,6 +2,8 @@
 	/* eslint-disable @typescript-eslint/no-unused-vars */
 	import { page } from '$app/state';
 	import Icon from '$lib/components/icon.svelte';
+	import GuestPdf from '$lib/components/cetak/GuestPdf.svelte';
+	import { responsePdfFilename } from '$lib/pdf-filename';
 	import PreviewHeader from '$lib/components/cetak-sr/PreviewHeader.svelte';
 	import DocumentMuridSelector from '$lib/components/cetak-sr/DocumentMuridSelector.svelte';
 	import PreviewFooter from '$lib/components/cetak-sr/PreviewFooter.svelte';
@@ -76,9 +78,10 @@
 			}>;
 		};
 		pdfVariant?: 'default' | 'sr';
+		documentGroup?: 'dokumen' | 'raport';
 	};
 
-	let { data, pdfVariant: pdfVariantProp }: Props = $props();
+	let { data, pdfVariant: pdfVariantProp, documentGroup }: Props = $props();
 	const pdfVariant = $derived(
 		pdfVariantProp ?? (page.url.searchParams.get('sr') === '1' ? 'sr' : 'default')
 	);
@@ -94,12 +97,16 @@
 		{ value: 'jadwal-pelajaran', label: 'Jadwal Pelajaran' },
 		{ value: 'kalender-pendidikan', label: 'Kalender Pendidikan' },
 		{ value: 'jurnal-mengajar', label: 'Jurnal Mengajar' },
+		{ value: 'buku-tamu', label: 'PDF Buku Tamu Digital' },
 		{ value: 'martikulasi-sk', label: 'Masa Persiapan - SK Tim Martikulasi' },
 		{ value: 'martikulasi-raport', label: 'Masa Persiapan - Raport Hasil Martikulasi' },
 		{ value: 'martikulasi-sttm', label: 'Masa Persiapan - STTM' }
 	];
 	const currentUserType = $derived((page.data.user as { type?: string } | null | undefined)?.type);
 	const visibleDocumentOptions = $derived.by(() => {
+		const general = ['kartu-absensi', 'jadwal-pelajaran', 'kalender-pendidikan', 'jurnal-mengajar', 'buku-tamu'];
+		if (documentGroup === 'dokumen') return documentOptions.filter((option) => general.includes(option.value) && (option.value !== 'jurnal-mengajar' || data.jurnalAccess?.canPrint !== false) && (option.value !== 'buku-tamu' || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('administrasi_buku_tamu')));
+		if (documentGroup === 'raport') return documentOptions.filter((option) => !general.includes(option.value) && (currentUserType !== 'wali_asrama' || option.value === 'keasramaan'));
 		if (currentUserType === 'wali_asrama') {
 			return documentOptions.filter((option) => option.value === 'keasramaan');
 		}
@@ -114,7 +121,7 @@
 		);
 	});
 
-	let selectedDocument = $state<DocumentType | ''>('');
+	let selectedDocument = $state<DocumentType | ''>((page.url.searchParams.get('dokumen') as DocumentType) ?? '');
 	let selectedRaporPeriode = $state<RaporPeriode | ''>('');
 	let selectedMuridId = $state('');
 	let selectedTemplate = $state<'1' | '2'>('1');
@@ -211,6 +218,7 @@
 	});
 
 	let pdfViewerUrl = $state('');
+	let pdfViewerFilename = $state('Dokumen.pdf');
 	let pdfViewerTitle = $state('');
 	let pdfViewerEl = $state<HTMLElement | null>(null);
 	const jurnalSelectionKey = $derived(
@@ -585,6 +593,7 @@
 					throw new Error(await responseErrorMessage(pdfRes, 'Gagal memuat dokumen Martikulasi'));
 				}
 				const blob = await pdfRes.blob();
+				pdfViewerFilename = responsePdfFilename(pdfRes);
 				if (pdfViewerUrl) URL.revokeObjectURL(pdfViewerUrl);
 				pdfViewerUrl = URL.createObjectURL(blob);
 				pdfViewerTitle = selectedDocumentEntry?.label ?? 'Dokumen Martikulasi';
@@ -609,6 +618,7 @@
 					throw new Error(message || 'Gagal memuat PDF Jurnal Mengajar');
 				}
 				const blob = await pdfRes.blob();
+				pdfViewerFilename = responsePdfFilename(pdfRes);
 				if (pdfViewerUrl) URL.revokeObjectURL(pdfViewerUrl);
 				pdfViewerUrl = URL.createObjectURL(blob);
 				pdfViewerTitle = `Jurnal Mengajar ${jurnalScope === 'kelas' ? jurnalKelas?.nama : jurnalMapel?.nama} ${jurnalTanggalMulai} - ${jurnalTanggalSelesai}`;
@@ -662,6 +672,7 @@
 			const pdfRes = await fetch(`/cetak/pdf/${slug}/${token}`);
 			if (!pdfRes.ok) throw new Error('Gagal memuat PDF');
 			const blob = await pdfRes.blob();
+			pdfViewerFilename = responsePdfFilename(pdfRes);
 
 			if (pdfViewerUrl) URL.revokeObjectURL(pdfViewerUrl);
 			pdfViewerUrl = URL.createObjectURL(blob);
@@ -783,7 +794,7 @@
 				const url = URL.createObjectURL(blob);
 				const anchor = document.createElement('a');
 				anchor.href = url;
-				anchor.download = `${documentType === 'martikulasi-raport' ? 'Raport-Hasil-Martikulasi' : 'STTM'}-${selectedPrintTahun?.nama?.replace('/', '-') ?? 'tahun-ajaran'}.pdf`;
+				anchor.download = responsePdfFilename(response);
 				anchor.click();
 				setTimeout(() => URL.revokeObjectURL(url), 1000);
 				toast('PDF Martikulasi massal berhasil dibuat', 'success');
@@ -859,7 +870,7 @@
 			}
 
 			const blob = await res.blob();
-			const filename = `${selectedDocumentEntry?.label || documentType}-${kelasAktifLabel ? kelasAktifLabel.replace(/\s+/g, '') : 'Semua-Kelas'}-${muridList.length}murid.pdf`;
+			const filename = responsePdfFilename(res);
 			const url = URL.createObjectURL(blob);
 			const a = document.createElement('a');
 			a.href = url;
@@ -962,15 +973,11 @@
 	}
 </script>
 
+{#if selectedDocument === 'buku-tamu'}
+	<label class="mb-4 flex flex-col gap-2">Pilih Dokumen<select class="select w-full" bind:value={selectedDocument}>{#each visibleDocumentOptions as option}<option value={option.value}>{option.label}</option>{/each}</select></label>
+	<GuestPdf />
+{:else}
 <div class="card bg-base-100 rounded-lg border border-none p-4 shadow-md">
-	{#if isSRVariant}
-		<div class="border-info/25 bg-info/10 mb-3 rounded-lg border px-4 py-3 text-sm">
-			<strong>Cetak Dokumen SR</strong>
-			<span class="ml-1"
-				>menggunakan data yang sama dengan Cetak Dokumen, dengan format PDF SR.</span
-			>
-		</div>
-	{/if}
 
 	<PreviewHeader
 		{headingTitle}
@@ -1366,6 +1373,7 @@
 </div>
 
 {#if pdfViewerUrl}
+	<div class="mt-4 flex flex-wrap items-center justify-between gap-3"><span class="break-all text-sm">{pdfViewerFilename}</span><a class="btn btn-primary" href={pdfViewerUrl} download={pdfViewerFilename}><Icon name="download" /> Unduh PDF</a></div>
 	<object
 		bind:this={pdfViewerEl}
 		data={pdfViewerUrl}
@@ -1387,3 +1395,4 @@
 	onPrintableReady={handlePrintableReady}
 	onBulkPrintableReady={handleBulkPrintableReady}
 />
+{/if}

@@ -2,6 +2,7 @@ import type { PageServerLoad } from './$types';
 import db from '$lib/server/db';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { ensureDashboardSchema } from '$lib/server/db/ensure-dashboard-schema';
+import { loadDashboardDaily } from '$lib/server/dashboard-daily';
 import {
 	tableAsesmenEkstrakurikuler,
 	tableAsesmenKeasramaan,
@@ -413,6 +414,12 @@ export const load: PageServerLoad = async (event) => {
 	return {
 		...parentData,
 		favorites,
+		dailyDashboard: await loadDashboardDaily(
+			event.locals.user,
+			sekolahId,
+			academicContext,
+			event.url.searchParams
+		),
 		statistikDashboard,
 		bellActive: bellRow?.isActive === true,
 		hariSekolah,

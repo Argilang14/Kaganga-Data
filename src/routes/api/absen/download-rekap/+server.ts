@@ -23,6 +23,8 @@ import { getUniqueSubjectKodes } from '$lib/server/absen/first-mapel';
 import { waktuToLocalDate } from '$lib/server/absen/utils';
 import ExcelJS from 'exceljs';
 import { error } from '@sveltejs/kit';
+import { canExportClassData } from '$lib/export-access';
+import { canAccessExportClass } from '$lib/server/class-export-access';
 
 function getDaysInMonth(year: number, month: number) {
 	return new Date(year, month, 0).getDate();
@@ -70,8 +72,11 @@ export async function POST({ cookies, locals, request }) {
 		throw error(401, 'Sesi tidak valid. Silakan login ulang.');
 	}
 
-	if (locals.user.type === 'user') {
+	if (!canExportClassData(locals.user, 'absensi')) {
 		throw error(403, 'Anda tidak memiliki izin untuk mengunduh rekap kehadiran.');
+	}
+	if (!(await canAccessExportClass(locals.user, sekolahId, kelasAktifId))) {
+		throw error(403, 'Kelas tidak termasuk dalam sekolah atau penugasan akun ini.');
 	}
 
 	const body = await request.json();

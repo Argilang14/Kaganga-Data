@@ -10,7 +10,7 @@ import {
 	listPresensiPegawaiHarian,
 	savePresensiPegawai
 } from '$lib/server/presensi-pegawai';
-import { isPresensiPegawaiStatus } from '$lib/presensi-pegawai-utils';
+import { isPresensiPegawaiStatus, normalizePegawaiJenis } from '$lib/presensi-pegawai-utils';
 import { isValidDate, todayDateString } from '$lib/server/absen/utils';
 import { authority } from '../pengguna/utils.server';
 import type { Actions, PageServerLoad } from './$types';
@@ -36,6 +36,7 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 
 	const mode = url.searchParams.get('mode') === 'bulanan' ? 'bulanan' : 'harian';
 	const q = url.searchParams.get('q')?.trim().slice(0, 100) ?? '';
+	const jenis = normalizePegawaiJenis(url.searchParams.get('jenis'));
 	const requestedPage = Math.max(1, Number(url.searchParams.get('page')) || 1);
 	const settings = await getPresensiPegawaiSettings(sekolahId);
 	const disabled = settings?.presensiPegawaiEnabled === false;
@@ -46,7 +47,7 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 		const yearParam = Number(url.searchParams.get('tahun'));
 		const bulan = Number.isInteger(monthParam) && monthParam >= 1 && monthParam <= 12 ? monthParam : now.getMonth() + 1;
 		const tahun = Number.isInteger(yearParam) && yearParam >= 2000 && yearParam <= 2200 ? yearParam : now.getFullYear();
-		const result = await listPresensiPegawaiBulanan(sekolahId, tahun, bulan, q);
+		const result = await listPresensiPegawaiBulanan(sekolahId, tahun, bulan, q, jenis);
 		const total = result.rows.length;
 		const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
 		const currentPage = Math.min(requestedPage, totalPages);
@@ -55,6 +56,7 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 			mode,
 			disabled,
 			q,
+			jenis,
 			bulan,
 			tahun,
 			dates: result.dates,
@@ -68,7 +70,7 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 	const requestedDate = url.searchParams.get('tanggal');
 	const tanggal = requestedDate && isValidDate(requestedDate) ? requestedDate : todayDateString();
 	const [rows, day] = await Promise.all([
-		listPresensiPegawaiHarian(sekolahId, tanggal, q),
+		listPresensiPegawaiHarian(sekolahId, tanggal, q, jenis),
 		isPresensiPegawaiWorkday(sekolahId, tanggal)
 	]);
 	const total = rows.length;
@@ -79,6 +81,7 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 		mode,
 		disabled,
 		q,
+		jenis,
 		tanggal,
 		isWorkday: day.isWorkday,
 		rows: rows.slice((currentPage - 1) * PER_PAGE, currentPage * PER_PAGE),

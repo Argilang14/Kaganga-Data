@@ -1,7 +1,8 @@
 import db from '$lib/server/db';
 import { tableKeasramaan, tableMurid, tableKelas } from '$lib/server/db/schema';
 import { error } from '@sveltejs/kit';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
+import { guardianStudentCondition } from '$lib/server/assignment-summary';
 import ExcelJS from 'exceljs';
 
 export async function POST({ request, locals }) {
@@ -39,7 +40,7 @@ export async function POST({ request, locals }) {
 		// Get all murid in the class
 		const muridList = await db.query.tableMurid.findMany({
 			columns: { id: true, nama: true },
-			where: eq(tableMurid.kelasId, kelasId),
+			where: and(eq(tableMurid.kelasId, kelasId), eq(tableMurid.sekolahId, locals.sekolah.id), await guardianStudentCondition(locals.user, locals.sekolah.id)),
 			orderBy: asc(tableMurid.nama)
 		});
 

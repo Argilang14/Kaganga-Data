@@ -1,4 +1,5 @@
 import { error, json } from '@sveltejs/kit';
+import { pdfFilename, pdfDisposition } from '$lib/pdf-filename';
 import { and, asc, eq, like, or, sql } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 import db from '$lib/server/db';
@@ -176,7 +177,7 @@ export const GET = (async ({ params, locals, url }) => {
 	const pdf = Buffer.from(await renderPDF(html));
 	return new Response(new Blob([pdf], { type: 'application/pdf' }), {
 		headers: {
-			'content-disposition': `inline; filename="buku-tamu-${start}-${end}.pdf"`,
+			'content-disposition': pdfDisposition(pdfFilename('Buku Tamu Digital', start, end)),
 			'cache-control': 'no-store'
 		}
 	});

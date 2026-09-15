@@ -9,6 +9,15 @@ const { createConsistentDatabaseBackup, inspectDatabaseFile } = (await import(
 	'./database-safety' + '.ts'
 )) as typeof import('./database-safety');
 
+async function cleanup(directory: string) {
+	await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(
+		(cause: NodeJS.ErrnoException) => {
+			if (!['EBUSY', 'EPERM'].includes(cause.code ?? '')) throw cause;
+			console.warn('Windows masih menahan direktori uji:', directory);
+		}
+	);
+}
+
 test('backup database konsisten, memuat data terakhir, dan lolos pemeriksaan SQLite', async () => {
 	const directory = await mkdtemp(path.join(os.tmpdir(), 'kaganga-db-safety-'));
 	const databasePath = path.join(directory, 'database.sqlite3');
@@ -38,7 +47,7 @@ test('backup database konsisten, memuat data terakhir, dan lolos pemeriksaan SQL
 		}
 	} finally {
 		await client.close();
-		await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+		await cleanup(directory);
 	}
 });
 
@@ -58,6 +67,6 @@ test('pemeriksaan menolak SQLite yang bukan database Kaganga', async () => {
 			/bukan database Kaganga/
 		);
 	} finally {
-		await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+		await cleanup(directory);
 	}
 });

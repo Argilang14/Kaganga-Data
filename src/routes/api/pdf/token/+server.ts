@@ -1,4 +1,5 @@
 import { error, json } from '@sveltejs/kit';
+import { resolveSchoolPdfVariant } from '$lib/server/pdf/school-variant';
 import { storePdfParams } from '$lib/server/pdf/token-store';
 import { getCoverPreviewPayload } from '../../../cetak/cover/preview-data';
 import { getRaporPreviewPayload } from '../../../cetak/rapor/preview-data';
@@ -113,7 +114,7 @@ export const POST = (async ({ locals, request }) => {
 		body.parentSignature === 'wali'
 			? body.parentSignature
 			: undefined;
-	const variant = body.pdfVariant === 'sr' ? 'sr' : 'default';
+	const variant = resolveSchoolPdfVariant(docType, locals);
 
 	if (locals.user?.type === 'wali_asrama' && (docType !== 'keasramaan' || variant !== 'sr')) {
 		throw error(403, 'Wali asrama hanya dapat mencetak Dokumen SR Rapor Keasramaan.');

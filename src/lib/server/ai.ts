@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 
 export const DEFAULT_AI_MODEL = 'gemini-2.5-flash';
 export const DEFAULT_AI_BASE_URL = 'https://generativelanguage.googleapis.com';
+export const ADMIN_TYPES = ['admin', 'kepala_sekolah'];
 const REQUEST_TIMEOUT_MS = 120_000;
 const MAX_RESPONSE_BYTES = 1_000_000;
 
@@ -116,6 +117,22 @@ export function consumeAiRateLimit(key: string, now = Date.now()) {
 	recent.push(now);
 	requestWindows.set(key, recent);
 	return true;
+}
+
+const RETRY_DELAYS_MS = [8_000, 16_000, 30_000];
+
+export async function withAi429Retry<T>(task: () => Promise<T>): Promise<T> {
+	let lastError: unknown;
+	for (let attempt = 0; ; attempt++) {
+		try {
+			return await task();
+		} catch (error) {
+			lastError = error;
+			if ((error as { status?: number }).status !== 429 || attempt >= RETRY_DELAYS_MS.length) break;
+			await new Promise<void>((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+		}
+	}
+	throw lastError;
 }
 
 type GenerateInput = AiSettings & {

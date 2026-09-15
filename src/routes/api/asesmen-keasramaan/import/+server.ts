@@ -2,7 +2,8 @@ import type { RequestHandler } from '@sveltejs/kit';
 import db from '$lib/server/db';
 import { tableAsesmenKeasramaan, tableKeasramaan, tableMurid } from '$lib/server/db/schema';
 import { type EkstrakurikulerNilaiKategori } from '$lib/ekstrakurikuler';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+import { guardianStudentCondition } from '$lib/server/assignment-summary';
 import { json } from '@sveltejs/kit';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
@@ -111,7 +112,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		// Get all murid to find by name
 		const allMurid = await db.query.tableMurid.findMany({
 			columns: { id: true, nama: true },
-			where: eq(tableMurid.kelasId, kelasId)
+			where: and(eq(tableMurid.kelasId, kelasId), eq(tableMurid.sekolahId, locals.sekolah.id), await guardianStudentCondition(locals.user, locals.sekolah.id))
 		});
 
 		const muridByName = new Map(allMurid.map((m) => [m.nama.trim().toLowerCase(), m.id]));

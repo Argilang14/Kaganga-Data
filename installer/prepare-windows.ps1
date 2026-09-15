@@ -164,7 +164,7 @@ if (Test-Path $envSample) {
 $envTarget = Join-Path $appStage '.env'
 if (-not (Test-Path $envTarget)) {
     $envContent = 'DB_URL=file:%LOCALAPPDATA%/Kaganga-data/database.sqlite3'
-    $envContent += "`nBODY_SIZE_LIMIT=5M"
+    $envContent += "`nBODY_SIZE_LIMIT=512M"
     Set-Content -Path $envTarget -Value $envContent -Encoding UTF8
     Write-Host "Wrote default .env to $envTarget" -ForegroundColor Green
 } else {

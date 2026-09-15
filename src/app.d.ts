@@ -16,6 +16,7 @@ declare global {
 		};
 		// interface Error {}
 		interface Locals {
+			bodySizeLimit?: number;
 			sekolah?: Omit<Sekolah, 'logo'>;
 			sekolahDirty?: boolean;
 			user?: Pick<
@@ -40,6 +41,7 @@ declare global {
 			nilaiRataRata: number | null;
 		};
 		interface PageData {
+			assignmentSummary?: string | null;
 			meta: PageMeta;
 			sekolah?: Omit<Sekolah, 'logo'>;
 			daftarKelas?: Array<

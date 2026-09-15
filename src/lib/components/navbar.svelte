@@ -252,6 +252,10 @@
 							</div>
 						{/if}
 
+						{#if page.data.assignmentSummary}
+							<p class="text-base-content/65 mb-4 text-sm break-words">{page.data.assignmentSummary}</p>
+						{/if}
+
 						<div class="flex items-center gap-4">
 							<div
 								class="bg-base-300 dark:bg-base-200 flex h-14 w-14 items-center justify-center rounded-full"

@@ -230,7 +230,7 @@ async function main() {
 		...process.env,
 		PORT: String(PORT),
 		NODE_ENV,
-		BODY_SIZE_LIMIT: '5242880',
+		BODY_SIZE_LIMIT: '536870912',
 		DB_URL,
 		DATABASE_URL: DB_URL,
 		KAGANGA_SKIP_DRIZZLE: '1'

@@ -1,5 +1,5 @@
 #define AppName "Kaganga"
-#define AppVersion "2.1.3"
+#define AppVersion "2.1.7"
 #define StagePath "..\\dist\\windows\\stage\\Kaganga"
 
 [Setup]
@@ -118,7 +118,7 @@ begin
 				ForceDirectories(SoundDir);
 
 		EnvPath := ExpandConstant('{app}\.env');
-		S := 'DB_URL="file:' + DbPath + '"' + #13#10 + 'BODY_SIZE_LIMIT=5M' + #13#10 + 'photo="file:' + ExpandConstant('{localappdata}\Kaganga-data\uploads') + '"' + #13#10 + 'sounds="file:' + ExpandConstant('{localappdata}\Kaganga-data\sounds') + '"';
+		S := 'DB_URL="file:' + DbPath + '"' + #13#10 + 'BODY_SIZE_LIMIT=512M' + #13#10 + 'photo="file:' + ExpandConstant('{localappdata}\Kaganga-data\uploads') + '"' + #13#10 + 'sounds="file:' + ExpandConstant('{localappdata}\Kaganga-data\sounds') + '"';
 		if SaveStringToFile(EnvPath, S, False) then
 			Log(Format('Wrote .env to %s', [EnvPath]))
 		else

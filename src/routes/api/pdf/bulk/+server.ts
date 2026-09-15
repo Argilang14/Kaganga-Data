@@ -1,4 +1,6 @@
 import { error } from '@sveltejs/kit';
+import { resolveSchoolPdfVariant } from '$lib/server/pdf/school-variant';
+import { documentPdfFilename, pdfDisposition } from '$lib/pdf-filename';
 import { generateBulkPDF, type DocumentType, type PdfVariant } from '$lib/server/pdf/generate';
 import { getRaporPreviewPayload } from '../../../cetak/rapor/preview-data';
 import { getCoverPreviewPayload } from '../../../cetak/cover/preview-data';
@@ -88,7 +90,7 @@ async function fetchStudentData(
 
 export const POST = (async ({ locals, request }) => {
 	const body: BulkRequest = await request.json();
-	const variant: PdfVariant = body.pdfVariant === 'sr' ? 'sr' : 'default';
+	const variant: PdfVariant = resolveSchoolPdfVariant(body.docType, locals);
 	const muridIds = normalizeMuridIds(body.muridIds);
 
 	if (!locals.user || !locals.sekolah?.id) {
@@ -125,11 +127,11 @@ export const POST = (async ({ locals, request }) => {
 	const pdfBuffer = await generateBulkPDF(items);
 	const docLabel = body.docLabel || body.docType;
 	const kelasLabel = body.kelasLabel || 'Semua-Kelas';
-	const filename = `${docLabel}-${kelasLabel}-${muridIds.length}murid.pdf`;
+	const filename = documentPdfFilename(body.docType, allData[0], { kelas: body.kelasLabel || 'Semua Kelas' }, muridIds.length);
 
 	return new Response(new Blob([pdfBuffer as unknown as BlobPart], { type: 'application/pdf' }), {
 		headers: {
-			'Content-Disposition': `attachment; filename="${filename}"`
+			'Content-Disposition': pdfDisposition(filename, 'attachment')
 		}
 	});
 }) satisfies RequestHandler;

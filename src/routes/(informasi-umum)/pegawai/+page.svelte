@@ -49,6 +49,7 @@
 	let pegawaiForm: HTMLFormElement | null = $state(null);
 	let importDialog: HTMLDialogElement | null = $state(null);
 	let importForm: HTMLFormElement | null = $state(null);
+	let excelDropdown: HTMLDetailsElement | null = $state(null);
 	let selectedPegawai = $state<PegawaiRow | null>(null);
 	let formActiveTab = $state(0);
 	let selectedIds = $state<number[]>([]);
@@ -105,6 +106,7 @@
 	const statusLabels: Record<string, string> = { aktif: 'Aktif', nonaktif: 'Nonaktif' };
 
 	function openCreateModal() {
+		closeExcelDropdown();
 		selectedPegawai = null;
 		formActiveTab = 0;
 		formDialog?.showModal();
@@ -269,6 +271,7 @@
 	}
 
 	function openImportDialog() {
+		closeExcelDropdown();
 		importForm?.reset();
 		resetImportPreview();
 		importDialog?.showModal();
@@ -277,6 +280,10 @@
 	function closeImportDialog() {
 		importForm?.reset();
 		resetImportPreview();
+	}
+
+	function closeExcelDropdown() {
+		if (excelDropdown) excelDropdown.open = false;
 	}
 </script>
 
@@ -289,26 +296,19 @@
 				Data wali kelas/asrama/asuh pada kelas mengambil nama pegawai dari sini.
 			</p>
 		</div>
-		<div class="flex flex-wrap gap-2">
-			<button class="btn btn-primary shadow-none" type="button" onclick={openCreateModal}>
+		<div class="flex max-sm:w-full">
+			<button class="btn btn-soft rounded-r-none shadow-none max-sm:flex-1" type="button" onclick={openCreateModal}>
 				<Icon name="plus" />
 				Tambah Pegawai
 			</button>
-			<div class="join flex max-w-full overflow-x-auto" aria-label="Pengelolaan data Excel pegawai">
-				<a class="btn btn-soft join-item shrink-0 shadow-none" href="/api/pegawai/template">
-					<Icon name="download" /> Template
-				</a>
-				<button
-					class="btn btn-soft join-item shrink-0 shadow-none"
-					type="button"
-					onclick={openImportDialog}
-				>
-					<Icon name="import" /> Import
-				</button>
-				<a class="btn btn-soft join-item shrink-0 shadow-none" href="/api/pegawai/export">
-					<Icon name="export" /> Export
-				</a>
-			</div>
+			<details class="dropdown dropdown-end" bind:this={excelDropdown}>
+				<summary class="btn btn-soft rounded-l-none shadow-none" aria-label="Menu data Excel pegawai" title="Menu data Excel pegawai"><Icon name="down" /></summary>
+				<ul class="dropdown-content menu bg-base-100 border-base-300 z-30 mt-2 w-56 rounded-lg border p-2 shadow-lg">
+					<li><a href="/api/pegawai/template" onclick={closeExcelDropdown}><Icon name="download" /> Download Template</a></li>
+					<li><button type="button" onclick={openImportDialog}><Icon name="import" /> Import Data Pegawai</button></li>
+					<li><a href="/api/pegawai/export" onclick={closeExcelDropdown}><Icon name="export" /> Export Data Pegawai</a></li>
+				</ul>
+			</details>
 		</div>
 	</div>
 

@@ -1,0 +1,2 @@
+export const DATABASE_IMPORT_MAX_BYTES = 512 * 1024 * 1024;
+export const DATABASE_IMPORT_MAX_LABEL = '512 MB';

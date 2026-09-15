@@ -8,6 +8,9 @@ import {
 import { asc, eq } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 import { cookieNames } from '$lib/utils';
+import { error } from '@sveltejs/kit';
+import { canExportClassData } from '$lib/export-access';
+import { canAccessExportClass } from '$lib/server/class-export-access';
 
 function isTableMissingError(error: unknown) {
 	if (error instanceof Error) {
@@ -17,6 +20,14 @@ function isTableMissingError(error: unknown) {
 }
 
 export async function POST({ cookies, locals }) {
+	if (!locals.user) throw error(401, 'Anda harus login terlebih dahulu.');
+	if (!canExportClassData(locals.user, 'keasramaan')) throw error(403, 'Anda tidak memiliki izin ekspor keasramaan.');
+	const activeKelasId = Number(cookies.get(cookieNames.ACTIVE_KELAS_ID));
+	if (!Number.isSafeInteger(activeKelasId) || activeKelasId <= 0) throw error(400, 'Pilih kelas aktif terlebih dahulu.');
+	if (!locals.sekolah?.id) throw error(400, 'Pilih sekolah aktif terlebih dahulu.');
+	if (!(await canAccessExportClass(locals.user, locals.sekolah.id, activeKelasId))) {
+		throw error(403, 'Kelas tidak termasuk dalam sekolah atau penugasan akun ini.');
+	}
 	try {
 		const kelasIdCookie = cookies.get(cookieNames.ACTIVE_KELAS_ID) || null;
 		const kelasId = kelasIdCookie ? Number(kelasIdCookie) : null;

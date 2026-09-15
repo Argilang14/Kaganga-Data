@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import { pdfFilename, pdfDisposition } from '$lib/pdf-filename';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import db from '$lib/server/db';
 import { ensureJurnalMengajarSchema } from '$lib/server/db/ensure-jurnal-mengajar';
@@ -404,7 +405,7 @@ export const GET = (async ({ locals, url }) => {
 
 	return new Response(new Blob([pdfBuffer], { type: 'application/pdf' }), {
 		headers: {
-			'Content-Disposition': `inline; filename="jurnal-mengajar.pdf"`
+			'Content-Disposition': pdfDisposition(pdfFilename('Jurnal Mengajar', printData.filter.value, printData.filter.jenisJadwal, tanggalMulai, tanggalSelesai))
 		}
 	});
 }) satisfies RequestHandler;

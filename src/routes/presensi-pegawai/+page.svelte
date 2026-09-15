@@ -1,7 +1,8 @@
 <script lang="ts">
 	/* eslint-disable svelte/no-navigation-without-resolve -- local filters and PDF endpoint */
 	import Icon from '$lib/components/icon.svelte';
-	import { statusLabel, type PresensiPegawaiStatus } from '$lib/presensi-pegawai-utils';
+	import { enhance } from '$app/forms';
+	import { statusLabel, pegawaiJenisLabels, pegawaiJenisLabel, type PresensiPegawaiStatus } from '$lib/presensi-pegawai-utils';
 	import type { PresensiPegawaiRow } from '$lib/server/presensi-pegawai';
 
 	let { data, form } = $props();
@@ -25,6 +26,7 @@
 		const params = new URLSearchParams();
 		params.set('mode', data.mode);
 		if (data.q) params.set('q', data.q);
+		if (data.jenis) params.set('jenis', data.jenis);
 		if (data.mode === 'harian') params.set('tanggal', dailyDate);
 		else {
 			params.set('bulan', String(data.bulan));
@@ -39,6 +41,7 @@
 
 	function pdfUrl() {
 		const params = new URLSearchParams();
+		if (data.jenis) params.set('jenis', data.jenis);
 		if (data.mode === 'harian') params.set('tanggal', dailyDate);
 		else {
 			params.set('bulan', String(data.bulan));
@@ -65,7 +68,6 @@
 	<header class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
 		<div>
 			<h1 class="text-2xl font-bold">Presensi Pegawai</h1>
-			<p class="text-base-content/65 mt-1 text-sm">Kehadiran guru dan pegawai berdasarkan sekolah aktif.</p>
 		</div>
 		<div class="flex flex-wrap gap-2">
 			<div class="join">
@@ -80,14 +82,15 @@
 	{#if form?.message}<div class="alert alert-success py-2"><Icon name="success" /><span>{form.message}</span></div>{/if}
 	{#if data.disabled}<div class="alert alert-warning"><Icon name="warning" /><span>Presensi pegawai dinonaktifkan pada Pengaturan Presensi tahun ajaran aktif.</span></div>{/if}
 
-	<form method="GET" class="border-base-300 bg-base-100 grid gap-3 rounded-lg border p-4 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_180px_180px_auto] xl:items-end">
+	<form method="GET" class="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
 		<input type="hidden" name="mode" value={data.mode} />
-		<label class="form-control"><span class="label-text mb-1">Cari Pegawai</span><label class="input input-bordered flex items-center gap-2"><Icon name="search" /><input class="grow" name="q" value={data.q} placeholder="Nama atau NIP" /></label></label>
+		<label class="flex min-w-0 flex-col gap-2 xl:col-span-2"><span>Cari Pegawai</span><input class="input w-full" name="q" value={data.q} placeholder="Nama atau NIP" /></label>
+		<label class="flex min-w-0 flex-col gap-2"><span>Jenis Pegawai</span><select class="select w-full" name="jenis" value={data.jenis}><option value="">Semua jenis</option>{#each Object.entries(pegawaiJenisLabels) as [value, label]}<option {value}>{label}</option>{/each}</select></label>
 		{#if data.mode === 'harian'}
-			<label class="form-control"><span class="label-text mb-1">Tanggal</span><input class="input input-bordered" type="date" name="tanggal" value={data.tanggal} /></label>
+			<label class="flex min-w-0 flex-col gap-2"><span>Tanggal</span><input class="input w-full" type="date" name="tanggal" value={data.tanggal} /></label>
 		{:else}
-			<label class="form-control"><span class="label-text mb-1">Bulan</span><select class="select select-bordered" name="bulan" value={data.bulan}>{#each monthNames as month, index}<option value={index + 1}>{month}</option>{/each}</select></label>
-			<label class="form-control"><span class="label-text mb-1">Tahun</span><input class="input input-bordered" type="number" name="tahun" min="2000" max="2200" value={data.tahun} /></label>
+			<div class="grid grid-cols-2 gap-2"><label class="flex min-w-0 flex-col gap-2"><span>Bulan</span><select class="select w-full" name="bulan" value={data.bulan}>{#each monthNames as month, index}<option value={index + 1}>{month}</option>{/each}</select></label>
+			<label class="flex min-w-0 flex-col gap-2"><span>Tahun</span><input class="input w-full" type="number" name="tahun" min="2000" max="2200" value={data.tahun} /></label></div>
 		{/if}
 		<button class="btn btn-primary" type="submit"><Icon name="search" /> Tampilkan</button>
 	</form>
@@ -95,43 +98,45 @@
 	{#if data.mode === 'harian'}
 		{#if !data.isWorkday}<div class="alert alert-info py-2"><Icon name="info" /><span>Tanggal ini termasuk hari libur. Admin tetap dapat mencatat izin, sakit, dinas luar, atau cuti bila diperlukan.</span></div>{/if}
 		{#if dailyRows.length}
-			<form method="POST" action="?/bulkSave" class="border-base-300 bg-base-100 flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-end">
+			<form method="POST" action="?/bulkSave" use:enhance class="flex flex-col gap-3 border-y border-base-300 py-3 sm:flex-row sm:items-end">
 				<input type="hidden" name="tanggal" value={dailyDate} />
 				<input type="hidden" name="pegawaiIds" value={dailyRows.map((row) => row.pegawaiId).join(',')} />
-				<label class="form-control flex-1"><span class="label-text mb-1">Isi seluruh pegawai yang terlihat</span><select class="select select-bordered" name="status">{#each statuses as status}<option value={status}>{statusLabel(status)}</option>{/each}</select></label>
+				<label class="flex flex-col gap-2 sm:w-64"><span>Status Massal</span><select class="select w-full" name="status">{#each statuses as status}<option value={status}>{statusLabel(status)}</option>{/each}</select></label>
 				<button class="btn btn-soft" type="submit" disabled={data.disabled} onclick={(event) => { if (!confirm(`Isi ${dailyRows.length} pegawai sekaligus?`)) event.preventDefault(); }}><Icon name="save" /> Isi Sekaligus</button>
 			</form>
 		{/if}
 
 		<div class="border-base-300 bg-base-100 overflow-x-auto rounded-lg border">
-			<table class="table table-zebra">
-				<thead><tr><th>Nama Pegawai</th><th>Jenis</th><th>Status</th><th>Jam Masuk</th><th>Jam Pulang</th><th>Keterangan</th><th class="text-right">Aksi</th></tr></thead>
+			<table class="table w-full min-w-[1040px]">
+				<thead class="bg-base-200/60"><tr><th>No</th><th class="min-w-48">Nama Pegawai</th><th>Jenis Pegawai</th><th class="w-40">Status</th><th class="w-32">Jam Masuk</th><th class="w-32">Jam Pulang</th><th class="min-w-44">Keterangan</th><th class="text-right">Aksi</th></tr></thead>
 				<tbody>
-					{#each dailyRows as row}
+					{#each dailyRows as row, index (row.pegawaiId)}
 						<tr>
+							<td>{(data.page.currentPage - 1) * 25 + index + 1}</td>
 							<td><div class="font-semibold">{row.nama}</div><div class="text-xs opacity-60">{row.nip || '-'}</div></td>
-							<td class="capitalize">{row.jenis.replaceAll('_', ' ')}</td>
-							<td colspan="5" class="p-2">
-								<form method="POST" action="?/save" class="grid min-w-[760px] grid-cols-[145px_110px_110px_minmax(190px,1fr)_auto] items-center gap-2">
+							<td class="whitespace-nowrap">{pegawaiJenisLabel(row.jenis)}</td>
+							<td>
+								<form id={`presensi-${row.pegawaiId}`} method="POST" action="?/save" use:enhance>
 									<input type="hidden" name="pegawaiId" value={row.pegawaiId} />
 									<input type="hidden" name="tanggal" value={dailyDate} />
-									<select class="select select-bordered select-sm" name="status" value={row.status ?? 'hadir'} disabled={data.disabled}>{#each statuses as status}<option value={status}>{statusLabel(status)}</option>{/each}</select>
-									<input class="input input-bordered input-sm" type="time" name="waktuMasuk" value={row.waktuMasuk ?? ''} disabled={data.disabled} />
-									<input class="input input-bordered input-sm" type="time" name="waktuPulang" value={row.waktuPulang ?? ''} disabled={data.disabled} />
-									<input class="input input-bordered input-sm" name="keterangan" maxlength="500" value={row.keterangan ?? ''} placeholder={row.inferredFromDinasLuar ? 'Terhubung dari Dinas Luar' : 'Opsional'} disabled={data.disabled} />
-									<div class="flex justify-end gap-1"><button class="btn btn-primary btn-sm" type="submit" disabled={data.disabled}><Icon name="save" /></button>{#if row.status && !row.inferredFromDinasLuar}<button class="btn btn-soft btn-error btn-sm" type="submit" formaction="?/delete" title="Kosongkan" disabled={data.disabled}><Icon name="del" /></button>{/if}</div>
+									<select class="select select-sm w-full" name="status" value={row.status ?? 'hadir'} aria-label={`Status ${row.nama}`} disabled={data.disabled}>{#each statuses as status}<option value={status}>{statusLabel(status)}</option>{/each}</select>
 								</form>
+								{#if !row.status}<span class="text-xs text-base-content/60">Belum diisi</span>{/if}
 							</td>
+							<td><input form={`presensi-${row.pegawaiId}`} class="input input-sm w-full" type="time" name="waktuMasuk" aria-label={`Jam masuk ${row.nama}`} value={row.waktuMasuk ?? ''} disabled={data.disabled} /></td>
+							<td><input form={`presensi-${row.pegawaiId}`} class="input input-sm w-full" type="time" name="waktuPulang" aria-label={`Jam pulang ${row.nama}`} value={row.waktuPulang ?? ''} disabled={data.disabled} /></td>
+							<td><input form={`presensi-${row.pegawaiId}`} class="input input-sm w-full" name="keterangan" aria-label={`Keterangan ${row.nama}`} maxlength="500" value={row.keterangan ?? ''} placeholder={row.inferredFromDinasLuar ? 'Terhubung dari Dinas Luar' : 'Opsional'} disabled={data.disabled} /></td>
+							<td><div class="flex justify-end gap-1"><button form={`presensi-${row.pegawaiId}`} class="btn btn-soft btn-sm" type="submit" title="Simpan presensi" aria-label={`Simpan presensi ${row.nama}`} disabled={data.disabled}><Icon name="save" /></button>{#if row.status && !row.inferredFromDinasLuar}<button form={`presensi-${row.pegawaiId}`} class="btn btn-soft btn-error btn-sm" type="submit" formaction="?/delete" title="Kosongkan presensi" aria-label={`Kosongkan presensi ${row.nama}`} disabled={data.disabled}><Icon name="del" /></button>{/if}</div></td>
 						</tr>
-					{:else}<tr><td colspan="7" class="py-12 text-center opacity-60">Tidak ada pegawai aktif.</td></tr>{/each}
+					{:else}<tr><td colspan="8" class="py-12 text-center opacity-60">Tidak ada pegawai aktif sesuai filter.</td></tr>{/each}
 				</tbody>
 			</table>
 		</div>
 	{:else}
 		<div class="border-base-300 bg-base-100 overflow-x-auto rounded-lg border">
 			<table class="table table-xs table-pin-rows table-pin-cols">
-				<thead><tr><th class="min-w-48">Pegawai</th>{#each monthlyDates as date}<th class:opacity-40={!monthlyWorkdays.includes(date)} class="w-9 text-center">{dayNumber(date)}</th>{/each}<th>H</th><th>I</th><th>S</th><th>DL</th><th>C</th><th>-</th></tr></thead>
-				<tbody>{#each monthlyRows as row}<tr><th><div class="font-semibold">{row.nama}</div><div class="text-xs font-normal opacity-55">{row.nip || '-'}</div></th>{#each row.statuses as status, index}<td class:opacity-25={!monthlyWorkdays.includes(monthlyDates[index])} class="text-center"><span class={`inline-flex min-h-6 min-w-6 items-center justify-center rounded px-1 text-[10px] font-bold ${statusClass(status)}`}>{shortStatus(status)}</span></td>{/each}<td>{row.counts.hadir}</td><td>{row.counts.izin}</td><td>{row.counts.sakit}</td><td>{row.counts.dinas_luar}</td><td>{row.counts.cuti}</td><td>{row.counts.belum}</td></tr>{:else}<tr><td colspan={monthlyDates.length + 7} class="py-12 text-center opacity-60">Tidak ada pegawai aktif.</td></tr>{/each}</tbody>
+				<thead class="bg-base-200/60"><tr><th class="min-w-48">Pegawai</th><td class="whitespace-nowrap">Jenis Pegawai</td>{#each monthlyDates as date}<td class:opacity-40={!monthlyWorkdays.includes(date)} class="min-w-9 text-center">{dayNumber(date)}</td>{/each}<td>H</td><td>I</td><td>S</td><td>DL</td><td>C</td><td>-</td></tr></thead>
+				<tbody>{#each monthlyRows as row (row.id)}<tr><th><div class="font-semibold">{row.nama}</div><div class="text-xs font-normal opacity-55">{row.nip || '-'}</div></th><td class="whitespace-nowrap">{pegawaiJenisLabel(row.jenis)}</td>{#each row.statuses as status, index}<td class:opacity-25={!monthlyWorkdays.includes(monthlyDates[index])} class="text-center"><span class={`inline-flex min-h-6 min-w-6 items-center justify-center rounded px-1 text-[10px] font-bold ${statusClass(status)}`}>{shortStatus(status)}</span></td>{/each}<td>{row.counts.hadir}</td><td>{row.counts.izin}</td><td>{row.counts.sakit}</td><td>{row.counts.dinas_luar}</td><td>{row.counts.cuti}</td><td>{row.counts.belum}</td></tr>{:else}<tr><td colspan={monthlyDates.length + 8} class="py-12 text-center opacity-60">Tidak ada pegawai aktif sesuai filter.</td></tr>{/each}</tbody>
 			</table>
 		</div>
 		<div class="flex flex-wrap gap-2 text-xs"><span class="badge badge-success badge-soft">H Hadir</span><span class="badge badge-info badge-soft">I Izin</span><span class="badge badge-warning badge-soft">S Sakit</span><span class="badge badge-primary badge-soft">DL Dinas Luar</span><span class="badge badge-secondary badge-soft">C Cuti</span></div>

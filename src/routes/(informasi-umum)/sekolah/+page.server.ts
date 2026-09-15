@@ -49,6 +49,7 @@ export const load: PageServerLoad = async ({ locals, depends }) => {
 	}
 
 	const sekolahRows = await db.query.tableSekolah.findMany({
+		where: locals.user?.type === 'admin' ? undefined : eq(tableSekolah.id, locals.user?.sekolahId ?? 0),
 		columns: { logo: false },
 		with: {
 			alamat: true,

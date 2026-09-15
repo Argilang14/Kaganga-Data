@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import { pdfFilename, pdfDisposition } from '$lib/pdf-filename';
 import { and, eq, isNotNull } from 'drizzle-orm';
 import db from '$lib/server/db';
 import { ensureMartikulasiSchema } from '$lib/server/db/ensure-martikulasi';
@@ -114,6 +115,7 @@ export const GET = (async ({ locals, url }) => {
 	};
 
 	let html: string;
+	let filename = pdfFilename(labels[jenis], tahun.nama);
 	if (jenis === 'sk') {
 		html = renderSkMartikulasiHTML({
 			school: schoolPrint,
@@ -199,6 +201,7 @@ export const GET = (async ({ locals, url }) => {
 					: 'Belum ada hasil Martikulasi untuk pilihan ini.'
 			);
 		}
+		filename = pdfFilename(labels[jenis], muridId ? students[0].nama : `${students.length} Murid`, muridId ? students[0].kelas : 'Semua Kelas', tahun.nama);
 		html =
 			jenis === 'raport'
 				? renderRaportMartikulasiHTML({ school: schoolPrint, settings: settingsPrint, students })
@@ -209,7 +212,7 @@ export const GET = (async ({ locals, url }) => {
 	return new Response(new Blob([pdf], { type: 'application/pdf' }), {
 		headers: {
 			'Content-Type': 'application/pdf',
-			'Content-Disposition': `inline; filename="${labels[jenis]}-${tahun.nama.replace('/', '-')}.pdf"`,
+			'Content-Disposition': pdfDisposition(filename),
 			'Cache-Control': 'private, no-store'
 		}
 	});

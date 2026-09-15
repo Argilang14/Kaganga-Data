@@ -45,6 +45,7 @@ const DOCUMENT_PATHS: Record<DocumentType, string> = {
 	'jadwal-pelajaran': '/cetak/jadwal-pelajaran',
 	'kalender-pendidikan': '/cetak/kalender-pendidikan',
 	'jurnal-mengajar': '/api/pdf/jurnal-mengajar',
+	'buku-tamu': '/api/buku-tamu/print',
 	'martikulasi-sk': '/api/pdf/martikulasi',
 	'martikulasi-raport': '/api/pdf/martikulasi',
 	'martikulasi-sttm': '/api/pdf/martikulasi'

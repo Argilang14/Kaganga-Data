@@ -11,6 +11,7 @@
 		| 'jadwal-pelajaran'
 		| 'kalender-pendidikan'
 	| 'jurnal-mengajar'
+	| 'buku-tamu'
 	| 'martikulasi-sk'
 	| 'martikulasi-raport'
 	| 'martikulasi-sttm';

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { canAccessArea } from '$lib/menu-access';
 	import Icon from '$lib/components/icon.svelte';
 	import { showModal } from '$lib/components/global-modal.svelte';
 	import ImportMatevDialog from '$lib/components/keasramaan/import-matev-dialog.svelte';
@@ -31,10 +32,7 @@
 			: '-'
 	);
 
-	const canEdit = $derived.by(() => {
-		const u = page.data.user as { type?: string } | null | undefined;
-		return u?.type !== 'user';
-	});
+	const canEdit = $derived(canAccessArea(page.data.user, 'keasramaan', 'manage'));
 
 	// eslint-disable-next-line svelte/no-navigation-without-resolve
 	const navigateToMatEval = () => {

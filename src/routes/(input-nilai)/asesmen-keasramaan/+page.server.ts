@@ -17,7 +17,8 @@ import {
 	getIndikatorCategory
 } from '$lib/components/asesmen-keasramaan/utils';
 import { redirect, error } from '@sveltejs/kit';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
+import { guardianStudentCondition } from '$lib/server/assignment-summary';
 
 const PER_PAGE = 20;
 
@@ -110,7 +111,7 @@ export async function load({ parent, url, depends }) {
 
 	const muridRecords = await db.query.tableMurid.findMany({
 		columns: { id: true, nama: true, waliAsuhNama: true },
-		where: eq(tableMurid.kelasId, kelasAktif.id),
+		where: and(eq(tableMurid.kelasId, kelasAktif.id), await guardianStudentCondition(user, user?.sekolahId ?? 0)),
 		orderBy: asc(tableMurid.nama)
 	});
 

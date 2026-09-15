@@ -1,4 +1,9 @@
 import { error } from '@sveltejs/kit';
+import { resolveSchoolPdfVariant } from '$lib/server/pdf/school-variant';
+import { documentPdfFilename, pdfDisposition } from '$lib/pdf-filename';
+import db from '$lib/server/db';
+import { tableMurid } from '$lib/server/db/schema';
+import { and, eq } from 'drizzle-orm';
 import { consumePdfParams } from '$lib/server/pdf/token-store';
 import { generatePDF } from '$lib/server/pdf/generate';
 import { getCoverPreviewPayload } from '../../../cover/preview-data';
@@ -94,16 +99,18 @@ export const GET = (async ({ locals, params }) => {
 			docType,
 			data as unknown as Record<string, unknown>,
 			stored.template,
-			stored.variant ?? 'default'
+			resolveSchoolPdfVariant(docType, locals)
 		);
 	} catch (e) {
 		console.error('PDF generation failed:', e);
 		throw error(500, 'Gagal menghasilkan PDF: ' + (e instanceof Error ? e.message : String(e)));
 	}
 
+	const student = stored.muridId && locals.sekolah ? await db.query.tableMurid.findFirst({ columns: { nama: true }, where: and(eq(tableMurid.id, stored.muridId), eq(tableMurid.sekolahId, locals.sekolah.id)), with: { kelas: { columns: { nama: true }, with: { tahunAjaran: { columns: { nama: true } } } } } }) : undefined;
+	const filename = documentPdfFilename(docType, data as Record<string, unknown>, student ? { nama: student.nama, kelas: student.kelas?.nama, tahun: student.kelas?.tahunAjaran?.nama } : undefined);
 	return new Response(new Blob([pdfBuffer as unknown as BlobPart], { type: 'application/pdf' }), {
 		headers: {
-			'Content-Disposition': `inline; filename="${stored.slug}.pdf"`
+			'Content-Disposition': pdfDisposition(filename)
 		}
 	});
 }) satisfies RequestHandler;

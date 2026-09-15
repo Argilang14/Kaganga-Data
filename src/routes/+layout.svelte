@@ -30,7 +30,7 @@
 		'/absen',
 		'/catatan-wali-kelas',
 		'/status-akhir',
-		'/cetak'
+		'/cetak-raport'
 	];
 
 	const isReadonlyPage = $derived(

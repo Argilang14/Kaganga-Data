@@ -1,6 +1,7 @@
 // @ts-nocheck
 import db from '$lib/server/db';
 import { ensureCatatanWaliSchema } from '$lib/server/db/ensure-catatan-wali';
+import { guardianStudentCondition } from '$lib/server/assignment-summary';
 import { tableCatatanWaliAsrama, tableMurid } from '$lib/server/db/schema';
 import { buildKelasContext } from '$lib/server/route-utils';
 import { fail, redirect } from '@sveltejs/kit';
@@ -41,6 +42,7 @@ export async function load({ locals, url, depends, parent }) {
 	}
 
 	const filter = and(
+		await guardianStudentCondition(locals.user, sekolahId),
 		eq(tableMurid.sekolahId, sekolahId),
 		kelasId ? eq(tableMurid.kelasId, Number(kelasId)) : inArray(tableMurid.kelasId, kelasIds),
 		search ? sql`${tableMurid.nama} LIKE ${'%' + search + '%'} COLLATE NOCASE` : undefined
@@ -193,7 +195,7 @@ export const actions = {
 		const muridList = await db
 			.select({ id: tableMurid.id })
 			.from(tableMurid)
-			.where(and(eq(tableMurid.sekolahId, sekolahId), inArray(tableMurid.id, muridIds)));
+			.where(and(eq(tableMurid.sekolahId, sekolahId), inArray(tableMurid.id, muridIds), await guardianStudentCondition(locals.user, sekolahId)));
 
 		const validIds = muridList.map((item) => item.id);
 		if (!validIds.length) {

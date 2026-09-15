@@ -5,7 +5,8 @@ import { tableSekolah } from '$lib/server/db/schema';
 import { runStartupEnsures } from '$lib/server/db/ensure-bootstrap';
 import { isSecureRequest, resolveRequestProtocol } from '$lib/server/http';
 import { cookieNames } from '$lib/utils';
-import { error, redirect, type Handle } from '@sveltejs/kit';
+import { DATABASE_IMPORT_MAX_BYTES, DATABASE_IMPORT_MAX_LABEL } from '$lib/database-import';
+import { error, json, redirect, type Handle } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { eq } from 'drizzle-orm';
 import {
@@ -13,7 +14,11 @@ import {
 	normalizeOrigin as normalizeFileOrigin
 } from '$lib/server/csrf-origins';
 import { startBellScheduler } from '$lib/server/bell-scheduler';
+import { isDatabaseMaintenanceActive } from '$lib/server/database-maintenance';
 import { canLegacyWaliKelasAccess, isLegacyWaliKelas } from '$lib/server/legacy-wali-kelas';
+import { canAccessArea, getProtectedArea, getAreaAction } from '$lib/menu-access';
+import { canAccessExportClass } from '$lib/server/class-export-access';
+import { assertKeasramaanTargets } from '$lib/server/keasramaan-target-access';
 
 setTimeout(() => {
 	startBellScheduler().catch((e) => {
@@ -52,6 +57,8 @@ const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const FORM_CONTENT_TYPES = [
 	'application/x-www-form-urlencoded',
 	'multipart/form-data',
+	'application/vnd.sqlite3',
+	'application/octet-stream',
 	'text/plain'
 ];
 
@@ -125,6 +132,12 @@ function resolveRedirectTarget(value: string | null) {
 }
 
 const authGuard: Handle = async ({ event, resolve }) => {
+	if (isDatabaseMaintenanceActive()) {
+		return json(
+			{ message: 'Database sedang dipulihkan. Silakan coba kembali beberapa saat lagi.' },
+			{ status: 503, headers: { 'retry-after': '3' } }
+		);
+	}
 	await runStartupEnsures();
 
 	const sessionToken = event.cookies.get(cookieNames.AUTH_SESSION);
@@ -302,16 +315,65 @@ function parseAsBytes(value: string | undefined, fallback = '512K') {
 // Compose the middleware sequence but ensure every internal `resolve` call
 // uses the `bodySizeLimit` derived from `process.env.BODY_SIZE_LIMIT` so
 // parsing limits follow the .env configuration in dev and prod.
-const _composed = sequence(csrfGuard, authGuard, cookieParser);
+const menuAccessGuard: Handle = async ({ event, resolve }) => {
+	const area = getProtectedArea(event.url.pathname);
+	if (!area) return resolve(event);
+	const action = getAreaAction(event.url.pathname, event.request.method);
+	if (!canAccessArea(event.locals.user, area, action)) {
+		if (event.url.pathname.startsWith('/api/') || event.request.method !== 'GET') {
+			throw error(403, 'Anda tidak memiliki izin untuk tindakan ini.');
+		}
+		throw redirect(303, `/forbidden?required=${area}_${action}`);
+	}
+	if (event.locals.user?.type !== 'admin') {
+		const user = event.locals.user;
+		const sekolahId = event.locals.sekolah?.id;
+		if (!user || !sekolahId || user.sekolahId !== sekolahId) throw error(403, 'Sekolah di luar penugasan akun.');
+		const posted = !['GET', 'HEAD'].includes(event.request.method) && /multipart\/form-data|application\/x-www-form-urlencoded/.test(event.request.headers.get('content-type') ?? '')
+			? await event.request.clone().formData() : null;
+		const params = event.url.searchParams;
+		if (area === 'keasramaan') {
+			await assertKeasramaanTargets(user, sekolahId, event.url.pathname, params);
+			if (posted) await assertKeasramaanTargets(user, sekolahId, event.url.pathname, posted);
+		}
+		const targetSchool = params.get('sekolahId') ?? posted?.get('sekolahId') ?? (area === 'sekolah' ? posted?.get('id') : null);
+		if (area === 'sekolah' && (params.get('mode') === 'new' || (targetSchool && Number(targetSchool) !== sekolahId))) throw error(403, 'Hanya sekolah yang ditugaskan dapat dikelola.');
+		const targetClass = params.get('kelas_id') ?? params.get('kelasId') ?? posted?.get('kelasId');
+		const classPath = area === 'kelas' ? /^\/kelas\/form\/(\d+)$/.exec(event.url.pathname)?.[1] ?? posted?.get('id') : null;
+		if ((targetClass || classPath) && !(await canAccessExportClass(user, sekolahId, Number(targetClass ?? classPath)))) throw error(403, 'Kelas di luar penugasan akun.');
+	}
+	if (area === 'keasramaan' && event.locals.user?.type !== 'admin') {
+		const kelasId = Number(event.cookies.get(cookieNames.ACTIVE_KELAS_ID));
+		if (!event.locals.sekolah?.id || !(await canAccessExportClass(event.locals.user, event.locals.sekolah.id, kelasId))) {
+			throw error(403, 'Kelas tidak termasuk dalam penugasan akun ini.');
+		}
+	}
+	return resolve(event);
+};
+
+const _composed = sequence(csrfGuard, authGuard, cookieParser, menuAccessGuard);
 export const handle: Handle = async ({ event, resolve }) => {
-	const bodySizeLimit = parseAsBytes(process.env.BODY_SIZE_LIMIT, '512K');
+	const bodySizeLimit = parseAsBytes(process.env.BODY_SIZE_LIMIT, '512M');
+	const contentLength = Number(event.request.headers.get('content-length'));
+	const isDatabaseImport = event.route.id === '/api/database/import';
+	const routeLimit = isDatabaseImport
+		? Math.min(bodySizeLimit, DATABASE_IMPORT_MAX_BYTES)
+		: Math.min(bodySizeLimit, 16 * 1024 * 1024);
+	if (Number.isFinite(contentLength) && contentLength > routeLimit) {
+		return json(
+			{
+				message: isDatabaseImport
+					? `Ukuran backup melebihi batas ${DATABASE_IMPORT_MAX_LABEL}.`
+					: 'Ukuran data yang dikirim terlalu besar.'
+			},
+			{ status: 413 }
+		);
+	}
 	// Expose the parsed limit on `locals` so other server-side code can
 	// inspect it if needed. We avoid passing it to `resolve` because
 	// SvelteKit's ResolveOptions type doesn't allow custom keys.
 	// Note: this does not change how SvelteKit parses the raw request body
 	// (that happens earlier), but makes the configured limit available.
-	// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-	// @ts-ignore -- allow adding a custom property to locals
 	event.locals.bodySizeLimit = bodySizeLimit;
 	return _composed({ event, resolve });
 };

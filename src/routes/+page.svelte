@@ -4,6 +4,7 @@
 	import MapelEkstrakurikulerStats from '$lib/components/dashboard/mapel-ekstrakurikuler-stats.svelte';
 	import ProgressCard from '$lib/components/dashboard/progress-card.svelte';
 	import QuickActionsCard from '$lib/components/dashboard/quick-actions-card.svelte';
+	import DailySummary from '$lib/components/dashboard/daily-summary.svelte';
 	import { computeNextEventMessage } from '$lib/utils/next-event-message';
 	import BellStatus from '$lib/components/jadwal-bell/bell-status.svelte';
 
@@ -262,6 +263,7 @@
 			ekstrakurikuler={ekstrakurikulerStats}
 			keasramaan={keasramaanStats}
 		/>
+		{#if data.dailyDashboard}<DailySummary summary={data.dailyDashboard} />{/if}
 	</div>
 
 	<!-- Kolom 2: Progress & Aksi -->

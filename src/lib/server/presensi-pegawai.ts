@@ -16,6 +16,7 @@ import {
 	isPresensiPegawaiStatus,
 	type PresensiPegawaiStatus
 } from '$lib/presensi-pegawai-utils';
+import type { PegawaiJenis } from '$lib/presensi-pegawai-utils';
 
 export type PresensiPegawaiRow = {
 	pegawaiId: number;
@@ -57,13 +58,14 @@ export async function isPresensiPegawaiWorkday(sekolahId: number, tanggal: strin
 	};
 }
 
-async function activeEmployees(sekolahId: number, search = '') {
+async function activeEmployees(sekolahId: number, search = '', jenis: PegawaiJenis | '' = '') {
 	const term = search.trim();
 	return db.query.tablePegawai.findMany({
 		columns: { id: true, nama: true, nip: true, jenis: true },
 		where: and(
 			eq(tablePegawai.sekolahId, sekolahId),
 			eq(tablePegawai.status, 'aktif'),
+			jenis ? eq(tablePegawai.jenis, jenis) : undefined,
 			term
 				? or(
 						sql`lower(${tablePegawai.nama}) like ${`%${term.toLowerCase()}%`}`,
@@ -122,8 +124,8 @@ async function dinasLuarEmployeeIds(sekolahId: number, start: string, end: strin
 	return byDate;
 }
 
-export async function listPresensiPegawaiHarian(sekolahId: number, tanggal: string, search = '') {
-	const employees = await activeEmployees(sekolahId, search);
+export async function listPresensiPegawaiHarian(sekolahId: number, tanggal: string, search = '', jenis: PegawaiJenis | '' = '') {
+	const employees = await activeEmployees(sekolahId, search, jenis);
 	if (!employees.length) return [] as PresensiPegawaiRow[];
 	const records = await db.query.tablePresensiPegawai.findMany({
 		where: and(
@@ -165,10 +167,11 @@ export async function listPresensiPegawaiBulanan(
 	sekolahId: number,
 	year: number,
 	month: number,
-	search = ''
+	search = '',
+	jenis: PegawaiJenis | '' = ''
 ) {
 	const dates = enumerateMonthDates(year, month);
-	const employees = await activeEmployees(sekolahId, search);
+	const employees = await activeEmployees(sekolahId, search, jenis);
 	const start = dates[0];
 	const end = dates.at(-1)!;
 	const records = employees.length

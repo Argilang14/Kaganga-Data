@@ -51,7 +51,7 @@
 		</div>
 		<div class="flex flex-wrap gap-2">
 			<a class="btn btn-soft" href={outputUrl('/api/buku-tamu/export')}><Icon name="export" /> Excel</a>
-			<a class="btn btn-primary" href={outputUrl('/api/buku-tamu/print')} target="_blank"><Icon name="print" /> Cetak PDF</a>
+			<a class="btn btn-primary" href={outputUrl('/cetak/buku-tamu')}><Icon name="print" /> Cetak PDF</a>
 		</div>
 	</header>
 

@@ -7,6 +7,7 @@ import { tableAsesmenKeasramaan, tableKeasramaan, tableMurid } from '$lib/server
 import { redirect } from '@sveltejs/kit';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { PageServerLoad } from './$types';
+import { guardianStudentCondition } from '$lib/server/assignment-summary';
 
 const PER_PAGE = 20;
 
@@ -94,7 +95,7 @@ export const load: PageServerLoad = async ({ parent, locals, url, depends }) => 
 	const kelasLabel = kelasAktif.fase ? `${kelasAktif.nama} - ${kelasAktif.fase}` : kelasAktif.nama;
 	const muridRecords = await db.query.tableMurid.findMany({
 		columns: { id: true, nama: true },
-		where: and(eq(tableMurid.sekolahId, sekolahId), eq(tableMurid.kelasId, kelasAktif.id)),
+		where: and(eq(tableMurid.sekolahId, sekolahId), eq(tableMurid.kelasId, kelasAktif.id), await guardianStudentCondition(locals.user, sekolahId)),
 		orderBy: asc(tableMurid.nama)
 	});
 	const muridIds = muridRecords.map((murid) => murid.id);

@@ -3,6 +3,7 @@ import { error } from '@sveltejs/kit';
 import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import db from '$lib/server/db';
+import { canDownloadDatabaseBackup } from '$lib/export-access';
 
 const DEFAULT_DB_URL = 'file:./data/database.sqlite3';
 
@@ -15,7 +16,11 @@ function resolveDatabasePath(url: string) {
 	throw error(500, 'Database URL tidak didukung untuk backup');
 }
 
-export async function GET() {
+export async function GET({ locals }) {
+	if (!locals.user) throw error(401, 'Anda harus login terlebih dahulu.');
+	if (!canDownloadDatabaseBackup(locals.user)) {
+		throw error(403, 'Hanya admin dan kepala sekolah yang dapat mengunduh backup database.');
+	}
 	const dbUrl = env.DB_URL ?? DEFAULT_DB_URL;
 	const dbPath = resolveDatabasePath(dbUrl);
 

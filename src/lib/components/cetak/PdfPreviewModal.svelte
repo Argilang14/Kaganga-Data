@@ -10,6 +10,7 @@
 		loading = false,
 		onPrev = () => {},
 		onNext = () => {},
+		onDownload = undefined,
 		onClose = () => {}
 	}: {
 		pdfUrl: string;
@@ -20,6 +21,7 @@
 		loading?: boolean;
 		onPrev?: () => void;
 		onNext?: () => void;
+		onDownload?: (() => void) | undefined;
 		onClose?: () => void;
 	} = $props();
 
@@ -43,6 +45,11 @@
 				<embed src={pdfUrl} type="application/pdf" class="h-full w-full" title={pdfTitle} />
 			</div>
 			<div class="absolute bottom-4 right-8 flex items-center gap-2">
+				{#if onDownload}
+					<button class="btn btn-primary btn-sm" type="button" onclick={onDownload} disabled={loading} title="Unduh PDF"><Icon name="download" /> Unduh PDF</button>
+				{:else}
+					<a class="btn btn-primary btn-sm" href={pdfUrl} download={pdfTitle.endsWith('.pdf') ? pdfTitle : `${pdfTitle}.pdf`} title="Unduh PDF"><Icon name="download" /> Unduh PDF</a>
+				{/if}
 				<div class="join [&>:first-child]:rounded-l-full [&>:last-child]:rounded-r-full">
 					<button
 						class="btn btn-primary btn-circle btn-sm shadow-none join-item"

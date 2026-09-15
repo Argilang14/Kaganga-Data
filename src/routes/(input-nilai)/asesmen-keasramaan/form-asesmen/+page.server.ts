@@ -15,6 +15,8 @@ import {
 import { unflattenFormData } from '$lib/utils';
 import { fail, redirect, error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
+import { guardianStudentCondition } from '$lib/server/assignment-summary';
+import { canAccessExportClass } from '$lib/server/class-export-access';
 
 type NilaiMap = Record<number, EkstrakurikulerNilaiKategori>;
 
@@ -56,11 +58,12 @@ export async function load({ parent, url, depends, locals }) {
 
 	const murid = await db.query.tableMurid.findFirst({
 		columns: { id: true, nama: true, kelasId: true, waliAsuhNama: true },
-		where: eq(tableMurid.id, muridId)
+		where: and(eq(tableMurid.id, muridId), await guardianStudentCondition(locals.user, locals.sekolah?.id ?? 0))
 	});
 	if (!murid) {
 		throw error(404, 'Data murid tidak ditemukan');
 	}
+	if (!locals.sekolah?.id || !(await canAccessExportClass(locals.user, locals.sekolah.id, murid.kelasId))) throw error(403, 'Murid di luar penugasan akun.');
 
 	const keasramaan = await db.query.tableKeasramaan.findFirst({
 		columns: { id: true, nama: true, kelasId: true },
@@ -177,11 +180,12 @@ export const actions = {
 
 		const muridRecord = await db.query.tableMurid.findFirst({
 			columns: { id: true, kelasId: true, waliAsuhNama: true },
-			where: eq(tableMurid.id, muridId)
+			where: and(eq(tableMurid.id, muridId), await guardianStudentCondition(locals.user, locals.sekolah?.id ?? 0))
 		});
 		if (!muridRecord) {
 			return fail(404, { fail: 'Data murid tidak ditemukan' });
 		}
+		if (!locals.sekolah?.id || !(await canAccessExportClass(locals.user, locals.sekolah.id, muridRecord.kelasId))) return fail(403, { fail: 'Murid di luar penugasan akun.' });
 
 		const keasramaanRecord = await db.query.tableKeasramaan.findFirst({
 			columns: { id: true, kelasId: true },

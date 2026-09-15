@@ -6,6 +6,7 @@
 	import Icon from './icon.svelte';
 	import { appMenuItems } from './menu';
 	import { isAuthorizedUser } from '../../routes/pengguna/permissions';
+	import { canAccessArea, getProtectedArea } from '$lib/menu-access';
 
 	const expanded = new StorageState<boolean>('menu-expanded');
 
@@ -20,6 +21,8 @@
 	function filterMenuByPermission(items: MenuItem[]): MenuItem[] {
 		return items
 			.map((item) => {
+				const area = item.path ? getProtectedArea(item.path) : null;
+				if (area && !canAccessArea(user, area)) return null;
 				if (item.permission && !isAuthorizedUser([item.permission], user ?? undefined)) return null;
 				if (!item.subMenu) return item;
 				const subMenu = filterMenuByPermission(item.subMenu);

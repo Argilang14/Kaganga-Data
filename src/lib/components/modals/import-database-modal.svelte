@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { hideModal } from '$lib/components/global-modal.svelte';
+	import { DATABASE_IMPORT_MAX_BYTES, DATABASE_IMPORT_MAX_LABEL } from '$lib/database-import';
 	import Icon from '../icon.svelte';
 	import { toast } from '../toast.svelte';
 
@@ -10,20 +11,27 @@
 	let fileInput: HTMLInputElement | null = null;
 
 	async function handleSubmit() {
-		if (!fileInput?.files?.[0]) return;
+		const file = fileInput?.files?.[0];
+		if (!file) return;
+		if (file.size > DATABASE_IMPORT_MAX_BYTES) {
+			toast(`Ukuran backup maksimal ${DATABASE_IMPORT_MAX_LABEL}.`, 'error');
+			return;
+		}
 
 		submitting = true;
-		const formData = new FormData();
-		formData.append('database', fileInput.files[0]);
 
 		try {
 			const response = await fetch('/api/database/import', {
 				method: 'POST',
-				body: formData,
+				headers: { 'Content-Type': 'application/vnd.sqlite3' },
+				body: file,
 				redirect: 'error'
 			});
 
 			if (!response.ok) {
+				if (response.status === 413) {
+					throw new Error(`Ukuran backup melebihi batas ${DATABASE_IMPORT_MAX_LABEL}.`);
+				}
 				const err = await response.json().catch(() => ({ message: 'Gagal mengimpor database' }));
 				throw new Error(err.message ?? `Error ${response.status}`);
 			}
@@ -66,7 +74,9 @@
 			id={inputId}
 		/>
 		<div class="label">
-			<span class="label-text-alt text-base-content/70"> Contoh file: file-backup.sqlite3 </span>
+			<span class="label-text-alt text-base-content/70">
+				File `.sqlite3`, maksimal {DATABASE_IMPORT_MAX_LABEL}.
+			</span>
 		</div>
 	</div>
 

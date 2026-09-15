@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.1.7 - 2026-09-15
+
+### Fitur dan perbaikan
+
+- Menambahkan generator RPM dan lampiran pembelajaran berbantuan AI dengan pratinjau serta ekspor PDF.
+- Menyusun ulang Cetak Dokumen dan Cetak Raport berdasarkan jenis sekolah, termasuk pratinjau Buku Tamu Digital.
+- Menambahkan ringkasan absensi harian dan kelengkapan data pada dashboard.
+- Memperkuat pembatasan menu, ekspor, dan data kelas berdasarkan peran serta penugasan pengguna.
+- Merapikan Presensi Pegawai, jenis pegawai, dan ringkasan jumlah murid yang ditangani.
+- Menyeragamkan nama berkas PDF berdasarkan dokumen, murid, kelas, dan tahun ajaran.
+- Meningkatkan keamanan backup dan pemulihan SQLite, termasuk validasi database Kaganga dan rollback saat impor gagal.
+- Menaikkan batas impor backup menjadi 512 MB untuk mendukung database sekolah yang berkembang.
+
+### Catatan pembaruan
+
+- Cadangkan database sebelum memasang pembaruan.
+- Installer tetap menggunakan port aplikasi `1206` dan lokasi data `%LOCALAPPDATA%\Kaganga-data`.
+- Installer memakai `AppId` Kaganga yang sama sehingga pemasangan memperbarui aplikasi sebelumnya.
+- Migrasi dan pemulihan database tidak menghapus data sekolah yang sudah ada.
+
 ## 2.1.3 - 2026-09-06
 
 ### Fitur dan perbaikan

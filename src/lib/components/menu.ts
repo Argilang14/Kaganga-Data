@@ -39,6 +39,12 @@ export const appMenuItems: MenuItem[] = [
 				path: '/data-mata-pelajaran'
 			},
 			{
+				title: 'RPM',
+				path: '/rpm',
+				permission: 'kurikulum_rpm',
+				tags: ['rencana pembelajaran mendalam', 'deep learning', 'modul ajar', 'lampiran']
+			},
+			{
 				title: 'Jadwal Pelajaran',
 				path: '/rapor/jadwal-pelajaran'
 			},
@@ -217,8 +223,8 @@ export const appMenuItems: MenuItem[] = [
 		path: '/cetak'
 	},
 	{
-		title: 'Cetak Dokumen SR',
+		title: 'Cetak Raport',
 		icon: 'print',
-		path: '/cetak-sr'
+		path: '/cetak-raport'
 	}
 ];

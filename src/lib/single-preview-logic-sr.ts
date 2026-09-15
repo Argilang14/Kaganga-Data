@@ -26,6 +26,7 @@ export type DocumentType =
 	| 'jadwal-pelajaran'
 	| 'kalender-pendidikan'
 	| 'jurnal-mengajar'
+	| 'buku-tamu'
 	| 'martikulasi-sk'
 	| 'martikulasi-raport'
 	| 'martikulasi-sttm';
@@ -63,6 +64,7 @@ const DOCUMENT_PATHS: Record<DocumentType, string> = {
 	'jadwal-pelajaran': '/cetak/jadwal-pelajaran',
 	'kalender-pendidikan': '/cetak/kalender-pendidikan',
 	'jurnal-mengajar': '/api/pdf/jurnal-mengajar',
+	'buku-tamu': '/api/buku-tamu/print',
 	'martikulasi-sk': '/api/pdf/martikulasi',
 	'martikulasi-raport': '/api/pdf/martikulasi',
 	'martikulasi-sttm': '/api/pdf/martikulasi'
@@ -78,6 +80,7 @@ const DOCUMENT_LABELS: Record<DocumentType, string> = {
 	'jadwal-pelajaran': 'Jadwal Pelajaran',
 	'kalender-pendidikan': 'Kalender Pendidikan',
 	'jurnal-mengajar': 'Jurnal Mengajar',
+	'buku-tamu': 'PDF Buku Tamu Digital',
 	'martikulasi-sk': 'SK Tim Martikulasi',
 	'martikulasi-raport': 'Raport Hasil Martikulasi',
 	'martikulasi-sttm': 'Surat Tanda Tamat Martikulasi'

@@ -190,7 +190,7 @@ function main() {
 	const envTarget = path.join(appStage, '.env');
 	if (!fs.existsSync(envTarget)) {
 		const envContent =
-			'DB_URL=file:%LOCALAPPDATA%/Kaganga-data/database.sqlite3\nBODY_SIZE_LIMIT=5M\n';
+			'DB_URL=file:%LOCALAPPDATA%/Kaganga-data/database.sqlite3\nBODY_SIZE_LIMIT=512M\n';
 		fs.writeFileSync(envTarget, envContent);
 		console.info('Wrote default .env to', envTarget);
 	} else {

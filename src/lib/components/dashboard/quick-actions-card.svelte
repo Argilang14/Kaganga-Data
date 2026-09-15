@@ -5,6 +5,8 @@
 	import { toast } from '$lib/components/toast.svelte';
 
 	import { page } from '$app/state';
+	import { canDownloadDatabaseBackup } from '$lib/export-access';
+	let canDownloadBackup = $derived(canDownloadDatabaseBackup(page.data.user));
 
 	// single permission to manage dashboard quick actions
 	let canDashboardManage = $derived.by(() => {
@@ -27,7 +29,7 @@
 	};
 
 	const handleBackupDownload = async () => {
-		if (typeof window === 'undefined' || downloadingBackup) return;
+		if (typeof window === 'undefined' || downloadingBackup || !canDownloadBackup) return;
 		downloadingBackup = true;
 
 		try {
@@ -98,13 +100,13 @@
 			<div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
 				<button
 					type="button"
-					onclick={() => (canDashboardManage ? handleBackupDownload() : undefined)}
+					onclick={handleBackupDownload}
 					class="btn btn-outline btn-accent w-full shadow-none"
-					disabled={downloadingBackup || !canDashboardManage}
-					aria-disabled={!canDashboardManage}
+					disabled={downloadingBackup || !canDownloadBackup}
+					aria-disabled={!canDownloadBackup}
 					aria-busy={downloadingBackup}
-					title={!canDashboardManage
-						? 'Anda tidak memiliki izin untuk melakukan tindakan cepat'
+					title={!canDownloadBackup
+						? 'Backup database hanya tersedia untuk admin dan kepala sekolah'
 						: ''}
 				>
 					{#if downloadingBackup}

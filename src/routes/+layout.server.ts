@@ -12,6 +12,7 @@ import { redirect } from '@sveltejs/kit';
 import type { LayoutServerLoad } from './$types';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { getLegacyWaliKelasIds, isLegacyWaliKelas } from '$lib/server/legacy-wali-kelas';
+import { getAssignmentSummaries } from '$lib/server/assignment-summary';
 
 export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 	const meta: PageMeta = {
@@ -102,6 +103,7 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 						with: { waliKelas: { columns: { id: true, nama: true } } },
 						where: and(
 							inArray(tableKelas.id, allowedKelasIds),
+							eq(tableKelas.sekolahId, sekolah.id),
 							eq(tableKelas.semesterId, academicContext.activeSemesterId)
 						),
 						orderBy: asc(tableKelas.nama)
@@ -110,7 +112,7 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 					if (!daftarKelas.length) {
 						const assignedKelas = await db.query.tableKelas.findMany({
 							columns: { nama: true },
-							where: inArray(tableKelas.id, allowedKelasIds)
+							where: and(inArray(tableKelas.id, allowedKelasIds), eq(tableKelas.sekolahId, sekolah.id), academicContext.activeTahunAjaranId ? eq(tableKelas.tahunAjaranId, academicContext.activeTahunAjaranId) : undefined)
 						});
 						const namaSet = new Set(assignedKelas.map((k) => k.nama));
 						daftarKelas = await db.query.tableKelas.findMany({
@@ -128,7 +130,7 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 					daftarKelas = await db.query.tableKelas.findMany({
 						columns: { id: true, nama: true, fase: true },
 						with: { waliKelas: { columns: { id: true, nama: true } } },
-						where: inArray(tableKelas.id, allowedKelasIds),
+						where: and(inArray(tableKelas.id, allowedKelasIds), eq(tableKelas.sekolahId, sekolah.id)),
 						orderBy: asc(tableKelas.nama)
 					});
 				}
@@ -263,6 +265,7 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 	}
 
 	return {
+		assignmentSummary: user && sekolah?.id ? (await getAssignmentSummaries([user], sekolah.id, academicContext?.activeSemesterId ?? null, academicContext?.activeTahunAjaranId ?? null)).get(user.id) ?? null : null,
 		sekolah,
 		meta,
 		daftarKelas,

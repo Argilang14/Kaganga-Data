@@ -8,6 +8,7 @@ import {
 } from '$lib/server/db/schema';
 import { error, isHttpError, type RequestHandler } from '@sveltejs/kit';
 import { and, asc, eq } from 'drizzle-orm';
+import { guardianStudentCondition } from '$lib/server/assignment-summary';
 import ExcelJS from 'exceljs';
 
 function sanitizeFilename(value: string) {
@@ -37,7 +38,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 		let muridList = await db.query.tableMurid.findMany({
 			columns: { nama: true, nisn: true, waliAsuhNama: true },
-			where: and(eq(tableMurid.kelasId, kelasId), eq(tableMurid.sekolahId, sekolahId)),
+			where: and(eq(tableMurid.kelasId, kelasId), eq(tableMurid.sekolahId, sekolahId), await guardianStudentCondition(locals.user, sekolahId)),
 			orderBy: asc(tableMurid.nama)
 		});
 

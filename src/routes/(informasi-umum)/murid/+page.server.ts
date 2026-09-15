@@ -36,7 +36,12 @@ export async function load({ locals, url, depends, parent }) {
 	const filter = and(
 		eq(tableMurid.sekolahId, sekolahId),
 		kelasId ? eq(tableMurid.kelasId, +kelasId) : inArray(tableMurid.kelasId, kelasIds),
-		search ? sql`${tableMurid.nama} LIKE ${'%' + search + '%'} COLLATE NOCASE` : undefined
+		search ? sql`${tableMurid.nama} LIKE ${'%' + search + '%'} COLLATE NOCASE` : undefined,
+		url.searchParams.get('belum_lengkap') === 'foto'
+			? sql`trim(coalesce(${tableMurid.foto}, '')) = ''`
+			: url.searchParams.get('belum_lengkap') === 'qr'
+				? sql`not exists (select 1 from qr_murid q where q.murid_id = ${tableMurid.id} and q.revoked_at is null)`
+				: undefined
 	);
 
 	const [{ totalItems }] = await db

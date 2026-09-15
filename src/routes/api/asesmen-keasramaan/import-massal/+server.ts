@@ -14,6 +14,7 @@ import {
 	type EkstrakurikulerNilaiKategori
 } from '$lib/ekstrakurikuler';
 import { and, asc, eq } from 'drizzle-orm';
+import { guardianStudentCondition } from '$lib/server/assignment-summary';
 
 type Target = {
 	keasramaanId: number;
@@ -227,7 +228,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 		let muridList = await db.query.tableMurid.findMany({
 			columns: { id: true, nama: true, nisn: true, waliAsuhNama: true },
-			where: and(eq(tableMurid.kelasId, kelasId), eq(tableMurid.sekolahId, sekolahId))
+			where: and(eq(tableMurid.kelasId, kelasId), eq(tableMurid.sekolahId, sekolahId), await guardianStudentCondition(locals.user, sekolahId))
 		});
 		const user = locals.user as { type?: string; pegawaiId?: number | null } | null;
 		if (user?.type === 'wali_asuh' && user.pegawaiId) {

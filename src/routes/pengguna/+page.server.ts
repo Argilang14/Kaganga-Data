@@ -24,6 +24,8 @@ import { hashPassword } from '$lib/server/auth';
 import { validatePassword } from '$lib/password-policy';
 import { defaultPermissionsForType } from './permissions';
 import { fail } from '@sveltejs/kit';
+import { getAssignmentSummaries } from '$lib/server/assignment-summary';
+import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 
 const u = tableAuthUser;
 const CREATABLE_ROLES = ['user', 'wali_asuh', 'wali_asrama'] as const;
@@ -138,42 +140,9 @@ export async function load({ url, locals }) {
 			}
 		}
 
-		// Second pass: for wali_kelas and wali_asuh users, fetch ALL kelas they manage
-		for (const [, userRow] of map.entries()) {
-			if (userRow.type === 'wali_kelas' && userRow.pegawaiId) {
-				// Query ALL kelas where waliKelasId = pegawaiId
-				const allKelas = await db.query.tableKelas.findMany({
-					columns: { id: true, nama: true },
-					where: and(
-						eq(tableKelas.waliKelasId, userRow.pegawaiId),
-						eq(tableKelas.sekolahId, sekolahId)
-					)
-				});
-
-				// Aggregate kelas names
-				if (allKelas.length > 0) {
-					const kelasNames = allKelas.map((k) => k.nama).join(', ');
-					userRow.kelasName = kelasNames;
-				}
-			} else if (userRow.type === 'wali_asuh' && userRow.pegawaiId) {
-				// Wali_asuh is per-student, not per-class
-				// Show count of assigned students instead
-				const peg = await db.query.tablePegawai.findFirst({
-					columns: { nama: true },
-					where: eq(tablePegawai.id, userRow.pegawaiId)
-				});
-				if (peg?.nama) {
-					const [{ count }] = await db
-						.select({ count: sql<number>`count(*)` })
-						.from(tableMurid)
-						.where(
-							sql`LOWER(trim(${tableMurid.waliAsuhNama})) = ${peg.nama.toLowerCase()} AND trim(${tableMurid.waliAsuhNama}) != ''`
-						);
-					userRow.kelasName = `${count} murid`;
-				}
-			}
-		}
-
+		const context = await resolveSekolahAcademicContext(sekolahId);
+		const summaries = await getAssignmentSummaries([...map.values()], sekolahId, context.activeSemesterId, context.activeTahunAjaranId);
+		for (const row of map.values()) row.kelasName = summaries.get(row.id) ?? 'Belum ada penugasan';
 		console.debug('[pengguna] after dedup, users count:', map.size);
 		const rows = Array.from(map.values());
 		const userIds = rows.map((row) => row.id);

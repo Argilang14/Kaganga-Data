@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.8 - 2026-09-15
+
+### Perbaikan rilis
+
+- Memperbaiki pipeline installer agar selalu membangun aplikasi dan membuat staging baru sebelum kompilasi.
+- Memastikan seluruh fitur dan rute terbaru masuk ke paket Windows, termasuk RPM dan lampiran pembelajaran.
+- Mencegah installer memakai staging lama yang hanya memiliki nomor versi terbaru.
+- Mempertahankan mekanisme backup, migrasi aman, port `1206`, dan direktori data Kaganga yang sama.
+
 ## 2.1.7 - 2026-09-15
 
 ### Fitur dan perbaikan

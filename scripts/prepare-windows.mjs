@@ -41,10 +41,13 @@ function main() {
 	const appStage = path.join(stageRoot, 'Kaganga');
 
 	const hasPnpm = hasCommand('pnpm');
+	const localVite = path.join(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js');
 
 	// 1) Build
 	if (!skipBuild) {
-		if (hasPnpm) {
+		if (fs.existsSync(localVite)) {
+			run(process.execPath, [localVite, 'build'], { cwd: projectRoot, shell: false });
+		} else if (hasPnpm) {
 			run('pnpm', ['build'], { cwd: projectRoot });
 		} else {
 			if (!hasCommand('npm')) throw new Error('Neither pnpm nor npm found on PATH');

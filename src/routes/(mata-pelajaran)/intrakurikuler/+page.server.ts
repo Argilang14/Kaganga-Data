@@ -2,6 +2,7 @@ import db from '$lib/server/db';
 import { normMapelName, pilihIndukPembelajaran } from '$lib/server/dapodik';
 import { ensureAgamaMapelForClasses } from '$lib/server/mapel-agama';
 import { getAksesMapelUser, needsMapelFilter } from '$lib/server/mapel-access';
+import { canManageKelas } from '$lib/server/kelas-manage';
 import {
 	tableMataPelajaran,
 	tableTujuanPembelajaran,
@@ -25,8 +26,8 @@ const PKS_VARIANT_NAME_SET = new Set<string>(pksVariantNames);
 const AGAMA_PARENT_NAME = 'Pendidikan Agama dan Budi Pekerti';
 const PKS_PARENT_NAME = 'Pendalaman Kitab Suci';
 
-function canManageImportUrutan(userType?: string) {
-	return userType === 'admin' || userType === 'kepala_sekolah' || userType === 'wali_kelas';
+async function canManageImportUrutan(user: App.Locals['user'], sekolahId: number | undefined, kelasId: number | null) {
+	return Boolean(sekolahId && kelasId && await canManageKelas(user, sekolahId, kelasId));
 }
 
 type MapelRow = { id: number; nama: string | null };
@@ -336,12 +337,6 @@ function isXlsxMime(type: string | null | undefined) {
 
 export const actions = {
 	async import_mapel({ request, cookies, locals }) {
-		const user = locals.user as { type?: string } | null;
-		const userType = user?.type;
-		if (!canManageImportUrutan(userType)) {
-			return fail(403, { fail: 'Anda tidak memiliki akses untuk mengimpor mata pelajaran.' });
-		}
-
 		const kelasIdCookie = cookies.get(cookieNames.ACTIVE_KELAS_ID) || null;
 		const kelasId = kelasIdCookie ? Number(kelasIdCookie) : null;
 		if (!kelasId || !Number.isFinite(kelasId)) {
@@ -350,6 +345,8 @@ export const actions = {
 
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(400, { fail: 'Pilih sekolah aktif terlebih dahulu.' });
+		if (!(await canManageImportUrutan(locals.user, sekolahId, kelasId)))
+			return fail(403, { fail: 'Anda tidak memiliki akses untuk mengimpor mata pelajaran.' });
 
 		const formData = await request.formData();
 		const file = formData.get('file');
@@ -709,12 +706,6 @@ export const actions = {
 	},
 
 	async simpan_urutan({ request, cookies, locals }) {
-		const user = locals.user as { type?: string } | null;
-		const userType = user?.type;
-		if (!canManageImportUrutan(userType)) {
-			return fail(403, { fail: 'Anda tidak memiliki akses untuk mengubah urutan.' });
-		}
-
 		const kelasIdCookie = cookies.get(cookieNames.ACTIVE_KELAS_ID) || null;
 		const kelasId = kelasIdCookie ? Number(kelasIdCookie) : null;
 		if (!kelasId || !Number.isFinite(kelasId)) {
@@ -723,6 +714,8 @@ export const actions = {
 
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(400, { fail: 'Pilih sekolah aktif terlebih dahulu.' });
+		if (!(await canManageImportUrutan(locals.user, sekolahId, kelasId)))
+			return fail(403, { fail: 'Anda tidak memiliki akses untuk mengubah urutan.' });
 
 		const formData = await request.formData();
 		let ids: unknown;
@@ -771,12 +764,6 @@ export const actions = {
 	},
 
 	async tambah_pks({ cookies, locals }) {
-		const user = locals.user as { type?: string } | null;
-		const userType = user?.type;
-		if (!canManageImportUrutan(userType)) {
-			return fail(403, { fail: 'Anda tidak memiliki akses untuk menambahkan PKS.' });
-		}
-
 		const kelasIdCookie = cookies.get(cookieNames.ACTIVE_KELAS_ID) || null;
 		const kelasId = kelasIdCookie ? Number(kelasIdCookie) : null;
 		if (!kelasId || !Number.isFinite(kelasId)) {
@@ -785,6 +772,8 @@ export const actions = {
 
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(400, { fail: 'Pilih sekolah aktif terlebih dahulu.' });
+		if (!(await canManageImportUrutan(locals.user, sekolahId, kelasId)))
+			return fail(403, { fail: 'Anda tidak memiliki akses untuk menambahkan PKS.' });
 
 		const { addPksParentToClasses } = await import('$lib/server/mapel-pks.js');
 		const wasAdded = await addPksParentToClasses([kelasId]);

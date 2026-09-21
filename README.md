@@ -1,16 +1,16 @@
-# Rapkumer
+# Kaganga
 
 ![screenshot](static/image.png)
 
 <a href='https://nodejs.org/en' target="_blank"><img alt='node.js' src='https://img.shields.io/badge/Node.JS-100000?style=for-the-badge&logo=node.js&logoColor=35C354&labelColor=000000&color=35C354'/></a> <a href='https://svelte.dev/' target="_blank"><img alt='Svelte' src='https://img.shields.io/badge/Svelte-100000?style=for-the-badge&logo=Svelte&logoColor=F45A20&labelColor=000000&color=F45A20'/></a> <a href='https://orm.drizzle.team/' target="_blank"><img alt='Drizzle' src='https://img.shields.io/badge/Drizzle_ORM-100000?style=for-the-badge&logo=Drizzle&logoColor=FAF61D&labelColor=000000&color=FAF61D'/></a> <a href='https://sqlite.org/' target="_blank"><img alt='Sqlite' src='https://img.shields.io/badge/SQLite3-100000?style=for-the-badge&logo=Sqlite&logoColor=5EA765&labelColor=000000&color=5EA765'/></a> <a href='https://tailwindcss.com/' target="_blank"><img alt='tailwindcss' src='https://img.shields.io/badge/Tailwind_CSS-100000?style=for-the-badge&logo=tailwindcss&logoColor=36DBFF&labelColor=000000&color=36DBFF'/></a> <a href='https://daisyui.com/' target="_blank"><img alt='DaisyUI' src='https://img.shields.io/badge/Daisy_UI-100000?style=for-the-badge&logo=DaisyUI&logoColor=FFEC25&labelColor=000000&color=FFEC25'/></a>
 
-> Rapkumer awalnya dibuat sebagai alternatif E-Rapor Kurikulum Merdeka.
+> Kaganga adalah sistem administrasi dan informasi data sekolah yang dikembangkan dari proyek Rapkumer.
 
-Seiring perkembangannya, Rapkumer kini menjadi aplikasi terpadu yang membantu berbagai kebutuhan administrasi guru dan sekolah.
+Kaganga membantu berbagai kebutuhan administrasi guru, murid, kurikulum, asrama, absensi, surat menyurat, dan dokumen sekolah dalam satu aplikasi.
 
-> **Mengapa masih menggunakan Rapkumer jika pemerintah sudah menyediakan E-Rapor resmi?**
+> **Mengapa menggunakan Kaganga jika pemerintah sudah menyediakan E-Rapor resmi?**
 
-Karena E-Rapor resmi berfokus pada input nilai akhir serta penentuan Tujuan Pembelajaran (TP) yang tercapai atau belum tercapai secara manual. Rapkumer hadir sebagai pelengkap proses tersebut dengan menyediakan pencatatan penilaian harian, pengolahan nilai, hingga rekapitulasi secara otomatis sehingga pekerjaan guru menjadi lebih praktis.
+Karena E-Rapor resmi berfokus pada input nilai akhir serta penentuan Tujuan Pembelajaran (TP) yang tercapai atau belum tercapai secara manual. Kaganga hadir sebagai pelengkap proses tersebut dengan menyediakan pencatatan penilaian harian, pengolahan nilai, hingga rekapitulasi secara otomatis sehingga pekerjaan guru menjadi lebih praktis.
 
 Dokumentasi lengkap aplikasi ini disusun dalam bahasa Indonesia. File README ini memberikan gambaran singkat untuk pengguna dan pengembang, sedangkan pembahasan teknis serta panduan kontribusi tersedia di folder `docs/`.
 
@@ -26,7 +26,7 @@ Dokumentasi lengkap aplikasi ini disusun dalam bahasa Indonesia. File README ini
 - Mendukung penggunaan campuran huruf latin dan arab pada Capaian Pembelajaran (CP) di rapor.
 - Ekspor nilai dan Tujuan Pembelajaran (TP) ke file Excel yang dapat diimpor ke E-Rapor Kemdikdas.
 
-## Siapa yang Cocok Menggunakan Rapkumer?
+## Siapa yang Cocok Menggunakan Kaganga?
 
 - Sekolah yang tidak dapat menggunakan E-Rapor Kemdikdas karena alasan tertentu.
 - Sekolah yang sudah menggunakan E-Rapor tetapi ingin seluruh proses penilaian harian tercatat secara elektronik sehingga rekapitulasi nilai tidak lagi dilakukan secara manual di Excel. Nilai akhir cukup diimpor ke E-Rapor.
@@ -37,8 +37,8 @@ Dokumentasi lengkap aplikasi ini disusun dalam bahasa Indonesia. File README ini
 ### Versi Pengguna (Windows Installer)
 
 1. Kunjungi halaman rilis:
-   https://github.com/sira313/rapkumer/releases
-2. Unduh file `RapkumerSetup.exe`.
+   https://github.com/Argilang14/Kaganga-Data/releases
+2. Unduh file `KagangaSetup-vX.Y.Z.exe`.
 3. Jalankan installer dan ikuti proses instalasi.
 4. Setelah selesai, buka aplikasi melalui shortcut yang tersedia.
 
@@ -52,10 +52,10 @@ Dokumentasi lengkap aplikasi ini disusun dalam bahasa Indonesia. File README ini
 
 #### Instalasi
 
-1. Clone repository menggunakan perintah di bawah atau download [file zip](https://github.com/sira313/rapkumer/archive/refs/heads/main.zip) dari project ini.
+1. Clone repository menggunakan perintah di bawah atau unduh file ZIP dari repositori Kaganga.
 
    ```bash
-   git clone https://github.com/sira313/rapkumer && cd rapkumer
+   git clone https://github.com/Argilang14/Kaganga-Data.git && cd Kaganga-Data
    ```
 
 2. Install seluruh dependency.
@@ -147,7 +147,7 @@ Informasi lisensi dan kredit selengkapnya tersedia di:
 
 ## Kontribusi
 
-Terima kasih atas minat Anda untuk berkontribusi pada Rapkumer.
+Terima kasih atas minat Anda untuk berkontribusi pada Kaganga.
 
 Sebelum mengirim Pull Request, mohon perhatikan beberapa hal berikut:
 

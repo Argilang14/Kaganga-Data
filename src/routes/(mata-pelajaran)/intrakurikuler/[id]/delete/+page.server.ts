@@ -1,4 +1,5 @@
 import db from '$lib/server/db/index.js';
+import { canManageKelas } from '$lib/server/kelas-manage';
 import { tableMataPelajaran, tableTujuanPembelajaran } from '$lib/server/db/schema.js';
 import { eq, inArray, and, like } from 'drizzle-orm';
 import { fail } from '@sveltejs/kit';
@@ -8,7 +9,7 @@ export async function load() {
 }
 
 export const actions = {
-	async delete({ params, request }) {
+	async delete({ params, request, locals }) {
 		const form = await request.formData();
 		if (!form.get('confirm')) {
 			return fail(400, { fail: 'Konfirmasi penghapusan diperlukan.' });
@@ -25,6 +26,8 @@ export const actions = {
 			if (!mapel) {
 				return fail(404, { fail: 'Mata pelajaran tidak ditemukan.' });
 			}
+			if (!locals.sekolah?.id || !(await canManageKelas(locals.user, locals.sekolah.id, mapel.kelasId)))
+				return fail(403, { fail: 'Anda tidak memiliki izin untuk menghapus mapel kelas ini.' });
 
 			// Check if this is parent PKS or parent Agama
 			const isPksParent = mapel.nama === 'Pendalaman Kitab Suci';

@@ -32,6 +32,11 @@
 <td>
 	<div class="flex flex-col items-start gap-1">
 		<span>{roleLabel(u.type)}{u.kelasName ? ` - ${u.kelasName}` : ''}</span>
+		{#if u.roles?.length}
+			<div class="flex max-w-72 flex-wrap gap-1">
+				{#each u.roles as role}<span class="badge badge-ghost badge-sm">{role}</span>{/each}
+			</div>
+		{/if}
 		{#if u.type === 'wali_kelas'}
 			<span class="badge badge-warning badge-xs" title="Role mengikuti penugasan Data Kelas">Akun lama</span>
 		{/if}

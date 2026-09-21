@@ -1,6 +1,6 @@
-RAPKUMER LICENSE
+KAGANGA LICENSE
 
-Copyright (c) 2026 Rapkumer
+Copyright (c) 2026 Kaganga Contributors
 
 Dengan menggunakan, menyalin, memodifikasi, atau mendistribusikan perangkat lunak ini, Anda dianggap telah menyetujui seluruh ketentuan lisensi berikut.
 
@@ -11,7 +11,7 @@ Anda diizinkan untuk:
 - Menggunakan perangkat lunak ini untuk penelitian.
 - Mempelajari cara kerja kode sumber.
 - Memodifikasi kode sumber sesuai kebutuhan.
-- Mengirimkan perbaikan (bug fix), fitur baru, atau kontribusi lainnya ke repositori resmi Rapkumer.
+- Mengirimkan perbaikan (bug fix), fitur baru, atau kontribusi lainnya ke repositori resmi Kaganga.
 
 2. PENYALINAN DAN DISTRIBUSI
 Anda diperbolehkan menyalin dan mendistribusikan perangkat lunak ini, baik dalam bentuk asli maupun yang telah dimodifikasi, dengan syarat:
@@ -31,13 +31,17 @@ Larangan ini mencakup, tetapi tidak terbatas pada:
 - Memungut biaya untuk mengunduh perangkat lunak ini.
 - Menawarkan layanan instalasi, konfigurasi, atau dukungan dengan menjadikan perangkat lunak ini sebagai produk utama yang diperjualbelikan.
 - Menggunakan perangkat lunak ini sebagai bagian dari produk atau layanan komersial tanpa izin tertulis dari pemegang hak cipta.
-Jika Anda ingin menggunakan Rapkumer untuk keperluan komersial, Anda wajib memperoleh izin tertulis dari pemegang hak cipta terlebih dahulu.
+Jika Anda ingin menggunakan Kaganga untuk keperluan komersial, Anda wajib memperoleh izin tertulis dari pemegang hak cipta terlebih dahulu.
 
 4. ATRIBUSI
 Apabila Anda mendistribusikan perangkat lunak ini atau versi yang telah dimodifikasi, Anda wajib:
-- Mencantumkan kredit kepada pengembang asli Rapkumer.
-- Menyertakan tautan ke repositori resmi Rapkumer.
+- Mencantumkan nama Kaganga dan kredit kepada para pengembangnya.
+- Menyertakan tautan ke repositori resmi Kaganga.
 - Menjelaskan bahwa perangkat lunak telah dimodifikasi apabila memang ada perubahan.
+- Mempertahankan atribusi bahwa Kaganga dikembangkan dari proyek Rapkumer oleh sira313.
+
+Repositori Kaganga: https://github.com/Argilang14/Kaganga-Data
+Proyek asal Rapkumer: https://github.com/sira313/rapkumer
 
 5. CAKUPAN LISENSI
 Lisensi ini berlaku untuk:
@@ -54,10 +58,10 @@ Seluruh aset lain yang tidak disebutkan di atas (termasuk file lain di dalam fol
 Ikon pada folder:
 src/lib/icons/
 berasal dari proyek Feather Icons dan dilisensikan di bawah lisensi MIT.
-Hak penggunaan ikon tersebut mengikuti ketentuan lisensi MIT dan tidak tunduk pada lisensi Rapkumer.
+Hak penggunaan ikon tersebut mengikuti ketentuan lisensi MIT dan tidak tunduk pada lisensi Kaganga.
 
 7. PENAFIAN
 PERANGKAT LUNAK INI DISEDIAKAN "SEBAGAIMANA ADANYA" (AS IS), TANPA JAMINAN DALAM BENTUK APA PUN, BAIK TERSURAT MAUPUN TERSIRAT.
 PEMEGANG HAK CIPTA TIDAK BERTANGGUNG JAWAB ATAS KERUSAKAN, KEHILANGAN DATA, GANGGUAN OPERASIONAL, ATAU KERUGIAN LAIN YANG TIMBUL AKIBAT PENGGUNAAN, KETIDAKMAMPUAN MENGGUNAKAN, ATAU HASIL PENGGUNAAN PERANGKAT LUNAK INI.
 
-Rapkumer - Administrasi Guru Terpadu
+Kaganga - Kawasan Gerbang Administrasi dan Informasi Data Sekolah

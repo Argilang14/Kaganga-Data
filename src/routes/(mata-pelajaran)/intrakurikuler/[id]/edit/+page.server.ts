@@ -1,6 +1,7 @@
 import db from '$lib/server/db/index.js';
 import { normMapelName } from '$lib/server/dapodik';
 import { opsiMapelDapodik } from '$lib/server/dapodik-mapel-options';
+import { canManageKelas } from '$lib/server/kelas-manage';
 import { tableDapodikPembelajaran, tableMataPelajaran } from '$lib/server/db/schema.js';
 import { agamaMapelNames, pksMapelNames } from '$lib/statics';
 import { unflattenFormData } from '$lib/utils';
@@ -61,6 +62,8 @@ export const actions = {
 		if (!existing || existing.kelas.sekolahId !== sekolahId) {
 			return fail(404, { fail: 'Data mata pelajaran tidak ditemukan.' });
 		}
+		if (!(await canManageKelas(locals.user, sekolahId, existing.kelasId)))
+			return fail(403, { fail: 'Anda tidak memiliki izin untuk mengubah mapel kelas ini.' });
 
 		const kkmValue = formMapel.kkm ? Number(formMapel.kkm) : Number.NaN;
 		const kode = formMapel.kode?.toString().trim() ?? '';

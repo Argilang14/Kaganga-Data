@@ -1,6 +1,7 @@
 import db from '$lib/server/db/index.js';
 import { normMapelName, resolveReferensiMapelId } from '$lib/server/dapodik';
 import { opsiMapelDapodik } from '$lib/server/dapodik-mapel-options';
+import { canManageKelas } from '$lib/server/kelas-manage';
 import { tableDapodikPembelajaran, tableKelas, tableMataPelajaran } from '$lib/server/db/schema';
 import { cookieNames, unflattenFormData } from '$lib/utils';
 import { fail } from '@sveltejs/kit';
@@ -52,6 +53,8 @@ export const actions = {
 		if (!kelasAktif) {
 			return fail(400, { fail: 'Kelas aktif tidak ditemukan.' });
 		}
+		if (!(await canManageKelas(locals.user, sekolahId, kelasId)))
+			return fail(403, { fail: 'Anda tidak memiliki izin untuk mengubah mapel kelas ini.' });
 
 		const nama = formMapel.nama?.trim();
 		const namaLokal = formMapel.nama_lokal?.toString().trim() ?? '';

@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.1.9 - 2026-09-21
+
+### Fitur dan perbaikan
+
+- Menambahkan impor, pratinjau, dan ekspor Excel untuk data kokurikuler.
+- Memperketat pembatasan pengelolaan intrakurikuler dan kokurikuler berdasarkan sekolah, kelas, serta penugasan pengguna.
+- Menampilkan ringkasan tugas tambahan pada Manajemen Pengguna tanpa menggabungkan atau mengubah akun secara otomatis.
+- Menyeragamkan identitas dan teks lisensi installer menjadi Kaganga.
+
+### Catatan pembaruan
+
+- Cadangkan database sebelum memasang pembaruan.
+- Installer tetap menggunakan port aplikasi `1206` dan lokasi data `%LOCALAPPDATA%\Kaganga-data`.
+- Installer memakai `AppId` Kaganga yang sama sehingga pemasangan memperbarui versi sebelumnya tanpa membuat aplikasi baru.
+- Kompatibilitas nama teknis lama tetap dipertahankan hanya untuk migrasi data dan pembaruan instalasi lama.
+
 ## 2.1.8 - 2026-09-15
 
 ### Perbaikan rilis

@@ -16,7 +16,8 @@ import {
 	tableAbsensiKegiatan,
 	tableKesehatanMurid,
 	tableUserFavorites,
-	tableJurnalMengajar
+	tableJurnalMengajar,
+	tableSekolah
 } from '$lib/server/db/schema';
 import { sql, eq, and, inArray, or, asc } from 'drizzle-orm';
 import { authority } from './utils.server';
@@ -120,13 +121,6 @@ export async function load({ url, locals }) {
 		.limit(pageSize)
 		.offset((currentPage - 1) * pageSize);
 
-	// Debug: log raw results
-	console.debug('[pengguna] usersRaw count:', usersRaw.length);
-	const nilawatiRows = usersRaw.filter((r) => r.pegawaiName?.includes('Nilawati'));
-	if (nilawatiRows.length > 0) {
-		console.debug('[pengguna] Nilawati entries:', JSON.stringify(nilawatiRows, null, 2));
-	}
-
 	// Deduplicate & aggregate kelas: for wali_kelas with multi-kelas,
 	// fetch ALL kelas they manage and aggregate into display
 	const users = await (async () => {
@@ -143,7 +137,6 @@ export async function load({ url, locals }) {
 		const context = await resolveSekolahAcademicContext(sekolahId);
 		const summaries = await getAssignmentSummaries([...map.values()], sekolahId, context.activeSemesterId, context.activeTahunAjaranId);
 		for (const row of map.values()) row.kelasName = summaries.get(row.id) ?? 'Belum ada penugasan';
-		console.debug('[pengguna] after dedup, users count:', map.size);
 		const rows = Array.from(map.values());
 		const userIds = rows.map((row) => row.id);
 		const [mapelLinks, kelasLinks] = userIds.length
@@ -171,6 +164,18 @@ export async function load({ url, locals }) {
 		}
 		for (const link of kelasLinks) {
 			kelasIdsByUser.set(link.userId, [...(kelasIdsByUser.get(link.userId) ?? []), link.id]);
+		}
+		const [waliClasses, schoolHead] = await Promise.all([
+			db.query.tableKelas.findMany({
+				columns: { id: true, nama: true, waliKelasId: true },
+				where: and(eq(tableKelas.sekolahId, sekolahId), context.activeSemesterId ? eq(tableKelas.semesterId, context.activeSemesterId) : undefined)
+			}),
+			db.query.tableSekolah.findFirst({ columns: { kepalaSekolahId: true }, where: eq(tableSekolah.id, sekolahId) })
+		]);
+		const waliByPegawai = new Map<number, typeof waliClasses>();
+		for (const kelas of waliClasses) {
+			if (!kelas.waliKelasId) continue;
+			waliByPegawai.set(kelas.waliKelasId, [...(waliByPegawai.get(kelas.waliKelasId) ?? []), kelas]);
 		}
 		const activeSessions = userIds.length
 			? await db
@@ -210,8 +215,14 @@ export async function load({ url, locals }) {
 			const session = sessionByUser.get(row.id);
 			const lastSeenAt = session?.lastSeenAt ?? null;
 			const lastSeenTime = lastSeenAt ? new Date(lastSeenAt).getTime() : 0;
+			const ownClasses = row.pegawaiId ? waliByPegawai.get(row.pegawaiId) ?? [] : [];
+			const roles: string[] = [];
+			if (row.pegawaiId && schoolHead?.kepalaSekolahId === row.pegawaiId) roles.push('Kepala Sekolah');
+			for (const kelas of ownClasses) roles.push(`Wali ${kelas.nama}`);
+			if (row.type === 'wali_kelas' && (mapelIdsByUser.get(row.id)?.length ?? 0) > 0) roles.push('Guru Mapel');
 			return {
 				...row,
+				roles,
 				mataPelajaranIds: mapelIdsByUser.get(row.id) ?? (row.mataPelajaranId ? [row.mataPelajaranId] : []),
 				kelasIds: kelasIdsByUser.get(row.id) ?? (row.kelasId ? [row.kelasId] : []),
 				activeSessionCount: session?.activeSessionCount ?? 0,

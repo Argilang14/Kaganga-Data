@@ -1,7 +1,9 @@
 <script lang="ts">
+	import { deserialize } from '$app/forms';
 	import { invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/icon.svelte';
+	import { toast } from '$lib/components/toast.svelte';
 	import KokurikulerFormModal from '$lib/components/kokurikuler/form-modal.svelte';
 	import KokurikulerDeleteModal from '$lib/components/kokurikuler/delete-modal.svelte';
 	import {
@@ -41,6 +43,39 @@
 	>(null);
 	let kodeInput = $state('');
 	let tujuanInput = $state('');
+	let importDialog: HTMLDialogElement;
+	let importFile = $state<File | null>(null);
+	let importPreview = $state<Array<{ baris: number; kode: string; dimensi: string[]; kegiatan: string; masalah: string | null }>>([]);
+	let importBusy = $state(false);
+	const readyCount = $derived(importPreview.filter((row) => !row.masalah).length);
+
+	async function submitImport(action: 'preview_import' | 'import_kokurikuler') {
+		if (!importFile || importBusy) return;
+		importBusy = true;
+		try {
+			const form = new FormData();
+			form.set('file', importFile);
+			const response = await fetch(`?/` + action, { method: 'POST', body: form });
+			const result = deserialize(await response.text());
+			const data = ('data' in result ? result.data : {}) as { fail?: string; message?: string; preview?: typeof importPreview };
+			if (result.type !== 'success') {
+				toast({ message: data?.fail ?? 'Excel tidak dapat diproses.', type: 'error' });
+				return;
+			}
+			if (action === 'preview_import') importPreview = data.preview ?? [];
+			else {
+				importDialog.close();
+				importFile = null;
+				importPreview = [];
+				await invalidate('app:kokurikuler');
+			}
+			toast({ message: data.message ?? 'Selesai.', type: 'success' });
+		} catch {
+			toast({ message: 'Gagal memproses Excel.', type: 'error' });
+		} finally {
+			importBusy = false;
+		}
+	}
 
 	const labelByKey = profilPelajarPancasilaDimensionLabelByKey;
 
@@ -176,6 +211,34 @@
 	}
 </script>
 
+<dialog bind:this={importDialog} class="modal" onclose={() => { importFile = null; importPreview = []; }}>
+	<div class="modal-box max-w-3xl rounded-lg">
+		<h3 class="text-lg font-semibold">Impor Kokurikuler</h3>
+		<input class="file-input mt-4 w-full" type="file" accept=".xlsx" aria-label="File Excel kokurikuler" onchange={(event) => {
+			importFile = event.currentTarget.files?.[0] ?? null;
+			importPreview = [];
+		}} />
+		<p class="text-base-content/60 mt-2 text-sm">Maksimal 2 MB, 500 baris. Kolom: Kode, Dimensi, Kegiatan.</p>
+		{#if importPreview.length}
+			<p class="mt-4 text-sm font-medium">{readyCount} siap diimpor, {importPreview.length - readyCount} dilewati</p>
+			<div class="mt-2 max-h-72 overflow-auto border border-base-300">
+				<table class="table table-sm min-w-[620px]">
+					<thead><tr><th>Baris</th><th>Kode</th><th>Dimensi</th><th>Kegiatan</th><th>Status</th></tr></thead>
+					<tbody>{#each importPreview as row}
+						<tr><td>{row.baris}</td><td>{row.kode}</td><td>{row.dimensi.join(', ')}</td><td>{row.kegiatan}</td><td>{row.masalah ?? 'Siap'}</td></tr>
+					{/each}</tbody>
+				</table>
+			</div>
+		{/if}
+		<div class="modal-action">
+			<button type="button" class="btn btn-soft" onclick={() => importDialog.close()}>Batal</button>
+			<button type="button" class="btn btn-soft" disabled={!importFile || importBusy} onclick={() => submitImport('preview_import')}><Icon name="search" /> Pratinjau</button>
+			<button type="button" class="btn btn-primary" disabled={!readyCount || importBusy} onclick={() => submitImport('import_kokurikuler')}><Icon name="import" /> Simpan {readyCount}</button>
+		</div>
+	</div>
+	<form method="dialog" class="modal-backdrop"><button aria-label="Tutup">Tutup</button></form>
+</dialog>
+
 <KokurikulerFormModal
 	open={isModalOpen}
 	title={modalTitle}
@@ -236,6 +299,14 @@
 			{/if}
 		</div>
 		<div class="flex flex-col gap-2 sm:flex-row">
+			<details class="dropdown dropdown-end" class:opacity-50={!canManage || !canEdit}>
+				<summary class="btn btn-soft" aria-label="Data Excel kokurikuler" title="Data Excel kokurikuler"><Icon name="download" /> Excel <Icon name="down" /></summary>
+				<ul class="dropdown-content menu bg-base-100 z-20 mt-1 w-48 rounded-md border border-base-300 p-1 shadow-lg">
+					<li><a href="/kokurikuler/excel?template" class:pointer-events-none={!canManage || !canEdit} aria-disabled={!canManage || !canEdit}><Icon name="download" /> Template</a></li>
+					<li><button type="button" disabled={!canManage || !canEdit} onclick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); importDialog.showModal(); }}><Icon name="import" /> Impor</button></li>
+					<li><a href="/kokurikuler/excel" class:pointer-events-none={!canManage || !canEdit} aria-disabled={!canManage || !canEdit}><Icon name="export" /> Ekspor</a></li>
+				</ul>
+			</details>
 			{#if anySelected}
 				<button
 					type="button"

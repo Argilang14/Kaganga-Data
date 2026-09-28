@@ -4,12 +4,15 @@ import { error } from '@sveltejs/kit';
 import db from '$lib/server/db/index.js';
 import { tableMurid } from '$lib/server/db/schema.js';
 import { eq } from 'drizzle-orm';
-
-function uploadsDir() {
-	const envPhoto = process.env.photo || 'file:./data/uploads';
-	const raw = envPhoto.startsWith('file:') ? envPhoto.slice(5) : envPhoto;
-	return path.resolve(raw);
-}
+import {
+	isSupportedPhoto,
+	photoDirectory,
+	removePhotoFiles,
+	safePhotoFilename,
+	thumbnailDirectory,
+	thumbnailFilename,
+	writePhotoThumbnail
+} from '$lib/server/photo-storage';
 
 function contentTypeFor(filename: string) {
 	if (filename.endsWith('.png')) return 'image/png';
@@ -52,7 +55,7 @@ async function generateUniqueFilename(
 	return filename;
 }
 
-export async function GET({ params }: { params: Record<string, string> }) {
+export async function GET({ params, url }: { params: Record<string, string>; url: URL }) {
 	const id = +params.id;
 	if (!id) throw error(400, 'Invalid id');
 
@@ -62,15 +65,32 @@ export async function GET({ params }: { params: Record<string, string> }) {
 	});
 	if (!murid || !murid.foto) throw error(404, 'Not found');
 
-	const dir = uploadsDir();
-	const filePath = path.join(dir, murid.foto);
+	const filename = safePhotoFilename(murid.foto);
+	if (!filename) throw error(404, 'Not found');
+	const originalPath = path.join(photoDirectory('murid'), filename);
+	const thumbnailPath = path.join(thumbnailDirectory('murid'), thumbnailFilename(filename));
+	const filePath = url.searchParams.get('thumbnail') === '1' ? thumbnailPath : originalPath;
 	try {
 		const data = await fs.readFile(filePath);
 		return new Response(Buffer.from(data), {
-			headers: { 'Content-Type': contentTypeFor(murid.foto) }
+			headers: {
+				'Content-Type': filePath === thumbnailPath ? 'image/jpeg' : contentTypeFor(filename),
+				'Cache-Control': 'private, max-age=3600'
+			}
 		});
 	} catch {
-		throw error(404, 'Not found');
+		if (filePath === originalPath) throw error(404, 'Not found');
+		try {
+			const data = await fs.readFile(originalPath);
+			return new Response(Buffer.from(data), {
+				headers: {
+					'Content-Type': contentTypeFor(filename),
+					'Cache-Control': 'private, max-age=3600'
+				}
+			});
+		} catch {
+			throw error(404, 'Not found');
+		}
 	}
 }
 
@@ -95,13 +115,8 @@ export async function DELETE({
 	if (!sekolahId || murid.sekolahId !== sekolahId)
 		return new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 });
 
-	const dir = uploadsDir();
 	if (murid.foto) {
-		try {
-			await fs.unlink(path.join(dir, murid.foto));
-		} catch {
-			// ignore
-		}
+		await removePhotoFiles('murid', murid.foto);
 		await db.update(tableMurid).set({ foto: null }).where(eq(tableMurid.id, id));
 	}
 	return new Response(JSON.stringify({ message: 'OK' }), {
@@ -134,6 +149,7 @@ export async function POST({
 
 	const formData = await request.formData();
 	const uploadedFile = formData.get('foto') as File | null;
+	const thumbnail = formData.get('thumbnail');
 
 	if (!uploadedFile || uploadedFile.size === 0) {
 		return new Response(JSON.stringify({ message: 'No file provided' }), { status: 400 });
@@ -156,7 +172,12 @@ export async function POST({
 
 	try {
 		const buffer = Buffer.from(await uploadedFile.arrayBuffer());
-		const dir = uploadsDir();
+		if (!isSupportedPhoto(buffer, uploadedFile.type)) {
+			return new Response(JSON.stringify({ message: 'Isi file foto tidak valid' }), {
+				status: 400
+			});
+		}
+		const dir = photoDirectory('murid');
 		await fs.mkdir(dir, { recursive: true });
 
 		const ext = uploadedFile.type === 'image/png' ? '.png' : '.jpg';
@@ -164,17 +185,16 @@ export async function POST({
 		const filename = await generateUniqueFilename(db, base, ext, dir);
 		const filePath = path.join(dir, filename);
 
-		// Remove old file if exists and different
-		if (murid.foto && murid.foto !== filename) {
-			try {
-				await fs.unlink(path.join(dir, murid.foto));
-			} catch {
-				// ignore
-			}
+		const temporaryPath = `${filePath}.${process.pid}.tmp`;
+		await fs.writeFile(temporaryPath, buffer, { mode: 0o644, flag: 'wx' });
+		await fs.rename(temporaryPath, filePath);
+		if (thumbnail instanceof File) {
+			await writePhotoThumbnail('murid', filename, thumbnail).catch((thumbnailError) =>
+				console.warn('[murid-photo] Thumbnail tidak dapat disimpan:', thumbnailError)
+			);
 		}
-
-		await fs.writeFile(filePath, buffer, { mode: 0o644 });
 		await db.update(tableMurid).set({ foto: filename }).where(eq(tableMurid.id, id));
+		if (murid.foto && murid.foto !== filename) await removePhotoFiles('murid', murid.foto);
 
 		return new Response(JSON.stringify({ foto: filename, message: 'Foto berhasil diperbarui' }), {
 			headers: { 'Content-Type': 'application/json' }

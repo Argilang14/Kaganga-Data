@@ -43,6 +43,7 @@ export const GET = (async ({ locals, params }) => {
 	if (stored.wakaKurikulumPegawaiId) {
 		url.searchParams.set('waka_kurikulum_pegawai_id', String(stored.wakaKurikulumPegawaiId));
 	}
+	if (stored.kartuLayout) url.searchParams.set('kartu_layout', stored.kartuLayout);
 
 	const docType = stored.docType as DocumentType;
 
@@ -106,8 +107,26 @@ export const GET = (async ({ locals, params }) => {
 		throw error(500, 'Gagal menghasilkan PDF: ' + (e instanceof Error ? e.message : String(e)));
 	}
 
-	const student = stored.muridId && locals.sekolah ? await db.query.tableMurid.findFirst({ columns: { nama: true }, where: and(eq(tableMurid.id, stored.muridId), eq(tableMurid.sekolahId, locals.sekolah.id)), with: { kelas: { columns: { nama: true }, with: { tahunAjaran: { columns: { nama: true } } } } } }) : undefined;
-	const filename = documentPdfFilename(docType, data as Record<string, unknown>, student ? { nama: student.nama, kelas: student.kelas?.nama, tahun: student.kelas?.tahunAjaran?.nama } : undefined);
+	const student =
+		stored.muridId && locals.sekolah
+			? await db.query.tableMurid.findFirst({
+					columns: { nama: true },
+					where: and(
+						eq(tableMurid.id, stored.muridId),
+						eq(tableMurid.sekolahId, locals.sekolah.id)
+					),
+					with: {
+						kelas: { columns: { nama: true }, with: { tahunAjaran: { columns: { nama: true } } } }
+					}
+				})
+			: undefined;
+	const filename = documentPdfFilename(
+		docType,
+		data as Record<string, unknown>,
+		student
+			? { nama: student.nama, kelas: student.kelas?.nama, tahun: student.kelas?.tahunAjaran?.nama }
+			: undefined
+	);
 	return new Response(new Blob([pdfBuffer as unknown as BlobPart], { type: 'application/pdf' }), {
 		headers: {
 			'Content-Disposition': pdfDisposition(filename)

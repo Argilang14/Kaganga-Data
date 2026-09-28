@@ -30,6 +30,18 @@
 		canScanSekolah: boolean;
 		kegiatanList: Kegiatan[];
 	};
+	type PendingScan = {
+		id: string;
+		token: string;
+		mode: 'sekolah' | 'kegiatan';
+		kegiatanId: string | null;
+		status: string | null;
+		capturedAt: string;
+	};
+
+	const OFFLINE_QUEUE_KEY = 'kaganga-absensi-offline-v1';
+	const MAX_QUEUE_AGE_MS = 12 * 60 * 60 * 1000;
+	const MAX_QUEUE_ITEMS = 200;
 
 	let { data }: { data: PageData } = $props();
 
@@ -48,6 +60,9 @@
 	let scanMode = $state<'sekolah' | 'kegiatan'>('kegiatan');
 	let kegiatanId = $state('');
 	let statusOverride = $state('');
+	let isOnline = $state(true);
+	let pendingCount = $state(0);
+	let syncing = $state(false);
 
 	$effect(() => {
 		if (scanMode === 'kegiatan' && !data.kegiatanList.length && data.canScanSekolah) {
@@ -128,6 +143,111 @@
 		await loadCameras();
 	}
 
+	function readPendingScans() {
+		if (typeof localStorage === 'undefined') return [] as PendingScan[];
+		try {
+			const parsed = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) ?? '[]');
+			if (!Array.isArray(parsed)) return [];
+			const cutoff = Date.now() - MAX_QUEUE_AGE_MS;
+			return parsed.filter(
+				(item): item is PendingScan =>
+					typeof item?.id === 'string' &&
+					typeof item?.token === 'string' &&
+					Date.parse(item?.capturedAt) >= cutoff
+			);
+		} catch {
+			return [];
+		}
+	}
+
+	function writePendingScans(items: PendingScan[]) {
+		localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(items.slice(-MAX_QUEUE_ITEMS)));
+		pendingCount = Math.min(items.length, MAX_QUEUE_ITEMS);
+	}
+
+	function queueScan(item: PendingScan) {
+		const items = readPendingScans();
+		const duplicate = items.some(
+			(pending) =>
+				pending.token === item.token &&
+				pending.mode === item.mode &&
+				pending.kegiatanId === item.kegiatanId
+		);
+		if (!duplicate) items.push(item);
+		writePendingScans(items);
+		result = {
+			ok: true,
+			code: 'queued_offline',
+			message: duplicate
+				? 'Scan ini sudah ada dalam antrean offline.'
+				: 'Scan disimpan di perangkat dan akan disinkronkan saat koneksi kembali.',
+			mode: item.mode,
+			waktuScan: item.capturedAt
+		};
+		scanHistory = [result, ...scanHistory].slice(0, 8);
+	}
+
+	async function sendScan(item: PendingScan) {
+		const response = await fetch('/api/administrasi/absensi/scan', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				token: item.token,
+				mode: item.mode,
+				kegiatanId: item.kegiatanId,
+				status: item.status,
+				capturedAt: item.capturedAt
+			})
+		});
+		const payload = (await response.json().catch(() => ({
+			ok: false,
+			code: 'server_error',
+			message: 'Respons server tidak dapat dibaca.'
+		}))) as ScanResult;
+		return { response, payload };
+	}
+
+	function showScanResult(payload: ScanResult, item: PendingScan) {
+		result = {
+			...payload,
+			mode: item.mode,
+			waktuScan: payload.waktuScan ?? item.capturedAt
+		};
+		if (result.murid) studentInfo = result;
+		if (result.murid || result.code !== 'invalid_token') {
+			scanHistory = [result, ...scanHistory].slice(0, 8);
+		}
+	}
+
+	async function syncPendingScans() {
+		if (syncing || !navigator.onLine) return;
+		let items = readPendingScans();
+		pendingCount = items.length;
+		if (!items.length) return;
+		syncing = true;
+		errorMessage = '';
+		try {
+			for (const item of [...items]) {
+				try {
+					const { response, payload } = await sendScan(item);
+					if (response.status >= 500 || response.status === 401 || response.status === 403) {
+						throw new Error(payload.message);
+					}
+					showScanResult(payload, item);
+					items = items.filter((pending) => pending.id !== item.id);
+					writePendingScans(items);
+				} catch (error) {
+					console.warn('[scan qr] sinkronisasi tertunda', error);
+					break;
+				}
+			}
+			if (items.length)
+				errorMessage = 'Sebagian antrean belum tersinkron. Coba lagi saat koneksi stabil.';
+		} finally {
+			syncing = false;
+		}
+	}
+
 	async function submitToken(token: string) {
 		const now = Date.now();
 		if (token === lastToken && now - lastScanAt < 4000) return;
@@ -135,30 +255,24 @@
 		lastScanAt = now;
 		loading = true;
 		errorMessage = '';
+		const pending: PendingScan = {
+			id: crypto.randomUUID(),
+			token,
+			mode: scanMode,
+			kegiatanId: scanMode === 'kegiatan' ? kegiatanId : null,
+			status: statusOverride || null,
+			capturedAt: new Date().toISOString()
+		};
 		try {
-			const response = await fetch('/api/administrasi/absensi/scan', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					token,
-					mode: scanMode,
-					kegiatanId: scanMode === 'kegiatan' ? kegiatanId : null,
-					status: statusOverride || null
-				})
-			});
-			const payload = (await response.json()) as ScanResult;
-			result = {
-				...payload,
-				mode: scanMode,
-				waktuScan: payload.waktuScan ?? new Date().toISOString()
-			};
-			if (result.murid) studentInfo = result;
-			if (result.murid || result.code !== 'invalid_token') {
-				scanHistory = [result, ...scanHistory].slice(0, 8);
+			if (!navigator.onLine) {
+				queueScan(pending);
+				return;
 			}
+			const { payload } = await sendScan(pending);
+			showScanResult(payload, pending);
 		} catch (error) {
 			console.error('[scan qr] failed', error);
-			errorMessage = 'Gagal mengirim hasil scan. Periksa koneksi aplikasi.';
+			queueScan(pending);
 		} finally {
 			loading = false;
 		}
@@ -218,7 +332,7 @@
 
 	function resultClass(code: string) {
 		if (code === 'success') return 'alert-success';
-		if (code === 'already_present') return 'alert-warning';
+		if (code === 'already_present' || code === 'queued_offline') return 'alert-warning';
 		return 'alert-error';
 	}
 
@@ -256,7 +370,8 @@
 			success: 'Berhasil',
 			already_present: 'Sudah tercatat',
 			revoked_token: 'QR dicabut',
-			invalid_activity: 'Kegiatan invalid'
+			invalid_activity: 'Kegiatan invalid',
+			queued_offline: 'Menunggu sinkronisasi'
 		};
 		return labels[item.code] ?? 'Gagal';
 	}
@@ -268,7 +383,21 @@
 
 	onDestroy(stopScanner);
 	onMount(() => {
+		isOnline = navigator.onLine;
+		writePendingScans(readPendingScans());
+		const handleOnline = () => {
+			isOnline = true;
+			void syncPendingScans();
+		};
+		const handleOffline = () => (isOnline = false);
+		window.addEventListener('online', handleOnline);
+		window.addEventListener('offline', handleOffline);
 		void loadCameras();
+		if (isOnline) void syncPendingScans();
+		return () => {
+			window.removeEventListener('online', handleOnline);
+			window.removeEventListener('offline', handleOffline);
+		};
 	});
 </script>
 
@@ -282,6 +411,31 @@
 			<Icon name="left" />
 			Kembali
 		</a>
+	</div>
+
+	<div class={`alert ${isOnline ? 'alert-success' : 'alert-warning'} py-3`}>
+		<Icon name={isOnline ? 'success' : 'warning'} />
+		<div class="min-w-0 flex-1">
+			<div class="font-semibold">{isOnline ? 'Terhubung ke server' : 'Mode offline aktif'}</div>
+			<div class="text-sm">
+				{pendingCount
+					? `${pendingCount} scan menunggu sinkronisasi.`
+					: isOnline
+						? 'Hasil scan langsung disimpan ke server.'
+						: 'Scan akan disimpan sementara di perangkat ini.'}
+			</div>
+		</div>
+		{#if pendingCount}
+			<button
+				class="btn btn-sm"
+				type="button"
+				onclick={syncPendingScans}
+				disabled={!isOnline || syncing}
+			>
+				{#if syncing}<span class="loading loading-spinner loading-xs"></span>{/if}
+				Sinkronkan
+			</button>
+		{/if}
 	</div>
 
 	<div class="card bg-base-100 border-base-200 rounded-lg border p-4 shadow-sm">
@@ -416,7 +570,10 @@
 		</div>
 
 		<div class="min-w-0 space-y-4">
-			<div class="card bg-base-100 border-base-200 rounded-lg border p-4 shadow-sm" aria-live="polite">
+			<div
+				class="card bg-base-100 border-base-200 rounded-lg border p-4 shadow-sm"
+				aria-live="polite"
+			>
 				<div class="mb-3 flex items-center justify-between gap-2">
 					<h3 class="font-semibold">Informasi Siswa</h3>
 					{#if studentInfo?.status}

@@ -287,16 +287,16 @@
 	}
 </script>
 
-<div class="space-y-6">
-	<div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+<div class="card bg-base-100 space-y-5 rounded-lg border border-none p-4 shadow-md">
+	<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 		<div>
-			<h1 class="text-2xl font-bold">Data Pegawai</h1>
-			<p class="text-base-content/70 mt-1 max-w-3xl text-sm">
+			<h1 class="text-xl font-bold">Formulir Dan Tabel Isian Data Pegawai</h1>
+			<p class="text-base-content/70 mt-1 max-w-3xl text-sm leading-relaxed">
 				Kelola kepala sekolah, guru, operator, TU, keamanan, kebersihan, wali asuh, dan wali asrama.
 				Data wali kelas/asrama/asuh pada kelas mengambil nama pegawai dari sini.
 			</p>
 		</div>
-		<div class="flex max-sm:w-full">
+		<div class="flex shrink-0 max-sm:w-full">
 			<button class="btn btn-soft rounded-r-none shadow-none max-sm:flex-1" type="button" onclick={openCreateModal}>
 				<Icon name="plus" />
 				Tambah Pegawai
@@ -323,26 +323,26 @@
 		</div>
 	{/if}
 
-	<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-		<div class="stats bg-base-100 border-base-200 border shadow-sm">
+	<div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+		<div class="stats bg-base-200/45 rounded-md shadow-none">
 			<div class="stat py-4">
 				<div class="stat-title">Total Pegawai</div>
 				<div class="stat-value text-2xl">{data.totals.total}</div>
 			</div>
 		</div>
-		<div class="stats bg-base-100 border-base-200 border shadow-sm">
+		<div class="stats bg-success/10 rounded-md shadow-none">
 			<div class="stat py-4">
 				<div class="stat-title">Aktif</div>
 				<div class="stat-value text-success text-2xl">{data.totals.aktif}</div>
 			</div>
 		</div>
-		<div class="stats bg-base-100 border-base-200 border shadow-sm">
+		<div class="stats bg-primary/10 rounded-md shadow-none">
 			<div class="stat py-4">
 				<div class="stat-title">Guru/Kepala</div>
 				<div class="stat-value text-primary text-2xl">{data.totals.guru}</div>
 			</div>
 		</div>
-		<div class="stats bg-base-100 border-base-200 border shadow-sm">
+		<div class="stats bg-secondary/10 rounded-md shadow-none">
 			<div class="stat py-4">
 				<div class="stat-title">Asrama</div>
 				<div class="stat-value text-secondary text-2xl">{data.totals.asrama}</div>
@@ -352,7 +352,7 @@
 
 	<form
 		method="GET"
-		class="bg-base-100 border-base-200 rounded-box grid gap-3 border p-4 lg:grid-cols-[1fr_220px_180px_auto]"
+		class="bg-base-200/35 grid gap-3 rounded-md p-4 lg:grid-cols-[1fr_220px_180px_auto]"
 	>
 		<label class="form-control gap-1">
 			<span class="label-text font-medium">Cari pegawai</span>
@@ -389,7 +389,7 @@
 		</div>
 	</form>
 
-	<div class="bg-base-100 dark:bg-base-200 overflow-hidden rounded-md shadow-md dark:shadow-none">
+	<div class="border-base-200 overflow-hidden rounded-md border">
 		<div
 			class="border-base-200 dark:border-base-300 flex flex-col gap-3 border-b px-4 py-3 md:flex-row md:items-center md:justify-between"
 		>
@@ -414,7 +414,7 @@
 			</form>
 		</div>
 		<div class="overflow-x-auto">
-			<table class="border-base-200 table min-w-[880px] border dark:border-none">
+			<table class="table min-w-[880px]">
 				<colgroup>
 					<col class="w-16" />
 					<col class="w-16" />

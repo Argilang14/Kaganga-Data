@@ -24,6 +24,7 @@ type BulkRequest = {
 	bgLogo?: boolean;
 	raporPeriode?: string;
 	parentSignature?: string;
+	kartuLayout?: 'duplex' | 'photo-qr' | 'qr-only';
 };
 
 const MAX_BULK_MURID = 500;
@@ -55,6 +56,13 @@ async function fetchStudentData(
 		body.parentSignature === 'wali'
 	) {
 		url.searchParams.set('ttd_wali', body.parentSignature);
+	}
+	if (body.docType === 'kartu-absensi') {
+		const layout =
+			body.kartuLayout === 'photo-qr' || body.kartuLayout === 'qr-only'
+				? body.kartuLayout
+				: 'duplex';
+		url.searchParams.set('kartu_layout', layout);
 	}
 
 	switch (body.docType) {
@@ -127,7 +135,12 @@ export const POST = (async ({ locals, request }) => {
 	const pdfBuffer = await generateBulkPDF(items);
 	const docLabel = body.docLabel || body.docType;
 	const kelasLabel = body.kelasLabel || 'Semua-Kelas';
-	const filename = documentPdfFilename(body.docType, allData[0], { kelas: body.kelasLabel || 'Semua Kelas' }, muridIds.length);
+	const filename = documentPdfFilename(
+		body.docType,
+		allData[0],
+		{ kelas: body.kelasLabel || 'Semua Kelas' },
+		muridIds.length
+	);
 
 	return new Response(new Blob([pdfBuffer as unknown as BlobPart], { type: 'application/pdf' }), {
 		headers: {

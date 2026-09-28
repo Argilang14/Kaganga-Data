@@ -8,9 +8,11 @@
 		| 'piagam'
 		| 'keasramaan'
 		| 'kartu-absensi'
+		| 'kartu-ujian'
 		| 'jadwal-pelajaran'
 		| 'kalender-pendidikan'
 		| 'jurnal-mengajar'
+		| 'rekap-absensi-kegiatan'
 		| 'buku-tamu'
 		| 'martikulasi-sk'
 		| 'martikulasi-raport'
@@ -74,9 +76,13 @@
 
 	const isPiagamSelected = $derived.by(() => selectedDocument === 'piagam');
 	const isKartuAbsensiSelected = $derived.by(() => selectedDocument === 'kartu-absensi');
+	const isKartuUjianSelected = $derived.by(() => selectedDocument === 'kartu-ujian');
 	const isJadwalSelected = $derived.by(() => selectedDocument === 'jadwal-pelajaran');
 	const isKalenderSelected = $derived.by(() => selectedDocument === 'kalender-pendidikan');
 	const isJurnalSelected = $derived.by(() => selectedDocument === 'jurnal-mengajar');
+	const isAbsensiKegiatanSelected = $derived.by(
+		() => selectedDocument === 'rekap-absensi-kegiatan'
+	);
 	const isMartikulasiSkSelected = $derived.by(() => selectedDocument === 'martikulasi-sk');
 	const hasMurid = $derived.by(() => daftarMurid.length > 0);
 	const hasPiagamRankingOptions = $derived.by(() => piagamRankingOptions.length > 0);
@@ -101,7 +107,7 @@
 	);
 
 	const hasSelectionOptions = $derived.by(() => {
-		if (isJadwalSelected || isKalenderSelected || isJurnalSelected || isMartikulasiSkSelected) return true;
+		if (isJadwalSelected || isKalenderSelected || isJurnalSelected || isAbsensiKegiatanSelected || isMartikulasiSkSelected || isKartuUjianSelected) return true;
 		return isPiagamSelected ? hasPiagamRankingOptions : hasMurid;
 	});
 </script>
@@ -150,7 +156,7 @@
 				<option value={option.value}>{option.label}</option>
 			{/each}
 		</select>
-	{:else if !isJadwalSelected && !isKalenderSelected && !isJurnalSelected && !isMartikulasiSkSelected}
+	{:else if !isJadwalSelected && !isKalenderSelected && !isJurnalSelected && !isAbsensiKegiatanSelected && !isMartikulasiSkSelected && !isKartuUjianSelected}
 		<select
 			class="select bg-base-200 w-full dark:border-none"
 			bind:value={selectedMuridId}
@@ -208,7 +214,9 @@
 							isJadwalSelected ||
 							isKalenderSelected ||
 							isJurnalSelected ||
-							isMartikulasiSkSelected}
+							isAbsensiKegiatanSelected ||
+							isMartikulasiSkSelected ||
+							isKartuUjianSelected}
 					>
 						{isKartuAbsensiSelected ? 'Semua Murid (A4)' : 'Semua Murid'}
 					</button>

@@ -1,4 +1,6 @@
 import db from '$lib/server/db';
+import { writeAuditLog } from '$lib/server/audit-log';
+import { syncDocumentApproval } from '$lib/server/document-approval';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { ensureSuratMenyuratSchema } from '$lib/server/db/ensure-surat-menyurat';
 import {
@@ -128,7 +130,7 @@ export const actions = {
 			);
 		}
 		try {
-			await db.insert(tableDinasLuarPermohonan).values({
+			const [created] = await db.insert(tableDinasLuarPermohonan).values({
 				sekolahId,
 				pegawaiId: Number(pegawaiId),
 				maksud,
@@ -138,7 +140,9 @@ export const actions = {
 				status: 'diajukan',
 				catatan: text(formData, 'catatan'),
 				undanganFile
-			});
+			}).returning({ id: tableDinasLuarPermohonan.id });
+			await writeAuditLog({ locals, request, action: 'create', entityType: 'dinas_luar', entityId: String(created.id), summary: 'Pengajuan dinas luar ditambahkan.', after: { pegawaiId, maksud, tempatTujuan, tanggalBerangkat, tanggalKembali } });
+			await syncDocumentApproval({ sekolahId, documentType: 'dinas_luar', entityId: String(created.id), title: `Dinas luar: ${maksud}`, status: 'diajukan', userId: locals.user.id });
 		} catch (cause) {
 			await deleteDinasLuarFile(undanganFile);
 			throw cause;
@@ -196,6 +200,8 @@ export const actions = {
 			.where(
 				and(eq(tableDinasLuarPermohonan.id, id), eq(tableDinasLuarPermohonan.sekolahId, sekolahId))
 			);
+		await writeAuditLog({ locals, request, action: 'status_change', entityType: 'dinas_luar', entityId: String(id), summary: `Status dinas luar diubah menjadi ${status}.`, before: requestRow, after: { status, sppdId } });
+		if (status === 'disetujui' || status === 'ditolak') await syncDocumentApproval({ sekolahId, documentType: 'dinas_luar', entityId: String(id), title: `Dinas luar: ${requestRow.maksud}`, status, userId: locals.user?.id, snapshot: status === 'disetujui' ? requestRow : undefined });
 		return { message: 'Status dinas luar berhasil diperbarui.' };
 	},
 	uploadBukti: async ({ request, locals }) => {
@@ -296,6 +302,7 @@ export const actions = {
 			.where(
 				and(eq(tableDinasLuarPermohonan.id, id), eq(tableDinasLuarPermohonan.sekolahId, sekolahId))
 			);
+		await writeAuditLog({ locals, request, action: 'delete', entityType: 'dinas_luar', entityId: String(id), summary: 'Pengajuan dinas luar dihapus.', before: existing });
 		return { message: 'Pengajuan dinas luar berhasil dihapus.' };
 	}
 };

@@ -99,6 +99,12 @@
 
 		return bestMatch === normalizedItemPath;
 	}
+
+	function closeMobileDrawer() {
+		if (!window.matchMedia('(max-width: 1023px)').matches) return;
+		const drawer = document.getElementById('my-drawer-2') as HTMLInputElement | null;
+		if (drawer) drawer.checked = false;
+	}
 </script>
 
 {#snippet menu_item(item: MenuItem)}
@@ -117,7 +123,7 @@
 			</details>
 		{:else}
 			<!-- `class:menu-active` is shorthand for `class="{active ? 'menu-active': ''}"` -->
-			<a class:menu-active={active} href={item.path}>
+			<a class:menu-active={active} href={item.path} onclick={closeMobileDrawer}>
 				{@render menu_item_label(item)}
 			</a>
 		{/if}
@@ -135,8 +141,8 @@
 {/snippet}
 
 <div class="flex-1">
-	<div class="mb-3 flex gap-1">
-		<label class="input bg-base-200 dark:bg-base-300 rounded-box dark:border-none">
+	<div class="mb-3 flex min-w-0 gap-1">
+		<label class="input bg-base-200 dark:bg-base-300 min-w-0 flex-1 rounded-box dark:border-none">
 			<Icon name="search" />
 			<input type="search" class="grow" bind:value={search} placeholder="Cari menu" />
 		</label>
@@ -150,7 +156,7 @@
 		</label>
 	</div>
 	<div
-		class="lg:bg-base-200 lg:rounded-box lg:max-h-[calc(100vh-13.5rem)] lg:overflow-y-auto lg:shadow-inner"
+		class="lg:bg-base-200 lg:rounded-box lg:max-h-[calc(100dvh-13.5rem)] lg:overflow-y-auto lg:shadow-inner"
 	>
 		{#each menuItems as menu (menu)}
 			{@render menu_item(menu)}

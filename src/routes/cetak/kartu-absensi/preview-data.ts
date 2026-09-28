@@ -18,6 +18,7 @@ type KartuAbsensiContext = {
 };
 
 export type KartuAbsensiPrintData = {
+	layout: KartuAbsensiLayout;
 	sekolah: {
 		nama: string;
 		logoSrc: string | null;
@@ -39,6 +40,12 @@ export type KartuAbsensiPrintData = {
 	qrDataUrl: string;
 	issuedAt: string;
 };
+
+export type KartuAbsensiLayout = 'duplex' | 'photo-qr' | 'qr-only';
+
+function kartuLayout(value: string | null): KartuAbsensiLayout {
+	return value === 'photo-qr' || value === 'qr-only' ? value : 'duplex';
+}
 
 function joinAddress(
 	alamat:
@@ -130,6 +137,7 @@ export async function getKartuAbsensiPreviewPayload({ locals, url }: KartuAbsens
 
 	const kelasNama = kelas.fase ? `${kelas.nama} - ${kelas.fase}` : kelas.nama;
 	const kartuAbsensiData: KartuAbsensiPrintData = {
+		layout: kartuLayout(url.searchParams.get('kartu_layout')),
 		sekolah: {
 			nama: school.nama,
 			logoSrc: await getLogoSrc(sekolah.id),

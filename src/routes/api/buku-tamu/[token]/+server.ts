@@ -141,7 +141,7 @@ export const GET = (async ({ params, locals, url }) => {
 	}
 
 	const sekolah = await db.query.tableSekolah.findFirst({
-		columns: { nama: true, npsn: true },
+		columns: { nama: true, npsn: true, naungan: true, email: true },
 		where: eq(tableSekolah.id, sekolahId)
 	});
 	const [logoUrl, logoDinasUrl, printRows] = await Promise.all([
@@ -167,7 +167,9 @@ export const GET = (async ({ params, locals, url }) => {
 		sekolah: {
 			nama: sekolah?.nama ?? '',
 			npsn: sekolah?.npsn ?? '',
+			naungan: sekolah?.naungan ?? 'kemendikbud',
 			alamat: composeAlamat(locals.sekolah),
+			email: sekolah?.email ?? '',
 			logoUrl,
 			logoDinasUrl
 		},

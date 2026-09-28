@@ -9,7 +9,8 @@ import {
 	resolvePrintableQrToken
 } from '$lib/server/absensi-digital';
 import db from '$lib/server/db';
-import { tableKelas, tableMurid, tableQrMurid } from '$lib/server/db/schema';
+import { tableKelas, tableMurid, tableQrMurid, tableSekolah } from '$lib/server/db/schema';
+import { formatTanggal } from '$lib/server/pdf/preview-utils';
 import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import QRCode from 'qrcode';
@@ -29,6 +30,30 @@ type QrRow = Pick<
 	typeof tableQrMurid.$inferSelect,
 	'muridId' | 'tokenHash' | 'tokenVersion' | 'issuedAt' | 'revokedAt'
 >;
+
+function joinAddress(
+	alamat:
+		| {
+				jalan?: string | null;
+				desa?: string | null;
+				kecamatan?: string | null;
+				kabupaten?: string | null;
+				provinsi?: string | null;
+		  }
+		| null
+		| undefined
+) {
+	return [alamat?.jalan, alamat?.desa, alamat?.kecamatan, alamat?.kabupaten, alamat?.provinsi]
+		.map((part) => part?.trim())
+		.filter(Boolean)
+		.join(', ');
+}
+
+function naunganLabel(naungan: string | null | undefined) {
+	if (naungan === 'kemsos') return 'KEMENTERIAN SOSIAL REPUBLIK INDONESIA';
+	if (naungan === 'kemenag') return 'KEMENTERIAN AGAMA REPUBLIK INDONESIA';
+	return 'KEMENTERIAN PENDIDIKAN DASAR DAN MENENGAH';
+}
 
 function kelasLabel(kelas: { nama: string; fase: string | null }) {
 	return kelas.fase ? `${kelas.nama} - ${kelas.fase}` : kelas.nama;
@@ -115,23 +140,38 @@ async function generateCard(
 	} satisfies CardPayload;
 }
 
-export async function load({ locals, url }) {
+export async function load({ locals, parent }) {
 	requireAbsensiDigitalAccess(locals.user);
 	const sekolahId = locals.sekolah?.id;
 	if (!sekolahId || !locals.user) throw redirect(303, '/login');
 
+	const parentData = await parent();
 	const { academic, kelasList } = await loadAbsensiKelasOptions(sekolahId, locals.user);
-	const kelasId = resolveKelasId(kelasList, parsePositiveInteger(url.searchParams.get('kelas_id')));
+	const sekolah = await db.query.tableSekolah.findFirst({
+		columns: { nama: true, naungan: true },
+		where: eq(tableSekolah.id, sekolahId),
+		with: { alamat: true }
+	});
+	const kelasId = resolveKelasId(kelasList, parentData.kelasAktif?.id ?? null);
 	const muridList =
 		academic.activeSemesterId && kelasId
 			? await db.query.tableMurid.findMany({
-					columns: { id: true, nama: true, nis: true, nisn: true },
+					columns: {
+						id: true,
+						nama: true,
+						nis: true,
+						nisn: true,
+						foto: true,
+						tempatLahir: true,
+						tanggalLahir: true
+					},
 					where: and(
 						eq(tableMurid.sekolahId, sekolahId),
 						eq(tableMurid.semesterId, academic.activeSemesterId),
 						eq(tableMurid.kelasId, kelasId)
 					),
-					orderBy: asc(tableMurid.nama)
+					orderBy: asc(tableMurid.nama),
+					with: { alamat: true }
 				})
 			: [];
 	const qrRows = muridList.length
@@ -155,13 +195,25 @@ export async function load({ locals, url }) {
 		meta: { title: 'Kartu Absensi Murid' } satisfies PageMeta,
 		kelasId,
 		kelasList,
-		sekolahNama: locals.sekolah?.nama ?? 'Sekolah',
+		sekolahNama: sekolah?.nama ?? locals.sekolah?.nama ?? 'Sekolah',
+		sekolahNaungan: naunganLabel(sekolah?.naungan),
+		sekolahAlamat: joinAddress(sekolah?.alamat),
 		muridList: await Promise.all(
 			muridList.map(async (murid) => {
 				const qr = activeQr.get(murid.id) ?? null;
 				const token = qr ? resolvePrintableQrToken(qr) : null;
 				return {
-					...murid,
+					id: murid.id,
+					nama: murid.nama,
+					nis: murid.nis,
+					nisn: murid.nisn,
+					fotoUrl: murid.foto
+						? `/api/murid-photo/${murid.id}?v=${encodeURIComponent(murid.foto)}`
+						: null,
+					tempatTanggalLahir: [murid.tempatLahir, formatTanggal(murid.tanggalLahir)]
+						.filter(Boolean)
+						.join(', '),
+					alamat: joinAddress(murid.alamat),
 					logoUrl: '/sekolah/logo',
 					qr: qr
 						? {

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from '$lib/components/icon.svelte';
+	import { createPhotoThumbnail } from '$lib/photo-thumbnail';
 	import { toast } from '$lib/components/toast.svelte';
 	import { onDestroy } from 'svelte';
 
@@ -56,6 +57,11 @@
 		try {
 			const body = new FormData();
 			body.append('foto', selectedFile);
+			try {
+				body.append('thumbnail', await createPhotoThumbnail(selectedFile));
+			} catch (error) {
+				console.warn('Thumbnail foto pegawai tidak dapat dibuat; foto asli tetap diunggah.', error);
+			}
 			const response = await fetch(`/api/pegawai-photo/${pegawaiId}`, { method: 'POST', body });
 			const result = await response.json().catch(() => ({}));
 			if (!response.ok) throw new Error(result.message || 'Foto pegawai gagal disimpan.');

@@ -10,6 +10,7 @@ export type DocumentType =
 	| 'jadwal-pelajaran'
 	| 'kalender-pendidikan'
 	| 'jurnal-mengajar'
+	| 'rekap-absensi-kegiatan'
 	| 'martikulasi-sk'
 	| 'martikulasi-raport'
 	| 'martikulasi-sttm';

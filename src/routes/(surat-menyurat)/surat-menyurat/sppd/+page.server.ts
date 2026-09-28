@@ -1,4 +1,5 @@
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
+import { writeAuditLog } from '$lib/server/audit-log';
 import db from '$lib/server/db';
 import { ensureSuratMenyuratSchema } from '$lib/server/db/ensure-surat-menyurat';
 import {
@@ -73,6 +74,7 @@ export const actions = {
 			})
 			.returning({ id: tableSppd.id });
 		await replaceSppdDetails(inserted.id, parsed.employees, parsed.followers);
+		await writeAuditLog({ locals, request, action: 'create', entityType: 'sppd', entityId: String(inserted.id), summary: 'Draft SPPD ditambahkan.', after: { ...parsed.values, employees: parsed.employees, followers: parsed.followers } });
 		return { message: 'Draft SPPD berhasil ditambahkan.' };
 	},
 	update: async ({ request, locals }) => {
@@ -94,10 +96,13 @@ export const actions = {
 		const id = positiveId(formData.get('id'));
 		const status = formData.get('status')?.toString() as (typeof STATUS)[number];
 		if (!id || !STATUS.includes(status)) return fail(400, { fail: 'Status SPPD tidak valid.' });
+		const before = await db.query.tableSppd.findFirst({ where: and(eq(tableSppd.id, id), eq(tableSppd.sekolahId, sekolahId)) });
+		if (!before) return fail(404, { fail: 'SPPD tidak ditemukan.' });
 		await db
 			.update(tableSppd)
 			.set({ status, updatedAt: new Date().toISOString() })
 			.where(and(eq(tableSppd.id, id), eq(tableSppd.sekolahId, sekolahId)));
+		await writeAuditLog({ locals, request, action: 'status_change', entityType: 'sppd', entityId: String(id), summary: `Status SPPD diubah menjadi ${status}.`, before, after: { status } });
 		return { message: 'Status SPPD berhasil diperbarui.' };
 	},
 	delete: async ({ request, locals }) => {
@@ -120,6 +125,7 @@ export const actions = {
 		await db.delete(tableSppdPegawai).where(eq(tableSppdPegawai.sppdId, id));
 		await db.delete(tableSppdPengikut).where(eq(tableSppdPengikut.sppdId, id));
 		await db.delete(tableSppd).where(and(eq(tableSppd.id, id), eq(tableSppd.sekolahId, sekolahId)));
+		await writeAuditLog({ locals, request, action: 'delete', entityType: 'sppd', entityId: String(id), summary: 'Draft SPPD dihapus.', before: existing });
 		return { message: 'Draft SPPD berhasil dihapus.' };
 	}
 };

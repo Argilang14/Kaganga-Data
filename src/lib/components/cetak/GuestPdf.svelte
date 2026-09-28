@@ -32,8 +32,10 @@
 		finally { busy = false; }
 	}
 </script>
-<h2 class="mb-4 text-xl font-bold">PDF Buku Tamu Digital</h2>
-<form class="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-4" onsubmit={preview}>
+<form
+	class="border-base-300 bg-base-200/30 grid items-end gap-3 rounded-lg border p-4 sm:grid-cols-2 lg:grid-cols-4"
+	onsubmit={preview}
+>
 	<label class="flex min-w-0 flex-col gap-2">Tanggal Mulai<input class="input w-full" type="date" bind:value={startDate} required /></label>
 	<label class="flex min-w-0 flex-col gap-2">Tanggal Selesai<input class="input w-full" type="date" bind:value={endDate} required /></label>
 	<label class="flex min-w-0 flex-col gap-2">Cari Tamu<input class="input w-full" bind:value={search} /></label>

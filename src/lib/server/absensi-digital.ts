@@ -1,9 +1,9 @@
 import db from '$lib/server/db';
 import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
-import { tableKelas, tableQrMurid } from '$lib/server/db/schema';
+import { tableAuthUserKelas, tableKelas, tableQrMurid } from '$lib/server/db/schema';
 import { error, redirect } from '@sveltejs/kit';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 
 export const ABSENSI_PERMISSION = 'administrasi_absensi' as UserPermission;
@@ -131,15 +131,31 @@ export async function loadAbsensiKelasOptions(
 		? and(eq(tableKelas.sekolahId, sekolahId), eq(tableKelas.semesterId, activeSemesterId))
 		: eq(tableKelas.sekolahId, sekolahId);
 
-	if (user.type === 'wali_kelas') {
-		const waliFilter = user.pegawaiId
-			? and(baseFilter, eq(tableKelas.waliKelasId, user.pegawaiId))
-			: and(baseFilter, eq(tableKelas.id, -1));
+	if (user.type !== 'admin') {
+		const assigned = await db.query.tableAuthUserKelas.findMany({
+			columns: { kelasId: true },
+			where: eq(tableAuthUserKelas.authUserId, user.id)
+		});
+		const assignedIds = assigned.map((item) => item.kelasId);
+		const roleColumn =
+			user.type === 'wali_kelas'
+				? tableKelas.waliKelasId
+				: user.type === 'wali_asrama'
+					? tableKelas.waliAsramaId
+					: user.type === 'wali_asuh'
+						? tableKelas.waliAsuhId
+						: null;
+		const roleFilter = roleColumn && user.pegawaiId ? eq(roleColumn, user.pegawaiId) : undefined;
+		const assignmentFilter = assignedIds.length ? inArray(tableKelas.id, assignedIds) : undefined;
+		const accessFilter =
+			roleFilter && assignmentFilter
+				? or(roleFilter, assignmentFilter)
+				: (roleFilter ?? assignmentFilter ?? eq(tableKelas.id, -1));
 		return {
 			academic,
 			kelasList: await db.query.tableKelas.findMany({
 				columns: { id: true, nama: true, fase: true, semesterId: true },
-				where: waliFilter,
+				where: and(baseFilter, accessFilter),
 				orderBy: asc(tableKelas.nama)
 			})
 		};

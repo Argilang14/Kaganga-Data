@@ -10,7 +10,7 @@ async function addColumn(sql: string) {
 }
 
 export async function ensureSuratMenyuratSchema() {
-	await ensureSchema('surat-menyurat', [
+	await ensureSchema('surat-menyurat-v2', [
 		`CREATE TABLE IF NOT EXISTS "surat_sppd" (
 			"id" integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 			"sekolah_id" integer NOT NULL,
@@ -94,6 +94,32 @@ export async function ensureSuratMenyuratSchema() {
 			FOREIGN KEY ("auth_user_id") REFERENCES "auth_user" ("id") ON DELETE SET NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS "surat_dinas_luar_bukti_sppd_idx" ON "surat_dinas_luar_bukti" ("sppd_id")`
+		,
+		`CREATE TABLE IF NOT EXISTS "surat_arsip" (
+			"id" integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+			"sekolah_id" integer NOT NULL,
+			"arah" text NOT NULL CHECK("arah" IN ('masuk','keluar')),
+			"nomor_surat" text,
+			"tanggal_surat" text NOT NULL,
+			"tanggal_diterima" text,
+			"pengirim_penerima" text NOT NULL,
+			"perihal" text NOT NULL,
+			"ringkasan" text,
+			"status" text NOT NULL DEFAULT 'draft' CHECK("status" IN ('draft','diajukan','disetujui','ditolak','diarsipkan')),
+			"dibuat_oleh_id" integer,
+			"disetujui_oleh_id" integer,
+			"tanggal_persetujuan" text,
+			"catatan_persetujuan" text,
+			"snapshot_json" text,
+			"created_at" text NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			"updated_at" text,
+			FOREIGN KEY ("sekolah_id") REFERENCES "sekolah" ("id") ON DELETE CASCADE,
+			FOREIGN KEY ("dibuat_oleh_id") REFERENCES "auth_user" ("id") ON DELETE SET NULL,
+			FOREIGN KEY ("disetujui_oleh_id") REFERENCES "auth_user" ("id") ON DELETE SET NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS "surat_arsip_sekolah_arah_idx" ON "surat_arsip" ("sekolah_id", "arah")`,
+		`CREATE INDEX IF NOT EXISTS "surat_arsip_sekolah_status_idx" ON "surat_arsip" ("sekolah_id", "status")`,
+		`CREATE INDEX IF NOT EXISTS "surat_arsip_tanggal_idx" ON "surat_arsip" ("tanggal_surat")`
 	]);
 
 	for (const [table, column] of [

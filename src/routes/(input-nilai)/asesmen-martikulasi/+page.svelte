@@ -77,20 +77,26 @@
 
 <svelte:head><title>Penilaian Martikulasi</title></svelte:head>
 
-<div class="space-y-4">
-	<header class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+<div class="card bg-base-100 space-y-5 rounded-lg border border-none p-4 shadow-md">
+	<header class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 		<div>
-			<h1 class="text-2xl font-bold">Penilaian Martikulasi</h1>
-			<p class="text-base-content/65 text-sm">Masa Persiapan dengan ketuntasan manual oleh guru.</p>
+			<h1 class="text-xl font-bold">Daftar Nilai Martikulasi</h1>
+			{#if data.selectedKelas}
+				<p class="text-base-content/75 text-sm">
+					Kelas aktif: {data.selectedKelas.nama}{data.selectedKelas.fase
+						? ` - ${data.selectedKelas.fase}`
+						: ''}
+				</p>
+			{:else}
+				<p class="text-base-content/65 text-sm">Masa Persiapan dengan ketuntasan manual oleh guru.</p>
+			{/if}
 		</div>
 		{#if data.selectedKelas}
 			<div class="text-left sm:text-right">
-				<p class="font-semibold">
-					{data.selectedKelas.nama}{data.selectedKelas.fase ? ` - ${data.selectedKelas.fase}` : ''}
-				</p>
-				<p class="text-base-content/60 text-sm">
+				<p class="text-base-content/60 text-sm font-medium">
 					{data.selectedJenjang?.toUpperCase()} - Tahun Ajaran {data.selectedTahunAjaranNama}
 				</p>
+				<p class="text-base-content/50 mt-0.5 text-xs">Ketuntasan ditentukan manual oleh guru</p>
 			</div>
 		{/if}
 	</header>
@@ -100,16 +106,16 @@
 			<Icon name="warning" /><span>Pilih kelas melalui menu Ganti Kelas di bagian atas.</span>
 		</div>
 	{:else}
-		<section class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-			<div class="bg-base-100 rounded-md border p-4">
+		<section class="grid grid-cols-1 overflow-hidden rounded-md border border-base-200 sm:grid-cols-3">
+			<div class="bg-base-200/35 p-4">
 				<p class="text-base-content/60 text-sm">Total Murid</p>
 				<p class="text-2xl font-bold">{data.jumlahMurid}</p>
 			</div>
-			<div class="bg-base-100 rounded-md border p-4">
+			<div class="bg-success/10 border-t border-base-200 p-4 sm:border-t-0 sm:border-l">
 				<p class="text-base-content/60 text-sm">Data Lengkap</p>
 				<p class="text-success text-2xl font-bold">{data.jumlahLengkap}</p>
 			</div>
-			<div class="bg-base-100 rounded-md border p-4">
+			<div class="bg-warning/10 border-t border-base-200 p-4 sm:border-t-0 sm:border-l">
 				<p class="text-base-content/60 text-sm">Belum Lengkap</p>
 				<p class="text-warning text-2xl font-bold">{data.jumlahMurid - data.jumlahLengkap}</p>
 			</div>
@@ -117,7 +123,7 @@
 
 		<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
 			<form method="GET" class="flex min-w-0 flex-1 gap-2">
-				<label class="input bg-base-100 w-full"
+				<label class="input bg-base-200/55 w-full"
 					><Icon name="search" /><input
 						name="q"
 						bind:value={searchTerm}
@@ -138,7 +144,7 @@
 			</button>
 		</div>
 
-		<div class="bg-base-100 overflow-x-auto rounded-md border">
+		<div class="overflow-x-auto rounded-md border border-base-200">
 			<table class="table min-w-[760px]">
 				<thead class="bg-base-200"
 					><tr>

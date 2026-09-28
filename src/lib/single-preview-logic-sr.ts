@@ -23,9 +23,11 @@ export type DocumentType =
 	| 'piagam'
 	| 'keasramaan'
 	| 'kartu-absensi'
+	| 'kartu-ujian'
 	| 'jadwal-pelajaran'
 	| 'kalender-pendidikan'
 	| 'jurnal-mengajar'
+	| 'rekap-absensi-kegiatan'
 	| 'buku-tamu'
 	| 'martikulasi-sk'
 	| 'martikulasi-raport'
@@ -61,9 +63,11 @@ const DOCUMENT_PATHS: Record<DocumentType, string> = {
 	piagam: '/cetak/piagam',
 	keasramaan: '/cetak/keasramaan',
 	'kartu-absensi': '/cetak/kartu-absensi',
+	'kartu-ujian': '/api/pdf/kartu-ujian',
 	'jadwal-pelajaran': '/cetak/jadwal-pelajaran',
 	'kalender-pendidikan': '/cetak/kalender-pendidikan',
 	'jurnal-mengajar': '/api/pdf/jurnal-mengajar',
+	'rekap-absensi-kegiatan': '/api/pdf/absensi-kegiatan',
 	'buku-tamu': '/api/buku-tamu/print',
 	'martikulasi-sk': '/api/pdf/martikulasi',
 	'martikulasi-raport': '/api/pdf/martikulasi',
@@ -77,9 +81,11 @@ const DOCUMENT_LABELS: Record<DocumentType, string> = {
 	piagam: 'Piagam',
 	keasramaan: 'Rapor Keasramaan',
 	'kartu-absensi': 'Kartu Absensi Murid',
+	'kartu-ujian': 'Kartu Ujian',
 	'jadwal-pelajaran': 'Jadwal Pelajaran',
 	'kalender-pendidikan': 'Kalender Pendidikan',
 	'jurnal-mengajar': 'Jurnal Mengajar',
+	'rekap-absensi-kegiatan': 'Rekap Absensi Kegiatan',
 	'buku-tamu': 'PDF Buku Tamu Digital',
 	'martikulasi-sk': 'SK Tim Martikulasi',
 	'martikulasi-raport': 'Raport Hasil Martikulasi',
@@ -144,9 +150,11 @@ export function isPreviewableDocument(value: DocumentType | ''): value is Docume
 		value === 'piagam' ||
 		value === 'keasramaan' ||
 		value === 'kartu-absensi' ||
+		value === 'kartu-ujian' ||
 		value === 'jadwal-pelajaran' ||
 		value === 'kalender-pendidikan' ||
 		value === 'jurnal-mengajar' ||
+		value === 'rekap-absensi-kegiatan' ||
 		value === 'martikulasi-sk' ||
 		value === 'martikulasi-raport' ||
 		value === 'martikulasi-sttm'

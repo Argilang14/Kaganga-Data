@@ -76,6 +76,19 @@
 				nama: string;
 				nilaiRataRata: number | null;
 			}>;
+			ujianSessions?: Array<{
+				id: number;
+				nama: string;
+				singkatan: string | null;
+				tahunAjaran: string;
+				semester: string | null;
+				participantCount: number;
+				classes: string[];
+			}>;
+			absensiAccess?: boolean;
+			absensiToday?: string;
+			absensiKelasList?: Array<{ id: number; nama: string; fase: string | null }>;
+			absensiKegiatanList?: Array<{ id: number; nama: string; kategori: string }>;
 		};
 		pdfVariant?: 'default' | 'sr';
 		documentGroup?: 'dokumen' | 'raport';
@@ -94,9 +107,11 @@
 		{ value: 'piagam', label: 'Piagam' },
 		{ value: 'keasramaan', label: 'Rapor Keasramaan' },
 		{ value: 'kartu-absensi', label: 'Kartu Absensi Murid' },
+		{ value: 'kartu-ujian', label: 'Kartu Ujian' },
 		{ value: 'jadwal-pelajaran', label: 'Jadwal Pelajaran' },
 		{ value: 'kalender-pendidikan', label: 'Kalender Pendidikan' },
 		{ value: 'jurnal-mengajar', label: 'Jurnal Mengajar' },
+		{ value: 'rekap-absensi-kegiatan', label: 'Rekap Absensi Kegiatan' },
 		{ value: 'buku-tamu', label: 'PDF Buku Tamu Digital' },
 		{ value: 'martikulasi-sk', label: 'Masa Persiapan - SK Tim Martikulasi' },
 		{ value: 'martikulasi-raport', label: 'Masa Persiapan - Raport Hasil Martikulasi' },
@@ -104,8 +119,8 @@
 	];
 	const currentUserType = $derived((page.data.user as { type?: string } | null | undefined)?.type);
 	const visibleDocumentOptions = $derived.by(() => {
-		const general = ['kartu-absensi', 'jadwal-pelajaran', 'kalender-pendidikan', 'jurnal-mengajar', 'buku-tamu'];
-		if (documentGroup === 'dokumen') return documentOptions.filter((option) => general.includes(option.value) && (option.value !== 'jurnal-mengajar' || data.jurnalAccess?.canPrint !== false) && (option.value !== 'buku-tamu' || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('administrasi_buku_tamu')));
+		const general = ['kartu-absensi', 'kartu-ujian', 'jadwal-pelajaran', 'kalender-pendidikan', 'jurnal-mengajar', 'rekap-absensi-kegiatan', 'buku-tamu'];
+		if (documentGroup === 'dokumen') return documentOptions.filter((option) => general.includes(option.value) && (option.value !== 'jurnal-mengajar' || data.jurnalAccess?.canPrint !== false) && (option.value !== 'rekap-absensi-kegiatan' || data.absensiAccess === true) && (option.value !== 'buku-tamu' || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('administrasi_buku_tamu')) && (option.value !== 'kartu-ujian' || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('ujian_cetak') || page.data.user?.permissions?.includes('ujian_manage')));
 		if (documentGroup === 'raport') return documentOptions.filter((option) => !general.includes(option.value) && (currentUserType !== 'wali_asrama' || option.value === 'keasramaan'));
 		if (currentUserType === 'wali_asrama') {
 			return documentOptions.filter((option) => option.value === 'keasramaan');
@@ -136,6 +151,14 @@
 	let downloadLoading = $state(false);
 	let jurnalTanggalMulai = $state('');
 	let jurnalTanggalSelesai = $state('');
+	let absensiTanggalAwal = $state(data.absensiToday ?? '');
+	let absensiTanggalAkhir = $state(data.absensiToday ?? '');
+	let absensiKelasId = $state<number | null>(
+		data.absensiKelasList?.some((kelas) => kelas.id === Number(data.kelasId))
+			? Number(data.kelasId)
+			: (data.absensiKelasList?.[0]?.id ?? null)
+	);
+	let absensiKegiatanId = $state<number | null>(null);
 	let jurnalScope = $state<'kelas' | 'mapel'>(data.jurnalAccess?.defaultScope ?? 'kelas');
 	let jurnalKelasId = $state<number | null>(data.kelasId ? Number(data.kelasId) : null);
 	let jurnalMapelId = $state<number | null>(null);
@@ -147,6 +170,11 @@
 	);
 	let selectedJadwalOrientation = $state<'landscape' | 'portrait'>('landscape');
 	let selectedJadwalLayout = $state<'padat' | 'multi'>('padat');
+	let selectedKartuLayout = $state<'duplex' | 'photo-qr' | 'qr-only'>('duplex');
+	let selectedUjianSessionId = $state<number | null>(
+		Number(page.url.searchParams.get('session_id')) || data.ujianSessions?.[0]?.id || null
+	);
+	let selectedUjianKelas = $state('');
 	let selectedJadwalJenjang = $state<'semua' | 'srd' | 'srmp' | 'srma'>('semua');
 	let selectedKalenderPeriode = $state<
 		'tahun_kalender' | 'tahun_ajaran' | 'semester_ganjil' | 'semester_genap'
@@ -155,6 +183,12 @@
 	const pegawaiGuruList = $derived(data.pegawaiGuruList ?? []);
 	const jurnalKelasList = $derived(data.jurnalKelasList ?? []);
 	const jurnalMapelList = $derived(data.jurnalMapelList ?? []);
+	const ujianSessions = $derived(data.ujianSessions ?? []);
+	const absensiKelasList = $derived(data.absensiKelasList ?? []);
+	const absensiKegiatanList = $derived(data.absensiKegiatanList ?? []);
+	const selectedUjianSession = $derived(
+		ujianSessions.find((item) => item.id === selectedUjianSessionId) ?? null
+	);
 	const jurnalAccess = $derived(
 		data.jurnalAccess ?? {
 			canPrint: true,
@@ -321,6 +355,10 @@
 	const isJadwalSelected = $derived.by(() => selectedDocument === 'jadwal-pelajaran');
 	const isKalenderSelected = $derived.by(() => selectedDocument === 'kalender-pendidikan');
 	const isJurnalSelected = $derived.by(() => selectedDocument === 'jurnal-mengajar');
+	const isAbsensiKegiatanSelected = $derived.by(
+		() => selectedDocument === 'rekap-absensi-kegiatan'
+	);
+	const isKartuUjianSelected = $derived.by(() => selectedDocument === 'kartu-ujian');
 	const isMartikulasiSkSelected = $derived.by(() => selectedDocument === 'martikulasi-sk');
 	const isMartikulasiSelected = $derived.by(() =>
 		selectedDocument === 'martikulasi-sk' ||
@@ -353,7 +391,9 @@
 			selectedDocument !== 'jadwal-pelajaran' &&
 			selectedDocument !== 'kalender-pendidikan' &&
 			selectedDocument !== 'jurnal-mengajar' &&
-			selectedDocument !== 'martikulasi-sk'
+			selectedDocument !== 'rekap-absensi-kegiatan' &&
+			selectedDocument !== 'martikulasi-sk' &&
+			selectedDocument !== 'kartu-ujian'
 	);
 	const navigationMuridIds = $derived.by(() => {
 		if (isPiagamSelected) {
@@ -372,6 +412,15 @@
 	const hasSelectionOptions = $derived.by(() => {
 		if (isJadwalSelected || isKalenderSelected) return true;
 		if (isJurnalSelected) return hasValidJurnalPeriod;
+		if (isAbsensiKegiatanSelected) {
+			return Boolean(
+				absensiKelasId &&
+				absensiTanggalAwal &&
+				absensiTanggalAkhir &&
+				absensiTanggalAwal <= absensiTanggalAkhir
+			);
+		}
+		if (isKartuUjianSelected) return Boolean(selectedUjianSession?.participantCount);
 		if (isMartikulasiSkSelected) return Boolean(selectedPrintTahunAjaranId);
 		return isPiagamSelected ? hasPiagamRankingOptions : hasMurid;
 	});
@@ -485,7 +534,13 @@
 				? 'Preview PDF Jurnal Mengajar'
 				: 'Pilih rentang tanggal jurnal yang valid';
 		}
+		if (isAbsensiKegiatanSelected) {
+			return hasSelectionOptions
+				? 'Preview PDF Rekap Absensi Kegiatan'
+				: 'Pilih kelas dan rentang tanggal absensi yang valid';
+		}
 		if (isMartikulasiSelected) return 'Preview PDF dokumen Martikulasi';
+		if (isKartuUjianSelected) return selectedUjianSession?.participantCount ? 'Preview PDF Kartu Ujian' : 'Pilih sesi ujian yang memiliki peserta';
 		return `Download PDF ${selectedDocumentEntry?.label ?? 'dokumen'} untuk ${selectedMurid?.nama ?? ''}`;
 	});
 
@@ -526,6 +581,8 @@
 			const message =
 				documentType === 'jurnal-mengajar'
 					? 'Pilih rentang tanggal jurnal yang valid.'
+					: documentType === 'rekap-absensi-kegiatan'
+						? 'Pilih kelas dan rentang tanggal absensi yang valid.'
 					: documentType === 'piagam'
 						? 'Tidak ada data peringkat piagam untuk kelas ini.'
 						: 'Tidak ada murid di kelas ini.';
@@ -537,7 +594,9 @@
 			documentType === 'jadwal-pelajaran' ||
 			documentType === 'kalender-pendidikan' ||
 			documentType === 'jurnal-mengajar' ||
-			documentType === 'martikulasi-sk'
+			documentType === 'rekap-absensi-kegiatan' ||
+			documentType === 'martikulasi-sk' ||
+			documentType === 'kartu-ujian'
 		) {
 			await loadPdf(null);
 			return;
@@ -574,6 +633,44 @@
 		if (!documentType) return;
 		downloadLoading = true;
 		try {
+			if (documentType === 'rekap-absensi-kegiatan') {
+				if (!absensiKelasId) throw new Error('Pilih kelas absensi terlebih dahulu.');
+				const params = new URLSearchParams({
+					tanggal_awal: absensiTanggalAwal,
+					tanggal_akhir: absensiTanggalAkhir,
+					kelas_id: String(absensiKelasId)
+				});
+				if (absensiKegiatanId) params.set('kegiatan_id', String(absensiKegiatanId));
+				const pdfRes = await fetch(`/api/pdf/absensi-kegiatan?${params}`);
+				if (!pdfRes.ok) {
+					throw new Error(
+						await responseErrorMessage(pdfRes, 'Gagal memuat rekap absensi kegiatan')
+					);
+				}
+				const blob = await pdfRes.blob();
+				pdfViewerFilename = responsePdfFilename(pdfRes);
+				if (pdfViewerUrl) URL.revokeObjectURL(pdfViewerUrl);
+				pdfViewerUrl = URL.createObjectURL(blob);
+				pdfViewerTitle = `Rekap Absensi Kegiatan ${absensiTanggalAwal} - ${absensiTanggalAkhir}`;
+				await scrollToViewer();
+				toast('PDF Rekap Absensi Kegiatan berhasil dimuat', 'success');
+				return;
+			}
+			if (documentType === 'kartu-ujian') {
+				if (!selectedUjianSessionId) throw new Error('Pilih sesi ujian terlebih dahulu.');
+				const params = new URLSearchParams({ session_id: String(selectedUjianSessionId) });
+				if (selectedUjianKelas) params.set('kelas', selectedUjianKelas);
+				const pdfRes = await fetch(`/api/pdf/kartu-ujian?${params}`);
+				if (!pdfRes.ok) throw new Error(await responseErrorMessage(pdfRes, 'Gagal memuat kartu ujian'));
+				const blob = await pdfRes.blob();
+				pdfViewerFilename = responsePdfFilename(pdfRes);
+				if (pdfViewerUrl) URL.revokeObjectURL(pdfViewerUrl);
+				pdfViewerUrl = URL.createObjectURL(blob);
+				pdfViewerTitle = `Kartu Ujian - ${selectedUjianSession?.singkatan || selectedUjianSession?.nama || ''}`;
+				await scrollToViewer();
+				toast('PDF Kartu Ujian berhasil dimuat', 'success');
+				return;
+			}
 			if (
 				documentType === 'martikulasi-sk' ||
 				documentType === 'martikulasi-raport' ||
@@ -663,7 +760,8 @@
 					wakaKurikulumPegawaiId:
 						documentType === 'jadwal-pelajaran' || documentType === 'kalender-pendidikan'
 							? selectedWakaKurikulumId
-							: undefined
+							: undefined,
+					kartuLayout: documentType === 'kartu-absensi' ? selectedKartuLayout : undefined
 				})
 			});
 			if (!res.ok) throw new Error('Gagal mendapatkan token');
@@ -860,7 +958,8 @@
 					bgLogo: showBgLogo,
 					raporPeriode:
 						documentType === 'rapor' && selectedRaporPeriode ? selectedRaporPeriode : undefined,
-					parentSignature: documentType === 'rapor' ? parentSignature : undefined
+					parentSignature: documentType === 'rapor' ? parentSignature : undefined,
+					kartuLayout: documentType === 'kartu-absensi' ? selectedKartuLayout : undefined
 				})
 			});
 
@@ -871,6 +970,15 @@
 
 			const blob = await res.blob();
 			const filename = responsePdfFilename(res);
+			if (documentType === 'kartu-absensi') {
+				if (pdfViewerUrl) URL.revokeObjectURL(pdfViewerUrl);
+				pdfViewerUrl = URL.createObjectURL(blob);
+				pdfViewerFilename = filename;
+				pdfViewerTitle = `Preview Kartu Absensi - ${muridList.length} Murid`;
+				await scrollToViewer();
+				toast('Preview kartu absensi massal berhasil dimuat.', 'success');
+				return;
+			}
 			const url = URL.createObjectURL(blob);
 			const a = document.createElement('a');
 			a.href = url;
@@ -974,8 +1082,21 @@
 </script>
 
 {#if selectedDocument === 'buku-tamu'}
-	<label class="mb-4 flex flex-col gap-2">Pilih Dokumen<select class="select w-full" bind:value={selectedDocument}>{#each visibleDocumentOptions as option}<option value={option.value}>{option.label}</option>{/each}</select></label>
-	<GuestPdf />
+	<div class="card bg-base-100 rounded-lg border border-none p-4 shadow-md">
+		<h2 class="mb-1 text-2xl font-bold">Cetak - PDF Buku Tamu Digital</h2>
+		<p class="text-base-content/65 mb-5 text-sm">
+			Pilih rentang tanggal dan periksa hasil PDF sebelum mengunduh.
+		</p>
+		<label class="form-control mb-4 min-w-0">
+			<span class="label-text mb-1">Pilih Dokumen</span>
+			<select class="select select-bordered bg-base-100 w-full" bind:value={selectedDocument}>
+				{#each visibleDocumentOptions as option}
+					<option value={option.value}>{option.label}</option>
+				{/each}
+			</select>
+		</label>
+		<GuestPdf />
+	</div>
 {:else}
 <div class="card bg-base-100 rounded-lg border border-none p-4 shadow-md">
 
@@ -1006,10 +1127,65 @@
 		{downloadLoading}
 	/>
 
+	{#if selectedDocument === 'kartu-ujian'}
+		<div class="border-base-300 bg-base-200/35 mt-3 grid items-end gap-3 rounded-lg border p-4 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto]">
+			<label class="form-control min-w-0">
+				<span class="label-text mb-1">Sesi Ujian</span>
+				<select class="select select-bordered bg-base-100 w-full" bind:value={selectedUjianSessionId} onchange={() => (selectedUjianKelas = '')}>
+					<option value={null}>Pilih sesi ujian</option>
+					{#each ujianSessions as session}
+						<option value={session.id}>{session.singkatan || session.nama} · {session.tahunAjaran} ({session.participantCount} peserta)</option>
+					{/each}
+				</select>
+			</label>
+			<label class="form-control min-w-0">
+				<span class="label-text mb-1">Kelas Peserta</span>
+				<select class="select select-bordered bg-base-100 w-full" bind:value={selectedUjianKelas} disabled={!selectedUjianSession}>
+					<option value="">Semua kelas</option>
+					{#each selectedUjianSession?.classes ?? [] as kelas}
+						<option value={kelas}>{kelas}</option>
+					{/each}
+				</select>
+			</label>
+			<a class="btn btn-soft" href="/ujian"><Icon name="gear" /> Kelola Sesi</a>
+			<div class="md:col-span-3 flex flex-wrap items-center gap-2 text-sm">
+				<span class="badge badge-outline">A4 Portrait</span>
+				<span class="badge badge-outline">4 kartu per halaman</span>
+				<span class="text-base-content/65">PDF ditampilkan pada pratinjau sebelum diunduh.</span>
+			</div>
+		</div>
+	{/if}
+
 	{#if selectedDocument === 'kartu-absensi' && daftarMurid.length}
-		<div
-			class="border-base-300 bg-base-200/40 mt-3 flex flex-wrap items-center gap-3 rounded-lg border px-4 py-3 text-sm"
-		>
+		<div class="border-base-300 bg-base-200/40 mt-3 rounded-lg border px-4 py-3 text-sm">
+			<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+				<div>
+					<div class="font-semibold">Model kartu</div>
+					<div class="text-base-content/65 text-xs">Ukuran asli 85,6 × 54 mm, 8 kartu per A4.</div>
+				</div>
+				<div class="join" role="group" aria-label="Model kartu pelajar dan absensi">
+					<button
+						class:btn-primary={selectedKartuLayout === 'duplex'}
+						class="btn join-item btn-sm shadow-none"
+						type="button"
+						onclick={() => (selectedKartuLayout = 'duplex')}>Dua Sisi</button
+					>
+					<button
+						class:btn-primary={selectedKartuLayout === 'photo-qr'}
+						class="btn join-item btn-sm shadow-none"
+						type="button"
+						onclick={() => (selectedKartuLayout = 'photo-qr')}>Foto + QR</button
+					>
+					<button
+						class:btn-primary={selectedKartuLayout === 'qr-only'}
+						class="btn join-item btn-sm shadow-none"
+						type="button"
+						onclick={() => (selectedKartuLayout = 'qr-only')}>QR Saja</button
+					>
+				</div>
+			</div>
+			<div class="flex flex-wrap items-center gap-3">
+				<span class="badge badge-outline whitespace-nowrap">A4 · 8 kartu · 85,6 × 54 mm</span>
 			{#if qrReadinessLoading}
 				<span class="loading loading-spinner loading-sm"></span>
 				<span>Memeriksa kesiapan QR {daftarMurid.length} murid...</span>
@@ -1051,7 +1227,47 @@
 						Buat QR yang Belum Siap
 					</button>
 				{/if}
-			{/if}
+				{/if}
+			</div>
+		</div>
+	{/if}
+
+	{#if selectedDocument === 'rekap-absensi-kegiatan'}
+		<div
+			class="border-base-300 bg-base-200/30 mt-3 grid items-end gap-3 rounded-lg border p-3 sm:grid-cols-2 xl:grid-cols-5"
+		>
+			<label class="form-control min-w-0">
+				<span class="label-text mb-1">Tanggal Awal</span>
+				<input class="input input-bordered bg-base-100 w-full" type="date" bind:value={absensiTanggalAwal} />
+			</label>
+			<label class="form-control min-w-0">
+				<span class="label-text mb-1">Tanggal Akhir</span>
+				<input class="input input-bordered bg-base-100 w-full" type="date" bind:value={absensiTanggalAkhir} />
+			</label>
+			<label class="form-control min-w-0">
+				<span class="label-text mb-1">Kelas</span>
+				<select class="select select-bordered bg-base-100 w-full" bind:value={absensiKelasId}>
+					<option value={null}>Pilih kelas</option>
+					{#each absensiKelasList as kelas (kelas.id)}
+						<option value={kelas.id}>{kelas.nama}{kelas.fase ? ` - ${kelas.fase}` : ''}</option>
+					{/each}
+				</select>
+			</label>
+			<label class="form-control min-w-0">
+				<span class="label-text mb-1">Kegiatan</span>
+				<select class="select select-bordered bg-base-100 w-full" bind:value={absensiKegiatanId}>
+					<option value={null}>Semua kegiatan</option>
+					{#each absensiKegiatanList as kegiatan (kegiatan.id)}
+						<option value={kegiatan.id}>{kegiatan.nama}</option>
+					{/each}
+				</select>
+			</label>
+			<a
+				class="btn btn-outline h-12 min-h-12 w-full whitespace-normal text-center leading-tight"
+				href={`/administrasi/absensi/kegiatan/rekap?kelas_id=${absensiKelasId ?? ''}&tanggal_awal=${absensiTanggalAwal}&tanggal_akhir=${absensiTanggalAkhir}${absensiKegiatanId ? `&kegiatan_id=${absensiKegiatanId}` : ''}`}
+			>
+				Buka Rekap Kegiatan
+			</a>
 		</div>
 	{/if}
 

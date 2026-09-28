@@ -19,7 +19,7 @@ export const tableAuthUser = sqliteTable(
 		passwordUpdatedAt: text(),
 		permissions: text({ mode: 'json' }).notNull().default('[]').$type<UserPermission[]>(),
 		// tipe user: admin (penuh), wali_kelas (terbatas ke kelas_id), wali_asuh (terbatas ke keasramaan), atau user (default/other)
-		type: text({ enum: ['admin', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'user'] })
+		type: text({ enum: ['admin', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'wali_murid', 'user'] })
 			.notNull()
 			.default('admin'),
 		// optional: directly associate a user to a sekolah so login can pick it reliably
@@ -434,6 +434,114 @@ export const tableMurid = sqliteTable(
 	(t) => [unique().on(t.sekolahId, t.semesterId, t.nis)]
 );
 
+export const tableAuthUserMurid = sqliteTable(
+	'auth_user_murid',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		authUserId: int()
+			.references(() => tableAuthUser.id, { onDelete: 'cascade' })
+			.notNull(),
+		muridId: int()
+			.references(() => tableMurid.id, { onDelete: 'cascade' })
+			.notNull(),
+		hubungan: text().notNull().default('wali'),
+		...audit
+	},
+	(table) => [
+		unique('auth_user_murid_unique').on(table.authUserId, table.muridId),
+		index('auth_user_murid_user_idx').on(table.authUserId),
+		index('auth_user_murid_murid_idx').on(table.muridId)
+	]
+);
+
+export const tableMuridLifecycle = sqliteTable(
+	'murid_lifecycle',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		identityKey: text().notNull(),
+		nis: text().notNull(),
+		nisn: text(),
+		namaSnapshot: text().notNull(),
+		status: text({ enum: ['aktif', 'pindah', 'keluar', 'alumni'] })
+			.notNull()
+			.default('aktif'),
+		tanggalStatus: text(),
+		alasan: text(),
+		lastMuridId: int().references(() => tableMurid.id, { onDelete: 'set null' }),
+		...audit
+	},
+	(table) => [
+		unique('murid_lifecycle_sekolah_identity_unique').on(table.sekolahId, table.identityKey),
+		index('murid_lifecycle_sekolah_status_idx').on(table.sekolahId, table.status),
+		index('murid_lifecycle_last_murid_idx').on(table.lastMuridId)
+	]
+);
+
+export const tableMuridRiwayatKelas = sqliteTable(
+	'murid_riwayat_kelas',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		identityKey: text().notNull(),
+		muridId: int().references(() => tableMurid.id, { onDelete: 'set null' }),
+		tahunAjaranId: int().references(() => tableTahunAjaran.id, { onDelete: 'set null' }),
+		semesterId: int().references(() => tableSemester.id, { onDelete: 'set null' }),
+		kelasId: int().references(() => tableKelas.id, { onDelete: 'set null' }),
+		namaSnapshot: text().notNull(),
+		nisSnapshot: text().notNull(),
+		nisnSnapshot: text(),
+		tahunAjaranSnapshot: text().notNull(),
+		semesterSnapshot: text().notNull(),
+		kelasSnapshot: text().notNull(),
+		faseSnapshot: text(),
+		statusSnapshot: text().notNull().default('aktif'),
+		recordedAt: text()
+			.$defaultFn(() => new Date().toISOString())
+			.notNull()
+	},
+	(table) => [
+		unique('murid_riwayat_kelas_murid_unique').on(table.muridId),
+		index('murid_riwayat_kelas_identity_idx').on(table.sekolahId, table.identityKey),
+		index('murid_riwayat_kelas_context_idx').on(
+			table.tahunAjaranId,
+			table.semesterId,
+			table.kelasId
+		)
+	]
+);
+
+export const tableAuditLog = sqliteTable(
+	'audit_log',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int().references(() => tableSekolah.id, { onDelete: 'set null' }),
+		userId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		usernameSnapshot: text().notNull(),
+		roleSnapshot: text().notNull(),
+		action: text().notNull(),
+		entityType: text().notNull(),
+		entityId: text(),
+		summary: text().notNull(),
+		beforeData: text({ mode: 'json' }).$type<Record<string, unknown> | null>(),
+		afterData: text({ mode: 'json' }).$type<Record<string, unknown> | null>(),
+		ipAddress: text(),
+		userAgent: text(),
+		createdAt: text()
+			.$defaultFn(() => new Date().toISOString())
+			.notNull()
+	},
+	(table) => [
+		index('audit_log_sekolah_created_idx').on(table.sekolahId, table.createdAt),
+		index('audit_log_user_created_idx').on(table.userId, table.createdAt),
+		index('audit_log_entity_idx').on(table.entityType, table.entityId)
+	]
+);
+
 export const tableDapodikSettings = sqliteTable(
 	'dapodik_settings',
 	{
@@ -815,6 +923,93 @@ export const tableAbsensiKegiatan = sqliteTable(
 	]
 );
 
+export const tableIzinPulangMurid = sqliteTable(
+	'izin_pulang_murid',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		tahunAjaranId: int().references(() => tableTahunAjaran.id, { onDelete: 'set null' }),
+		semesterId: int().references(() => tableSemester.id, { onDelete: 'set null' }),
+		kelasId: int().references(() => tableKelas.id, { onDelete: 'set null' }),
+		muridId: int().references(() => tableMurid.id, { onDelete: 'set null' }),
+		nisSnapshot: text().notNull(),
+		nisnSnapshot: text(),
+		namaSnapshot: text().notNull(),
+		kelasSnapshot: text().notNull(),
+		tanggalKeluar: text().notNull(),
+		waktuKeluar: text(),
+		alasan: text().notNull(),
+		penjemputNama: text(),
+		penjemputHubungan: text(),
+		penjemputKontak: text(),
+		rencanaKembali: text().notNull(),
+		waktuRencanaKembali: text(),
+		tanggalKembali: text(),
+		waktuKembali: text(),
+		status: text({
+			enum: ['sedang_izin', 'sudah_kembali', 'terlambat_kembali', 'dibatalkan']
+		})
+			.default('sedang_izin')
+			.notNull(),
+		nomorDokumen: text(),
+		petugasKeluarUserId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		petugasKembaliUserId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		catatan: text(),
+		...audit
+	},
+	(table) => [
+		index('izin_pulang_murid_sekolah_status_idx').on(table.sekolahId, table.status),
+		index('izin_pulang_murid_sekolah_tanggal_idx').on(
+			table.sekolahId,
+			table.tanggalKeluar,
+			table.rencanaKembali
+		),
+		index('izin_pulang_murid_murid_status_idx').on(table.muridId, table.status),
+		index('izin_pulang_murid_context_idx').on(
+			table.tahunAjaranId,
+			table.semesterId,
+			table.kelasId
+		)
+	]
+);
+
+export const tableTindakLanjutAbsensi = sqliteTable(
+	'tindak_lanjut_absensi',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		muridId: int().references(() => tableMurid.id, { onDelete: 'set null' }),
+		namaSnapshot: text().notNull(),
+		kelasSnapshot: text().notNull(),
+		jenis: text({
+			enum: ['sakit_beruntun', 'sakit_berulang', 'alfa_berulang', 'izin_pulang_terlambat']
+		}).notNull(),
+		periodeMulai: text().notNull(),
+		periodeSelesai: text().notNull(),
+		status: text({ enum: ['baru', 'diproses', 'selesai'] })
+			.notNull()
+			.default('baru'),
+		catatan: text(),
+		ditanganiOlehUserId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		ditanganiPada: text(),
+		...audit
+	},
+	(table) => [
+		unique('tindak_lanjut_absensi_unique').on(
+			table.sekolahId,
+			table.muridId,
+			table.jenis,
+			table.periodeMulai
+		),
+		index('tindak_lanjut_absensi_sekolah_status_idx').on(table.sekolahId, table.status),
+		index('tindak_lanjut_absensi_murid_jenis_idx').on(table.muridId, table.jenis)
+	]
+);
+
 export const tableQrMurid = sqliteTable(
 	'qr_murid',
 	{
@@ -892,6 +1087,57 @@ export const tableAbsensiKegiatanRelations = relations(tableAbsensiKegiatan, ({ 
 		references: [tableAuthUser.id]
 	})
 }));
+
+export const tableIzinPulangMuridRelations = relations(tableIzinPulangMurid, ({ one }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableIzinPulangMurid.sekolahId],
+		references: [tableSekolah.id]
+	}),
+	tahunAjaran: one(tableTahunAjaran, {
+		fields: [tableIzinPulangMurid.tahunAjaranId],
+		references: [tableTahunAjaran.id]
+	}),
+	semester: one(tableSemester, {
+		fields: [tableIzinPulangMurid.semesterId],
+		references: [tableSemester.id]
+	}),
+	kelas: one(tableKelas, {
+		fields: [tableIzinPulangMurid.kelasId],
+		references: [tableKelas.id]
+	}),
+	murid: one(tableMurid, {
+		fields: [tableIzinPulangMurid.muridId],
+		references: [tableMurid.id]
+	}),
+	petugasKeluar: one(tableAuthUser, {
+		fields: [tableIzinPulangMurid.petugasKeluarUserId],
+		references: [tableAuthUser.id],
+		relationName: 'izinPulangPetugasKeluar'
+	}),
+	petugasKembali: one(tableAuthUser, {
+		fields: [tableIzinPulangMurid.petugasKembaliUserId],
+		references: [tableAuthUser.id],
+		relationName: 'izinPulangPetugasKembali'
+	})
+}));
+
+export const tableTindakLanjutAbsensiRelations = relations(
+	tableTindakLanjutAbsensi,
+	({ one }) => ({
+		sekolah: one(tableSekolah, {
+			fields: [tableTindakLanjutAbsensi.sekolahId],
+			references: [tableSekolah.id]
+		}),
+		murid: one(tableMurid, {
+			fields: [tableTindakLanjutAbsensi.muridId],
+			references: [tableMurid.id]
+		}),
+		ditanganiOleh: one(tableAuthUser, {
+			fields: [tableTindakLanjutAbsensi.ditanganiOlehUserId],
+			references: [tableAuthUser.id]
+		})
+	})
+);
 
 export const tableQrMuridRelations = relations(tableQrMurid, ({ one }) => ({
 	murid: one(tableMurid, {
@@ -1586,6 +1832,76 @@ export const tableJadwalPelajaran = sqliteTable(
 		index('jadwal_pelajaran_guru_idx').on(table.guruPegawaiId),
 		index('jadwal_pelajaran_mapel_idx').on(table.mataPelajaranId),
 		index('jadwal_pelajaran_jadwal_mapel_idx').on(table.jadwalMapelId)
+	]
+);
+
+export const tableRuangan = sqliteTable(
+	'ruangan',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		kode: text().notNull(),
+		nama: text().notNull(),
+		jenis: text().notNull().default('kelas'),
+		kapasitas: int(),
+		lokasi: text(),
+		kondisi: text({ enum: ['baik', 'rusak_ringan', 'rusak_berat', 'tidak_aktif'] })
+			.notNull()
+			.default('baik'),
+		fasilitas: text(),
+		catatan: text(),
+		...audit
+	},
+	(table) => [
+		unique('ruangan_sekolah_kode_unique').on(table.sekolahId, table.kode),
+		index('ruangan_sekolah_jenis_idx').on(table.sekolahId, table.jenis)
+	]
+);
+
+export const tableJadwalRuangan = sqliteTable(
+	'jadwal_ruangan',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		jadwalPelajaranId: int()
+			.references(() => tableJadwalPelajaran.id, { onDelete: 'cascade' })
+			.notNull(),
+		ruanganId: int()
+			.references(() => tableRuangan.id, { onDelete: 'cascade' })
+			.notNull(),
+		...audit
+	},
+	(table) => [
+		unique('jadwal_ruangan_jadwal_unique').on(table.jadwalPelajaranId),
+		index('jadwal_ruangan_ruang_idx').on(table.ruanganId)
+	]
+);
+
+export const tableJadwalPreferensiGuru = sqliteTable(
+	'jadwal_preferensi_guru',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		pegawaiId: int()
+			.references(() => tablePegawai.id, { onDelete: 'cascade' })
+			.notNull(),
+		hari: text().notNull(),
+		jamKe: int().notNull(),
+		tersedia: int({ mode: 'boolean' }).notNull().default(false),
+		catatan: text(),
+		...audit
+	},
+	(table) => [
+		unique('jadwal_preferensi_unique').on(
+			table.sekolahId,
+			table.pegawaiId,
+			table.hari,
+			table.jamKe
+		),
+		index('jadwal_preferensi_context_idx').on(table.sekolahId, table.hari, table.jamKe)
 	]
 );
 
@@ -2482,6 +2798,294 @@ export const tableDinasLuarBukti = sqliteTable(
 	(table) => [index('surat_dinas_luar_bukti_sppd_idx').on(table.sppdId)]
 );
 
+export const tableSuratArsip = sqliteTable(
+	'surat_arsip',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		arah: text({ enum: ['masuk', 'keluar'] }).notNull(),
+		nomorSurat: text(),
+		tanggalSurat: text().notNull(),
+		tanggalDiterima: text(),
+		pengirimPenerima: text().notNull(),
+		perihal: text().notNull(),
+		ringkasan: text(),
+		status: text({
+			enum: ['draft', 'diajukan', 'disetujui', 'ditolak', 'diarsipkan']
+		})
+			.notNull()
+			.default('draft'),
+		dibuatOlehId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		disetujuiOlehId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		tanggalPersetujuan: text(),
+		catatanPersetujuan: text(),
+		snapshotJson: text(),
+		...audit
+	},
+	(table) => [
+		index('surat_arsip_sekolah_arah_idx').on(table.sekolahId, table.arah),
+		index('surat_arsip_sekolah_status_idx').on(table.sekolahId, table.status),
+		index('surat_arsip_tanggal_idx').on(table.tanggalSurat)
+	]
+);
+
+export const tableDocumentAttachment = sqliteTable(
+	'document_attachment',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		entityType: text().notNull(),
+		entityId: text().notNull(),
+		entityLabelSnapshot: text().notNull(),
+		category: text().notNull(),
+		originalName: text().notNull(),
+		storedPath: text().notNull(),
+		mimeType: text().notNull(),
+		sizeBytes: int().notNull(),
+		sha256: text().notNull(),
+		expiresAt: text(),
+		uploadedById: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		...audit
+	},
+	(table) => [
+		index('document_attachment_school_entity_idx').on(
+			table.sekolahId,
+			table.entityType,
+			table.entityId
+		),
+		index('document_attachment_school_category_idx').on(table.sekolahId, table.category),
+		unique('document_attachment_stored_path_unique').on(table.storedPath)
+	]
+);
+
+export const tableServerIdentity = sqliteTable('server_identity', {
+	id: int().primaryKey(),
+	instanceId: text().notNull(),
+	machineName: text().notNull(),
+	processId: int().notNull(),
+	role: text({ enum: ['primary', 'standby'] })
+		.notNull()
+		.default('primary'),
+	databasePathHash: text().notNull(),
+	startedAt: text().notNull(),
+	heartbeatAt: text().notNull(),
+	...audit
+});
+
+export const tableMaintenanceRun = sqliteTable(
+	'maintenance_run',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		type: text({ enum: ['backup', 'cleanup', 'health', 'restore_test', 'update_test'] }).notNull(),
+		status: text({ enum: ['running', 'success', 'failed', 'warning'] }).notNull(),
+		summary: text(),
+		detailsJson: text(),
+		startedAt: text().notNull(),
+		finishedAt: text(),
+		...audit
+	},
+	(table) => [index('maintenance_run_type_created_idx').on(table.type, table.createdAt)]
+);
+
+export const tableCommunicationTemplate = sqliteTable(
+	'communication_template',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		name: text().notNull(),
+		channel: text({ enum: ['internal', 'email', 'whatsapp'] })
+			.notNull()
+			.default('internal'),
+		audience: text().notNull().default('semua'),
+		subject: text(),
+		body: text().notNull(),
+		active: int({ mode: 'boolean' }).notNull().default(true),
+		...audit
+	},
+	(table) => [
+		index('communication_template_school_idx').on(table.sekolahId),
+		unique('communication_template_school_name_unique').on(table.sekolahId, table.name)
+	]
+);
+
+export const tableCommunicationQueue = sqliteTable(
+	'communication_queue',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		templateId: int().references(() => tableCommunicationTemplate.id, { onDelete: 'set null' }),
+		channel: text({ enum: ['internal', 'email', 'whatsapp'] }).notNull(),
+		audience: text().notNull(),
+		recipient: text(),
+		subject: text(),
+		body: text().notNull(),
+		status: text({ enum: ['draft', 'pending_approval', 'approved', 'sent', 'failed', 'cancelled'] })
+			.notNull()
+			.default('draft'),
+		containsSensitiveData: int({ mode: 'boolean' }).notNull().default(false),
+		createdById: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		approvedById: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		approvedAt: text(),
+		sentAt: text(),
+		attempts: int().notNull().default(0),
+		lastError: text(),
+		...audit
+	},
+	(table) => [
+		index('communication_queue_school_status_idx').on(table.sekolahId, table.status),
+		index('communication_queue_created_idx').on(table.createdAt)
+	]
+);
+
+export const tableDocumentApproval = sqliteTable(
+	'document_approval',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		documentType: text().notNull(),
+		entityId: text(),
+		titleSnapshot: text().notNull(),
+		version: int().notNull().default(1),
+		status: text({
+			enum: ['draft', 'diajukan', 'diperiksa', 'disetujui', 'ditolak', 'diterbitkan']
+		})
+			.notNull()
+			.default('draft'),
+		submittedById: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		reviewedById: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		approvedById: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		submittedAt: text(),
+		reviewedAt: text(),
+		approvedAt: text(),
+		publishedAt: text(),
+		note: text(),
+		snapshotJson: text(),
+		parentApprovalId: int(),
+		...audit
+	},
+	(table) => [
+		index('document_approval_school_status_idx').on(table.sekolahId, table.status),
+		index('document_approval_entity_idx').on(table.sekolahId, table.documentType, table.entityId),
+		index('document_approval_parent_idx').on(table.parentApprovalId)
+	]
+);
+
+export const tableInventaris = sqliteTable(
+	'inventaris',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		kode: text().notNull(),
+		nama: text().notNull(),
+		kategori: text().notNull(),
+		lokasi: text(),
+		kondisi: text({ enum: ['baik', 'rusak_ringan', 'rusak_berat', 'hilang'] })
+			.notNull()
+			.default('baik'),
+		jumlah: int().notNull().default(1),
+		satuan: text().notNull().default('unit'),
+		sumberDana: text(),
+		tahunPerolehan: int(),
+		nilaiPerolehan: real(),
+		penanggungJawabId: int().references(() => tablePegawai.id, { onDelete: 'set null' }),
+		qrToken: text().notNull(),
+		catatan: text(),
+		...audit
+	},
+	(table) => [
+		unique('inventaris_sekolah_kode_unique').on(table.sekolahId, table.kode),
+		unique('inventaris_qr_token_unique').on(table.qrToken),
+		index('inventaris_sekolah_kategori_idx').on(table.sekolahId, table.kategori),
+		index('inventaris_sekolah_kondisi_idx').on(table.sekolahId, table.kondisi)
+	]
+);
+
+export const tableInventarisPeminjaman = sqliteTable(
+	'inventaris_peminjaman',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		inventarisId: int()
+			.references(() => tableInventaris.id, { onDelete: 'cascade' })
+			.notNull(),
+		peminjamPegawaiId: int().references(() => tablePegawai.id, { onDelete: 'set null' }),
+		peminjamNama: text().notNull(),
+		jumlah: int().notNull().default(1),
+		tanggalPinjam: text().notNull(),
+		rencanaKembali: text(),
+		tanggalKembali: text(),
+		status: text({ enum: ['dipinjam', 'dikembalikan'] })
+			.notNull()
+			.default('dipinjam'),
+		kondisiKembali: text(),
+		catatan: text(),
+		...audit
+	},
+	(table) => [index('inventaris_peminjaman_asset_status_idx').on(table.inventarisId, table.status)]
+);
+
+export const tableInventarisPerawatan = sqliteTable(
+	'inventaris_perawatan',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		inventarisId: int()
+			.references(() => tableInventaris.id, { onDelete: 'cascade' })
+			.notNull(),
+		tanggal: text().notNull(),
+		jenis: text().notNull(),
+		biaya: real(),
+		keterangan: text(),
+		pegawaiId: int().references(() => tablePegawai.id, { onDelete: 'set null' }),
+		...audit
+	},
+	(table) => [index('inventaris_perawatan_asset_tanggal_idx').on(table.inventarisId, table.tanggal)]
+);
+
+export const tablePengumuman = sqliteTable(
+	'pengumuman',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		judul: text().notNull(),
+		isi: text().notNull(),
+		kategori: text({ enum: ['umum', 'sekolah', 'asrama', 'akademik'] })
+			.notNull()
+			.default('umum'),
+		audiens: text({ enum: ['semua', 'admin', 'guru', 'wali_kelas', 'wali_asuh', 'wali_asrama'] })
+			.notNull()
+			.default('semua'),
+		prioritas: text({ enum: ['normal', 'penting'] })
+			.notNull()
+			.default('normal'),
+		tanggalMulai: text().notNull(),
+		tanggalSelesai: text(),
+		aktif: int({ mode: 'boolean' }).notNull().default(true),
+		dibuatOlehId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		...audit
+	},
+	(table) => [
+		index('pengumuman_sekolah_periode_idx').on(
+			table.sekolahId,
+			table.tanggalMulai,
+			table.tanggalSelesai
+		),
+		index('pengumuman_sekolah_audiens_idx').on(table.sekolahId, table.audiens, table.aktif)
+	]
+);
+
 export const tableBukuTamu = sqliteTable(
 	'buku_tamu',
 	{
@@ -2546,7 +3150,9 @@ export const tableUserAiSettings = sqliteTable(
 		authUserId: int()
 			.references(() => tableAuthUser.id, { onDelete: 'cascade' })
 			.notNull(),
-		provider: text({ enum: ['gemini', 'openai_compatible'] }).default('gemini').notNull(),
+		provider: text({ enum: ['gemini', 'openai_compatible'] })
+			.default('gemini')
+			.notNull(),
 		apiKey: text().notNull(),
 		model: text().notNull(),
 		baseUrl: text().notNull(),

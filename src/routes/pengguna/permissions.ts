@@ -15,8 +15,50 @@ export const groupedUserPermissions = {
 		values: [['manage', 'Kelola Tindakan Cepat']],
 		description: 'Dashboard'
 	},
+	pimpinan: {
+		values: [['lihat', 'Lihat Dashboard Pimpinan']],
+		description: 'Dashboard Pimpinan'
+	},
+	inventaris: {
+		values: [
+			['lihat', 'Lihat Inventaris dan Sarana Prasarana'],
+			['manage', 'Kelola aset, peminjaman, dan perawatan']
+		],
+		description: 'Inventaris dan Sarana Prasarana'
+	},
+	pengumuman: {
+		values: [
+			['lihat', 'Lihat Pengumuman dan Agenda'],
+			['manage', 'Kelola Pengumuman']
+		],
+		description: 'Pengumuman dan Kalender Terpadu'
+	},
+	portal_wali: {
+		values: [
+			['lihat', 'Lihat Portal Wali Murid'],
+			['manage', 'Kelola akun dan hubungan wali murid']
+		],
+		description: 'Portal Wali Murid'
+	},
+	ruangan: {
+		values: [
+			['lihat', 'Lihat data dan pemakaian ruangan'],
+			['manage', 'Kelola ruangan dan penempatannya']
+		],
+		description: 'Manajemen Ruangan'
+	},
+	penjadwalan: {
+		values: [
+			['rekomendasi', 'Lihat rekomendasi jadwal'],
+			['preferensi', 'Kelola preferensi waktu guru']
+		],
+		description: 'Penjadwalan Semiotomatis'
+	},
 	sekolah: {
-		values: [['lihat', 'Lihat Data Sekolah'], ['manage', 'Kelola Identitas Sekolah']],
+		values: [
+			['lihat', 'Lihat Data Sekolah'],
+			['manage', 'Kelola Identitas Sekolah']
+		],
 		description: 'Sekolah'
 	},
 	app: {
@@ -35,6 +77,13 @@ export const groupedUserPermissions = {
 		values: [['rpm', 'Buat dan cetak RPM']],
 		description: 'Kurikulum'
 	},
+	ujian: {
+		values: [
+			['manage', 'Kelola sesi dan peserta ujian'],
+			['cetak', 'Cetak kartu ujian']
+		],
+		description: 'Kartu Ujian'
+	},
 	kelas: {
 		values: [
 			['lihat', 'Lihat Daftar Kelas'],
@@ -42,6 +91,14 @@ export const groupedUserPermissions = {
 			['pindah', 'Pindah dan akses kelas lain']
 		],
 		description: 'Data Kelas'
+	},
+	murid: {
+		values: [['arsip', 'Kelola Arsip Murid, Alumni, dan Kenaikan Kelas']],
+		description: 'Arsip Murid dan Alumni'
+	},
+	audit: {
+		values: [['lihat', 'Lihat Riwayat Aktivitas Sistem']],
+		description: 'Audit Aktivitas'
 	},
 	administrasi: {
 		values: [
@@ -66,9 +123,45 @@ export const groupedUserPermissions = {
 	surat: {
 		values: [
 			['sppd', 'Kelola SPPD'],
-			['dinas_luar', 'Kelola Dinas Luar']
+			['dinas_luar', 'Kelola Dinas Luar'],
+			['arsip', 'Kelola Surat Masuk dan Keluar'],
+			['persetujuan', 'Menyetujui dan Menolak Dokumen Surat']
 		],
 		description: 'Surat Menyurat'
+	},
+	notifikasi: {
+		values: [['lihat', 'Lihat Pusat Notifikasi']],
+		description: 'Pusat Notifikasi'
+	},
+	operasional: {
+		values: [['lihat', 'Lihat kesehatan server, backup, dan sesi perangkat']],
+		description: 'Operasional dan Pemeliharaan Sistem'
+	},
+	komunikasi: {
+		values: [
+			['lihat', 'Lihat antrean komunikasi'],
+			['manage', 'Kelola template dan draf komunikasi'],
+			['approve', 'Setujui komunikasi sebelum dikirim']
+		],
+		description: 'Komunikasi Terintegrasi'
+	},
+	berkas: {
+		values: [
+			['lihat', 'Lihat dan unduh berkas'],
+			['manage', 'Unggah dan kelola metadata berkas'],
+			['delete', 'Hapus berkas']
+		],
+		description: 'Manajemen Berkas'
+	},
+	persetujuan: {
+		values: [
+			['lihat', 'Lihat Pusat Persetujuan'],
+			['ajukan', 'Buat dan ajukan dokumen'],
+			['periksa', 'Periksa dokumen sebagai Waka'],
+			['setujui', 'Setujui atau tolak dokumen'],
+			['terbitkan', 'Terbitkan dokumen final']
+		],
+		description: 'Persetujuan Dokumen'
 	}
 } as const;
 
@@ -80,6 +173,7 @@ export function defaultPermissionsForType(
 	options: { kelasCount?: number } = {}
 ): UserPermission[] {
 	if (type === 'admin') return [...userPermissions];
+	if (type === 'wali_murid') return ['portal_wali_lihat'];
 	if (type === 'user' && (options.kelasCount ?? 0) > 1) return ['kelas_pindah'];
 	return [];
 }

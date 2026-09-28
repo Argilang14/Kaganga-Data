@@ -20,6 +20,7 @@
 		if (type === 'wali_kelas') return 'Wali Kelas';
 		if (type === 'wali_asuh') return 'Wali Asuh';
 		if (type === 'wali_asrama') return 'Wali Asrama';
+		if (type === 'wali_murid') return 'Wali Murid';
 		if (type === 'user') return 'Guru Mapel';
 		return type.replaceAll('_', ' ');
 	}
@@ -38,7 +39,9 @@
 			</div>
 		{/if}
 		{#if u.type === 'wali_kelas'}
-			<span class="badge badge-warning badge-xs" title="Role mengikuti penugasan Data Kelas">Akun lama</span>
+			<span class="badge badge-warning badge-xs" title="Role mengikuti penugasan Data Kelas"
+				>Akun lama</span
+			>
 		{/if}
 	</div>
 </td>
@@ -46,12 +49,15 @@
 <td>
 	<div class="flex flex-col gap-1">
 		<div class={`badge ${u.isOnline ? 'badge-success' : 'badge-ghost'} badge-sm gap-1`}>
-			<span class={`h-2 w-2 rounded-full ${u.isOnline ? 'bg-success-content' : 'bg-base-content/40'}`}></span>
+			<span
+				class={`h-2 w-2 rounded-full ${u.isOnline ? 'bg-success-content' : 'bg-base-content/40'}`}
+			></span>
 			{u.isOnline ? 'Online' : 'Offline'}
 		</div>
 		<div class="text-base-content/60 text-xs">
 			{formatLastSeen(u.lastSeenAt)}
-			{#if u.activeSessionCount > 1} · {u.activeSessionCount} sesi{/if}
+			{#if u.activeSessionCount > 1}
+				· {u.activeSessionCount} sesi{/if}
 		</div>
 	</div>
 </td>
@@ -64,13 +70,28 @@
 </td>
 <td>
 	<div class="join">
-		<button class="btn btn-sm btn-soft join-item" type="button" title="Edit pengguna" onclick={() => onEdit?.(u)}>
+		<button
+			class="btn btn-sm btn-soft join-item"
+			type="button"
+			title="Edit pengguna"
+			onclick={() => onEdit?.(u)}
+		>
 			<Icon name="edit" />
 		</button>
-		<button class="btn btn-sm btn-primary btn-soft join-item" type="button" title="Atur hak akses" onclick={() => onOpenUser?.(u)}>
+		<button
+			class="btn btn-sm btn-primary btn-soft join-item"
+			type="button"
+			title="Atur hak akses"
+			onclick={() => onOpenUser?.(u)}
+		>
 			<Icon name="key" />
 		</button>
-		<button class="btn btn-sm btn-error btn-soft join-item" type="button" title="Hapus pengguna" onclick={() => onDelete?.(u)}>
+		<button
+			class="btn btn-sm btn-error btn-soft join-item"
+			type="button"
+			title="Hapus pengguna"
+			onclick={() => onDelete?.(u)}
+		>
 			<Icon name="del" />
 		</button>
 	</div>

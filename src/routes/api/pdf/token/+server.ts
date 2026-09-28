@@ -114,6 +114,8 @@ export const POST = (async ({ locals, request }) => {
 		body.parentSignature === 'wali'
 			? body.parentSignature
 			: undefined;
+	const kartuLayout =
+		body.kartuLayout === 'photo-qr' || body.kartuLayout === 'qr-only' ? body.kartuLayout : 'duplex';
 	const variant = resolveSchoolPdfVariant(docType, locals);
 
 	if (locals.user?.type === 'wali_asrama' && (docType !== 'keasramaan' || variant !== 'sr')) {
@@ -142,6 +144,7 @@ export const POST = (async ({ locals, request }) => {
 	if (wakaKurikulumPegawaiId) {
 		url.searchParams.set('waka_kurikulum_pegawai_id', String(wakaKurikulumPegawaiId));
 	}
+	if (docType === 'kartu-absensi') url.searchParams.set('kartu_layout', kartuLayout);
 
 	const docLabel = body.docLabel || docType;
 	const nama = await resolveNama(docType, locals, url);
@@ -167,6 +170,7 @@ export const POST = (async ({ locals, request }) => {
 		jenisJadwal,
 		semesterId,
 		wakaKurikulumPegawaiId,
+		kartuLayout: docType === 'kartu-absensi' ? kartuLayout : undefined,
 		slug
 	});
 

@@ -5,11 +5,15 @@
 	import ProgressCard from '$lib/components/dashboard/progress-card.svelte';
 	import QuickActionsCard from '$lib/components/dashboard/quick-actions-card.svelte';
 	import DailySummary from '$lib/components/dashboard/daily-summary.svelte';
+	import MissingDataCard from '$lib/components/dashboard/missing-data-card.svelte';
 	import { computeNextEventMessage } from '$lib/utils/next-event-message';
 	import BellStatus from '$lib/components/jadwal-bell/bell-status.svelte';
 
 	let { data } = $props();
 	const sekolah = (data.sekolah ?? null) as Sekolah | null;
+	const canViewLeadershipDashboard = $derived(
+		data.user?.type === 'admin' || data.user?.permissions?.includes('pimpinan_lihat') === true
+	);
 	const statistikDashboard = $derived(
 		data.statistikDashboard ?? {
 			rombel: { total: 0, perFase: [] },
@@ -246,6 +250,17 @@
 	});
 </script>
 
+{#if canViewLeadershipDashboard}
+	<nav class="mb-4 flex justify-end" aria-label="Pilihan dashboard">
+		<div class="join border-base-300 border bg-base-100 shadow-sm">
+			<a class="btn btn-sm btn-active join-item shadow-none" href="/">Dashboard Umum</a>
+			<a class="btn btn-sm btn-ghost join-item shadow-none" href="/dashboard-pimpinan">
+				Dashboard Pimpinan
+			</a>
+		</div>
+	</nav>
+{/if}
+
 <BellStatus {bellActive} {hariIni} {nextEventMessage} class="alert alert-info alert-soft mb-4" />
 
 <!-- Kontainer Utama Grid -->
@@ -269,6 +284,7 @@
 	<!-- Kolom 2: Progress & Aksi -->
 	<div class="flex flex-col gap-4">
 		<ProgressCard progress={progressStats} />
+		{#if data.dailyDashboard}<MissingDataCard summary={data.dailyDashboard} />{/if}
 		<QuickActionsCard />
 	</div>
 </div>

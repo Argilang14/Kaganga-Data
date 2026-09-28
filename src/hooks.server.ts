@@ -19,12 +19,15 @@ import { canLegacyWaliKelasAccess, isLegacyWaliKelas } from '$lib/server/legacy-
 import { canAccessArea, getProtectedArea, getAreaAction } from '$lib/menu-access';
 import { canAccessExportClass } from '$lib/server/class-export-access';
 import { assertKeasramaanTargets } from '$lib/server/keasramaan-target-access';
+import { recordServerHeartbeat, startMaintenanceScheduler } from '$lib/server/system-operations';
 
 setTimeout(() => {
 	startBellScheduler().catch((e) => {
 		console.error('[hooks] bell scheduler failed to start:', e);
 	});
 }, 1000);
+
+startMaintenanceScheduler();
 
 // Prevent crash from socket write-after-close errors
 process.on('uncaughtException', (err) => {
@@ -139,6 +142,9 @@ const authGuard: Handle = async ({ event, resolve }) => {
 		);
 	}
 	await runStartupEnsures();
+	recordServerHeartbeat().catch((heartbeatError) => {
+		console.warn('[server] heartbeat operasional gagal diperbarui', heartbeatError);
+	});
 
 	const sessionToken = event.cookies.get(cookieNames.AUTH_SESSION);
 	const resolvedProtocol = resolveRequestProtocol(event.request, event.url);
@@ -328,23 +334,46 @@ const menuAccessGuard: Handle = async ({ event, resolve }) => {
 	if (event.locals.user?.type !== 'admin') {
 		const user = event.locals.user;
 		const sekolahId = event.locals.sekolah?.id;
-		if (!user || !sekolahId || user.sekolahId !== sekolahId) throw error(403, 'Sekolah di luar penugasan akun.');
-		const posted = !['GET', 'HEAD'].includes(event.request.method) && /multipart\/form-data|application\/x-www-form-urlencoded/.test(event.request.headers.get('content-type') ?? '')
-			? await event.request.clone().formData() : null;
+		if (!user || !sekolahId || user.sekolahId !== sekolahId)
+			throw error(403, 'Sekolah di luar penugasan akun.');
+		const posted =
+			!['GET', 'HEAD'].includes(event.request.method) &&
+			/multipart\/form-data|application\/x-www-form-urlencoded/.test(
+				event.request.headers.get('content-type') ?? ''
+			)
+				? await event.request.clone().formData()
+				: null;
 		const params = event.url.searchParams;
 		if (area === 'keasramaan') {
 			await assertKeasramaanTargets(user, sekolahId, event.url.pathname, params);
 			if (posted) await assertKeasramaanTargets(user, sekolahId, event.url.pathname, posted);
 		}
-		const targetSchool = params.get('sekolahId') ?? posted?.get('sekolahId') ?? (area === 'sekolah' ? posted?.get('id') : null);
-		if (area === 'sekolah' && (params.get('mode') === 'new' || (targetSchool && Number(targetSchool) !== sekolahId))) throw error(403, 'Hanya sekolah yang ditugaskan dapat dikelola.');
+		const targetSchool =
+			params.get('sekolahId') ??
+			posted?.get('sekolahId') ??
+			(area === 'sekolah' ? posted?.get('id') : null);
+		if (
+			area === 'sekolah' &&
+			(params.get('mode') === 'new' || (targetSchool && Number(targetSchool) !== sekolahId))
+		)
+			throw error(403, 'Hanya sekolah yang ditugaskan dapat dikelola.');
 		const targetClass = params.get('kelas_id') ?? params.get('kelasId') ?? posted?.get('kelasId');
-		const classPath = area === 'kelas' ? /^\/kelas\/form\/(\d+)$/.exec(event.url.pathname)?.[1] ?? posted?.get('id') : null;
-		if ((targetClass || classPath) && !(await canAccessExportClass(user, sekolahId, Number(targetClass ?? classPath)))) throw error(403, 'Kelas di luar penugasan akun.');
+		const classPath =
+			area === 'kelas'
+				? (/^\/kelas\/form\/(\d+)$/.exec(event.url.pathname)?.[1] ?? posted?.get('id'))
+				: null;
+		if (
+			(targetClass || classPath) &&
+			!(await canAccessExportClass(user, sekolahId, Number(targetClass ?? classPath)))
+		)
+			throw error(403, 'Kelas di luar penugasan akun.');
 	}
 	if (area === 'keasramaan' && event.locals.user?.type !== 'admin') {
 		const kelasId = Number(event.cookies.get(cookieNames.ACTIVE_KELAS_ID));
-		if (!event.locals.sekolah?.id || !(await canAccessExportClass(event.locals.user, event.locals.sekolah.id, kelasId))) {
+		if (
+			!event.locals.sekolah?.id ||
+			!(await canAccessExportClass(event.locals.user, event.locals.sekolah.id, kelasId))
+		) {
 			throw error(403, 'Kelas tidak termasuk dalam penugasan akun ini.');
 		}
 	}

@@ -1,7 +1,9 @@
 <script lang="ts">
 	import type { loadDashboardDaily } from '$lib/server/dashboard-daily';
 	import Icon from '$lib/components/icon.svelte';
+
 	let { summary }: { summary: Awaited<ReturnType<typeof loadDashboardDaily>> } = $props();
+
 	const labels: Record<string, string> = {
 		hadir: 'Hadir',
 		terlambat: 'Terlambat',
@@ -11,141 +13,195 @@
 		dinas_luar: 'Dinas luar',
 		cuti: 'Cuti'
 	};
+
+	function attendanceRate(value: { total: number; recorded: number }) {
+		return value.total > 0 ? Math.round((value.recorded / value.total) * 100) : 0;
+	}
+
+	function formatDashboardDate(value: string) {
+		const date = new Date(`${value}T12:00:00+07:00`);
+		return Number.isNaN(date.getTime())
+			? value
+			: new Intl.DateTimeFormat('id-ID', {
+					weekday: 'long',
+					day: 'numeric',
+					month: 'long',
+					year: 'numeric',
+					timeZone: 'Asia/Jakarta'
+				}).format(date);
+	}
+
+	function absenceIconClass(status: string) {
+		const base = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-md';
+		if (status === 'alfa') return `${base} bg-error/10 text-error`;
+		if (status === 'sakit') return `${base} bg-warning/10 text-warning`;
+		return `${base} bg-info/10 text-info`;
+	}
+
+	const absenceTotal = $derived(
+		summary.absences.reduce((total, group) => total + group.total, 0)
+	);
 </script>
 
 <div class="min-w-0 space-y-4">
 	<section
 		id="absensi-hari-ini"
-		class="min-w-0 rounded-lg bg-base-100 p-5 shadow-sm"
+		class="min-w-0 overflow-hidden rounded-lg bg-base-100 shadow-sm"
 		aria-label="Absensi hari ini"
 	>
-		<div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-			<h2 class="flex items-center gap-2 text-lg font-bold">
-				<span class="text-success" aria-hidden="true"><Icon name="users" class="h-5 w-5" /></span
-				>Absensi Hari Ini
-			</h2>
-			<span class="text-sm text-base-content/60">{summary.date} · {summary.scope}</span>
-		</div>
-		{#if summary.holiday}<p class="mb-2 text-sm text-base-content/60">
-				Hari libur / non-efektif
-			</p>{/if}
-		<div class="grid gap-4 sm:grid-cols-2">
-			{#each [{ name: 'Murid', value: summary.students }, { name: 'Pegawai', value: summary.employees }] as item}
-				{#if item.value}<div>
-						<h3 class="mb-2 font-semibold">
-							<span class="mr-1 inline-flex align-middle text-base-content/60" aria-hidden="true"
-								><Icon name="user" class="h-4 w-4" /></span
-							>{item.name}
-							<span class="font-normal text-base-content/60">({item.value.total})</span>
-						</h3>
-						<dl class="flex flex-wrap gap-x-4 gap-y-2 text-sm">
-							{#each item.value.rows as row}<div>
-									<dt class="text-base-content/60">{labels[row.status] ?? row.status}</dt>
-									<dd class="font-semibold">{row.count}</dd>
-								</div>{/each}
-							<div>
-								<dt class="text-base-content/60">Belum diisi</dt>
-								<dd class="font-semibold">{item.value.unrecorded}</dd>
-							</div>
-						</dl>
-					</div>{/if}
-			{/each}
-		</div>
-		<div class="mt-4 border-t border-base-200 pt-3">
-			{#each summary.absences as group}
-				<details class="border-b border-base-200 py-2 last:border-0" open={group.total > 0}>
-					<summary class="cursor-pointer font-semibold"
-						><span
-							class="mr-1 inline-flex align-middle"
-							class:text-error={group.status === 'alfa'}
-							class:text-warning={group.status === 'sakit'}
-							class:text-info={group.status === 'izin'}
-							aria-hidden="true"
-							><Icon
-								name={group.status === 'alfa'
-									? 'warning'
-									: group.status === 'sakit'
-										? 'info'
-										: 'pen'}
-								class="h-4 w-4"
-							/></span
-						>{labels[group.status]}
-						<span class="ml-1 font-normal text-base-content/60">({group.total} anak)</span></summary
+		<div class="border-b border-base-200 px-5 py-4">
+			<div class="flex flex-wrap items-center justify-between gap-3">
+				<div class="flex min-w-0 items-center gap-3">
+					<span
+						class="bg-success/10 text-success flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+						aria-hidden="true"
 					>
-					{#if group.students.length}
-						<div class="mt-2 overflow-x-auto">
-							<table class="table table-sm" aria-label={`Daftar murid ${labels[group.status]}`}>
-								<thead><tr><th>Nama Murid</th><th>Kelas</th></tr></thead><tbody
-									>{#each group.students as student}<tr
-											><td class="break-words">{student.nama}</td><td>{student.kelas}</td></tr
-										>{/each}</tbody
-								>
-							</table>
-						</div>
-						{#if group.pageCount > 1}<nav
-								class="mt-2 flex items-center justify-end gap-3 text-sm"
-								aria-label={`Halaman daftar ${labels[group.status]}`}
-							>
-								<span>{group.page} / {group.pageCount}</span>{#if group.previous}<a
-										class="btn btn-ghost btn-sm btn-square"
-										href={group.previous}
-										title="Halaman sebelumnya"
-										aria-label="Halaman sebelumnya"><Icon name="left" class="h-4 w-4" /></a
-									>{/if}{#if group.next}<a
-										class="btn btn-ghost btn-sm btn-square"
-										href={group.next}
-										title="Halaman berikutnya"
-										aria-label="Halaman berikutnya"><Icon name="right" class="h-4 w-4" /></a
-									>{/if}
-							</nav>{/if}
-					{:else}<p class="mt-2 text-sm text-base-content/60">
-							Tidak ada murid {labels[group.status].toLowerCase()} yang tercatat hari ini.
-						</p>{/if}
-				</details>
-			{/each}
+						<Icon name="users" class="h-5 w-5" />
+					</span>
+					<div class="min-w-0">
+						<h2 class="text-lg font-bold">Absensi Hari Ini</h2>
+						<p class="truncate text-xs text-base-content/55">Cakupan: {summary.scope}</p>
+					</div>
+				</div>
+				<div class="flex items-center gap-2 rounded-md bg-base-200/60 px-3 py-2 text-sm font-medium">
+					<span class="text-primary" aria-hidden="true"><Icon name="calendar" class="h-4 w-4" /></span>
+					<span>{formatDashboardDate(summary.date)}</span>
+				</div>
+			</div>
 		</div>
-	</section>
-	<section class="min-w-0 rounded-lg bg-base-100 p-5 shadow-sm" aria-label="Data belum lengkap">
-		<h2 class="mb-3 flex items-center gap-2 text-lg font-bold">
-			<span class="text-info" aria-hidden="true"><Icon name="table" class="h-5 w-5" /></span>Data
-			Belum Lengkap
-		</h2>
-		{#if summary.admin}<div class="mb-3 flex flex-wrap gap-4 text-sm">
-				<a class="link" href="/murid?kelas_id=semua&belum_lengkap=foto">Murid tanpa foto</a><a
-					class="link"
-					href="/murid?kelas_id=semua&belum_lengkap=qr">Murid tanpa QR</a
-				>
-			</div>{/if}
-		<dl class="grid grid-cols-2 gap-3 text-sm">
-			<div>
-				<dt class="flex items-center gap-2 text-base-content/60">
-					<span class="text-info" aria-hidden="true"><Icon name="image" class="h-4 w-4" /></span
-					>Foto murid
-				</dt>
-				<dd class="font-semibold">{summary.missing.photo}</dd>
+
+		<div class="px-5 pt-4">
+			{#if summary.holiday}
+				<div class="alert alert-warning alert-soft mb-4 py-2 text-sm">
+					<Icon name="calendar" class="h-4 w-4" />
+					<span>Hari libur atau hari non-efektif.</span>
+				</div>
+			{/if}
+
+			<div class="grid overflow-hidden rounded-lg border border-base-200 sm:grid-cols-2">
+				{#each [{ name: 'Murid', value: summary.students }, { name: 'Pegawai', value: summary.employees }] as item, index}
+					{#if item.value}
+						<div
+							class="p-4 sm:border-t-0 sm:border-l sm:first:border-l-0"
+							class:border-t={index > 0}
+						>
+							<div class="mb-3 flex items-center justify-between gap-3">
+								<div class="flex items-center gap-2 font-semibold">
+									<span class="text-primary" aria-hidden="true"><Icon name="user" class="h-4 w-4" /></span>
+									{item.name}
+								</div>
+								<div class="text-right">
+									<strong class="text-xl leading-none">{item.value.recorded}</strong>
+									<span class="text-xs text-base-content/55"> / {item.value.total} terisi</span>
+								</div>
+							</div>
+							<div class="h-2 overflow-hidden rounded-full bg-base-200" aria-hidden="true">
+								<div
+									class="bg-success h-full rounded-full transition-[width]"
+									style={`width: ${attendanceRate(item.value)}%`}
+								></div>
+							</div>
+							<div class="mt-2 flex items-center justify-between gap-2 text-xs">
+								<span class="font-semibold text-success">{attendanceRate(item.value)}% tercatat</span>
+								<span class:text-warning={item.value.unrecorded > 0} class="text-base-content/55">
+									{item.value.unrecorded} belum diisi
+								</span>
+							</div>
+							<div class="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-base-content/65">
+								{#each item.value.rows as row}
+									<span><strong class="text-base-content">{row.count}</strong> {labels[row.status] ?? row.status}</span>
+								{/each}
+								{#if item.value.rows.length === 0}
+									<span>Belum ada presensi tercatat</span>
+								{/if}
+							</div>
+						</div>
+					{/if}
+				{/each}
 			</div>
-			<div>
-				<dt class="flex items-center gap-2 text-base-content/60">
-					<span class="text-success" aria-hidden="true"><Icon name="grid" class="h-4 w-4" /></span
-					>QR murid
-				</dt>
-				<dd class="font-semibold">{summary.missing.qr}</dd>
+		</div>
+
+		<div class="px-5 pt-5 pb-5">
+			<div class="mb-3 flex items-center justify-between gap-3">
+				<div>
+					<h3 class="font-semibold">Ketidakhadiran Murid</h3>
+					<p class="text-xs text-base-content/55">Klik status untuk melihat nama dan kelas.</p>
+				</div>
+				<span class="badge badge-neutral badge-soft">{absenceTotal} anak</span>
 			</div>
-			{#if summary.missing.homeroom !== null}<div>
-					<dt class="flex items-center gap-2 text-base-content/60">
-						<span class="text-warning" aria-hidden="true"
-							><Icon name="school" class="h-4 w-4" /></span
-						>Wali kelas
-					</dt>
-					<dd class="font-semibold">{summary.missing.homeroom}</dd>
-				</div>{/if}{#if summary.missing.employee !== null}<div>
-					<dt class="flex items-center gap-2 text-base-content/60">
-						<span class="text-secondary" aria-hidden="true"
-							><Icon name="user" class="h-4 w-4" /></span
-						>Identitas wajib pegawai
-					</dt>
-					<dd class="font-semibold">{summary.missing.employee}</dd>
-				</div>{/if}
-		</dl>
+
+			<div class="overflow-hidden rounded-lg border border-base-200">
+				{#each summary.absences as group}
+					<details class="group border-b border-base-200 last:border-b-0" open={group.total > 0}>
+						<summary
+							class="flex cursor-pointer list-none items-center gap-3 px-3 py-2.5 [&::-webkit-details-marker]:hidden"
+						>
+							<span class={absenceIconClass(group.status)} aria-hidden="true">
+								<Icon
+									name={group.status === 'alfa'
+										? 'warning'
+										: group.status === 'sakit'
+											? 'info'
+											: 'pen'}
+									class="h-4 w-4"
+								/>
+							</span>
+							<span class="min-w-0 flex-1">
+								<span class="block text-sm font-semibold">{labels[group.status]}</span>
+								<span class="text-xs text-base-content/55">{group.total} anak</span>
+							</span>
+							<span class="text-base-content/40 transition-transform group-open:rotate-180" aria-hidden="true">
+								<Icon name="down" class="h-4 w-4" />
+							</span>
+						</summary>
+
+						{#if group.students.length}
+							<div class="border-t border-base-200 px-3 pb-3">
+								<div class="overflow-x-auto">
+									<table class="table table-sm" aria-label={`Daftar murid ${labels[group.status]}`}>
+										<thead><tr><th>Nama Murid</th><th>Kelas</th></tr></thead>
+										<tbody>
+											{#each group.students as student}
+												<tr><td class="break-words">{student.nama}</td><td>{student.kelas}</td></tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+								{#if group.pageCount > 1}
+									<nav
+										class="mt-2 flex items-center justify-end gap-3 text-sm"
+										aria-label={`Halaman daftar ${labels[group.status]}`}
+									>
+										<span>{group.page} / {group.pageCount}</span>
+										{#if group.previous}
+											<a
+												class="btn btn-ghost btn-sm btn-square"
+												href={group.previous}
+												title="Halaman sebelumnya"
+												aria-label="Halaman sebelumnya"
+												><Icon name="left" class="h-4 w-4" /></a
+											>
+										{/if}
+										{#if group.next}
+											<a
+												class="btn btn-ghost btn-sm btn-square"
+												href={group.next}
+												title="Halaman berikutnya"
+												aria-label="Halaman berikutnya"
+												><Icon name="right" class="h-4 w-4" /></a
+											>
+										{/if}
+									</nav>
+								{/if}
+							</div>
+						{:else}
+							<p class="border-t border-base-200 px-3 py-3 text-xs text-base-content/60">
+								Tidak ada murid {labels[group.status].toLowerCase()} yang tercatat hari ini.
+							</p>
+						{/if}
+					</details>
+				{/each}
+			</div>
+		</div>
 	</section>
 </div>

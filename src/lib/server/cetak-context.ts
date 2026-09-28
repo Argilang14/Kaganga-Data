@@ -10,6 +10,13 @@ import { computeNilaiAkhirRekap } from '$lib/server/nilai-akhir';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { buildKelasContext, fetchMuridList } from '$lib/server/route-utils';
 import type { RequestEvent } from '@sveltejs/kit';
+import { ensureUjianSchema } from '$lib/server/db/ensure-ujian';
+import { isAuthorizedUser } from '../../routes/pengguna/permissions';
+import { loadAbsensiKelasOptions, todayLocalDate } from '$lib/server/absensi-digital';
+import {
+	canAccessAbsensiKegiatan,
+	loadKegiatanAbsensiOptions
+} from '$lib/server/absensi-kegiatan';
 
 export async function loadCetakContext({ locals, url, depends, parent }: Pick<RequestEvent, 'locals' | 'url'> & { depends: (...dependencies: string[]) => void; parent: () => Promise<Parameters<typeof buildKelasContext>[1]> }) {
 	depends('app:cetak-sr');
@@ -44,6 +51,74 @@ export async function loadCetakContext({ locals, url, depends, parent }: Pick<Re
 		activeSemesterId: academicContext?.activeSemesterId ?? null,
 		activeSemesterTipe: academicContext?.activeSemesterTipe ?? null
 	};
+	const absensiAccess = canAccessAbsensiKegiatan(locals.user);
+	const [absensiKelasResult, absensiKegiatanList] =
+		sekolahId && locals.user && absensiAccess
+			? await Promise.all([
+					loadAbsensiKelasOptions(sekolahId, locals.user),
+					loadKegiatanAbsensiOptions(sekolahId)
+				])
+			: [{ kelasList: [] }, []];
+	const absensiPrintContext = {
+		absensiAccess,
+		absensiToday: todayLocalDate(),
+		absensiKelasList: absensiKelasResult.kelasList.map((kelas) => ({
+			id: kelas.id,
+			nama: kelas.nama,
+			fase: kelas.fase
+		})),
+		absensiKegiatanList: absensiKegiatanList.map((kegiatan) => ({
+			id: kegiatan.id,
+			nama: kegiatan.nama,
+			kategori: kegiatan.kategori
+		}))
+	};
+	let ujianSessions: Array<{
+		id: number;
+		nama: string;
+		singkatan: string | null;
+		tahunAjaran: string;
+		semester: string | null;
+		participantCount: number;
+		classes: string[];
+	}> = [];
+	if (sekolahId && isAuthorizedUser(['ujian_cetak', 'ujian_manage'], locals.user)) {
+		await ensureUjianSchema();
+		const [sessionsResult, classesResult] = await Promise.all([
+			db.$client.execute({
+				sql: `SELECT s.id, s.nama, s.singkatan, ta.nama AS tahunAjaran, se.nama AS semester,
+					COUNT(p.id) AS participantCount
+				FROM ujian_session s JOIN tahun_ajaran ta ON ta.id=s.tahun_ajaran_id
+				LEFT JOIN semester se ON se.id=s.semester_id
+				LEFT JOIN ujian_peserta p ON p.session_id=s.id
+				WHERE s.sekolah_id=? GROUP BY s.id ORDER BY s.created_at DESC, s.id DESC`,
+				args: [sekolahId]
+			}),
+			db.$client.execute({
+				sql: `SELECT DISTINCT p.session_id AS sessionId, p.kelas_nama_snapshot AS kelas
+				FROM ujian_peserta p JOIN ujian_session s ON s.id=p.session_id
+				WHERE s.sekolah_id=? AND p.kelas_nama_snapshot IS NOT NULL
+				ORDER BY p.kelas_nama_snapshot`,
+				args: [sekolahId]
+			})
+		]);
+		const classMap = new Map<number, string[]>();
+		for (const row of classesResult.rows) {
+			const sessionId = Number(row.sessionId);
+			const list = classMap.get(sessionId) ?? [];
+			list.push(String(row.kelas));
+			classMap.set(sessionId, list);
+		}
+		ujianSessions = sessionsResult.rows.map((row) => ({
+			id: Number(row.id),
+			nama: String(row.nama),
+			singkatan: row.singkatan ? String(row.singkatan) : null,
+			tahunAjaran: String(row.tahunAjaran),
+			semester: row.semester ? String(row.semester) : null,
+			participantCount: Number(row.participantCount ?? 0),
+			classes: classMap.get(Number(row.id)) ?? []
+		}));
+	}
 	const activeSemester = sekolahId
 		? await db
 				.select({
@@ -129,6 +204,8 @@ export async function loadCetakContext({ locals, url, depends, parent }: Pick<Re
 			jurnalKelasList,
 			jurnalMapelList,
 			jurnalAccess,
+			ujianSessions,
+			...absensiPrintContext,
 			...printContext,
 			...jurnalPeriod
 		};
@@ -166,6 +243,8 @@ export async function loadCetakContext({ locals, url, depends, parent }: Pick<Re
 		jurnalKelasList,
 		jurnalMapelList,
 		jurnalAccess,
+		ujianSessions,
+		...absensiPrintContext,
 		...printContext,
 		...jurnalPeriod
 	};

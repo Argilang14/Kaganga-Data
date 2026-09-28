@@ -6,6 +6,7 @@ import { cookieNames } from '$lib/utils';
 import { readBufferToAoA } from '$lib/utils/excel.js';
 import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { writeAuditLog } from '$lib/server/audit-log';
 
 const PER_PAGE = 20;
 const MAX_IMPORT_FILE_SIZE = 2 * 1024 * 1024;
@@ -180,7 +181,7 @@ export const actions = {
 		}
 
 		const murid = await db.query.tableMurid.findFirst({
-			columns: { id: true },
+			columns: { id: true, nama: true },
 			where: and(eq(tableMurid.id, muridId), eq(tableMurid.sekolahId, sekolahId))
 		});
 
@@ -194,6 +195,9 @@ export const actions = {
 		const catatanRaw = formData.get('catatan');
 		const catatan = typeof catatanRaw === 'string' ? catatanRaw : '';
 		const now = new Date().toISOString();
+		const before = await db.query.tableStatusAkhirRapor.findFirst({
+			where: eq(tableStatusAkhirRapor.muridId, muridId)
+		});
 
 		if (status && !STATUS_OPTIONS.includes(status as (typeof STATUS_OPTIONS)[number])) {
 			return fail(400, { fail: 'Status kenaikan / kelulusan tidak valid' });
@@ -201,6 +205,15 @@ export const actions = {
 
 		if (!status && !tanggalPenetapan && !catatan.trim()) {
 			await db.delete(tableStatusAkhirRapor).where(eq(tableStatusAkhirRapor.muridId, muridId));
+			await writeAuditLog({
+				locals,
+				request,
+				action: 'delete',
+				entityType: 'status_akhir_rapor',
+				entityId: muridId,
+				summary: `Status akhir ${murid.nama} dihapus.`,
+				before
+			});
 			return { message: 'Status akhir rapor dihapus' };
 		}
 
@@ -222,6 +235,17 @@ export const actions = {
 					updatedAt: now
 				}
 			});
+
+		await writeAuditLog({
+			locals,
+			request,
+			action: before ? 'update' : 'create',
+			entityType: 'status_akhir_rapor',
+			entityId: muridId,
+			summary: `Status akhir ${murid.nama} disimpan: ${status || 'belum ditetapkan'}.`,
+			before,
+			after: { status, tanggalPenetapan, catatan }
+		});
 
 		return { message: 'Status akhir rapor tersimpan' };
 	},

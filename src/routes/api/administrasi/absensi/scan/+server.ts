@@ -24,6 +24,22 @@ import {
 import { json } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 
+const MAX_OFFLINE_SCAN_AGE_MS = 12 * 60 * 60 * 1000;
+
+function resolveCapturedAt(value: string | null | undefined) {
+	const current = new Date();
+	if (!value) return { date: current } as const;
+	const captured = new Date(value);
+	const age = current.getTime() - captured.getTime();
+	if (!Number.isFinite(captured.getTime()) || age < -5 * 60 * 1000) {
+		return { error: 'Waktu scan offline tidak valid.' } as const;
+	}
+	if (age > MAX_OFFLINE_SCAN_AGE_MS) {
+		return { error: 'Scan offline sudah lebih dari 12 jam dan tidak dapat disinkronkan.' } as const;
+	}
+	return { date: captured } as const;
+}
+
 function muridPayload(murid: {
 	id: number;
 	nama: string;
@@ -56,6 +72,7 @@ export async function POST({ request, locals }) {
 		mode?: 'sekolah' | 'kegiatan';
 		kegiatanId?: number | string | null;
 		status?: string | null;
+		capturedAt?: string | null;
 	} | null;
 	const token = body?.token?.trim();
 	if (!token) {
@@ -65,6 +82,14 @@ export async function POST({ request, locals }) {
 		);
 	}
 	const mode = body?.mode === 'kegiatan' ? 'kegiatan' : 'sekolah';
+	const captured = resolveCapturedAt(body?.capturedAt);
+	if ('error' in captured) {
+		return json(
+			{ ok: false, code: 'expired_offline_scan', message: captured.error },
+			{ status: 400 }
+		);
+	}
+	const scanDate = captured.date;
 	if (mode === 'kegiatan') assertAbsensiKegiatanAccess(locals.user);
 	else assertAbsensiDigitalAccess(locals.user);
 
@@ -151,7 +176,7 @@ export async function POST({ request, locals }) {
 			);
 		}
 
-		const tanggal = todayLocalDate();
+		const tanggal = todayLocalDate(scanDate);
 		const existing = await db.query.tableAbsensiKegiatan.findFirst({
 			columns: { id: true, status: true, waktuScan: true },
 			where: and(
@@ -192,7 +217,7 @@ export async function POST({ request, locals }) {
 			);
 		}
 
-		const nowDate = new Date();
+		const nowDate = scanDate;
 		const now = nowDate.toISOString();
 		const requestedStatus = parseAbsensiKegiatanStatus(body?.status);
 		const status =
@@ -235,7 +260,7 @@ export async function POST({ request, locals }) {
 		);
 	}
 
-	const tanggal = todayLocalDate();
+	const tanggal = todayLocalDate(scanDate);
 	const existing = await db.query.tableAbsensiHarian.findFirst({
 		columns: { id: true, status: true, waktuScan: true },
 		where: and(
@@ -258,7 +283,7 @@ export async function POST({ request, locals }) {
 		});
 	}
 
-	const nowDate = new Date();
+	const nowDate = scanDate;
 	const now = nowDate.toISOString();
 	const status = parseAbsensiStatus(body?.status ?? null) ?? getLateAwareStatus(nowDate);
 

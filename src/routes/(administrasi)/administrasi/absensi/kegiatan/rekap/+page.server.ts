@@ -7,6 +7,11 @@ import {
 	todayLocalDate
 } from '$lib/server/absensi-digital';
 import {
+	ATTENDANCE_ALERT_TYPES,
+	loadAttendanceMonitoring,
+	type AttendanceAlertType
+} from '$lib/server/attendance-monitoring.server';
+import {
 	ABSENSI_KEGIATAN_STATUS_LABELS,
 	ABSENSI_KEGIATAN_STATUSES,
 	applyAutoAlfaKegiatan,
@@ -18,12 +23,16 @@ import {
 	requireAbsensiKegiatanAccess,
 	syncKegiatanMasukRaporToKehadiran
 } from '$lib/server/absensi-kegiatan';
+import { writeAuditLog } from '$lib/server/audit-log';
 import db from '$lib/server/db';
+import { ensureAbsenceMonitoringSchema } from '$lib/server/db/ensure-absence-monitoring';
 import {
 	tableAbsensiKegiatan,
+	tableIzinPulangMurid,
 	tableKegiatanAbsensi,
 	tableKelas,
-	tableMurid
+	tableMurid,
+	tableTindakLanjutAbsensi
 } from '$lib/server/db/schema';
 import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, between, eq, inArray } from 'drizzle-orm';
@@ -102,6 +111,21 @@ function normalizeIdentity(value: unknown) {
 	return normalizeImportText(value).toLowerCase();
 }
 
+function parseTime(value: FormDataEntryValue | null) {
+	const raw = value?.toString().trim() ?? '';
+	return /^\d{2}:\d{2}$/.test(raw) ? raw : null;
+}
+
+function parseFollowUpStatus(value: FormDataEntryValue | null) {
+	const raw = value?.toString();
+	return raw === 'baru' || raw === 'diproses' || raw === 'selesai' ? raw : null;
+}
+
+function parseAlertType(value: FormDataEntryValue | null): AttendanceAlertType | null {
+	const raw = value?.toString() as AttendanceAlertType | undefined;
+	return raw && ATTENDANCE_ALERT_TYPES.includes(raw) ? raw : null;
+}
+
 export async function load({ locals, url }) {
 	requireAbsensiKegiatanAccess(locals.user);
 	const sekolahId = locals.sekolah?.id;
@@ -122,6 +146,7 @@ export async function load({ locals, url }) {
 			: null;
 
 	if (!academic.activeSemesterId || !kelasId) {
+		const today = todayLocalDate();
 		return {
 			meta: { title: 'Rekap Kegiatan' } satisfies PageMeta,
 			tanggalAwal,
@@ -134,6 +159,8 @@ export async function load({ locals, url }) {
 			summary: emptySummary(),
 			rows: [],
 			detailRows: [],
+			monitoring: { alerts: [], izinPulang: [] },
+			monitoringToday: today,
 			canSyncRapor: canSyncAbsensiKegiatanToRapor(locals.user),
 			statusLabels: ABSENSI_KEGIATAN_STATUS_LABELS
 		};
@@ -212,6 +239,15 @@ export async function load({ locals, url }) {
 		if (byDate !== 0) return byDate;
 		return a.kegiatanNama.localeCompare(b.kegiatanNama);
 	});
+	const monitoring = academic.activeTahunAjaranId
+		? await loadAttendanceMonitoring({
+				sekolahId,
+				tahunAjaranId: academic.activeTahunAjaranId,
+				semesterId: academic.activeSemesterId,
+				kelasIds: [kelasId],
+				today: todayLocalDate()
+			})
+		: { alerts: [], izinPulang: [] };
 
 	return {
 		meta: { title: 'Rekap Kegiatan' } satisfies PageMeta,
@@ -225,6 +261,8 @@ export async function load({ locals, url }) {
 		summary,
 		rows,
 		detailRows,
+		monitoring,
+		monitoringToday: todayLocalDate(),
 		autoAlfaInserted,
 		canSyncRapor: canSyncAbsensiKegiatanToRapor(locals.user),
 		statusLabels: ABSENSI_KEGIATAN_STATUS_LABELS
@@ -232,6 +270,276 @@ export async function load({ locals, url }) {
 }
 
 export const actions = {
+	saveIzinPulang: async ({ request, locals }) => {
+		requireAbsensiKegiatanAccess(locals.user);
+		const sekolahId = locals.sekolah?.id;
+		if (!sekolahId || !locals.user) return fail(401, { fail: 'Sesi tidak valid.' });
+		await ensureAbsenceMonitoringSchema();
+		const formData = await request.formData();
+		const muridId = parsePositiveInteger(formData.get('muridId'));
+		const kelasId = parsePositiveInteger(formData.get('kelasId'));
+		const tanggalKeluar = normalizeDateInput(formData.get('tanggalKeluar')?.toString(), '');
+		const rencanaKembali = normalizeDateInput(formData.get('rencanaKembali')?.toString(), '');
+		const alasan = formData.get('alasan')?.toString().trim() ?? '';
+		const waktuKeluar = parseTime(formData.get('waktuKeluar'));
+		const waktuRencanaKembali = parseTime(formData.get('waktuRencanaKembali'));
+		const penjemputNama = formData.get('penjemputNama')?.toString().trim() || null;
+		const penjemputHubungan = formData.get('penjemputHubungan')?.toString().trim() || null;
+		const penjemputKontak = formData.get('penjemputKontak')?.toString().trim() || null;
+		const nomorDokumen = formData.get('nomorDokumen')?.toString().trim() || null;
+		const catatan = formData.get('catatan')?.toString().trim() || null;
+		if (!muridId || !kelasId || !tanggalKeluar || !rencanaKembali || !alasan) {
+			return fail(400, { fail: 'Murid, tanggal keluar, rencana kembali, dan alasan wajib diisi.' });
+		}
+		if (rencanaKembali < tanggalKeluar) {
+			return fail(400, { fail: 'Rencana kembali tidak boleh sebelum tanggal keluar.' });
+		}
+		const { academic, kelasList } = await loadAbsensiKelasOptions(sekolahId, locals.user);
+		if (!academic.activeSemesterId || !academic.activeTahunAjaranId) {
+			return fail(400, { fail: 'Tahun ajaran dan semester aktif belum tersedia.' });
+		}
+		if (!kelasList.some((kelas) => kelas.id === kelasId)) {
+			return fail(403, { fail: 'Kelas berada di luar penugasan akun.' });
+		}
+		const [murid, kelas] = await Promise.all([
+			db.query.tableMurid.findFirst({
+				columns: { id: true, nama: true, nis: true, nisn: true },
+				where: and(
+					eq(tableMurid.id, muridId),
+					eq(tableMurid.sekolahId, sekolahId),
+					eq(tableMurid.semesterId, academic.activeSemesterId),
+					eq(tableMurid.kelasId, kelasId)
+				)
+			}),
+			db.query.tableKelas.findFirst({
+				columns: { id: true, nama: true },
+				where: and(eq(tableKelas.id, kelasId), eq(tableKelas.sekolahId, sekolahId))
+			})
+		]);
+		if (!murid || !kelas) return fail(404, { fail: 'Data murid atau kelas tidak ditemukan.' });
+		const activePermit = await db.query.tableIzinPulangMurid.findFirst({
+			columns: { id: true },
+			where: and(
+				eq(tableIzinPulangMurid.sekolahId, sekolahId),
+				eq(tableIzinPulangMurid.muridId, muridId),
+				inArray(tableIzinPulangMurid.status, ['sedang_izin', 'terlambat_kembali'])
+			)
+		});
+		if (activePermit) return fail(409, { fail: 'Murid masih memiliki izin pulang yang aktif.' });
+		const now = new Date().toISOString();
+		const [created] = await db
+			.insert(tableIzinPulangMurid)
+			.values({
+				sekolahId,
+				tahunAjaranId: academic.activeTahunAjaranId,
+				semesterId: academic.activeSemesterId,
+				kelasId,
+				muridId,
+				nisSnapshot: murid.nis,
+				nisnSnapshot: murid.nisn || null,
+				namaSnapshot: murid.nama,
+				kelasSnapshot: kelas.nama,
+				tanggalKeluar,
+				waktuKeluar,
+				alasan,
+				penjemputNama,
+				penjemputHubungan,
+				penjemputKontak,
+				rencanaKembali,
+				waktuRencanaKembali,
+				status: 'sedang_izin',
+				nomorDokumen,
+				petugasKeluarUserId: locals.user.id,
+				catatan,
+				createdAt: now,
+				updatedAt: now
+			})
+			.returning({ id: tableIzinPulangMurid.id });
+		await writeAuditLog({
+			locals,
+			request,
+			action: 'create',
+			entityType: 'izin_pulang_murid',
+			entityId: created.id,
+			summary: `Mencatat izin pulang ${murid.nama}`,
+			after: { muridId, kelasId, tanggalKeluar, rencanaKembali, alasan }
+		});
+		return { message: `Izin pulang ${murid.nama} berhasil dicatat.` };
+	},
+	markIzinReturned: async ({ request, locals }) => {
+		requireAbsensiKegiatanAccess(locals.user);
+		const sekolahId = locals.sekolah?.id;
+		if (!sekolahId || !locals.user) return fail(401, { fail: 'Sesi tidak valid.' });
+		const formData = await request.formData();
+		const id = parsePositiveInteger(formData.get('id'));
+		const tanggalKembali = normalizeDateInput(
+			formData.get('tanggalKembali')?.toString(),
+			todayLocalDate()
+		);
+		const waktuKembali = parseTime(formData.get('waktuKembali'));
+		if (!id) return fail(400, { fail: 'Catatan izin tidak valid.' });
+		const { kelasList } = await loadAbsensiKelasOptions(sekolahId, locals.user);
+		const accessibleIds = kelasList.map((kelas) => kelas.id);
+		if (!accessibleIds.length) return fail(403, { fail: 'Tidak ada kelas yang dapat diakses.' });
+		const existing = await db.query.tableIzinPulangMurid.findFirst({
+			where: and(
+				eq(tableIzinPulangMurid.id, id),
+				eq(tableIzinPulangMurid.sekolahId, sekolahId),
+				inArray(tableIzinPulangMurid.kelasId, accessibleIds)
+			)
+		});
+		if (!existing) return fail(404, { fail: 'Catatan izin tidak ditemukan.' });
+		if (!['sedang_izin', 'terlambat_kembali'].includes(existing.status)) {
+			return fail(409, { fail: 'Izin ini sudah ditutup atau dibatalkan.' });
+		}
+		if (tanggalKembali < existing.tanggalKeluar) {
+			return fail(400, { fail: 'Tanggal kembali tidak boleh sebelum tanggal keluar.' });
+		}
+		const status =
+			tanggalKembali > existing.rencanaKembali ? 'terlambat_kembali' : 'sudah_kembali';
+		const now = new Date().toISOString();
+		await db
+			.update(tableIzinPulangMurid)
+			.set({
+				tanggalKembali,
+				waktuKembali,
+				status,
+				petugasKembaliUserId: locals.user.id,
+				updatedAt: now
+			})
+			.where(eq(tableIzinPulangMurid.id, id));
+		await writeAuditLog({
+			locals,
+			request,
+			action: 'status_change',
+			entityType: 'izin_pulang_murid',
+			entityId: id,
+			summary: `Mencatat kepulangan ${existing.namaSnapshot}`,
+			before: existing,
+			after: { tanggalKembali, waktuKembali, status }
+		});
+		return { message: `Kepulangan ${existing.namaSnapshot} berhasil dicatat.` };
+	},
+	cancelIzinPulang: async ({ request, locals }) => {
+		requireAbsensiKegiatanAccess(locals.user);
+		const sekolahId = locals.sekolah?.id;
+		if (!sekolahId || !locals.user) return fail(401, { fail: 'Sesi tidak valid.' });
+		const formData = await request.formData();
+		const id = parsePositiveInteger(formData.get('id'));
+		if (!id) return fail(400, { fail: 'Catatan izin tidak valid.' });
+		const { kelasList } = await loadAbsensiKelasOptions(sekolahId, locals.user);
+		const accessibleIds = kelasList.map((kelas) => kelas.id);
+		const existing = accessibleIds.length
+			? await db.query.tableIzinPulangMurid.findFirst({
+					where: and(
+						eq(tableIzinPulangMurid.id, id),
+						eq(tableIzinPulangMurid.sekolahId, sekolahId),
+						inArray(tableIzinPulangMurid.kelasId, accessibleIds)
+					)
+				})
+			: null;
+		if (!existing) return fail(404, { fail: 'Catatan izin tidak ditemukan.' });
+		if (!['sedang_izin', 'terlambat_kembali'].includes(existing.status)) {
+			return fail(409, { fail: 'Izin ini sudah ditutup atau dibatalkan.' });
+		}
+		await db
+			.update(tableIzinPulangMurid)
+			.set({ status: 'dibatalkan', updatedAt: new Date().toISOString() })
+			.where(eq(tableIzinPulangMurid.id, id));
+		await writeAuditLog({
+			locals,
+			request,
+			action: 'status_change',
+			entityType: 'izin_pulang_murid',
+			entityId: id,
+			summary: `Membatalkan izin pulang ${existing.namaSnapshot}`,
+			before: existing,
+			after: { status: 'dibatalkan' }
+		});
+		return { message: `Izin pulang ${existing.namaSnapshot} dibatalkan.` };
+	},
+	saveFollowUp: async ({ request, locals }) => {
+		requireAbsensiKegiatanAccess(locals.user);
+		const sekolahId = locals.sekolah?.id;
+		if (!sekolahId || !locals.user) return fail(401, { fail: 'Sesi tidak valid.' });
+		const formData = await request.formData();
+		const muridId = parsePositiveInteger(formData.get('muridId'));
+		const kelasId = parsePositiveInteger(formData.get('kelasId'));
+		const jenis = parseAlertType(formData.get('jenis'));
+		const periodeMulai = normalizeDateInput(formData.get('periodeMulai')?.toString(), '');
+		const periodeSelesai = normalizeDateInput(formData.get('periodeSelesai')?.toString(), '');
+		const status = parseFollowUpStatus(formData.get('status'));
+		const catatan = formData.get('catatan')?.toString().trim() || null;
+		if (!muridId || !kelasId || !jenis || !periodeMulai || !periodeSelesai || !status) {
+			return fail(400, { fail: 'Data tindak lanjut tidak lengkap.' });
+		}
+		const { academic, kelasList } = await loadAbsensiKelasOptions(sekolahId, locals.user);
+		if (!academic.activeSemesterId || !academic.activeTahunAjaranId) {
+			return fail(400, { fail: 'Tahun ajaran atau semester aktif belum tersedia.' });
+		}
+		if (!kelasList.some((kelas) => kelas.id === kelasId)) {
+			return fail(403, { fail: 'Kelas berada di luar penugasan akun.' });
+		}
+		const monitoring = await loadAttendanceMonitoring({
+			sekolahId,
+			tahunAjaranId: academic.activeTahunAjaranId,
+			semesterId: academic.activeSemesterId,
+			kelasIds: [kelasId],
+			today: todayLocalDate()
+		});
+		const alert = monitoring.alerts.find(
+			(item) =>
+				item.muridId === muridId &&
+				item.type === jenis &&
+				item.periodeMulai === periodeMulai &&
+				item.periodeSelesai === periodeSelesai
+		);
+		if (!alert) return fail(409, { fail: 'Peringatan sudah berubah. Muat ulang halaman.' });
+		const now = new Date().toISOString();
+		await db
+			.insert(tableTindakLanjutAbsensi)
+			.values({
+				sekolahId,
+				muridId,
+				namaSnapshot: alert.nama,
+				kelasSnapshot: alert.kelasNama,
+				jenis,
+				periodeMulai,
+				periodeSelesai,
+				status,
+				catatan,
+				ditanganiOlehUserId: locals.user.id,
+				ditanganiPada: now,
+				createdAt: now,
+				updatedAt: now
+			})
+			.onConflictDoUpdate({
+				target: [
+					tableTindakLanjutAbsensi.sekolahId,
+					tableTindakLanjutAbsensi.muridId,
+					tableTindakLanjutAbsensi.jenis,
+					tableTindakLanjutAbsensi.periodeMulai
+				],
+				set: {
+					periodeSelesai,
+					status,
+					catatan,
+					ditanganiOlehUserId: locals.user.id,
+					ditanganiPada: now,
+					updatedAt: now
+				}
+			});
+		await writeAuditLog({
+			locals,
+			request,
+			action: 'status_change',
+			entityType: 'tindak_lanjut_absensi',
+			entityId: alert.key,
+			summary: `Memperbarui tindak lanjut absensi ${alert.nama}`,
+			after: { jenis, periodeMulai, periodeSelesai, status, catatan }
+		});
+		return { message: `Tindak lanjut ${alert.nama} berhasil disimpan.` };
+	},
 	importExcel: async ({ request, locals }) => {
 		requireAbsensiKegiatanAccess(locals.user);
 		const sekolahId = locals.sekolah?.id;

@@ -111,31 +111,42 @@
 	<title>Riwayat Pertumbuhan</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+<div class="card bg-base-100 space-y-5 rounded-lg border border-none p-4 shadow-md">
+	<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 		<div>
-			<h1 class="text-2xl font-bold">Riwayat Pertumbuhan</h1>
-			<p class="text-base-content/70 mt-1 max-w-3xl text-sm">
+			<h1 class="text-xl font-bold">Formulir Dan Tabel Riwayat Pertumbuhan Murid</h1>
+			<p class="text-base-content/70 mt-1 max-w-3xl text-sm leading-relaxed">
 				Pantau data kesehatan dan fisik murid dari seluruh kelas berdasarkan sekolah aktif.
 			</p>
 		</div>
-		<div class="flex flex-wrap gap-2">
-			<a class="btn btn-primary shadow-none" href="/api/riwayat-pertumbuhan/template">
-				<Icon name="download" />
-				Template Import
-			</a>
+		<div class="flex shrink-0 max-sm:w-full">
 			<button
-				class="btn btn-soft shadow-none"
+				class="btn btn-soft rounded-r-none shadow-none max-sm:flex-1"
 				type="button"
 				onclick={() => importDialog?.showModal()}
 			>
 				<Icon name="import" />
 				Import Data
 			</button>
-			<a class="btn btn-soft shadow-none" href={exportUrl}>
-				<Icon name="export" />
-				Export Data
-			</a>
+			<details class="dropdown dropdown-end">
+				<summary
+					class="btn btn-soft rounded-l-none shadow-none"
+					aria-label="Menu data Excel riwayat pertumbuhan"
+					title="Menu data Excel riwayat pertumbuhan"
+				>
+					<Icon name="down" />
+				</summary>
+				<ul class="dropdown-content menu bg-base-100 border-base-300 z-30 mt-2 w-56 rounded-lg border p-2 shadow-lg">
+					<li>
+						<a href="/api/riwayat-pertumbuhan/template">
+							<Icon name="download" /> Template Import
+						</a>
+					</li>
+					<li>
+						<a href={exportUrl}><Icon name="export" /> Export Data</a>
+					</li>
+				</ul>
+			</details>
 		</div>
 	</div>
 
@@ -152,7 +163,7 @@
 
 	<form
 		method="GET"
-		class="bg-base-100 border-base-200 rounded-box grid gap-3 border p-4 lg:grid-cols-[220px_1fr_180px_180px_auto_auto] lg:items-end"
+		class="bg-base-200/35 grid gap-3 rounded-md p-4 lg:grid-cols-[220px_1fr_180px_180px_auto_auto] lg:items-end"
 	>
 		<label class="form-control gap-1">
 			<span class="label-text font-medium">Kelas</span>
@@ -191,7 +202,7 @@
 		<button class="btn btn-ghost shadow-none" type="button" onclick={resetFilter}>Reset</button>
 	</form>
 
-	<div class="stats bg-base-100 border-base-200 w-full border shadow-sm">
+	<div class="stats bg-base-200/45 w-full rounded-md shadow-none">
 		<div class="stat">
 			<div class="stat-title">Total Catatan</div>
 			<div class="stat-value text-2xl">{riwayat.length}</div>
@@ -210,9 +221,9 @@
 		</div>
 	</div>
 
-	<div class="bg-base-100 border-base-200 rounded-box overflow-hidden border">
+	<div class="border-base-200 overflow-hidden rounded-md border">
 		<div class="overflow-x-auto">
-			<table class="table-sm table">
+			<table class="table-sm table min-w-[1200px]">
 				<thead>
 					<tr class="bg-base-200/80">
 						<th>Tanggal</th>

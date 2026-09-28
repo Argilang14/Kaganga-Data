@@ -209,6 +209,20 @@ export async function deleteSessionsForUser(userId: number) {
 	await db.delete(tableAuthSession).where(eq(tableAuthSession.userId, userId));
 }
 
+export async function deleteSessionForUser(sessionId: number, userId: number) {
+	await db
+		.delete(tableAuthSession)
+		.where(sql`${tableAuthSession.id} = ${sessionId} AND ${tableAuthSession.userId} = ${userId}`);
+}
+
+export async function deleteOtherSessionsForUser(userId: number, currentSessionId: number) {
+	await db
+		.delete(tableAuthSession)
+		.where(
+			sql`${tableAuthSession.userId} = ${userId} AND ${tableAuthSession.id} <> ${currentSessionId}`
+		);
+}
+
 export async function updateUserPassword(userId: number, newPassword: string) {
 	const { hash, salt } = hashPassword(newPassword);
 	const timestamp = nowIso();

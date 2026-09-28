@@ -8,9 +8,9 @@ test('template Buku Tamu escapes every guest-controlled text field', () => {
 	for (const field of ['waktu', 'nama', 'asal', 'nip', 'keperluan', 'pesan']) {
 		assert.match(source, new RegExp(`escapeHtml\\(row\\.${field}`));
 	}
-	for (const field of ['nama', 'npsn', 'alamat']) {
-		assert.match(source, new RegExp(`escapeHtml\\(data\\.sekolah\\.${field}`));
-	}
+	assert.match(source, /renderSchoolLetterhead\(data\.sekolah\)/);
+	assert.match(source, /schoolLetterheadStyles\(\)/);
+	assert.match(source, /escapeHtml\(data\.sekolah\.npsn\)/);
 	assert.match(source, /escapeHtml\(data\.periode\)/);
 	assert.match(source, /replaceAll\('<', '&lt;'\)/);
 	assert.match(source, /replaceAll\('>', '&gt;'\)/);

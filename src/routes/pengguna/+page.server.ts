@@ -68,7 +68,9 @@ export async function load({ url, locals }) {
 	const onlineCutoff = new Date(now.getTime() - onlineThresholdMs).toISOString();
 	const nowIso = now.toISOString();
 	const queryLike = `%${q.toLowerCase()}%`;
-	const isKnownRole = ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama'].includes(role);
+	const isKnownRole = ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'wali_murid'].includes(
+		role
+	);
 	const isKnownStatus = status === 'online' || status === 'offline';
 	const onlineExpression = sql`exists (
 		select 1 from auth_session activity
@@ -85,8 +87,14 @@ export async function load({ url, locals }) {
 					sql`lower(coalesce(${tablePegawai.nama}, '')) like ${queryLike}`
 				)
 			: undefined,
-		isKnownRole ? eq(u.type, role as 'user' | 'wali_kelas' | 'wali_asuh' | 'wali_asrama') : undefined,
-		isKnownStatus ? (status === 'online' ? onlineExpression : sql`not ${onlineExpression}`) : undefined
+		isKnownRole
+			? eq(u.type, role as 'user' | 'wali_kelas' | 'wali_asuh' | 'wali_asrama' | 'wali_murid')
+			: undefined,
+		isKnownStatus
+			? status === 'online'
+				? onlineExpression
+				: sql`not ${onlineExpression}`
+			: undefined
 	);
 	const [{ total }] = await db
 		.select({ total: sql<number>`count(distinct ${u.id})` })
@@ -135,7 +143,12 @@ export async function load({ url, locals }) {
 		}
 
 		const context = await resolveSekolahAcademicContext(sekolahId);
-		const summaries = await getAssignmentSummaries([...map.values()], sekolahId, context.activeSemesterId, context.activeTahunAjaranId);
+		const summaries = await getAssignmentSummaries(
+			[...map.values()],
+			sekolahId,
+			context.activeSemesterId,
+			context.activeTahunAjaranId
+		);
 		for (const row of map.values()) row.kelasName = summaries.get(row.id) ?? 'Belum ada penugasan';
 		const rows = Array.from(map.values());
 		const userIds = rows.map((row) => row.id);
@@ -168,14 +181,23 @@ export async function load({ url, locals }) {
 		const [waliClasses, schoolHead] = await Promise.all([
 			db.query.tableKelas.findMany({
 				columns: { id: true, nama: true, waliKelasId: true },
-				where: and(eq(tableKelas.sekolahId, sekolahId), context.activeSemesterId ? eq(tableKelas.semesterId, context.activeSemesterId) : undefined)
+				where: and(
+					eq(tableKelas.sekolahId, sekolahId),
+					context.activeSemesterId ? eq(tableKelas.semesterId, context.activeSemesterId) : undefined
+				)
 			}),
-			db.query.tableSekolah.findFirst({ columns: { kepalaSekolahId: true }, where: eq(tableSekolah.id, sekolahId) })
+			db.query.tableSekolah.findFirst({
+				columns: { kepalaSekolahId: true },
+				where: eq(tableSekolah.id, sekolahId)
+			})
 		]);
 		const waliByPegawai = new Map<number, typeof waliClasses>();
 		for (const kelas of waliClasses) {
 			if (!kelas.waliKelasId) continue;
-			waliByPegawai.set(kelas.waliKelasId, [...(waliByPegawai.get(kelas.waliKelasId) ?? []), kelas]);
+			waliByPegawai.set(kelas.waliKelasId, [
+				...(waliByPegawai.get(kelas.waliKelasId) ?? []),
+				kelas
+			]);
 		}
 		const activeSessions = userIds.length
 			? await db
@@ -215,15 +237,18 @@ export async function load({ url, locals }) {
 			const session = sessionByUser.get(row.id);
 			const lastSeenAt = session?.lastSeenAt ?? null;
 			const lastSeenTime = lastSeenAt ? new Date(lastSeenAt).getTime() : 0;
-			const ownClasses = row.pegawaiId ? waliByPegawai.get(row.pegawaiId) ?? [] : [];
+			const ownClasses = row.pegawaiId ? (waliByPegawai.get(row.pegawaiId) ?? []) : [];
 			const roles: string[] = [];
-			if (row.pegawaiId && schoolHead?.kepalaSekolahId === row.pegawaiId) roles.push('Kepala Sekolah');
+			if (row.pegawaiId && schoolHead?.kepalaSekolahId === row.pegawaiId)
+				roles.push('Kepala Sekolah');
 			for (const kelas of ownClasses) roles.push(`Wali ${kelas.nama}`);
-			if (row.type === 'wali_kelas' && (mapelIdsByUser.get(row.id)?.length ?? 0) > 0) roles.push('Guru Mapel');
+			if (row.type === 'wali_kelas' && (mapelIdsByUser.get(row.id)?.length ?? 0) > 0)
+				roles.push('Guru Mapel');
 			return {
 				...row,
 				roles,
-				mataPelajaranIds: mapelIdsByUser.get(row.id) ?? (row.mataPelajaranId ? [row.mataPelajaranId] : []),
+				mataPelajaranIds:
+					mapelIdsByUser.get(row.id) ?? (row.mataPelajaranId ? [row.mataPelajaranId] : []),
 				kelasIds: kelasIdsByUser.get(row.id) ?? (row.kelasId ? [row.kelasId] : []),
 				activeSessionCount: session?.activeSessionCount ?? 0,
 				lastSeenAt,
@@ -527,7 +552,9 @@ export const actions = {
 				.select({ id: tableMataPelajaran.id })
 				.from(tableMataPelajaran)
 				.innerJoin(tableKelas, eq(tableMataPelajaran.kelasId, tableKelas.id))
-				.where(and(inArray(tableMataPelajaran.id, mataPelajaranIds), eq(tableKelas.sekolahId, sekolahId)));
+				.where(
+					and(inArray(tableMataPelajaran.id, mataPelajaranIds), eq(tableKelas.sekolahId, sekolahId))
+				);
 			if (new Set(validMapel.map((item) => item.id)).size !== mataPelajaranIds.length) {
 				return fail(400, { message: 'Mata pelajaran tidak valid untuk sekolah aktif' });
 			}
@@ -591,7 +618,9 @@ export const actions = {
 				if (!user) throw new Error('Pengguna tidak ditemukan');
 
 				if (!isLegacyWaliKelas) {
-					await tx.delete(tableAuthUserMataPelajaran).where(eq(tableAuthUserMataPelajaran.authUserId, id));
+					await tx
+						.delete(tableAuthUserMataPelajaran)
+						.where(eq(tableAuthUserMataPelajaran.authUserId, id));
 					await tx.delete(tableAuthUserKelas).where(eq(tableAuthUserKelas.authUserId, id));
 					if (mataPelajaranIds.length) {
 						await tx.insert(tableAuthUserMataPelajaran).values(

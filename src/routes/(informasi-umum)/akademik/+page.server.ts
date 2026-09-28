@@ -16,8 +16,10 @@ import {
 import { cookieNames, unflattenFormData } from '$lib/utils';
 import { readBufferToAoA } from '$lib/utils/excel.js';
 import { error, fail } from '@sveltejs/kit';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
+import { syncMuridGovernance } from '$lib/server/murid-lifecycle';
+import { writeAuditLog } from '$lib/server/audit-log';
 
 type TahunAjaranRow = typeof tableTahunAjaran.$inferSelect;
 type SemesterRow = typeof tableSemester.$inferSelect;
@@ -615,7 +617,16 @@ async function copyKelasDanMuridDariGanjilKeGenap(opts: {
 				where: and(
 					eq(tableMurid.sekolahId, opts.sekolahId),
 					eq(tableMurid.semesterId, opts.sourceSemester.id),
-					eq(tableMurid.kelasId, sourceId)
+					eq(tableMurid.kelasId, sourceId),
+					sql`NOT EXISTS (
+						SELECT 1 FROM murid_lifecycle ml
+						WHERE ml.sekolah_id = ${tableMurid.sekolahId}
+						AND ml.identity_key = CASE
+							WHEN trim(coalesce(${tableMurid.nisn}, '')) <> '' THEN 'nisn:' || lower(trim(${tableMurid.nisn}))
+							ELSE 'nis:' || lower(trim(${tableMurid.nis}))
+						END
+						AND ml.status <> 'aktif'
+					)`
 				)
 			});
 			totalSourceMurid += sourceMuridList.length;
@@ -998,6 +1009,20 @@ export const actions: Actions = {
 			sekolahId,
 			sourceSemester,
 			targetSemester
+		});
+		const targetMurid = await db.query.tableMurid.findMany({
+			columns: { id: true },
+			where: and(eq(tableMurid.sekolahId, sekolahId), eq(tableMurid.semesterId, targetSemester.id))
+		});
+		await syncMuridGovernance(sekolahId, targetMurid.map((murid) => murid.id));
+		await writeAuditLog({
+			locals,
+			request,
+			action: 'promote',
+			entityType: 'semester',
+			entityId: targetSemester.id,
+			summary: `Penyalinan semester memproses ${summary.insertedMurid} murid dan ${summary.insertedKelas} kelas baru.`,
+			after: summary
 		});
 
 		if (summary.totalSourceKelas === 0) {

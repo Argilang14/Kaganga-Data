@@ -18,6 +18,13 @@ a[data-preloading] {
 }
 
 @layer base {
+	html,
+	body {
+		min-width: 0;
+		max-width: 100%;
+		overflow-x: hidden;
+	}
+
 	.modal:not([open]) {
 		display: none;
 	}
@@ -44,6 +51,194 @@ a[data-preloading] {
 	table[data-intrak-table='true'] tr[data-tail-row='true'] > td {
 		border-width: 0 !important;
 		border-color: transparent !important;
+	}
+}
+
+@media screen {
+	.app-page-viewport {
+		min-height: calc(100dvh - 4rem);
+		max-height: calc(100dvh - 4rem);
+	}
+
+	.app-page-padding {
+		padding: 0.75rem;
+	}
+
+	.app-page-container {
+		max-width: 100rem;
+	}
+
+	.app-page-container,
+	.app-page-container > *,
+	.drawer-content,
+	.drawer-content :is(section, article, form, fieldset, header, footer, nav, dl) {
+		min-width: 0;
+	}
+
+	.drawer-content :is(input, select, textarea, .input, .select, .textarea) {
+		max-width: 100%;
+	}
+
+	.drawer-content :is(.alert, .card-body, .stat, .collapse-content) {
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+
+	.drawer-content :is(.tabs, [role='tablist']) {
+		max-width: 100%;
+		overflow-x: auto;
+		overflow-y: hidden;
+		scrollbar-width: thin;
+	}
+
+	.drawer-content :is(div, section, article):has(> table.table) {
+		max-width: 100%;
+		overflow-x: auto;
+		overscroll-behavior-inline: contain;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	.drawer-content table.table {
+		width: 100%;
+	}
+
+	.drawer-content table.table :is(th, td) {
+		max-width: min(28rem, 70vw);
+	}
+
+	.drawer-content :is(.dropdown-content, .menu.dropdown-content) {
+		max-width: calc(100vw - 1rem);
+	}
+
+	.drawer-content .join {
+		max-width: 100%;
+	}
+
+	.drawer-content :is(img, video, canvas, svg) {
+		max-width: 100%;
+	}
+
+	.modal-box {
+		max-height: min(90dvh, 56rem);
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	}
+}
+
+@media screen and (min-width: 640px) {
+	.app-page-padding {
+		padding: 1rem;
+	}
+}
+
+@media screen and (min-width: 768px) {
+	.app-page-viewport {
+		min-height: calc(100dvh - 4.6rem);
+		max-height: calc(100dvh - 4.6rem);
+	}
+}
+
+@media screen and (min-width: 1280px) {
+	.app-page-padding {
+		padding: 1.25rem;
+	}
+}
+
+@media screen and (max-width: 639px) {
+	.app-page-surface {
+		border-right-width: 0;
+		border-left-width: 0;
+	}
+
+	.app-navbar {
+		min-height: 3.5rem;
+		padding-inline: 0.25rem;
+	}
+
+	.app-navbar-actions .btn-circle,
+	.app-navbar .drawer-button {
+		min-height: 2.5rem;
+		height: 2.5rem;
+		width: 2.5rem;
+	}
+
+	.app-class-switcher {
+		min-height: 2.5rem;
+		height: 2.5rem;
+		padding-inline: 0.75rem;
+	}
+
+	.app-page-container :is(h1, h2) {
+		overflow-wrap: anywhere;
+	}
+
+	.app-page-container > .space-y-5 > header,
+	.app-page-container > .space-y-4 > header,
+	.app-page-container > header {
+		align-items: stretch;
+		gap: 0.75rem;
+	}
+
+	.app-page-container > .space-y-5 > header > :is(button, a),
+	.app-page-container > .space-y-4 > header > :is(button, a),
+	.app-page-container > header > :is(button, a) {
+		width: 100%;
+	}
+
+	.app-page-container :is(.pagination, .join):has(> .join-item) {
+		overflow-x: auto;
+		justify-content: flex-start;
+	}
+
+	.drawer-content table.table {
+		font-size: 0.8125rem;
+	}
+
+	.drawer-content table.table :is(th, td) {
+		padding: 0.65rem 0.75rem;
+	}
+
+	.modal {
+		padding: 0.5rem;
+	}
+
+	.modal-box {
+		width: calc(100vw - 1rem);
+		max-width: calc(100vw - 1rem);
+		max-height: calc(100dvh - 1rem);
+		padding: 1rem;
+		border-radius: 0.5rem;
+	}
+
+	.modal-box .modal-action {
+		position: sticky;
+		bottom: -1rem;
+		z-index: 2;
+		margin-inline: -1rem;
+		margin-bottom: -1rem;
+		padding: 0.75rem 1rem 1rem;
+		background: var(--color-base-100);
+		box-shadow: 0 -1px 0 color-mix(in oklab, var(--color-base-content) 12%, transparent);
+	}
+
+	.drawer-content .stats:not(.stats-vertical) {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		width: 100%;
+		overflow: visible;
+	}
+}
+
+@media screen and (max-width: 430px) {
+	.app-navbar-title {
+		display: none;
+	}
+}
+
+@media (pointer: coarse) {
+	.drawer-content .btn:not(.btn-xs),
+	.drawer-side .btn:not(.btn-xs) {
+		min-height: 2.75rem;
 	}
 }
 

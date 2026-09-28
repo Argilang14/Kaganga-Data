@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.2.0 - 2026-09-28
+
+### Fitur utama
+
+- Menambahkan fondasi arsip murid dan alumni, riwayat kelas, audit aktivitas, pusat persetujuan, manajemen berkas, notifikasi, serta operasional server dan backup.
+- Menambahkan dashboard pimpinan, inventaris dan sarana prasarana, pengumuman dan agenda, komunikasi terintegrasi, Portal Wali Murid berbasis akun, manajemen ruangan, rekomendasi jadwal, dan sesi ujian.
+- Menambahkan kartu peserta ujian, penyempurnaan kartu absensi atau kartu pelajar, pratinjau PDF, dan tata letak delapan kartu pada kertas A4.
+- Menambahkan pemantauan absensi kegiatan, pencatatan izin pulang, tindak lanjut sakit atau alfa berulang, serta PDF rekap absensi kegiatan.
+
+### Penyempurnaan
+
+- Merapikan dashboard, Data Pegawai, Riwayat Pertumbuhan, Martikulasi, Presensi Pegawai, Rekap Kegiatan, menu Cetak, dan navigasi responsif.
+- Menyempurnakan manajemen pengguna, ringkasan penugasan, sesi perangkat, keamanan perubahan data, dan pengaturan izin fitur baru.
+- Memindahkan formulir impor Rekap Kegiatan dan Catat Izin Pulang ke dialog khusus yang lebih ringkas dan responsif.
+- Mengelompokkan Portal Wali Murid, Komunikasi, serta Pengumuman dan Agenda ke menu Lain-lain tanpa mengubah izin masing-masing.
+- Memperkuat penyimpanan foto dan lampiran di luar SQLite, thumbnail, pembersihan file, pemeriksaan kesehatan database, serta backup bertingkat.
+
+### Catatan pembaruan
+
+- Cadangkan database dan folder lampiran sebelum memasang pembaruan.
+- Installer tetap memakai `AppId` Kaganga yang sama, port `1206`, dan direktori data `%LOCALAPPDATA%\Kaganga-data`.
+- Data sekolah tidak dimasukkan ke installer dan database pengguna tidak ditimpa saat pembaruan.
+- Kaganga membuat backup otomatis sebelum migrasi versi baru dijalankan.
+
 ## 2.1.9 - 2026-09-21
 
 ### Fitur dan perbaikan

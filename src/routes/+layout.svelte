@@ -6,6 +6,7 @@
 	import Menu from '$lib/components/menu.svelte';
 	import Navbar from '$lib/components/navbar.svelte';
 	import Toast, { toast } from '$lib/components/toast.svelte';
+	import { onMount } from 'svelte';
 
 	import NavIndicator from '$lib/components/nav-indicator.svelte';
 	import ScrollToTop from '$lib/components/scroll-to-top.svelte';
@@ -38,6 +39,14 @@
 	);
 
 	const disableInteraction = $derived(data.user?.type === 'user' && isReadonlyPage);
+
+	onMount(() => {
+		if ('serviceWorker' in navigator) {
+			navigator.serviceWorker.register('/service-worker.js').catch((error) => {
+				console.warn('Service worker Kaganga tidak dapat didaftarkan.', error);
+			});
+		}
+	});
 
 	async function stopServer() {
 		if (stoppingServer) return;
@@ -99,6 +108,8 @@
 </script>
 
 <svelte:head>
+	<link rel="manifest" href="/manifest.webmanifest" />
+	<meta name="theme-color" content="#4f46e5" />
 	<script>
 		(function () {
 			try {
@@ -128,23 +139,23 @@
 </svelte:head>
 
 {#if isLoginPage || isPublicGuestPage}
-	<div class="bg-base-200 flex min-h-screen flex-col items-center justify-center p-6">
+	<div class="bg-base-200 flex min-h-screen flex-col items-center justify-center p-3 sm:p-6">
 		{@render children()}
 	</div>
 {:else}
-	<main class="drawer lg:drawer-open">
+	<main class="app-shell drawer lg:drawer-open">
 		<input id="my-drawer-2" type="checkbox" class="drawer-toggle" />
-		<div class="drawer-content min-w-0 flex min-h-screen flex-col">
+		<div class="drawer-content min-w-0 flex min-h-screen flex-col overflow-x-hidden">
 			<Navbar {stopServer} {stoppingServer} {logout} {loggingOut} />
 
 			<div
-				class="bg-base-300 dark:bg-base-200 dark:border-base-200 border-base-300 flex flex-1 flex-col border lg:mr-2 lg:mb-2 lg:rounded-xl"
+				class="app-page-surface bg-base-300 dark:bg-base-200 dark:border-base-200 border-base-300 flex min-w-0 flex-1 flex-col border lg:mr-2 lg:mb-2 lg:rounded-xl"
 			>
 				<div
-					class="max-h-[calc(100vh-4.2rem)] min-h-[calc(100vh-4.2rem)] max-w-none overflow-y-auto md:max-h-[calc(100vh-4.6rem)] md:min-h-[calc(100vh-4.6rem)]"
+					class="app-page-viewport max-w-none overflow-y-auto"
 				>
-					<div class="m-4 flex flex-row xl:gap-4">
-						<div class="w-full max-w-7xl min-w-0 flex-1">
+					<div class="app-page-padding flex min-w-0 flex-row">
+						<div class="app-page-container mx-auto w-full min-w-0 flex-1">
 							<ScrollToTop />
 							<div class={disableInteraction ? 'is-readonly' : ''}>
 								{@render children()}

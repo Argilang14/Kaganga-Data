@@ -20,6 +20,7 @@ type PdfParams = {
 	jenisJadwal?: string;
 	semesterId?: number;
 	wakaKurikulumPegawaiId?: number;
+	kartuLayout?: 'duplex' | 'photo-qr' | 'qr-only';
 	slug: string;
 };
 

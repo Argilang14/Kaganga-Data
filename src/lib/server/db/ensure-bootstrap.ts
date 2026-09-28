@@ -14,11 +14,27 @@ import { ensureAiSettingsSchema } from './ensure-ai-settings';
 import { ensureMartikulasiSchema } from './ensure-martikulasi';
 import { ensureDapodikSchema } from './ensure-dapodik';
 import { ensureAccountSettingsSchema } from './ensure-account-settings';
+import { ensureDataGovernanceSchema } from './ensure-data-governance';
+import { ensureDocumentManagementSchema } from './ensure-document-management';
+import { ensureInventarisPengumumanSchema } from './ensure-inventaris-pengumuman';
+import { ensureLongTermFoundationSchema } from './ensure-long-term-foundation';
+import { ensureProductionOperationsSchema } from './ensure-production-operations';
+import { ensureUjianSchema } from './ensure-ujian';
+import { ensureAbsensiDigitalSchema } from './ensure-absensi-digital';
+import { ensureAbsenceMonitoringSchema } from './ensure-absence-monitoring';
 
 let startupPromise: Promise<void> | null = null;
 
 async function applyStartupEnsures() {
 	await ensureCoreSchema();
+	await ensureAbsensiDigitalSchema();
+	await ensureAbsenceMonitoringSchema();
+	await ensureDataGovernanceSchema();
+	await ensureDocumentManagementSchema();
+	await ensureInventarisPengumumanSchema();
+	await ensureLongTermFoundationSchema();
+	await ensureProductionOperationsSchema();
+	await ensureUjianSchema();
 	await ensureAccountSettingsSchema();
 	await ensurePegawaiSchema();
 	await ensureJadwalBellSchema();

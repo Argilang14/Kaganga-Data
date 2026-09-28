@@ -32,9 +32,13 @@
 	let showTasksPopup = $state(false);
 	let taskPopupRef = $state<HTMLDivElement | null>(null);
 	let taskButtonRef = $state<HTMLButtonElement | null>(null);
+	let notificationCount = $state(0);
 	const daftarKelas = $derived(page.data.daftarKelas ?? []);
 	const kelasAktif = $derived(page.data.kelasAktif ?? null);
 	const user = $derived(page.data.user ?? null);
+	const canViewNotifications = $derived(
+		user?.type === 'admin' || user?.permissions?.includes('notifikasi_lihat') === true
+	);
 	const kelasAktifLabel = $derived.by(() => {
 		if (!kelasAktif) return 'Pilih Kelas';
 		return kelasAktif.fase ? `${kelasAktif.nama} - ${kelasAktif.fase}` : kelasAktif.nama;
@@ -117,6 +121,21 @@
 		showTasksPopup = !showTasksPopup;
 	}
 
+	async function refreshNotificationCount() {
+		if (!canViewNotifications) {
+			notificationCount = 0;
+			return;
+		}
+		try {
+			const response = await fetch('/api/notifikasi/ringkasan');
+			if (!response.ok) return;
+			const payload = (await response.json()) as { total?: number };
+			notificationCount = Math.max(0, Number(payload.total ?? 0));
+		} catch {
+			// Navbar tetap dapat digunakan saat ringkasan belum tersedia.
+		}
+	}
+
 	onMount(() => {
 		const handlePointerDown = (event: PointerEvent) => {
 			if (!showTasksPopup) return;
@@ -127,7 +146,12 @@
 		};
 
 		document.addEventListener('pointerdown', handlePointerDown, true);
-		return () => document.removeEventListener('pointerdown', handlePointerDown, true);
+		void refreshNotificationCount();
+		const refreshTimer = window.setInterval(() => void refreshNotificationCount(), 60_000);
+		return () => {
+			document.removeEventListener('pointerdown', handlePointerDown, true);
+			window.clearInterval(refreshTimer);
+		};
 	});
 	async function showHelp() {
 		const pathname = page.url.pathname.replace(/\/+$/, '') || '/';
@@ -148,7 +172,7 @@
 	}
 </script>
 
-<div class="navbar bg-base-100 border-base-200 sticky top-0 z-50">
+<div class="app-navbar navbar bg-base-100 border-base-200 sticky top-0 z-50 min-w-0">
 	<div class="flex-none lg:hidden">
 		<label for="my-drawer-2" class="btn btn-square btn-ghost drawer-button">
 			<span class="text-lg">
@@ -157,9 +181,36 @@
 		</label>
 	</div>
 
-	<span class="mx-2 flex-1 truncate px-2 text-lg font-bold">{page.data.meta?.title || ''}</span>
-	<div class="ml-auto flex-none">
-		<ul class="flex items-center px-1">
+	<span class="app-navbar-title mx-1 min-w-0 flex-1 truncate px-2 text-base font-bold sm:mx-2 sm:text-lg">{page.data.meta?.title || ''}</span>
+	<div class="ml-auto min-w-0 flex-none">
+		<ul class="app-navbar-actions flex items-center px-1">
+			{#if canViewNotifications}
+				<!-- Pusat Notifikasi -->
+				<li class="relative">
+					<a
+						class="btn btn-ghost btn-circle relative shadow-none"
+						class:btn-active={page.url.pathname === '/notifikasi'}
+						href="/notifikasi"
+						aria-label={notificationCount > 0
+							? `Pusat Notifikasi, ${notificationCount} pemberitahuan`
+							: 'Pusat Notifikasi'}
+						title="Pusat Notifikasi"
+						onclick={() => (showTasksPopup = false)}
+					>
+						<span class="text-xl">
+							<Icon name="bell" />
+						</span>
+						{#if notificationCount > 0}
+							<span
+								class="badge badge-error absolute -top-0.5 -right-1 h-5 min-w-5 border-2 border-base-100 px-1 text-[0.65rem] font-bold text-white"
+								aria-hidden="true"
+							>
+								{notificationCount > 99 ? '99+' : notificationCount}
+							</span>
+						{/if}
+					</a>
+				</li>
+			{/if}
 			<!-- Daftar Tugas -->
 			<li class="relative">
 				<button
@@ -205,20 +256,20 @@
 			</li>
 
 			<!-- Dropdown ganti kelas -->
-			<li class="ml-2">
+			<li class="ml-1 sm:ml-2">
 				<div class="dropdown dropdown-end">
 					<div
 						tabindex="0"
 						role="button"
 						title="Ganti kelas"
-						class="btn btn-soft rounded-full shadow-none"
+						class="btn btn-soft app-class-switcher rounded-full shadow-none"
 					>
 						<span class="hidden sm:block">{excerpt(kelasAktifLabel, 16)}</span>
 						<Icon name="users" class="sm:hidden" />
 						<Icon name="select" class="hidden sm:block" />
 					</div>
 					<ul
-						class="border-base-300 menu dropdown-content bg-base-100 ring-opacity-5 z-1 mt-5 mr-1 w-72 origin-top-right rounded-xl border p-4 shadow-xl focus:outline-none"
+						class="border-base-300 menu dropdown-content bg-base-100 ring-opacity-5 z-1 mt-5 mr-1 w-72 max-w-[calc(100vw-1rem)] origin-top-right rounded-xl border p-4 shadow-xl focus:outline-none"
 					>
 						<!-- alert akun admin -->
 						{#if user?.type === 'admin'}

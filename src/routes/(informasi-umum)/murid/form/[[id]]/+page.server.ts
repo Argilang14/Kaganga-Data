@@ -8,6 +8,8 @@ import { canEditMurid } from '$lib/murid-permissions';
 import { error, fail, redirect } from '@sveltejs/kit';
 import { and, eq, ne } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
+import { syncMuridGovernance } from '$lib/server/murid-lifecycle';
+import { writeAuditLog } from '$lib/server/audit-log';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	await ensureMuridWaliAsramaSchema();
@@ -47,6 +49,11 @@ export const actions: Actions = {
 		if (params.id && (!Number.isInteger(muridId) || Number(muridId) <= 0)) {
 			return fail(400, { fail: 'Data murid tidak valid.' });
 		}
+		const beforeMurid = muridId
+			? await db.query.tableMurid.findFirst({
+					where: and(eq(tableMurid.id, muridId), eq(tableMurid.sekolahId, sekolahId))
+				})
+			: null;
 
 		const formData = await request.formData();
 		const uploadedFile = formData.get('foto') as File | null;
@@ -128,6 +135,22 @@ export const actions: Actions = {
 					updatedAt: new Date().toISOString()
 				})
 				.where(and(eq(tableMurid.id, Number(muridId)), eq(tableMurid.sekolahId, sekolahId)));
+			await syncMuridGovernance(sekolahId, [murid.id]);
+			await writeAuditLog({
+				locals,
+				request,
+				action: 'update',
+				entityType: 'murid',
+				entityId: murid.id,
+				summary: 'Data wali asrama dan wali asuh murid diperbarui.',
+				before: beforeMurid,
+				after: {
+					waliAsramaNama: formMurid.waliAsramaNama ?? null,
+					waliAsramaNip: formMurid.waliAsramaNip ?? null,
+					waliAsuhNama: formMurid.waliAsuhNama ?? null,
+					waliAsuhNip: formMurid.waliAsuhNip ?? null
+				}
+			});
 
 			return {
 				message: `Data wali asrama dan wali asuh berhasil disimpan`,
@@ -345,6 +368,19 @@ export const actions: Actions = {
 					with: { kelas: true, alamat: true, ibu: true, ayah: true, wali: true }
 				})
 			: null;
+		if (savedId && savedMurid) {
+			await syncMuridGovernance(sekolahId, [savedId]);
+			await writeAuditLog({
+				locals,
+				request,
+				action: params.id ? 'update' : 'create',
+				entityType: 'murid',
+				entityId: savedId,
+				summary: `Data murid ${savedMurid.nama} ${params.id ? 'diperbarui' : 'ditambahkan'}.`,
+				before: beforeMurid,
+				after: savedMurid
+			});
+		}
 
 		// Return the complete row so the detail modal updates without showing stale data.
 		return {

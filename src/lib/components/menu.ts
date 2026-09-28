@@ -24,6 +24,12 @@ export const appMenuItems: MenuItem[] = [
 				path: '/murid'
 			},
 			{
+				title: 'Arsip Murid & Alumni',
+				path: '/murid/arsip',
+				permission: 'murid_arsip',
+				tags: ['alumni', 'kelulusan', 'kenaikan kelas', 'pindah', 'keluar']
+			},
+			{
 				title: 'Riwayat Pertumbuhan',
 				path: '/riwayat-pertumbuhan'
 			}
@@ -53,8 +59,26 @@ export const appMenuItems: MenuItem[] = [
 				path: '/jadwal/pengaturan'
 			},
 			{
+				title: 'Rekomendasi Jadwal',
+				path: '/jadwal/rekomendasi',
+				permission: 'penjadwalan_rekomendasi',
+				tags: ['semiotomatis', 'bentrok guru', 'target jp', 'preferensi']
+			},
+			{
+				title: 'Manajemen Ruangan',
+				path: '/ruangan',
+				permission: 'ruangan_lihat',
+				tags: ['ruang kelas', 'laboratorium', 'bentrok ruang']
+			},
+			{
 				title: 'Kalender Pendidikan',
 				path: '/jadwal/kalender'
+			},
+			{
+				title: 'Sesi Ujian',
+				path: '/ujian',
+				permission: 'ujian_manage',
+				tags: ['kartu ujian', 'peserta ujian', 'ruang ujian', 'lms']
 			},
 			{
 				title: 'Jurnal Mengajar',
@@ -195,8 +219,36 @@ export const appMenuItems: MenuItem[] = [
 	{
 		title: 'Surat Menyurat',
 		icon: 'briefcase',
-		tags: ['surat', 'sppd', 'dinas luar', 'perjalanan dinas', 'tamu', 'kunjungan'],
+		tags: [
+			'surat',
+			'sppd',
+			'dinas luar',
+			'perjalanan dinas',
+			'tamu',
+			'kunjungan',
+			'persetujuan',
+			'berkas',
+			'lampiran'
+		],
 		subMenu: [
+			{
+				title: 'Surat Masuk & Keluar',
+				path: '/surat-menyurat/arsip',
+				permission: 'surat_arsip',
+				tags: ['surat masuk', 'surat keluar', 'arsip', 'persetujuan']
+			},
+			{
+				title: 'Pusat Persetujuan',
+				path: '/persetujuan',
+				permission: 'persetujuan_lihat',
+				tags: ['persetujuan', 'dokumen', 'waka', 'kepala sekolah', 'terbit']
+			},
+			{
+				title: 'Manajemen Berkas',
+				path: '/berkas',
+				permission: 'berkas_lihat',
+				tags: ['lampiran', 'dokumen', 'arsip', 'ijazah', 'akta', 'sertifikat']
+			},
 			{
 				title: 'Buku Tamu',
 				path: '/buku-tamu',
@@ -218,13 +270,68 @@ export const appMenuItems: MenuItem[] = [
 		]
 	},
 	{
-		title: 'Cetak Dokumen',
-		icon: 'print',
-		path: '/cetak'
+		title: 'Inventaris',
+		icon: 'database',
+		tags: ['aset', 'sarpras', 'barang', 'peminjaman', 'perawatan', 'qr'],
+		subMenu: [
+			{
+				title: 'Daftar Aset',
+				path: '/inventaris',
+				permission: 'inventaris_lihat',
+				tags: ['aset', 'sarpras', 'barang', 'qr']
+			},
+			{
+				title: 'Peminjaman',
+				path: '/inventaris/peminjaman',
+				permission: 'inventaris_lihat',
+				tags: ['pinjam', 'pengembalian', 'peminjam']
+			},
+			{
+				title: 'Perawatan',
+				path: '/inventaris/perawatan',
+				permission: 'inventaris_lihat',
+				tags: ['pemeliharaan', 'perbaikan', 'kondisi']
+			}
+		]
 	},
 	{
-		title: 'Cetak Raport',
+		title: 'Lain-lain',
+		icon: 'grid',
+		tags: ['portal wali murid', 'komunikasi', 'pengumuman', 'agenda'],
+		subMenu: [
+			{
+				title: 'Portal Wali Murid',
+				path: '/portal-wali',
+				permission: 'portal_wali_lihat',
+				tags: ['orang tua', 'wali murid', 'anak', 'presensi', 'raport']
+			},
+			{
+				title: 'Komunikasi',
+				path: '/komunikasi',
+				permission: 'komunikasi_lihat',
+				tags: ['pesan', 'email', 'whatsapp', 'template', 'antrean']
+			},
+			{
+				title: 'Pengumuman & Agenda',
+				path: '/pengumuman',
+				permission: 'pengumuman_lihat',
+				tags: ['pengumuman', 'agenda', 'rapat', 'ujian', 'asrama', 'kalender']
+			}
+		]
+	},
+	{
+		title: 'Cetak',
 		icon: 'print',
-		path: '/cetak-raport'
+		tags: ['cetak', 'dokumen', 'raport', 'pdf'],
+		subMenu: [
+			{
+				title: 'Cetak Dokumen',
+				path: '/cetak'
+			},
+			{
+				title: 'Cetak Raport',
+				path: '/cetak-raport'
+			}
+		]
 	}
 ];

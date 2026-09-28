@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from '$lib/components/icon.svelte';
+	import { createPhotoThumbnail } from '$lib/photo-thumbnail';
 	import { toast } from '$lib/components/toast.svelte';
 	import { onMount } from 'svelte';
 
@@ -81,6 +82,11 @@
 		try {
 			const formData = new FormData();
 			formData.append('foto', selectedFile);
+			try {
+				formData.append('thumbnail', await createPhotoThumbnail(selectedFile));
+			} catch (error) {
+				console.warn('Thumbnail foto murid tidak dapat dibuat; foto asli tetap diunggah.', error);
+			}
 
 			const res = await fetch(`/api/murid-photo/${muridId}`, {
 				method: 'POST',

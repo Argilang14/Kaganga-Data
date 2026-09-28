@@ -13,7 +13,7 @@
 			) {
 				return murid.foto;
 			}
-			return `/api/murid-photo/${murid.id}?v=${encodeURIComponent(murid.foto)}`;
+			return `/api/murid-photo/${murid.id}?thumbnail=1&v=${encodeURIComponent(murid.foto)}`;
 		}
 		return null;
 	};

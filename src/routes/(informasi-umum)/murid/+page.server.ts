@@ -3,6 +3,8 @@ import { tableMurid } from '$lib/server/db/schema.js';
 import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { buildKelasContext } from '$lib/server/route-utils';
+import { writeAuditLog } from '$lib/server/audit-log';
+import { syncMuridGovernance } from '$lib/server/murid-lifecycle';
 
 export async function load({ locals, url, depends, parent }) {
 	depends('app:murid');
@@ -36,6 +38,15 @@ export async function load({ locals, url, depends, parent }) {
 	const filter = and(
 		eq(tableMurid.sekolahId, sekolahId),
 		kelasId ? eq(tableMurid.kelasId, +kelasId) : inArray(tableMurid.kelasId, kelasIds),
+		sql`NOT EXISTS (
+			SELECT 1 FROM murid_lifecycle ml
+			WHERE ml.sekolah_id = ${tableMurid.sekolahId}
+			AND ml.identity_key = CASE
+				WHEN trim(coalesce(${tableMurid.nisn}, '')) <> '' THEN 'nisn:' || lower(trim(${tableMurid.nisn}))
+				ELSE 'nis:' || lower(trim(${tableMurid.nis}))
+			END
+			AND ml.status <> 'aktif'
+		)`,
 		search ? sql`${tableMurid.nama} LIKE ${'%' + search + '%'} COLLATE NOCASE` : undefined,
 		url.searchParams.get('belum_lengkap') === 'foto'
 			? sql`trim(coalesce(${tableMurid.foto}, '')) = ''`
@@ -100,10 +111,28 @@ export const actions = {
 			return fail(400, { fail: 'Pilih minimal satu murid untuk dihapus' });
 		}
 
+		const deletedMurid = await db.query.tableMurid.findMany({
+			where: and(eq(tableMurid.sekolahId, sekolahId), inArray(tableMurid.id, muridIds))
+		});
+		await syncMuridGovernance(sekolahId, deletedMurid.map((murid) => murid.id), 'keluar', {
+			tanggalStatus: new Date().toISOString().slice(0, 10),
+			alasan: 'Data murid dihapus dari daftar aktif.'
+		});
+
 		await db
 			.delete(tableMurid)
 			.where(and(eq(tableMurid.sekolahId, sekolahId), inArray(tableMurid.id, muridIds)));
 
-		return { message: `${muridIds.length} murid berhasil dihapus` };
+		await writeAuditLog({
+			locals,
+			request,
+			action: 'delete',
+			entityType: 'murid',
+			entityId: muridIds.join(','),
+			summary: `${deletedMurid.length} data murid dihapus dari daftar aktif.`,
+			before: deletedMurid
+		});
+
+		return { message: `${deletedMurid.length} murid berhasil dihapus dan jejak identitasnya disimpan di arsip` };
 	}
 };

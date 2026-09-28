@@ -10,11 +10,14 @@
 
 	let { data } = $props();
 	type UserItem = (typeof data.users)[number];
+	type EditableUser = UserItem & {
+		type: 'user' | 'wali_kelas' | 'wali_asuh' | 'wali_asrama';
+	};
 	type ActionBody = { message?: string; deleted?: number[] };
 
 	let selectedIds = $state<number[]>([]);
 	let showUserModal = $state(false);
-	let editingUser = $state<UserItem | null>(null);
+	let editingUser = $state<EditableUser | null>(null);
 	const users = $derived(data.users ?? []);
 	const filters = $derived(data.filters ?? { q: '', role: 'all', status: 'all' });
 	const pagination = $derived(
@@ -38,7 +41,11 @@
 	}
 
 	function openEdit(user: UserItem) {
-		editingUser = user;
+		if (user.type === 'wali_murid') {
+			window.location.href = '/portal-wali/pengaturan';
+			return;
+		}
+		editingUser = user as EditableUser;
 		showUserModal = true;
 	}
 
@@ -65,7 +72,10 @@
 					selectedIds = [];
 					close();
 					await invalidateAll();
-					toast({ message: `${body.deleted?.length ?? scopedIds.length} akun berhasil dihapus`, type: 'success' });
+					toast({
+						message: `${body.deleted?.length ?? scopedIds.length} akun berhasil dihapus`,
+						type: 'success'
+					});
 				}
 			},
 			onNegative: { label: 'Batal', icon: 'close' },
@@ -105,6 +115,7 @@
 				<option value="wali_kelas">Wali Kelas Lama</option>
 				<option value="wali_asuh">Wali Asuh</option>
 				<option value="wali_asrama">Wali Asrama</option>
+				<option value="wali_murid">Wali Murid</option>
 			</select>
 			<select class="select bg-base-200 w-full" name="status" value={filters.status}>
 				<option value="all">Semua status</option>
@@ -120,7 +131,14 @@
 				<thead>
 					<tr>
 						<th>
-							<input type="checkbox" class="checkbox checkbox-sm" aria-label="Pilih semua pengguna" checked={users.length > 0 && users.every((user) => selectedIds.includes(Number(user.id)))} onclick={toggleSelectAll} />
+							<input
+								type="checkbox"
+								class="checkbox checkbox-sm"
+								aria-label="Pilih semua pengguna"
+								checked={users.length > 0 &&
+									users.every((user) => selectedIds.includes(Number(user.id)))}
+								onclick={toggleSelectAll}
+							/>
 						</th>
 						<th>Nama</th>
 						<th>Role</th>
@@ -134,30 +152,53 @@
 					{#each users as user (user.id)}
 						<tr>
 							<td>
-								<input type="checkbox" class="checkbox checkbox-sm" aria-label={`Pilih ${user.username}`} checked={selectedIds.includes(Number(user.id))} onclick={() => toggleSelect(Number(user.id))} />
+								<input
+									type="checkbox"
+									class="checkbox checkbox-sm"
+									aria-label={`Pilih ${user.username}`}
+									checked={selectedIds.includes(Number(user.id))}
+									onclick={() => toggleSelect(Number(user.id))}
+								/>
 							</td>
 							<ExistingUserRow
 								u={user}
 								onEdit={openEdit}
-								onOpenUser={(selected: UserItem) => (window.location.href = `/pengguna/${selected.id}`)}
+								onOpenUser={(selected: UserItem) =>
+									(window.location.href = `/pengguna/${selected.id}`)}
 								onDelete={(selected: UserItem) => openDeleteModal([Number(selected.id)])}
 							/>
 						</tr>
 					{:else}
-						<tr><td colspan="7" class="py-10 text-center text-base-content/60">Tidak ada pengguna yang sesuai.</td></tr>
+						<tr
+							><td colspan="7" class="py-10 text-center text-base-content/60"
+								>Tidak ada pengguna yang sesuai.</td
+							></tr
+						>
 					{/each}
 				</tbody>
 			</table>
 		</div>
 
 		{#if pagination.totalPages > 1}
-			<footer class="flex flex-col gap-2 border-t border-base-300 pt-4 sm:flex-row sm:items-center sm:justify-between">
+			<footer
+				class="flex flex-col gap-2 border-t border-base-300 pt-4 sm:flex-row sm:items-center sm:justify-between"
+			>
 				<p class="text-sm text-base-content/65">
 					Halaman {pagination.currentPage} dari {pagination.totalPages}
 				</p>
 				<div class="join">
-					<a class:btn-disabled={pagination.currentPage <= 1} class="btn btn-sm join-item" href={pageHref(pagination.currentPage - 1)} aria-label="Halaman sebelumnya"><Icon name="left" /></a>
-					<a class:btn-disabled={pagination.currentPage >= pagination.totalPages} class="btn btn-sm join-item" href={pageHref(pagination.currentPage + 1)} aria-label="Halaman berikutnya"><Icon name="right" /></a>
+					<a
+						class:btn-disabled={pagination.currentPage <= 1}
+						class="btn btn-sm join-item"
+						href={pageHref(pagination.currentPage - 1)}
+						aria-label="Halaman sebelumnya"><Icon name="left" /></a
+					>
+					<a
+						class:btn-disabled={pagination.currentPage >= pagination.totalPages}
+						class="btn btn-sm join-item"
+						href={pageHref(pagination.currentPage + 1)}
+						aria-label="Halaman berikutnya"><Icon name="right" /></a
+					>
 				</div>
 			</footer>
 		{/if}

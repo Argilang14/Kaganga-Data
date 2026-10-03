@@ -9,6 +9,7 @@
 		| 'keasramaan'
 		| 'kartu-absensi'
 		| 'kartu-ujian'
+		| 'kartu-ujian-meja'
 		| 'jadwal-pelajaran'
 		| 'kalender-pendidikan'
 		| 'jurnal-mengajar'
@@ -76,7 +77,7 @@
 
 	const isPiagamSelected = $derived.by(() => selectedDocument === 'piagam');
 	const isKartuAbsensiSelected = $derived.by(() => selectedDocument === 'kartu-absensi');
-	const isKartuUjianSelected = $derived.by(() => selectedDocument === 'kartu-ujian');
+	const isKartuUjianSelected = $derived.by(() => selectedDocument === 'kartu-ujian' || selectedDocument === 'kartu-ujian-meja');
 	const isJadwalSelected = $derived.by(() => selectedDocument === 'jadwal-pelajaran');
 	const isKalenderSelected = $derived.by(() => selectedDocument === 'kalender-pendidikan');
 	const isJurnalSelected = $derived.by(() => selectedDocument === 'jurnal-mengajar');
@@ -117,6 +118,7 @@
 		class="select bg-base-200 w-full dark:border-none"
 		bind:value={selectedDocument}
 		title="Pilih dokumen yang ingin dipreview"
+		disabled={downloadLoading}
 	>
 		<option value="">Pilih dokumen…</option>
 		{#each documentOptions as option (option.value)}

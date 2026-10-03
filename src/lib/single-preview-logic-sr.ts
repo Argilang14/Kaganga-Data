@@ -24,6 +24,7 @@ export type DocumentType =
 	| 'keasramaan'
 	| 'kartu-absensi'
 	| 'kartu-ujian'
+	| 'kartu-ujian-meja'
 	| 'jadwal-pelajaran'
 	| 'kalender-pendidikan'
 	| 'jurnal-mengajar'
@@ -64,6 +65,7 @@ const DOCUMENT_PATHS: Record<DocumentType, string> = {
 	keasramaan: '/cetak/keasramaan',
 	'kartu-absensi': '/cetak/kartu-absensi',
 	'kartu-ujian': '/api/pdf/kartu-ujian',
+	'kartu-ujian-meja': '/api/pdf/kartu-ujian',
 	'jadwal-pelajaran': '/cetak/jadwal-pelajaran',
 	'kalender-pendidikan': '/cetak/kalender-pendidikan',
 	'jurnal-mengajar': '/api/pdf/jurnal-mengajar',
@@ -82,6 +84,7 @@ const DOCUMENT_LABELS: Record<DocumentType, string> = {
 	keasramaan: 'Rapor Keasramaan',
 	'kartu-absensi': 'Kartu Absensi Murid',
 	'kartu-ujian': 'Kartu Ujian',
+	'kartu-ujian-meja': 'Kartu Ujian Meja',
 	'jadwal-pelajaran': 'Jadwal Pelajaran',
 	'kalender-pendidikan': 'Kalender Pendidikan',
 	'jurnal-mengajar': 'Jurnal Mengajar',
@@ -151,6 +154,7 @@ export function isPreviewableDocument(value: DocumentType | ''): value is Docume
 		value === 'keasramaan' ||
 		value === 'kartu-absensi' ||
 		value === 'kartu-ujian' ||
+		value === 'kartu-ujian-meja' ||
 		value === 'jadwal-pelajaran' ||
 		value === 'kalender-pendidikan' ||
 		value === 'jurnal-mengajar' ||

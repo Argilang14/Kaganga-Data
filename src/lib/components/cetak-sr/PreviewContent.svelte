@@ -9,6 +9,7 @@
 		| 'keasramaan'
 		| 'kartu-absensi'
 		| 'kartu-ujian'
+		| 'kartu-ujian-meja'
 		| 'jadwal-pelajaran'
 		| 'kalender-pendidikan'
 	| 'jurnal-mengajar'

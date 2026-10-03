@@ -12,7 +12,7 @@ type Participant = {
 	qrDataUrl?: string | null;
 };
 
-type ExamCardData = {
+export type ExamCardData = {
 	sekolah: SchoolLetterheadData;
 	ujian: { nama: string; singkatan?: string | null; tahunAjaran: string; semester?: string | null; tanggalCetak?: string | null };
 	peserta: Participant[];

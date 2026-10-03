@@ -196,6 +196,7 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 				'/pengaturan',
 				'/ujian',
 				'/cetak?dokumen=kartu-ujian',
+				'/cetak?dokumen=kartu-ujian-meja',
 				'/asesmen-martikulasi',
 				'/jurnal-mengajar',
 				'/berkas',

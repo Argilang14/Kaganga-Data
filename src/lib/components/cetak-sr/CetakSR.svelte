@@ -84,6 +84,7 @@
 				semester: string | null;
 				participantCount: number;
 				classes: string[];
+				rooms: string[];
 			}>;
 			absensiAccess?: boolean;
 			absensiToday?: string;
@@ -108,6 +109,7 @@
 		{ value: 'keasramaan', label: 'Rapor Keasramaan' },
 		{ value: 'kartu-absensi', label: 'Kartu Absensi Murid' },
 		{ value: 'kartu-ujian', label: 'Kartu Ujian' },
+		{ value: 'kartu-ujian-meja', label: 'Kartu Ujian Meja' },
 		{ value: 'jadwal-pelajaran', label: 'Jadwal Pelajaran' },
 		{ value: 'kalender-pendidikan', label: 'Kalender Pendidikan' },
 		{ value: 'jurnal-mengajar', label: 'Jurnal Mengajar' },
@@ -119,8 +121,8 @@
 	];
 	const currentUserType = $derived((page.data.user as { type?: string } | null | undefined)?.type);
 	const visibleDocumentOptions = $derived.by(() => {
-		const general = ['kartu-absensi', 'kartu-ujian', 'jadwal-pelajaran', 'kalender-pendidikan', 'jurnal-mengajar', 'rekap-absensi-kegiatan', 'buku-tamu'];
-		if (documentGroup === 'dokumen') return documentOptions.filter((option) => general.includes(option.value) && (option.value !== 'jurnal-mengajar' || data.jurnalAccess?.canPrint !== false) && (option.value !== 'rekap-absensi-kegiatan' || data.absensiAccess === true) && (option.value !== 'buku-tamu' || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('administrasi_buku_tamu')) && (option.value !== 'kartu-ujian' || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('ujian_cetak') || page.data.user?.permissions?.includes('ujian_manage')));
+		const general = ['kartu-absensi', 'kartu-ujian', 'kartu-ujian-meja', 'jadwal-pelajaran', 'kalender-pendidikan', 'jurnal-mengajar', 'rekap-absensi-kegiatan', 'buku-tamu'];
+		if (documentGroup === 'dokumen') return documentOptions.filter((option) => general.includes(option.value) && (option.value !== 'jurnal-mengajar' || data.jurnalAccess?.canPrint !== false) && (option.value !== 'rekap-absensi-kegiatan' || data.absensiAccess === true) && (option.value !== 'buku-tamu' || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('administrasi_buku_tamu')) && (!['kartu-ujian', 'kartu-ujian-meja'].includes(option.value) || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('ujian_cetak') || page.data.user?.permissions?.includes('ujian_manage')));
 		if (documentGroup === 'raport') return documentOptions.filter((option) => !general.includes(option.value) && (currentUserType !== 'wali_asrama' || option.value === 'keasramaan'));
 		if (currentUserType === 'wali_asrama') {
 			return documentOptions.filter((option) => option.value === 'keasramaan');
@@ -175,8 +177,10 @@
 		Number(page.url.searchParams.get('session_id')) || data.ujianSessions?.[0]?.id || null
 	);
 	let selectedUjianKelas = $state('');
+	let selectedUjianRuang = $state('');
 	let showUjianAttendanceQr = $state(false);
 	let showUjianLmsAccount = $state(false);
+	let showUjianDeskPrincipalSignature = $state(true);
 	let selectedJadwalJenjang = $state<'semua' | 'srd' | 'srmp' | 'srma'>('semua');
 	let selectedKalenderPeriode = $state<
 		'tahun_kalender' | 'tahun_ajaran' | 'semester_ganjil' | 'semester_genap'
@@ -257,6 +261,19 @@
 	let pdfViewerFilename = $state('Dokumen.pdf');
 	let pdfViewerTitle = $state('');
 	let pdfViewerEl = $state<HTMLElement | null>(null);
+	const ujianSelectionKey = $derived(
+		[selectedDocument, selectedUjianSessionId, selectedUjianKelas, selectedUjianRuang, showUjianAttendanceQr, showUjianLmsAccount, showUjianDeskPrincipalSignature].join('|')
+	);
+	let previousUjianSelectionKey = $state('');
+	$effect(() => {
+		const nextKey = ujianSelectionKey;
+		if (previousUjianSelectionKey && previousUjianSelectionKey !== nextKey && pdfViewerUrl) {
+			URL.revokeObjectURL(pdfViewerUrl);
+			pdfViewerUrl = '';
+			pdfViewerTitle = '';
+		}
+		previousUjianSelectionKey = nextKey;
+	});
 	const jurnalSelectionKey = $derived(
 		[
 			jurnalScope,
@@ -360,7 +377,8 @@
 	const isAbsensiKegiatanSelected = $derived.by(
 		() => selectedDocument === 'rekap-absensi-kegiatan'
 	);
-	const isKartuUjianSelected = $derived.by(() => selectedDocument === 'kartu-ujian');
+	const isKartuUjianMejaSelected = $derived(selectedDocument === 'kartu-ujian-meja');
+	const isKartuUjianSelected = $derived.by(() => selectedDocument === 'kartu-ujian' || isKartuUjianMejaSelected);
 	const isMartikulasiSkSelected = $derived.by(() => selectedDocument === 'martikulasi-sk');
 	const isMartikulasiSelected = $derived.by(() =>
 		selectedDocument === 'martikulasi-sk' ||
@@ -395,7 +413,7 @@
 			selectedDocument !== 'jurnal-mengajar' &&
 			selectedDocument !== 'rekap-absensi-kegiatan' &&
 			selectedDocument !== 'martikulasi-sk' &&
-			selectedDocument !== 'kartu-ujian'
+			selectedDocument !== 'kartu-ujian' && selectedDocument !== 'kartu-ujian-meja'
 	);
 	const navigationMuridIds = $derived.by(() => {
 		if (isPiagamSelected) {
@@ -542,7 +560,7 @@
 				: 'Pilih kelas dan rentang tanggal absensi yang valid';
 		}
 		if (isMartikulasiSelected) return 'Preview PDF dokumen Martikulasi';
-		if (isKartuUjianSelected) return selectedUjianSession?.participantCount ? 'Preview PDF Kartu Ujian' : 'Pilih sesi ujian yang memiliki peserta';
+		if (isKartuUjianSelected) return selectedUjianSession?.participantCount ? `Preview PDF ${isKartuUjianMejaSelected ? 'Kartu Ujian Meja' : 'Kartu Ujian'}` : 'Pilih sesi ujian yang memiliki peserta';
 		return `Download PDF ${selectedDocumentEntry?.label ?? 'dokumen'} untuk ${selectedMurid?.nama ?? ''}`;
 	});
 
@@ -598,7 +616,7 @@
 			documentType === 'jurnal-mengajar' ||
 			documentType === 'rekap-absensi-kegiatan' ||
 			documentType === 'martikulasi-sk' ||
-			documentType === 'kartu-ujian'
+			documentType === 'kartu-ujian' || documentType === 'kartu-ujian-meja'
 		) {
 			await loadPdf(null);
 			return;
@@ -658,21 +676,24 @@
 				toast('PDF Rekap Absensi Kegiatan berhasil dimuat', 'success');
 				return;
 			}
-			if (documentType === 'kartu-ujian') {
+			if (documentType === 'kartu-ujian' || documentType === 'kartu-ujian-meja') {
 				if (!selectedUjianSessionId) throw new Error('Pilih sesi ujian terlebih dahulu.');
 				const params = new URLSearchParams({ session_id: String(selectedUjianSessionId) });
-				params.set('qr_absensi', showUjianAttendanceQr ? '1' : '0');
+				params.set('layout', documentType === 'kartu-ujian-meja' ? 'meja' : 'kartu');
+				params.set('qr_absensi', documentType === 'kartu-ujian' && showUjianAttendanceQr ? '1' : '0');
 				params.set('akun_lms', showUjianLmsAccount ? '1' : '0');
+				if (documentType === 'kartu-ujian-meja') params.set('ttd_kepsek', showUjianDeskPrincipalSignature ? '1' : '0');
 				if (selectedUjianKelas) params.set('kelas', selectedUjianKelas);
+				if (selectedUjianRuang) params.set('ruang', selectedUjianRuang);
 				const pdfRes = await fetch(`/api/pdf/kartu-ujian?${params}`);
 				if (!pdfRes.ok) throw new Error(await responseErrorMessage(pdfRes, 'Gagal memuat kartu ujian'));
 				const blob = await pdfRes.blob();
 				pdfViewerFilename = responsePdfFilename(pdfRes);
 				if (pdfViewerUrl) URL.revokeObjectURL(pdfViewerUrl);
 				pdfViewerUrl = URL.createObjectURL(blob);
-				pdfViewerTitle = `Kartu Ujian - ${selectedUjianSession?.singkatan || selectedUjianSession?.nama || ''}`;
+				pdfViewerTitle = `${documentType === 'kartu-ujian-meja' ? 'Kartu Ujian Meja' : 'Kartu Ujian'} - ${selectedUjianSession?.singkatan || selectedUjianSession?.nama || ''}`;
 				await scrollToViewer();
-				toast('PDF Kartu Ujian berhasil dimuat', 'success');
+				toast(`PDF ${documentType === 'kartu-ujian-meja' ? 'Kartu Ujian Meja' : 'Kartu Ujian'} berhasil dimuat`, 'success');
 				return;
 			}
 			if (
@@ -1131,11 +1152,11 @@
 		{downloadLoading}
 	/>
 
-	{#if selectedDocument === 'kartu-ujian'}
-		<div class="border-base-300 bg-base-200/35 mt-3 grid items-end gap-3 rounded-lg border p-4 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto]">
+	{#if isKartuUjianSelected}
+		<div class="border-base-300 bg-base-200/35 mt-3 grid items-end gap-3 rounded-lg border p-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,.65fr)_auto]">
 			<label class="form-control min-w-0">
 				<span class="label-text mb-1">Sesi Ujian</span>
-				<select class="select select-bordered bg-base-100 w-full" bind:value={selectedUjianSessionId} onchange={() => (selectedUjianKelas = '')}>
+				<select class="select select-bordered bg-base-100 w-full" bind:value={selectedUjianSessionId} disabled={downloadLoading} onchange={() => { selectedUjianKelas = ''; selectedUjianRuang = ''; }}>
 					<option value={null}>Pilih sesi ujian</option>
 					{#each ujianSessions as session}
 						<option value={session.id}>{session.singkatan || session.nama} · {session.tahunAjaran} ({session.participantCount} peserta)</option>
@@ -1144,15 +1165,25 @@
 			</label>
 			<label class="form-control min-w-0">
 				<span class="label-text mb-1">Kelas Peserta</span>
-				<select class="select select-bordered bg-base-100 w-full" bind:value={selectedUjianKelas} disabled={!selectedUjianSession}>
+				<select class="select select-bordered bg-base-100 w-full" bind:value={selectedUjianKelas} disabled={!selectedUjianSession || downloadLoading}>
 					<option value="">Semua kelas</option>
 					{#each selectedUjianSession?.classes ?? [] as kelas}
 						<option value={kelas}>{kelas}</option>
 					{/each}
 				</select>
 			</label>
+			<label class="form-control min-w-0">
+				<span class="label-text mb-1">Ruang Ujian</span>
+				<select class="select select-bordered bg-base-100 w-full" bind:value={selectedUjianRuang} disabled={!selectedUjianSession || downloadLoading}>
+					<option value="">Semua ruang</option>
+					{#each selectedUjianSession?.rooms ?? [] as ruang}
+						<option value={ruang}>{ruang}</option>
+					{/each}
+				</select>
+			</label>
 			<a class="btn btn-soft" href="/ujian"><Icon name="gear" /> Kelola Sesi</a>
-			<div class="md:col-span-3 flex flex-wrap items-center gap-2 text-sm">
+			<div class="md:col-span-2 xl:col-span-4 flex flex-wrap items-center gap-2 text-sm">
+				{#if !isKartuUjianMejaSelected}
 				<button
 					type="button"
 					class="btn btn-soft btn-sm shadow-none"
@@ -1168,6 +1199,7 @@
 						pdfViewerTitle = '';
 					}}
 				>QR Absensi {showUjianAttendanceQr ? 'ON' : 'OFF'}</button>
+				{/if}
 				<button
 					type="button"
 					class="btn btn-soft btn-sm shadow-none"
@@ -1183,9 +1215,20 @@
 						pdfViewerTitle = '';
 					}}
 				>Akun LMS {showUjianLmsAccount ? 'ON' : 'OFF'}</button>
+				{#if isKartuUjianMejaSelected}
+					<button
+						type="button"
+						class="btn btn-soft btn-sm shadow-none"
+						role="switch"
+						aria-checked={showUjianDeskPrincipalSignature}
+						aria-label="TTD Kepsek"
+						title="Tampilkan blok tanda tangan, nama, dan NIP kepala sekolah"
+						disabled={downloadLoading}
+						onclick={() => showUjianDeskPrincipalSignature = !showUjianDeskPrincipalSignature}
+					>TTD Kepsek {showUjianDeskPrincipalSignature ? 'ON' : 'OFF'}</button>
+				{/if}
 				<span class="badge badge-outline">A4 Portrait</span>
-				<span class="badge badge-outline">4 kartu per halaman</span>
-				<span class="text-base-content/65">PDF ditampilkan pada pratinjau sebelum diunduh.</span>
+				<span class="badge badge-outline">{isKartuUjianMejaSelected ? '8' : '4'} kartu per halaman</span>
 			</div>
 		</div>
 	{/if}

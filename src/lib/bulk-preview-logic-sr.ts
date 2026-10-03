@@ -43,6 +43,7 @@ const DOCUMENT_PATHS: Record<DocumentType, string> = {
 	keasramaan: '/cetak/keasramaan',
 	'kartu-absensi': '/cetak/kartu-absensi',
 	'kartu-ujian': '/api/pdf/kartu-ujian',
+	'kartu-ujian-meja': '/api/pdf/kartu-ujian',
 	'jadwal-pelajaran': '/cetak/jadwal-pelajaran',
 	'kalender-pendidikan': '/cetak/kalender-pendidikan',
 	'jurnal-mengajar': '/api/pdf/jurnal-mengajar',

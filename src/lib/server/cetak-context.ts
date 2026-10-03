@@ -81,6 +81,7 @@ export async function loadCetakContext({ locals, url, depends, parent }: Pick<Re
 		semester: string | null;
 		participantCount: number;
 		classes: string[];
+		rooms: string[];
 	}> = [];
 	if (sekolahId && isAuthorizedUser(['ujian_cetak', 'ujian_manage'], locals.user)) {
 		await ensureUjianSchema();
@@ -95,19 +96,23 @@ export async function loadCetakContext({ locals, url, depends, parent }: Pick<Re
 				args: [sekolahId]
 			}),
 			db.$client.execute({
-				sql: `SELECT DISTINCT p.session_id AS sessionId, p.kelas_nama_snapshot AS kelas
+				sql: `SELECT DISTINCT p.session_id AS sessionId, p.kelas_nama_snapshot AS kelas, p.ruang
 				FROM ujian_peserta p JOIN ujian_session s ON s.id=p.session_id
-				WHERE s.sekolah_id=? AND p.kelas_nama_snapshot IS NOT NULL
-				ORDER BY p.kelas_nama_snapshot`,
+				WHERE s.sekolah_id=?
+				ORDER BY p.kelas_nama_snapshot, p.ruang`,
 				args: [sekolahId]
 			})
 		]);
 		const classMap = new Map<number, string[]>();
+		const roomMap = new Map<number, string[]>();
 		for (const row of classesResult.rows) {
 			const sessionId = Number(row.sessionId);
 			const list = classMap.get(sessionId) ?? [];
-			list.push(String(row.kelas));
+			if (row.kelas && !list.includes(String(row.kelas))) list.push(String(row.kelas));
 			classMap.set(sessionId, list);
+			const rooms = roomMap.get(sessionId) ?? [];
+			if (row.ruang && !rooms.includes(String(row.ruang))) rooms.push(String(row.ruang));
+			roomMap.set(sessionId, rooms);
 		}
 		ujianSessions = sessionsResult.rows.map((row) => ({
 			id: Number(row.id),
@@ -116,7 +121,8 @@ export async function loadCetakContext({ locals, url, depends, parent }: Pick<Re
 			tahunAjaran: String(row.tahunAjaran),
 			semester: row.semester ? String(row.semester) : null,
 			participantCount: Number(row.participantCount ?? 0),
-			classes: classMap.get(Number(row.id)) ?? []
+			classes: classMap.get(Number(row.id)) ?? [],
+			rooms: roomMap.get(Number(row.id)) ?? []
 		}));
 	}
 	const activeSemester = sekolahId

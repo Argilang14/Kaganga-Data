@@ -1,7 +1,7 @@
 {
 	"name": "kaganga",
 	"private": true,
-	"version": "2.2.1",
+	"version": "2.2.2",
 	"type": "module",
 	"scripts": {
 		"db:push": "node scripts/migrate-installed-db.mjs",
@@ -32,6 +32,7 @@
 		"check:watch": "svelte-kit sync && node scripts/svelte-check-wrapper.mjs --watch",
 		"test:jadwal": "node --test src/lib/jadwal-segments.test.ts src/lib/jadwal-slots.test.ts src/lib/jadwal-jp.test.ts",
 		"test:jadwal-db": "node scripts/test-jadwal-jp-target-copy.mjs",
+		"test:exam-desk-copy": "node scripts/test-exam-desk-copy.mjs",
 		"test:pegawai": "node --test src/lib/server/db/pegawai-foundation.test.ts src/lib/server/pegawai-excel.test.ts src/lib/server/pegawai-documents.test.ts",
 		"test:pegawai-copy": "node scripts/test-pegawai-foundation-copy.mjs",
 		"test:database-safety": "node --test src/lib/server/db/database-safety.test.ts src/lib/server/db/database-restore.test.ts",

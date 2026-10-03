@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.2.2 - 2026-10-03
+
+### Fitur dan perbaikan
+
+- Menambahkan Kartu Ujian Meja pada Cetak Dokumen dengan delapan kartu 94 x 62 mm dalam A4 portrait (dua kolom, empat baris).
+- Menggunakan kop sekolah aktif dan peserta sesi ujian, dengan filter kelas dan ruang serta pratinjau PDF di halaman yang sama.
+- Menambahkan Akun LMS ON/OFF (bawaan OFF) dan TTD Kepsek ON/OFF (bawaan ON) khusus kartu meja. TTD OFF menyembunyikan seluruh blok tempat/tanggal, jabatan, nama, dan NIP.
+- Membersihkan preview ketika pilihan dokumen, sesi, kelas, ruang, LMS, atau TTD berubah agar PDF lama tidak digunakan untuk pilihan baru.
+- Mempertahankan ukuran, QR absensi, dan tanda tangan pada kartu ujian biasa.
+
+### Catatan pembaruan
+
+- Tidak ada migrasi database baru untuk fitur kartu meja; tidak mengubah nomor peserta atau data kepala sekolah.
+- Cadangkan database dan folder foto/lampiran sebelum memasang pembaruan di server sekolah.
+- Nama dan lisensi Kaganga, AppId installer, port 1206, serta direktori Kaganga-data tetap dipertahankan.
+- Masalah identitas murid dengan NISN placeholder/duplikat seperti 000 masih terbuka. Rilis ini tidak memperbaikinya; jangan menghapus murid atau mengimpor ulang data untuk memulihkan daftar yang tampak kosong sebelum audit dan perbaikan khusus dilakukan.
+
 ## 2.2.1 - 2026-10-03
 
 ### Fitur dan perbaikan

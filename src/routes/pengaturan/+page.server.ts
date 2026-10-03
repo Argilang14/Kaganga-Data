@@ -27,6 +27,7 @@ import {
 } from '$lib/server/ai';
 import { getOrCreateBukuTamuSettings, setBukuTamuPasskey } from '$lib/server/buku-tamu-pass';
 import { getStorageInfo, saveStorageRoot } from '$lib/server/storage-settings';
+import { writeAuditLog } from '$lib/server/audit-log';
 
 type AddressEntry = { name: string; address: string; raw: string };
 
@@ -124,8 +125,19 @@ export const actions: Actions = {
 		if (!(await verifyUserPassword(user.id, currentPassword))) return fail(400, { message: 'Kata sandi lama tidak sesuai.' });
 		const validation = validatePassword(newPassword);
 		if (!validation.valid) return fail(400, { message: validation.message });
+		if (newPassword === currentPassword) return fail(400, { message: 'Kata sandi baru harus berbeda dari kata sandi saat ini.' });
 		if (newPassword !== confirmPassword) return fail(400, { message: 'Konfirmasi kata sandi tidak cocok.' });
 		await updateUserPassword(user.id, newPassword);
+		await writeAuditLog({
+			locals,
+			request,
+			action: 'update',
+			entityType: 'auth_user',
+			entityId: user.id,
+			summary: user.mustChangePassword
+				? 'Pengguna mengganti kata sandi saat login pertama.'
+				: 'Pengguna mengganti kata sandi akun.'
+		});
 		await deleteSessionsForUser(user.id);
 		const session = await createSession(user.id, { userAgent: request.headers.get('user-agent'), ipAddress: getClientAddress() });
 		applySessionCookie(cookies, session.token, session.expiresAt, locals.requestIsSecure ?? url.protocol === 'https:');
@@ -133,6 +145,7 @@ export const actions: Actions = {
 	},
 	'change-admin-username': async ({ request, locals }) => {
 		const user = requireUser(locals);
+		if (user.mustChangePassword) return fail(403, { message: 'Ganti kata sandi bawaan terlebih dahulu.' });
 		const form = await request.formData();
 		const username = String(form.get('adminUsername') ?? '').trim();
 		const password = String(form.get('adminPassword') ?? '');
@@ -146,6 +159,7 @@ export const actions: Actions = {
 	},
 	'save-ai-settings': async ({ request, locals }) => {
 		const user = requireUser(locals);
+		if (user.mustChangePassword) return fail(403, { message: 'Ganti kata sandi bawaan terlebih dahulu.' });
 		if (user.type !== 'admin' || !locals.sekolah?.id) return fail(403, { message: 'Akses ditolak.' });
 		try { await saveAiSettings(locals.sekolah.id, parseAi(await request.formData())); }
 		catch (error) { return fail(400, { message: error instanceof Error ? error.message : 'Pengaturan AI gagal disimpan.' }); }
@@ -153,23 +167,27 @@ export const actions: Actions = {
 	},
 	'clear-ai-settings': async ({ locals }) => {
 		const user = requireUser(locals);
+		if (user.mustChangePassword) return fail(403, { message: 'Ganti kata sandi bawaan terlebih dahulu.' });
 		if (user.type !== 'admin' || !locals.sekolah?.id) return fail(403, { message: 'Akses ditolak.' });
 		await clearAiSettings(locals.sekolah.id);
 		return { message: 'AI sekolah berhasil dihapus.' };
 	},
 	'save-personal-ai': async ({ request, locals }) => {
 		const user = requireUser(locals);
+		if (user.mustChangePassword) return fail(403, { message: 'Ganti kata sandi bawaan terlebih dahulu.' });
 		try { await saveUserAiSettings(user.id, parseAi(await request.formData())); }
 		catch (error) { return fail(400, { message: error instanceof Error ? error.message : 'AI pribadi gagal disimpan.' }); }
 		return { message: 'AI pribadi berhasil disimpan.' };
 	},
 	'clear-personal-ai': async ({ locals }) => {
 		const user = requireUser(locals);
+		if (user.mustChangePassword) return fail(403, { message: 'Ganti kata sandi bawaan terlebih dahulu.' });
 		await clearUserAiSettings(user.id);
 		return { message: 'AI pribadi berhasil dihapus; konfigurasi sekolah akan digunakan.' };
 	},
 	'set-guest-passkey': async ({ request, locals }) => {
 		const user = requireUser(locals);
+		if (user.mustChangePassword) return fail(403, { message: 'Ganti kata sandi bawaan terlebih dahulu.' });
 		if (user.type !== 'admin' || !locals.sekolah?.id) return fail(403, { message: 'Akses ditolak.' });
 		const passkey = String((await request.formData()).get('passkey') ?? '').trim();
 		if (passkey && (passkey.length < 4 || passkey.length > 64)) return fail(400, { message: 'Passkey harus terdiri dari 4-64 karakter.' });
@@ -178,6 +196,7 @@ export const actions: Actions = {
 	},
 	'save-storage': async ({ request, locals }) => {
 		const user = requireUser(locals);
+		if (user.mustChangePassword) return fail(403, { message: 'Ganti kata sandi bawaan terlebih dahulu.' });
 		if (user.type !== 'admin') return fail(403, { message: 'Akses ditolak.' });
 		try {
 			const result = await saveStorageRoot(String((await request.formData()).get('dataRoot') ?? ''));

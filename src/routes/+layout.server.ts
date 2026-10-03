@@ -13,6 +13,7 @@ import type { LayoutServerLoad } from './$types';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { getLegacyWaliKelasIds, isLegacyWaliKelas } from '$lib/server/legacy-wali-kelas';
 import { getAssignmentSummaries } from '$lib/server/assignment-summary';
+import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 
 export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 	const meta: PageMeta = {
@@ -34,7 +35,12 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 		waliKelas: { id: number; nama: string } | null;
 	}> = [];
 	if (sekolah?.id) {
-		const userWithType = user as { type?: string; id?: number; pegawaiId?: number } | null;
+		const userWithType = user as {
+			type?: string;
+			id?: number;
+			pegawaiId?: number;
+			jabatanAkses?: string | null;
+		} | null;
 		if (isLegacyWaliKelas(userWithType)) {
 			const legacyKelasIds = await getLegacyWaliKelasIds(
 				userWithType,
@@ -88,7 +94,11 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 					});
 				}
 			}
-		} else if (userWithType?.type === 'user' && userWithType.id) {
+		} else if (
+			userWithType?.type === 'user' &&
+			userWithType.id &&
+			!hasSchoolWideOperationalAccess(userWithType)
+		) {
 			const allowedKelasRecords = await db.query.tableAuthUserKelas.findMany({
 				columns: { kelasId: true },
 				where: eq(tableAuthUserKelas.authUserId, userWithType.id)
@@ -217,7 +227,9 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 		const userType = (user as { type?: string }).type;
 		const canManageMapel = userType !== 'wali_asuh' && userType !== 'wali_asrama';
 		const canEditUrutan =
-			userType === 'admin' || userType === 'kepala_sekolah' || userType === 'wali_kelas';
+			hasSchoolWideOperationalAccess(user) ||
+			userType === 'kepala_sekolah' ||
+			userType === 'wali_kelas';
 		const canAddImportMapel = canEditUrutan;
 
 		if (user.pegawaiId) {
@@ -240,7 +252,7 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 	// For user type (guru), check if they have any mata pelajaran assigned
 	// (either via direct column or many-to-many table)
 	let hasMataPelajaran = false;
-	if (user?.type === 'user') {
+	if (user?.type === 'user' && !hasSchoolWideOperationalAccess(user)) {
 		const u = user as { id?: number; mataPelajaranId?: number | null };
 		hasMataPelajaran = !!u.mataPelajaranId;
 		if (!hasMataPelajaran && u.id) {

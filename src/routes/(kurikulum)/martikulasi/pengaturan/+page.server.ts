@@ -14,6 +14,7 @@ import {
 import { formatNomorSttm, isFormatNomorSttmValid } from '$lib/martikulasi';
 import { inferKelasJadwalJenjang } from '$lib/server/jadwal';
 import { composeAlamat, fallbackTempat } from '$lib/server/pdf/preview-utils';
+import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 
 const positiveInteger = (value: FormDataEntryValue | null) => {
 	const parsed = Number(value);
@@ -26,9 +27,9 @@ const clean = (value: FormDataEntryValue | null, max = 1000) => {
 	return result ? result.slice(0, max) : null;
 };
 
-function requireAdmin(locals: App.Locals) {
-	if (locals.user?.type !== 'admin') {
-		return fail(403, { fail: 'Pengaturan Martikulasi hanya dapat diubah oleh admin.' });
+function requireManager(locals: App.Locals) {
+	if (!hasSchoolWideOperationalAccess(locals.user)) {
+		return fail(403, { fail: 'Anda tidak memiliki akses operasional sekolah.' });
 	}
 	return null;
 }
@@ -90,13 +91,13 @@ export async function load({ locals, url, depends }) {
 		settings,
 		pegawaiList,
 		hasilLengkapBelumBernomor: hasilLengkapBelumBernomor.length,
-		canManage: locals.user?.type === 'admin'
+		canManage: hasSchoolWideOperationalAccess(locals.user)
 	};
 }
 
 export const actions = {
 	simpan: async ({ locals, request }) => {
-		const denied = requireAdmin(locals);
+		const denied = requireManager(locals);
 		if (denied) return denied;
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(401, { fail: 'Sesi sekolah tidak ditemukan.' });
@@ -145,7 +146,7 @@ export const actions = {
 		return { message: 'Pengaturan Martikulasi berhasil disimpan.' };
 	},
 	tambahTim: async ({ locals, request }) => {
-		const denied = requireAdmin(locals);
+		const denied = requireManager(locals);
 		if (denied) return denied;
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(401, { fail: 'Sesi sekolah tidak ditemukan.' });
@@ -189,7 +190,7 @@ export const actions = {
 		return { message: 'Anggota tim Martikulasi berhasil ditambahkan.' };
 	},
 	hapusTim: async ({ locals, request }) => {
-		const denied = requireAdmin(locals);
+		const denied = requireManager(locals);
 		if (denied) return denied;
 		const sekolahId = locals.sekolah?.id;
 		const id = positiveInteger((await request.formData()).get('id'));
@@ -206,7 +207,7 @@ export const actions = {
 		return { message: 'Anggota tim dihapus.' };
 	},
 	terbitkanSttm: async ({ locals, request }) => {
-		const denied = requireAdmin(locals);
+		const denied = requireManager(locals);
 		if (denied) return denied;
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(401, { fail: 'Sesi sekolah tidak ditemukan.' });

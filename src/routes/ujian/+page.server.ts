@@ -1,6 +1,7 @@
 import db from '$lib/server/db';
 import { ensureUjianSchema } from '$lib/server/db/ensure-ujian';
 import { writeAuditLog } from '$lib/server/audit-log';
+import { examParticipantNumber, isValidExamNpsn, nextExamSequence, participantsInClassAdditionOrder } from '$lib/server/ujian-numbering';
 import { fail, redirect } from '@sveltejs/kit';
 import { authority } from '../pengguna/utils.server';
 import type { Actions, PageServerLoad } from './$types';
@@ -90,7 +91,7 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 					murid_nama_snapshot AS nama, nis_snapshot AS nis, nisn_snapshot AS nisn,
 					kelas_nama_snapshot AS kelas
 				FROM ujian_peserta WHERE session_id = ?
-				ORDER BY COALESCE(ruang, ''), COALESCE(nomor_peserta, ''), murid_nama_snapshot`,
+				ORDER BY COALESCE(ruang, ''), LENGTH(COALESCE(nomor_peserta, '')), COALESCE(nomor_peserta, ''), murid_nama_snapshot`,
 				args: [selectedSessionId]
 			}),
 			db.$client.execute({
@@ -152,6 +153,7 @@ export const actions: Actions = {
 	},
 	addClass: async ({ request, locals }) => {
 		authority('ujian_manage');
+		await ensureUjianSchema();
 		const sekolahId = locals.sekolah?.id;
 		const form = await request.formData();
 		const sessionId = integer(form, 'sessionId');
@@ -162,26 +164,66 @@ export const actions: Actions = {
 		const murid = await db.$client.execute({
 			sql: `SELECT m.id, m.nama, m.nis, m.nisn, k.nama AS kelas
 			FROM kelas k JOIN murid m ON m.kelas_id = k.id
-			WHERE k.id=? AND k.sekolah_id=? AND k.tahun_ajaran_id=?
+			WHERE k.id=? AND k.sekolah_id=? AND m.sekolah_id=k.sekolah_id AND k.tahun_ajaran_id=?
 				AND (? IS NULL OR k.semester_id=?) ORDER BY m.nama`,
 			args: [classId, sekolahId, Number(session.tahun_ajaran_id), session.semester_id, session.semester_id]
 		});
 		if (!murid.rows.length) return fail(400, { fail: 'Kelas tidak memiliki murid yang dapat ditambahkan.' });
-		const countResult = await db.$client.execute({ sql: `SELECT COUNT(*) AS total FROM ujian_peserta WHERE session_id=?`, args: [sessionId] });
-		let sequence = Number(countResult.rows[0]?.total ?? 0);
 		const now = new Date().toISOString();
 		const room = text(form, 'room', 50) || null;
 		let added = 0;
-		for (const row of murid.rows) {
-			sequence += 1;
-			const result = await db.$client.execute({
-				sql: `INSERT OR IGNORE INTO ujian_peserta (session_id,murid_id,nomor_peserta,ruang,username_lms,murid_nama_snapshot,nis_snapshot,nisn_snapshot,kelas_nama_snapshot,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-				args: [sessionId, Number(row.id), String(sequence).padStart(3, '0'), room, row.nis ? `s${row.nis}` : null, String(row.nama), row.nis, row.nisn, row.kelas, now]
-			});
-			if (Number(result.rowsAffected ?? 0) > 0) added += 1;
+		const tx = await db.$client.transaction('write');
+		try {
+			const school = (await tx.execute({ sql: 'SELECT npsn FROM sekolah WHERE id=?', args: [sekolahId] })).rows[0];
+			const npsn = String(school?.npsn ?? '').trim();
+			if (!isValidExamNpsn(npsn)) return fail(400, { fail: 'Lengkapi NPSN sekolah aktif dengan 8 digit di Data Sekolah sebelum menomori peserta.' });
+			const existing = await tx.execute({ sql: 'SELECT murid_id, nomor_peserta FROM ujian_peserta WHERE session_id=?', args: [sessionId] });
+			const existingIds = new Set(existing.rows.map((row) => Number(row.murid_id)));
+			let sequence = nextExamSequence(npsn, existing.rows.map((row) => row.nomor_peserta == null ? null : String(row.nomor_peserta)));
+			for (const row of murid.rows) {
+				if (existingIds.has(Number(row.id))) continue;
+				await tx.execute({
+					sql: `INSERT INTO ujian_peserta (session_id,murid_id,nomor_peserta,ruang,username_lms,murid_nama_snapshot,nis_snapshot,nisn_snapshot,kelas_nama_snapshot,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+					args: [sessionId, Number(row.id), examParticipantNumber(npsn, sequence), room, row.nis ? `s${row.nis}` : null, String(row.nama), row.nis, row.nisn, row.kelas, now]
+				});
+				sequence += 1;
+				added += 1;
+			}
+			await tx.commit();
+		} finally {
+			if (!tx.closed) await tx.rollback();
+			tx.close();
 		}
 		await writeAuditLog({ locals, request, action: 'create', entityType: 'ujian_peserta', entityId: sessionId, summary: `${added} peserta ditambahkan ke sesi ujian.`, after: { sessionId, classId, added } });
 		return { message: added ? `${added} peserta berhasil ditambahkan.` : 'Semua murid kelas tersebut sudah menjadi peserta.' };
+	},
+	renumberParticipants: async ({ request, locals }) => {
+		authority('ujian_manage');
+		await ensureUjianSchema();
+		const sekolahId = locals.sekolah?.id;
+		const form = await request.formData();
+		const sessionId = integer(form, 'sessionId');
+		if (!sekolahId || !sessionId || !(await sessionForSchool(sessionId, sekolahId))) return fail(404, { fail: 'Sesi ujian tidak ditemukan.' });
+		const tx = await db.$client.transaction('write');
+		let count = 0;
+		try {
+			const school = (await tx.execute({ sql: 'SELECT npsn FROM sekolah WHERE id=?', args: [sekolahId] })).rows[0];
+			const npsn = String(school?.npsn ?? '').trim();
+			if (!isValidExamNpsn(npsn)) return fail(400, { fail: 'Lengkapi NPSN sekolah aktif dengan 8 digit di Data Sekolah sebelum menomori peserta.' });
+			const result = await tx.execute({ sql: 'SELECT id, kelas_nama_snapshot AS kelas FROM ujian_peserta WHERE session_id=? ORDER BY id', args: [sessionId] });
+			const participants = participantsInClassAdditionOrder(result.rows.map((row) => ({ id: Number(row.id), kelas: row.kelas == null ? null : String(row.kelas) })));
+			const now = new Date().toISOString();
+			for (const [index, participant] of participants.entries()) {
+				await tx.execute({ sql: 'UPDATE ujian_peserta SET nomor_peserta=?, updated_at=? WHERE id=? AND session_id=?', args: [examParticipantNumber(npsn, index + 1), now, participant.id, sessionId] });
+			}
+			count = participants.length;
+			await tx.commit();
+		} finally {
+			if (!tx.closed) await tx.rollback();
+			tx.close();
+		}
+		await writeAuditLog({ locals, request, action: 'update', entityType: 'ujian_peserta', entityId: sessionId, summary: `Nomor ${count} peserta disusun ulang berdasarkan NPSN dan urutan penambahan kelas.`, after: { sessionId, count } });
+		return { message: `${count} nomor peserta berhasil disusun ulang.` };
 	},
 	updateParticipant: async ({ request, locals }) => {
 		authority('ujian_manage');

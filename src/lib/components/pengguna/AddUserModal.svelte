@@ -4,6 +4,11 @@
 	import Icon from '$lib/components/icon.svelte';
 	import { toast } from '$lib/components/toast.svelte';
 	import { validatePassword } from '$lib/password-policy';
+	import {
+		accessPositionLabels,
+		accessPositionValues,
+		type AccessPosition
+	} from '$lib/access-position';
 
 	type Role = 'user' | 'wali_asuh' | 'wali_asrama' | 'wali_kelas' | 'admin';
 	type PegawaiOption = {
@@ -24,6 +29,7 @@
 		pegawaiName?: string | null;
 		pegawaiNip?: string | null;
 		pegawaiJenis?: string | null;
+		jabatanAkses?: AccessPosition | null;
 		mataPelajaranIds?: number[];
 		kelasIds?: number[];
 	} | null;
@@ -45,6 +51,7 @@
 	let username = $state('');
 	let password = $state('');
 	let type = $state<Role>('user');
+	let jabatanAkses = $state<AccessPosition | ''>('');
 	let pegawaiId = $state('');
 	let mataPelajaranIds = $state(new Set<number>());
 	let kelasIds = $state(new Set<number>());
@@ -67,8 +74,9 @@
 		admin: []
 	};
 	let filteredPegawai = $derived(
-		pegawaiList.filter(
-			(pegawai) => pegawai.status === 'aktif' && allowedJenis[type].includes(pegawai.jenis)
+		pegawaiList.filter((pegawai) =>
+			pegawai.status === 'aktif' &&
+			(jabatanAkses !== '' || allowedJenis[type].includes(pegawai.jenis))
 		)
 	);
 	let selectedPegawai = $derived(
@@ -86,7 +94,7 @@
 		!!selectedPegawai &&
 			username.trim().length >= 3 &&
 			(isEditMode || password.trim().length > 0) &&
-			(type !== 'user' || mataPelajaranIds.size > 0)
+			(type !== 'user' || jabatanAkses !== '' || mataPelajaranIds.size > 0)
 	);
 
 	$effect(() => {
@@ -103,6 +111,11 @@
 			pegawaiId = '';
 		}
 		if (type !== 'user' && type !== 'wali_kelas') {
+			jabatanAkses = '';
+			mataPelajaranIds = new Set<number>();
+			kelasIds = new Set<number>();
+		}
+		if (jabatanAkses !== '') {
 			mataPelajaranIds = new Set<number>();
 			kelasIds = new Set<number>();
 		}
@@ -112,6 +125,7 @@
 		username = editUser?.username ?? '';
 		password = '';
 		type = editUser?.type ?? 'user';
+		jabatanAkses = editUser?.jabatanAkses ?? '';
 		pegawaiId = editUser?.pegawaiId ? String(editUser.pegawaiId) : '';
 		mataPelajaranIds = new Set(editUser?.mataPelajaranIds ?? []);
 		kelasIds = new Set(editUser?.kelasIds ?? []);
@@ -180,6 +194,7 @@
 		form.set('username', username.trim());
 		form.set('password', password);
 		form.set('type', type);
+		form.set('jabatanAkses', jabatanAkses);
 		form.set('pegawaiId', pegawaiId);
 		form.set('mataPelajaranIds', JSON.stringify([...mataPelajaranIds]));
 		form.set('kelasIds', JSON.stringify([...kelasIds]));
@@ -270,6 +285,21 @@
 				</div>
 
 				{#if type === 'user'}
+					<fieldset class="fieldset">
+						<legend class="fieldset-legend">Jabatan Akses</legend>
+						<select class="select bg-base-200 w-full" bind:value={jabatanAkses}>
+							<option value="">Tanpa jabatan akses khusus</option>
+							{#each accessPositionValues as position}
+								<option value={position}>{accessPositionLabels[position]}</option>
+							{/each}
+						</select>
+						<p class="label text-wrap">
+							Jabatan akses membuka seluruh fitur operasional sekolah. Pengaturan sistem dan manajemen pengguna tetap khusus admin.
+						</p>
+					</fieldset>
+				{/if}
+
+				{#if type === 'user' && jabatanAkses === ''}
 					<div class="grid gap-3 sm:grid-cols-2">
 						<fieldset class="fieldset">
 							<legend class="fieldset-legend">Mata Pelajaran</legend>

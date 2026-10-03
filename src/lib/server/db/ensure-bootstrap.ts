@@ -22,6 +22,10 @@ import { ensureProductionOperationsSchema } from './ensure-production-operations
 import { ensureUjianSchema } from './ensure-ujian';
 import { ensureAbsensiDigitalSchema } from './ensure-absensi-digital';
 import { ensureAbsenceMonitoringSchema } from './ensure-absence-monitoring';
+import {
+	ensurePenggunaIdentitySchema,
+	resetPenggunaIdentitySchemaEnsure
+} from './ensure-pengguna';
 
 let startupPromise: Promise<void> | null = null;
 
@@ -37,6 +41,7 @@ async function applyStartupEnsures() {
 	await ensureUjianSchema();
 	await ensureAccountSettingsSchema();
 	await ensurePegawaiSchema();
+	await ensurePenggunaIdentitySchema();
 	await ensureJadwalBellSchema();
 	await ensurePresensiSettingsSchema();
 	await ensureJadwalKurikulumSchema();
@@ -67,4 +72,5 @@ export function resetStartupEnsures() {
 	startupPromise = null;
 	resetEnsuredSchemas();
 	resetPegawaiSchemaEnsure();
+	resetPenggunaIdentitySchemaEnsure();
 }

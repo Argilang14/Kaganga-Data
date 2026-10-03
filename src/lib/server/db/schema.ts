@@ -18,6 +18,16 @@ export const tableAuthUser = sqliteTable(
 		passwordSalt: text().notNull(),
 		passwordUpdatedAt: text(),
 		permissions: text({ mode: 'json' }).notNull().default('[]').$type<UserPermission[]>(),
+		jabatanAkses: text('jabatan_akses', {
+			enum: [
+				'kepala_sekolah',
+				'waka_kesiswaan',
+				'waka_kurikulum',
+				'waka_sarpras',
+				'waka_keasramaan',
+				'operator'
+			]
+		}).$type<import('$lib/access-position').AccessPosition | null>(),
 		// tipe user: admin (penuh), wali_kelas (terbatas ke kelas_id), wali_asuh (terbatas ke keasramaan), atau user (default/other)
 		type: text({ enum: ['admin', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'wali_murid', 'user'] })
 			.notNull()

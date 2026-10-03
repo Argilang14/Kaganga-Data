@@ -7,6 +7,7 @@
 	import UsersHeader from '$lib/components/pengguna/UsersHeader.svelte';
 	import AddUserModal from '$lib/components/pengguna/AddUserModal.svelte';
 	import ExistingUserRow from '$lib/components/pengguna/ExistingUserRow.svelte';
+	import { accessPositionLabels, accessPositionValues } from '$lib/access-position';
 
 	let { data } = $props();
 	type UserItem = (typeof data.users)[number];
@@ -19,7 +20,7 @@
 	let showUserModal = $state(false);
 	let editingUser = $state<EditableUser | null>(null);
 	const users = $derived(data.users ?? []);
-	const filters = $derived(data.filters ?? { q: '', role: 'all', status: 'all' });
+	const filters = $derived(data.filters ?? { q: '', role: 'all', jabatan: 'all', status: 'all' });
 	const pagination = $derived(
 		data.pagination ?? { currentPage: 1, totalPages: 1, totalItems: 0, pageSize: 25 }
 	);
@@ -87,6 +88,7 @@
 		const params = new URLSearchParams();
 		if (filters.q) params.set('q', filters.q);
 		if (filters.role !== 'all') params.set('role', filters.role);
+		if (filters.jabatan !== 'all') params.set('jabatan', filters.jabatan);
 		if (filters.status !== 'all') params.set('status', filters.status);
 		if (page > 1) params.set('page', String(page));
 		const query = params.toString();
@@ -104,7 +106,7 @@
 			<UsersHeader {selectedIds} onDelete={() => openDeleteModal(selectedIds)} onAdd={openCreate} />
 		</header>
 
-		<form method="GET" class="grid gap-2 sm:grid-cols-[minmax(14rem,1fr)_12rem_11rem_auto_auto]">
+		<form method="GET" class="grid gap-2 lg:grid-cols-[minmax(14rem,1fr)_11rem_13rem_10rem_auto_auto]">
 			<label class="input bg-base-200 w-full">
 				<Icon name="search" />
 				<input name="q" value={filters.q} placeholder="Cari nama atau nama pengguna" />
@@ -116,6 +118,12 @@
 				<option value="wali_asuh">Wali Asuh</option>
 				<option value="wali_asrama">Wali Asrama</option>
 				<option value="wali_murid">Wali Murid</option>
+			</select>
+			<select class="select bg-base-200 w-full" name="jabatan" value={filters.jabatan}>
+				<option value="all">Semua jabatan akses</option>
+				{#each accessPositionValues as position}
+					<option value={position}>{accessPositionLabels[position]}</option>
+				{/each}
 			</select>
 			<select class="select bg-base-200 w-full" name="status" value={filters.status}>
 				<option value="all">Semua status</option>
@@ -142,6 +150,7 @@
 						</th>
 						<th>Nama</th>
 						<th>Role</th>
+						<th>Jabatan Akses</th>
 						<th>Nama Pengguna</th>
 						<th>Status</th>
 						<th>Kata Sandi</th>
@@ -170,7 +179,7 @@
 						</tr>
 					{:else}
 						<tr
-							><td colspan="7" class="py-10 text-center text-base-content/60"
+							><td colspan="8" class="py-10 text-center text-base-content/60"
 								>Tidak ada pengguna yang sesuai.</td
 							></tr
 						>

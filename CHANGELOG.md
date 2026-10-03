@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.2.1 - 2026-10-03
+
+### Fitur dan perbaikan
+
+- Menambahkan Jabatan Akses untuk Kepala Sekolah, Waka Kesiswaan, Kurikulum, Sarana Prasarana, Keasramaan, dan Operator, termasuk filter jabatan pada Manajemen Pengguna.
+- Memberikan akses operasional lintas kelas sesuai jabatan, dengan pengaturan sistem, manajemen pengguna, dan backup database tetap khusus admin.
+- Menampilkan popup penggantian kata sandi saat login pertama serta membatasi penggunaan akun sampai kata sandi bawaan diganti.
+- Memastikan akun admin bawaan pada instalasi baru juga wajib mengganti kata sandi, tanpa mereset sandi akun yang sudah ada.
+- Memperbaiki putaran pengalihan antara penggantian sandi dan formulir sekolah pada instalasi baru yang belum memiliki data sekolah.
+- Memperbarui override js-yaml dan qs untuk menutup temuan penolakan layanan yang tersedia patch kompatibelnya.
+- Menyempurnakan kartu peserta ujian menjadi 94 x 123 mm, empat kartu pada A4 portrait, dengan identitas dan tanda tangan lebih mudah dibaca.
+- Menambahkan tombol QR Absensi dan Akun LMS ON/OFF pada cetak kartu ujian; akun LMS tidak ditampilkan secara bawaan untuk ujian berbasis kertas.
+- Menghapus baris NIS dari kartu ujian dan menggunakan nomor peserta berupa NPSN sekolah aktif diikuti urutan peserta lintas kelas.
+- Menambahkan aksi Nomori Ulang yang mempertahankan urutan penambahan kelas dan data peserta lainnya tanpa mengubah nomor lama secara otomatis.
+
+### Catatan pembaruan
+
+- Cadangkan database dan folder foto/lampiran sebelum memasang pembaruan.
+- Installer tetap memakai identitas dan lisensi Kaganga, AppId yang sama, port 1206, serta direktori data Kaganga-data.
+- Kolom jabatan_akses ditambahkan secara aditif; akun lama tidak otomatis memperoleh jabatan atau akses tambahan.
+- Nomor peserta yang sudah tersimpan tetap berlaku sampai admin menjalankan Nomori Ulang. Cetak ulang kartu setelah penomoran diubah.
+- QR kartu ujian memakai token absensi murid yang sama, bukan QR baru yang terpisah.
+
 ## 2.2.0 - 2026-09-28
 
 ### Fitur utama

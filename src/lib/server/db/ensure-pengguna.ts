@@ -3,9 +3,19 @@ import { ensurePegawaiSchema } from '$lib/server/db/ensure-pegawai';
 
 let ensured = false;
 
+export function resetPenggunaIdentitySchemaEnsure() {
+	ensured = false;
+}
+
 export async function ensurePenggunaIdentitySchema() {
 	if (ensured) return;
 	await ensurePegawaiSchema();
+
+	const columns = await db.$client.execute('PRAGMA table_info("auth_user")');
+	const columnNames = new Set(columns.rows.map((row) => String(row.name)));
+	if (!columnNames.has('jabatan_akses')) {
+		await db.$client.execute('ALTER TABLE auth_user ADD COLUMN jabatan_akses TEXT');
+	}
 
 	await db.$client.execute(`
 		UPDATE auth_user

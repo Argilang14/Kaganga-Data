@@ -197,7 +197,9 @@ export const actions: Actions = {
 			console.warn('[login action] failed to set active kelas cookie', err);
 		}
 
-		const target = resolveRedirectTarget(url.searchParams.get('redirect')) ?? '/';
+		const target = user.mustChangePassword
+			? '/pengaturan?ganti_password=1'
+			: (resolveRedirectTarget(url.searchParams.get('redirect')) ?? '/');
 		logLoginEvent('Redirecting after success', { username, target });
 		throw redirect(303, target);
 	}

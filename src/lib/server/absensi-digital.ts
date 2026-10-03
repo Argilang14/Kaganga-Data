@@ -5,13 +5,14 @@ import { tableAuthUserKelas, tableKelas, tableQrMurid } from '$lib/server/db/sch
 import { error, redirect } from '@sveltejs/kit';
 import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 
 export const ABSENSI_PERMISSION = 'administrasi_absensi' as UserPermission;
 export const ABSENSI_STATUSES = ['hadir', 'terlambat', 'sakit', 'izin', 'alfa'] as const;
 export type AbsensiStatus = (typeof ABSENSI_STATUSES)[number];
 
 export function canAccessAbsensiDigital(
-	user?: Pick<AuthUser, 'type' | 'permissions'> | null
+	user?: (Pick<AuthUser, 'type' | 'permissions'> & { jabatanAkses?: string | null }) | null
 ): boolean {
 	if (!user) return false;
 	if (user.type === 'admin' || user.type === 'wali_kelas') return true;
@@ -122,7 +123,9 @@ export function getLateAwareStatus(date = new Date()): 'hadir' | 'terlambat' {
 
 export async function loadAbsensiKelasOptions(
 	sekolahId: number,
-	user: Pick<AuthUser, 'id' | 'type' | 'pegawaiId' | 'permissions'>
+	user: Pick<AuthUser, 'id' | 'type' | 'pegawaiId' | 'permissions'> & {
+		jabatanAkses?: string | null;
+	}
 ) {
 	await ensureAbsensiDigitalSchema();
 	const academic = await resolveSekolahAcademicContext(sekolahId);
@@ -131,7 +134,7 @@ export async function loadAbsensiKelasOptions(
 		? and(eq(tableKelas.sekolahId, sekolahId), eq(tableKelas.semesterId, activeSemesterId))
 		: eq(tableKelas.sekolahId, sekolahId);
 
-	if (user.type !== 'admin') {
+	if (!hasSchoolWideOperationalAccess(user)) {
 		const assigned = await db.query.tableAuthUserKelas.findMany({
 			columns: { kelasId: true },
 			where: eq(tableAuthUserKelas.authUserId, user.id)
@@ -179,9 +182,12 @@ export function resolveKelasId(kelasList: Array<{ id: number }>, requested: numb
 export function buildKelasAccessWhere(
 	sekolahId: number,
 	kelasId: number,
-	user: Pick<AuthUser, 'id' | 'type' | 'pegawaiId' | 'permissions'>
+	user: Pick<AuthUser, 'id' | 'type' | 'pegawaiId' | 'permissions'> & {
+		jabatanAkses?: string | null;
+	}
 ) {
 	const base = and(eq(tableKelas.id, kelasId), eq(tableKelas.sekolahId, sekolahId));
+	if (hasSchoolWideOperationalAccess(user)) return base;
 	if (user.type !== 'wali_kelas') return base;
 	if (!user.pegawaiId) return and(base, eq(tableKelas.id, -1));
 	return and(base, eq(tableKelas.waliKelasId, user.pegawaiId));

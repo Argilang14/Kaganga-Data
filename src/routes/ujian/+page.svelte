@@ -54,6 +54,11 @@
 						<button class="btn btn-primary"><Icon name="plus" /> Tambahkan</button>
 					</form>
 
+					<form method="POST" action="?/renumberParticipants" class="mt-3 flex justify-end" onsubmit={(event) => !confirm('Susun ulang semua nomor peserta menggunakan NPSN sekolah aktif, mulai 01 sesuai urutan kelas ditambahkan? Kartu yang sudah dicetak perlu dicetak ulang.') && event.preventDefault()}>
+						<input type="hidden" name="sessionId" value={selectedSession.id} />
+						<button class="btn btn-soft btn-sm" disabled={!data.participants.length}><Icon name="edit" /> Nomori Ulang</button>
+					</form>
+
 					<div class="mt-4 overflow-x-auto rounded-lg border border-base-300">
 						<table class="table"><thead><tr><th>Peserta</th><th>No. Peserta</th><th>Ruang</th><th>Akun LMS</th><th class="w-24">Aksi</th></tr></thead><tbody>
 							{#each data.participants as item}

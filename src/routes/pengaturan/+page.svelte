@@ -5,6 +5,7 @@
 	import AiSettingsCard from '$lib/components/settings/ai-settings-card.svelte';
 	import DatabaseCard from '$lib/components/settings/database-card.svelte';
 	import GuestBookCard from '$lib/components/settings/guest-book-card.svelte';
+	import FirstLoginPasswordModal from '$lib/components/settings/first-login-password-modal.svelte';
 	import ProfileCard from '$lib/components/settings/profile-card.svelte';
 	import StorageCard from '$lib/components/settings/storage-card.svelte';
 	import Icon from '$lib/components/icon.svelte';
@@ -85,3 +86,7 @@
 		clearAction="?/clear-personal-ai"
 	/>
 </div>
+
+{#if data.mustChangePassword}
+	<FirstLoginPasswordModal />
+{/if}

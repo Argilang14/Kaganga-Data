@@ -1,9 +1,11 @@
+import { hasSchoolWideOperationalAccess } from '../../access-position.ts';
+
 export async function canUserEditAbsen(
 	user: NonNullable<App.Locals['user']>,
 	_sekolahId: number
 ): Promise<boolean> {
-	if (user.type === 'admin' || user.type === 'wali_kelas') return true;
-	return false;
+	if (hasSchoolWideOperationalAccess(user) || user.type === 'wali_kelas') return true;
+	return user.permissions?.includes('administrasi_absensi') === true;
 }
 
 export function isTableMissingError(error: unknown) {

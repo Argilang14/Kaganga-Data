@@ -28,6 +28,7 @@ import {
 	getLogoSrc
 } from '$lib/server/pdf/preview-utils';
 import type { RequestHandler } from './$types';
+import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 
 export const GET = (async ({ locals, url }) => {
 	const sekolahId = locals.sekolah?.id;
@@ -37,6 +38,7 @@ export const GET = (async ({ locals, url }) => {
 		pegawaiId?: number;
 		kelasId?: number | null;
 		mataPelajaranId?: number | null;
+		jabatanAkses?: string | null;
 	} | null;
 
 	if (!sekolahId || !user?.id) {
@@ -95,7 +97,7 @@ export const GET = (async ({ locals, url }) => {
 	}
 	if (!schoolClasses.length) throw error(400, 'Data kelas belum tersedia');
 
-	let hasClassAccess = user.type === 'admin';
+	let hasClassAccess = hasSchoolWideOperationalAccess(user);
 	if (selectedKelas && user.type === 'wali_kelas') {
 		hasClassAccess =
 			selectedKelas.waliKelasId === user.pegawaiId || selectedKelas.id === user.kelasId;
@@ -119,7 +121,7 @@ export const GET = (async ({ locals, url }) => {
 			assignedClasses.some((item) => item.kelas?.nama === selectedKelas.nama);
 	}
 	const hasSubjectAccess =
-		user.type === 'admin' ||
+		hasSchoolWideOperationalAccess(user) ||
 		(user.type === 'user' && selectedMapel?.guruPegawaiId === user.pegawaiId);
 	const accessError = getJurnalPrintAccessError({
 		userType: user.type,

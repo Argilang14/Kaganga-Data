@@ -1,3 +1,5 @@
+import { parseAccessPosition, type AccessPosition } from '../../lib/access-position.ts';
+
 export const groupedUserPermissions = {
 	user: {
 		values: [
@@ -168,6 +170,54 @@ export const groupedUserPermissions = {
 export const userPermissions = Object.entries(groupedUserPermissions) //
 	.flatMap(([key, { values }]) => values.map((value) => `${key}_${value[0]}` as UserPermission));
 
+export const systemOnlyPermissions = new Set<UserPermission>([
+	'user_list',
+	'user_detail',
+	'user_add',
+	'user_delete',
+	'user_suspend',
+	'user_set_permissions',
+	'app_check_update',
+	'server_stop',
+	'audit_lihat',
+	'operasional_lihat'
+]);
+
+const operatorExcludedPermissions = new Set<UserPermission>([
+	'surat_persetujuan',
+	'persetujuan_periksa',
+	'persetujuan_setujui',
+	'persetujuan_terbitkan',
+	'komunikasi_approve'
+]);
+
+export function permissionsForAccessPosition(position?: AccessPosition | null): UserPermission[] {
+	const resolvedPosition = parseAccessPosition(position);
+	if (!resolvedPosition) return [];
+	return userPermissions.filter(
+		(permission) =>
+			!systemOnlyPermissions.has(permission) &&
+			(resolvedPosition !== 'operator' || !operatorExcludedPermissions.has(permission))
+	);
+}
+
+export function effectivePermissions(
+	user?: {
+		type?: string | null;
+		permissions?: readonly UserPermission[] | null;
+		jabatanAkses?: AccessPosition | null;
+	} | null
+): UserPermission[] {
+	if (!user) return [];
+	if (user.type === 'admin') return [...userPermissions];
+	const position = parseAccessPosition(user.jabatanAkses);
+	const positionPermissions = permissionsForAccessPosition(position);
+	const stored = (user.permissions ?? []).filter(
+		(permission) => !position || !systemOnlyPermissions.has(permission)
+	);
+	return [...new Set([...positionPermissions, ...stored])];
+}
+
 export function defaultPermissionsForType(
 	type: AuthUser['type'],
 	options: { kelasCount?: number } = {}
@@ -181,12 +231,12 @@ export function defaultPermissionsForType(
 export function isAuthorizedUser(
 	allowedPermissions: UserPermission[],
 	// include 'type' so we can treat admins as authorized
-	user?: Pick<AuthUser, 'permissions' | 'type'>
+	user?: Pick<AuthUser, 'permissions' | 'type'> & { jabatanAkses?: AuthUser['jabatanAkses'] }
 ) {
 	if (!user) return false;
 	// Admins are authorized for everything by policy
 	// wali_kelas and wali_asuh are NOT admins and must check permissions
 	if ('type' in user && user.type === 'admin') return true;
-	const userPermissions = user.permissions || [];
-	return allowedPermissions.some((r) => userPermissions.includes(r));
+	const granted = effectivePermissions(user);
+	return allowedPermissions.some((permission) => granted.includes(permission));
 }

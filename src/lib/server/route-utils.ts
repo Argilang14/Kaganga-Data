@@ -2,6 +2,7 @@ import db from '$lib/server/db';
 import { resolveSekolahAcademicContext, type AcademicContext } from '$lib/server/db/academic';
 import { tableMurid, tablePegawai, tableAuthUserKelas, tableKelas } from '$lib/server/db/schema';
 import { and, asc, eq, inArray } from 'drizzle-orm';
+import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 
 export interface KelasContext {
 	sekolahId: number | null;
@@ -63,10 +64,11 @@ export async function getKelasContextForUser(
 		id?: number;
 		pegawaiId?: number;
 		kelasId?: number;
+		jabatanAkses?: string | null;
 	};
 	const kelasId = student.kelasId;
 
-	if (user.type === 'admin') return { hasAccess: true };
+	if (hasSchoolWideOperationalAccess(user)) return { hasAccess: true };
 	if (user.type === 'wali_kelas' && user.pegawaiId) {
 		const kelasRow = await db.query.tableKelas.findFirst({
 			columns: { id: true, waliKelasId: true },

@@ -20,6 +20,8 @@ import { canAccessArea, getProtectedArea, getAreaAction } from '$lib/menu-access
 import { canAccessExportClass } from '$lib/server/class-export-access';
 import { assertKeasramaanTargets } from '$lib/server/keasramaan-target-access';
 import { recordServerHeartbeat, startMaintenanceScheduler } from '$lib/server/system-operations';
+import { hasSchoolWideOperationalAccess } from '$lib/access-position';
+import { effectivePermissions } from './routes/pengguna/permissions';
 
 setTimeout(() => {
 	startBellScheduler().catch((e) => {
@@ -168,7 +170,8 @@ const authGuard: Handle = async ({ event, resolve }) => {
 			event.locals.user = {
 				id: resolved.user.id,
 				username: resolved.user.username,
-				permissions: resolved.user.permissions,
+				permissions: effectivePermissions(resolved.user),
+				jabatanAkses: resolved.user.jabatanAkses,
 				type: resolved.user.type,
 				kelasId: resolved.user.kelasId,
 				pegawaiId: resolved.user.pegawaiId,
@@ -294,6 +297,8 @@ const cookieParser: Handle = async ({ event, resolve }) => {
 
 	if (
 		!sekolah?.id &&
+		!(event.locals.user.mustChangePassword && event.url.pathname === '/pengaturan') &&
+		!event.url.pathname.startsWith('/logout') &&
 		event.route.id != '/(informasi-umum)/sekolah/form' &&
 		event.route.id != '/api/database/import'
 	) {
@@ -344,7 +349,7 @@ const menuAccessGuard: Handle = async ({ event, resolve }) => {
 				? await event.request.clone().formData()
 				: null;
 		const params = event.url.searchParams;
-		if (area === 'keasramaan') {
+		if (area === 'keasramaan' && !hasSchoolWideOperationalAccess(user)) {
 			await assertKeasramaanTargets(user, sekolahId, event.url.pathname, params);
 			if (posted) await assertKeasramaanTargets(user, sekolahId, event.url.pathname, posted);
 		}
@@ -364,11 +369,16 @@ const menuAccessGuard: Handle = async ({ event, resolve }) => {
 				: null;
 		if (
 			(targetClass || classPath) &&
+			!hasSchoolWideOperationalAccess(user) &&
 			!(await canAccessExportClass(user, sekolahId, Number(targetClass ?? classPath)))
 		)
 			throw error(403, 'Kelas di luar penugasan akun.');
 	}
-	if (area === 'keasramaan' && event.locals.user?.type !== 'admin') {
+	if (
+		area === 'keasramaan' &&
+		event.locals.user?.type !== 'admin' &&
+		!hasSchoolWideOperationalAccess(event.locals.user)
+	) {
 		const kelasId = Number(event.cookies.get(cookieNames.ACTIVE_KELAS_ID));
 		if (
 			!event.locals.sekolah?.id ||

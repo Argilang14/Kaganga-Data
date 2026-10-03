@@ -75,7 +75,7 @@ async function main() {
 	console.info('[seed-default-admin] No admin account found. Creating default Admin user.');
 	const { hash, salt } = hashPassword(DEFAULT_ADMIN.password);
 	const ts = nowIso();
-	const insertSql = `INSERT INTO auth_user (username, username_normalized, password_hash, password_salt, password_updated_at, permissions, type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+	const insertSql = `INSERT INTO auth_user (username, username_normalized, password_hash, password_salt, password_updated_at, permissions, type, must_change_password, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 	await client.execute({
 		sql: insertSql,
 		args: [
@@ -86,6 +86,7 @@ async function main() {
 			ts,
 			JSON.stringify(DEFAULT_ADMIN.permissions),
 			'admin',
+			1,
 			ts,
 			ts
 		]

@@ -27,6 +27,8 @@ import { defaultPermissionsForType } from './permissions';
 import { fail } from '@sveltejs/kit';
 import { getAssignmentSummaries } from '$lib/server/assignment-summary';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
+import { parseAccessPosition } from '$lib/access-position';
+import { writeAuditLog } from '$lib/server/audit-log';
 
 const u = tableAuthUser;
 const CREATABLE_ROLES = ['user', 'wali_asuh', 'wali_asrama'] as const;
@@ -52,7 +54,7 @@ export async function load({ url, locals }) {
 		return {
 			meta: { title: 'Manajemen Pengguna' },
 			users: [],
-			filters: { q: '', role: 'all', status: 'all' },
+			filters: { q: '', role: 'all', jabatan: 'all', status: 'all' },
 			pagination: { currentPage: 1, totalPages: 1, totalItems: 0, pageSize: 25 }
 		};
 	}
@@ -60,6 +62,7 @@ export async function load({ url, locals }) {
 	// Halaman ini hanya membaca akun. Pembuatan akun dilakukan melalui aksi eksplisit.
 	const q = (url.searchParams.get('q') ?? '').trim();
 	const role = url.searchParams.get('role') ?? 'all';
+	const jabatan = url.searchParams.get('jabatan') ?? 'all';
 	const status = url.searchParams.get('status') ?? 'all';
 	const requestedPage = Math.max(1, Number(url.searchParams.get('page')) || 1);
 	const pageSize = 25;
@@ -72,6 +75,7 @@ export async function load({ url, locals }) {
 		role
 	);
 	const isKnownStatus = status === 'online' || status === 'offline';
+	const parsedJabatan = parseAccessPosition(jabatan);
 	const onlineExpression = sql`exists (
 		select 1 from auth_session activity
 		where activity.user_id = ${u.id}
@@ -90,6 +94,7 @@ export async function load({ url, locals }) {
 		isKnownRole
 			? eq(u.type, role as 'user' | 'wali_kelas' | 'wali_asuh' | 'wali_asrama' | 'wali_murid')
 			: undefined,
+		parsedJabatan ? eq(u.jabatanAkses, parsedJabatan) : undefined,
 		isKnownStatus
 			? status === 'online'
 				? onlineExpression
@@ -111,6 +116,7 @@ export async function load({ url, locals }) {
 			username: u.username,
 			createdAt: u.createdAt,
 			type: u.type,
+			jabatanAkses: u.jabatanAkses,
 			pegawaiId: u.pegawaiId,
 			pegawaiName: tablePegawai.nama,
 			pegawaiNip: tablePegawai.nip,
@@ -260,7 +266,12 @@ export async function load({ url, locals }) {
 	return {
 		meta: { title: 'Manajemen Pengguna' },
 		users,
-		filters: { q, role: isKnownRole ? role : 'all', status: isKnownStatus ? status : 'all' },
+		filters: {
+			q,
+			role: isKnownRole ? role : 'all',
+			jabatan: parsedJabatan ?? 'all',
+			status: isKnownStatus ? status : 'all'
+		},
 		pagination: { currentPage, totalPages, totalItems, pageSize }
 	};
 }
@@ -333,6 +344,7 @@ export const actions = {
 		const roleValue: CreatableRole = CREATABLE_ROLES.includes(requestedRole as CreatableRole)
 			? (requestedRole as CreatableRole)
 			: 'user';
+		const jabatanAkses = parseAccessPosition(form.get('jabatanAkses'));
 		const pegawaiId = Number(form.get('pegawaiId'));
 		let mataPelajaranIds = parseIdList(form.get('mataPelajaranIds'));
 		let kelasIds = parseIdList(form.get('kelasIds'));
@@ -345,6 +357,9 @@ export const actions = {
 			return fail(400, { message: 'Pilih pegawai dari Data Pegawai' });
 		}
 
+		if (jabatanAkses && roleValue !== 'user') {
+			return fail(400, { message: 'Jabatan akses hanya dapat dipakai pada akun pegawai umum' });
+		}
 		const allowedJenis: Record<CreatableRole, string[]> = {
 			user: ['guru', 'kepala_sekolah'],
 			wali_asuh: ['wali_asuh'],
@@ -358,7 +373,7 @@ export const actions = {
 				eq(tablePegawai.status, 'aktif')
 			)
 		});
-		if (!pegawai || !allowedJenis[roleValue].includes(pegawai.jenis)) {
+		if (!pegawai || (!jabatanAkses && !allowedJenis[roleValue].includes(pegawai.jenis))) {
 			return fail(400, { message: 'Pegawai tidak sesuai dengan role yang dipilih' });
 		}
 
@@ -375,7 +390,7 @@ export const actions = {
 		if (roleValue !== 'user') {
 			mataPelajaranIds = [];
 			kelasIds = [];
-		} else if (!mataPelajaranIds.length) {
+		} else if (!jabatanAkses && !mataPelajaranIds.length) {
 			return fail(400, { message: 'Guru Mapel wajib memilih mata pelajaran' });
 		}
 
@@ -420,6 +435,7 @@ export const actions = {
 						passwordUpdatedAt: timestamp,
 						mustChangePassword: true,
 						permissions,
+						jabatanAkses,
 						type: roleValue,
 						mataPelajaranId: mataPelajaranIds[0] ?? null,
 						kelasId: kelasIds[0] ?? null,
@@ -433,6 +449,7 @@ export const actions = {
 						username: tableAuthUser.username,
 						createdAt: tableAuthUser.createdAt,
 						type: tableAuthUser.type,
+						jabatanAkses: tableAuthUser.jabatanAkses,
 						pegawaiId: tableAuthUser.pegawaiId,
 						passwordUpdatedAt: tableAuthUser.passwordUpdatedAt
 					});
@@ -461,12 +478,22 @@ export const actions = {
 				return user;
 			});
 
+			await writeAuditLog({
+				locals,
+				request,
+				action: 'create',
+				entityType: 'pengguna',
+				entityId: created.id,
+				summary: `Membuat akun ${created.username}`,
+				after: { type: created.type, jabatanAkses: created.jabatanAkses, pegawaiId }
+			}).catch((auditError) => console.error('Failed to audit user creation', auditError));
 			return {
 				success: true,
 				user: created,
 				displayName: pegawai.nama,
 				mataPelajaranIds,
-				kelasIds
+				kelasIds,
+				jabatanAkses
 			};
 		} catch (err) {
 			const message = String(err);
@@ -490,6 +517,7 @@ export const actions = {
 		const username = String(form.get('username') ?? '').trim();
 		const password = String(form.get('password') ?? '').trim();
 		const requestedRole = String(form.get('type') ?? 'user');
+		const jabatanAkses = parseAccessPosition(form.get('jabatanAkses'));
 		let mataPelajaranIds = parseIdList(form.get('mataPelajaranIds'));
 		let kelasIds = parseIdList(form.get('kelasIds'));
 
@@ -501,7 +529,8 @@ export const actions = {
 				id: true,
 				type: true,
 				pegawaiId: true,
-				permissions: true
+				permissions: true,
+				jabatanAkses: true
 			},
 			where: and(eq(tableAuthUser.id, id), eq(tableAuthUser.sekolahId, sekolahId))
 		});
@@ -513,6 +542,9 @@ export const actions = {
 		const roleValue: CreatableRole = CREATABLE_ROLES.includes(requestedRole as CreatableRole)
 			? (requestedRole as CreatableRole)
 			: 'user';
+		if (jabatanAkses && roleValue !== 'user') {
+			return fail(400, { message: 'Jabatan akses hanya dapat dipakai pada akun pegawai umum' });
+		}
 		if (isLegacyWaliKelas && requestedRole !== 'wali_kelas') {
 			return fail(400, { message: 'Role wali kelas lama dikelola dari Data Kelas' });
 		}
@@ -536,13 +568,13 @@ export const actions = {
 				wali_asuh: ['wali_asuh'],
 				wali_asrama: ['wali_asrama']
 			};
-			if (!allowedJenis[roleValue].includes(pegawai.jenis)) {
+			if (!jabatanAkses && !allowedJenis[roleValue].includes(pegawai.jenis)) {
 				return fail(400, { message: 'Role tidak sesuai dengan jenis Data Pegawai' });
 			}
 			if (roleValue !== 'user') {
 				mataPelajaranIds = [];
 				kelasIds = [];
-			} else if (!mataPelajaranIds.length) {
+			} else if (!jabatanAkses && !mataPelajaranIds.length) {
 				return fail(400, { message: 'Guru Mapel wajib memilih mata pelajaran' });
 			}
 		}
@@ -584,6 +616,7 @@ export const actions = {
 				username,
 				usernameNormalized: username.toLowerCase(),
 				type: nextType,
+				jabatanAkses: isLegacyWaliKelas ? null : jabatanAkses,
 				updatedAt: timestamp
 			};
 			if (!isLegacyWaliKelas) {
@@ -611,6 +644,7 @@ export const actions = {
 						id: tableAuthUser.id,
 						username: tableAuthUser.username,
 						type: tableAuthUser.type,
+						jabatanAkses: tableAuthUser.jabatanAkses,
 						pegawaiId: tableAuthUser.pegawaiId,
 						passwordUpdatedAt: tableAuthUser.passwordUpdatedAt,
 						mustChangePassword: tableAuthUser.mustChangePassword
@@ -643,19 +677,30 @@ export const actions = {
 						);
 					}
 				}
-				if (hashedPassword) {
+				if (hashedPassword || target.jabatanAkses !== jabatanAkses) {
 					await tx.delete(tableAuthSession).where(eq(tableAuthSession.userId, id));
 				}
 				return user;
 			});
 
+			await writeAuditLog({
+				locals,
+				request,
+				action: 'update',
+				entityType: 'pengguna',
+				entityId: updated.id,
+				summary: `Memperbarui akun ${updated.username}`,
+				before: { type: target.type, jabatanAkses: target.jabatanAkses },
+				after: { type: updated.type, jabatanAkses: updated.jabatanAkses }
+			}).catch((auditError) => console.error('Failed to audit user update', auditError));
 			return {
 				success: true,
 				message: 'Pengguna berhasil diperbarui',
 				user: updated,
 				displayName: pegawai.nama,
 				mataPelajaranIds,
-				kelasIds
+				kelasIds,
+				jabatanAkses
 			};
 		} catch (err) {
 			const message = String(err);

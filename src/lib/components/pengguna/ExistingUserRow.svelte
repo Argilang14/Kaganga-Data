@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from '$lib/components/icon.svelte';
+	import { accessPositionLabels, parseAccessPosition } from '$lib/access-position';
 
 	let { u, onEdit, onOpenUser, onDelete = undefined } = $props();
 
@@ -24,6 +25,11 @@
 		if (type === 'user') return 'Guru Mapel';
 		return type.replaceAll('_', ' ');
 	}
+
+	function positionLabel(value: unknown) {
+		const position = parseAccessPosition(value);
+		return position ? accessPositionLabels[position] : null;
+	}
 </script>
 
 <td>
@@ -44,6 +50,13 @@
 			>
 		{/if}
 	</div>
+</td>
+<td>
+	{#if positionLabel(u.jabatanAkses)}
+		<span class="badge badge-primary badge-soft badge-sm">{positionLabel(u.jabatanAkses)}</span>
+	{:else}
+		<span class="text-base-content/50">-</span>
+	{/if}
 </td>
 <td>{u.username || '-'}</td>
 <td>

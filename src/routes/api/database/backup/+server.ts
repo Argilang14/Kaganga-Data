@@ -19,7 +19,7 @@ function resolveDatabasePath(url: string) {
 export async function GET({ locals }) {
 	if (!locals.user) throw error(401, 'Anda harus login terlebih dahulu.');
 	if (!canDownloadDatabaseBackup(locals.user)) {
-		throw error(403, 'Hanya admin dan kepala sekolah yang dapat mengunduh backup database.');
+		throw error(403, 'Hanya admin yang dapat mengunduh backup database.');
 	}
 	const dbUrl = env.DB_URL ?? DEFAULT_DB_URL;
 	const dbPath = resolveDatabasePath(dbUrl);

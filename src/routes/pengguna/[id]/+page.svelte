@@ -6,9 +6,12 @@
 	import Authority from '../authority.svelte';
 	import { groupedUserPermissions } from '../permissions';
 	import ResetPermissionsBody from './reset-permissions-body.svelte';
+	import { accessPositionLabels, parseAccessPosition } from '$lib/access-position';
 
 	let { data } = $props();
 	let user = $derived(data.userDetail);
+	let position = $derived(parseAccessPosition(user.jabatanAkses));
+	let positionPermissions = $derived(new Set(user.positionPermissions ?? []));
 
 	function formatRole(type?: string) {
 		return (type ?? '')
@@ -51,7 +54,16 @@
 			<p class="text-base-content/70 text-sm">Atur hak akses khusus untuk pengguna ini.</p>
 		</div>
 		<span class="badge badge-soft badge-info sm:ml-auto">{formatRole(user.type)}</span>
+		{#if position}
+			<span class="badge badge-primary badge-soft">{accessPositionLabels[position]}</span>
+		{/if}
 	</header>
+	{#if position}
+		<div class="alert mb-4 text-sm">
+			<Icon name="info" />
+			<span>Jabatan akses memberi izin operasional sekolah secara otomatis. Pengaturan sistem tetap khusus admin.</span>
+		</div>
+	{/if}
 
 	<FormEnhance id="set-permissions-form" action="?/set_permissions" onsuccess={handleSaveSuccess}>
 		{#snippet children()}
@@ -64,11 +76,12 @@
 							{#each permission.values as [name, description] (name)}
 								{@const key = `${group}_${name}` as UserPermission}
 								{@const isAdmin = user.type === 'admin'}
+								{@const fromPosition = positionPermissions.has(key)}
 								<tr>
 									<td class="pl-8 text-sm">{description}</td>
 									<td class="text-center">
-										{#if isAdmin}<input type="hidden" name={key} value="true" />{/if}
-										<input type="checkbox" class="toggle toggle-sm toggle-primary" name={key} value="true" checked={isAdmin || user.permissions.includes(key)} disabled={isAdmin} />
+										<input type="checkbox" class="toggle toggle-sm toggle-primary" name={key} value="true" checked={isAdmin || user.permissions.includes(key)} disabled={isAdmin || fromPosition} />
+										{#if fromPosition}<span class="ml-2 text-xs opacity-60">Otomatis</span>{/if}
 									</td>
 								</tr>
 							{/each}

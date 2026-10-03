@@ -175,6 +175,8 @@
 		Number(page.url.searchParams.get('session_id')) || data.ujianSessions?.[0]?.id || null
 	);
 	let selectedUjianKelas = $state('');
+	let showUjianAttendanceQr = $state(false);
+	let showUjianLmsAccount = $state(false);
 	let selectedJadwalJenjang = $state<'semua' | 'srd' | 'srmp' | 'srma'>('semua');
 	let selectedKalenderPeriode = $state<
 		'tahun_kalender' | 'tahun_ajaran' | 'semester_ganjil' | 'semester_genap'
@@ -659,6 +661,8 @@
 			if (documentType === 'kartu-ujian') {
 				if (!selectedUjianSessionId) throw new Error('Pilih sesi ujian terlebih dahulu.');
 				const params = new URLSearchParams({ session_id: String(selectedUjianSessionId) });
+				params.set('qr_absensi', showUjianAttendanceQr ? '1' : '0');
+				params.set('akun_lms', showUjianLmsAccount ? '1' : '0');
 				if (selectedUjianKelas) params.set('kelas', selectedUjianKelas);
 				const pdfRes = await fetch(`/api/pdf/kartu-ujian?${params}`);
 				if (!pdfRes.ok) throw new Error(await responseErrorMessage(pdfRes, 'Gagal memuat kartu ujian'));
@@ -1149,6 +1153,36 @@
 			</label>
 			<a class="btn btn-soft" href="/ujian"><Icon name="gear" /> Kelola Sesi</a>
 			<div class="md:col-span-3 flex flex-wrap items-center gap-2 text-sm">
+				<button
+					type="button"
+					class="btn btn-soft btn-sm shadow-none"
+					role="switch"
+					aria-checked={showUjianAttendanceQr}
+					aria-label="QR Absensi"
+					title="Tampilkan QR absensi murid pada kartu ujian"
+					disabled={downloadLoading}
+					onclick={() => {
+						showUjianAttendanceQr = !showUjianAttendanceQr;
+						if (pdfViewerUrl) URL.revokeObjectURL(pdfViewerUrl);
+						pdfViewerUrl = '';
+						pdfViewerTitle = '';
+					}}
+				>QR Absensi {showUjianAttendanceQr ? 'ON' : 'OFF'}</button>
+				<button
+					type="button"
+					class="btn btn-soft btn-sm shadow-none"
+					role="switch"
+					aria-checked={showUjianLmsAccount}
+					aria-label="Akun LMS"
+					title="Tampilkan username dan password LMS pada kartu ujian"
+					disabled={downloadLoading}
+					onclick={() => {
+						showUjianLmsAccount = !showUjianLmsAccount;
+						if (pdfViewerUrl) URL.revokeObjectURL(pdfViewerUrl);
+						pdfViewerUrl = '';
+						pdfViewerTitle = '';
+					}}
+				>Akun LMS {showUjianLmsAccount ? 'ON' : 'OFF'}</button>
 				<span class="badge badge-outline">A4 Portrait</span>
 				<span class="badge badge-outline">4 kartu per halaman</span>
 				<span class="text-base-content/65">PDF ditampilkan pada pratinjau sebelum diunduh.</span>

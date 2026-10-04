@@ -10,6 +10,9 @@ import {
 	todayLocalDate
 } from '$lib/server/absensi-digital';
 import db from '$lib/server/db';
+import { studentAccessCondition } from '$lib/server/student-access';
+import { saveAttendance } from '$lib/server/attendance-mutation';
+import { canAttendance, canAttendActivity, attendanceDateAllowed } from '$lib/attendance-access';
 import {
 	tableAbsensiHarian,
 	tableKehadiranMurid,
@@ -42,6 +45,12 @@ export async function load({ locals, url }) {
 	if (!sekolahId || !locals.user) throw redirect(303, '/login');
 
 	const tanggal = normalizeDateInput(url.searchParams.get('tanggal'));
+	const access = {
+		canEdit:
+			canAttendActivity(locals.user, 'sekolah') &&
+			attendanceDateAllowed(locals.user, tanggal, todayLocalDate()),
+		canSyncRapor: canAttendance(locals.user, 'sinkron_rapor')
+	};
 	const requestedKelasId = parsePositiveInteger(url.searchParams.get('kelas_id'));
 	const { academic, kelasList } = await loadAbsensiKelasOptions(sekolahId, locals.user);
 	const kelasId = resolveKelasId(kelasList, requestedKelasId);
@@ -55,7 +64,8 @@ export async function load({ locals, url }) {
 			kelasList,
 			rows: [],
 			summary: emptySummary(),
-			statusLabels: STATUS_LABELS
+			statusLabels: STATUS_LABELS,
+			...access
 		};
 	}
 
@@ -70,7 +80,9 @@ export async function load({ locals, url }) {
 		where: and(
 			eq(tableMurid.sekolahId, sekolahId),
 			eq(tableMurid.semesterId, academic.activeSemesterId),
-			eq(tableMurid.kelasId, kelasId)
+			eq(tableMurid.kelasId, kelasId),
+			activeMuridFilter(),
+			await studentAccessCondition(locals.user, sekolahId)
 		),
 		orderBy: asc(tableMurid.nama)
 	});
@@ -116,7 +128,8 @@ export async function load({ locals, url }) {
 		kelasList,
 		rows,
 		summary,
-		statusLabels: STATUS_LABELS
+		statusLabels: STATUS_LABELS,
+		...access
 	};
 }
 
@@ -142,7 +155,7 @@ export const actions = {
 		const kelas = await db.query.tableKelas.findFirst({
 			columns: { id: true },
 			where: and(
-				buildKelasAccessWhere(sekolahId, kelasId, user),
+				await buildKelasAccessWhere(sekolahId, kelasId, user),
 				eq(tableKelas.semesterId, semesterId)
 			)
 		});
@@ -154,43 +167,23 @@ export const actions = {
 				eq(tableMurid.id, muridId),
 				eq(tableMurid.sekolahId, sekolahId),
 				eq(tableMurid.semesterId, semesterId),
-				eq(tableMurid.kelasId, kelasId)
+				eq(tableMurid.kelasId, kelasId),
+				activeMuridFilter(),
+				await studentAccessCondition(locals.user, sekolahId)
 			)
 		});
 		if (!murid) return fail(404, { fail: 'Siswa tidak ditemukan di sekolah aktif.' });
 
-		const now = new Date().toISOString();
-		const existing = await db.query.tableAbsensiHarian.findFirst({
-			columns: { id: true },
-			where: and(
-				eq(tableAbsensiHarian.sekolahId, sekolahId),
-				eq(tableAbsensiHarian.semesterId, semesterId),
-				eq(tableAbsensiHarian.kelasId, kelasId),
-				eq(tableAbsensiHarian.muridId, muridId),
-				eq(tableAbsensiHarian.tanggal, tanggal)
-			)
+		await saveAttendance({
+			locals,
+			request,
+			semesterId,
+			kelasId,
+			muridIds: [muridId],
+			tanggal,
+			status,
+			catatan
 		});
-
-		if (existing) {
-			await db
-				.update(tableAbsensiHarian)
-				.set({ status, metode: 'manual', catatan, petugasUserId: locals.user.id, updatedAt: now })
-				.where(eq(tableAbsensiHarian.id, existing.id));
-		} else {
-			await db.insert(tableAbsensiHarian).values({
-				sekolahId,
-				semesterId,
-				kelasId,
-				muridId,
-				tanggal,
-				status,
-				metode: 'manual',
-				petugasUserId: locals.user.id,
-				catatan,
-				createdAt: now,
-				updatedAt: now
-			});
-		}
 
 		return { message: 'Absensi manual berhasil disimpan.' };
 	},
@@ -213,23 +206,22 @@ export const actions = {
 		const kelas = await db.query.tableKelas.findFirst({
 			columns: { id: true },
 			where: and(
-				buildKelasAccessWhere(sekolahId, kelasId, user),
+				await buildKelasAccessWhere(sekolahId, kelasId, user),
 				eq(tableKelas.semesterId, semesterId)
 			)
 		});
 		if (!kelas) return fail(403, { fail: 'Anda tidak memiliki akses ke kelas ini.' });
 
-		await db
-			.delete(tableAbsensiHarian)
-			.where(
-				and(
-					eq(tableAbsensiHarian.sekolahId, sekolahId),
-					eq(tableAbsensiHarian.semesterId, semesterId),
-					eq(tableAbsensiHarian.kelasId, kelasId),
-					eq(tableAbsensiHarian.muridId, muridId),
-					eq(tableAbsensiHarian.tanggal, tanggal)
-				)
-			);
+		await saveAttendance({
+			locals,
+			request,
+			semesterId,
+			kelasId,
+			muridIds: [muridId],
+			tanggal,
+			status: null,
+			catatan: formData.get('catatan')?.toString()
+		});
 
 		return { message: 'Status absensi berhasil dihapus.' };
 	},
@@ -247,7 +239,7 @@ export const actions = {
 			const kelas = await db.query.tableKelas.findFirst({
 				columns: { id: true },
 				where: and(
-					buildKelasAccessWhere(sekolahId, kelasId, user),
+					await buildKelasAccessWhere(sekolahId, kelasId, user),
 					eq(tableKelas.semesterId, semesterId)
 				)
 			});
@@ -259,7 +251,9 @@ export const actions = {
 			where: and(
 				eq(tableMurid.sekolahId, sekolahId),
 				eq(tableMurid.semesterId, semesterId),
-				kelasId ? eq(tableMurid.kelasId, kelasId) : undefined
+				kelasId ? eq(tableMurid.kelasId, kelasId) : undefined,
+				activeMuridFilter(),
+				await studentAccessCondition(locals.user, sekolahId)
 			)
 		});
 		const muridIds = muridRows.map((murid) => murid.id);
@@ -313,3 +307,4 @@ export const actions = {
 		return { message: 'Kehadiran rapor berhasil disinkronkan dari absensi digital.' };
 	}
 };
+import { activeMuridFilter } from '$lib/server/murid-query';

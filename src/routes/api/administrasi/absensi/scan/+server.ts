@@ -13,6 +13,10 @@ import {
 	parseAbsensiKegiatanStatus
 } from '$lib/server/absensi-kegiatan';
 import db from '$lib/server/db';
+import { canAttendance, canAttendActivity, attendanceDateAllowed } from '$lib/attendance-access';
+import { assertStudentAccess } from '$lib/server/student-access';
+import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
+import { saveAttendance } from '$lib/server/attendance-mutation';
 import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
 import {
 	tableAbsensiHarian,
@@ -66,6 +70,8 @@ export async function POST({ request, locals }) {
 		);
 	}
 	await ensureAbsensiDigitalSchema();
+	if (!canAttendance(locals.user, 'scan'))
+		return json({ ok: false, message: 'Izin scan belum diberikan.' }, { status: 403 });
 
 	const body = (await request.json().catch(() => null)) as {
 		token?: string;
@@ -82,6 +88,17 @@ export async function POST({ request, locals }) {
 		);
 	}
 	const mode = body?.mode === 'kegiatan' ? 'kegiatan' : 'sekolah';
+	const kegiatanId = Number(body?.kegiatanId);
+	if (mode === 'kegiatan' && (!Number.isSafeInteger(kegiatanId) || kegiatanId <= 0)) {
+		return json(
+			{
+				ok: false,
+				code: 'invalid_activity',
+				message: 'Pilih kegiatan terlebih dahulu sebelum scan.'
+			},
+			{ status: 400 }
+		);
+	}
 	const captured = resolveCapturedAt(body?.capturedAt);
 	if ('error' in captured) {
 		return json(
@@ -90,6 +107,25 @@ export async function POST({ request, locals }) {
 		);
 	}
 	const scanDate = captured.date;
+	if (!attendanceDateAllowed(locals.user, todayLocalDate(scanDate), todayLocalDate()))
+		return json(
+			{ ok: false, message: 'Tanggal scan memerlukan izin koreksi tanggal lama.' },
+			{ status: 403 }
+		);
+	if (mode === 'sekolah' && !canAttendActivity(locals.user, 'sekolah'))
+		return json(
+			{ ok: false, message: 'Scan sekolah di luar tanggung jawab akun.' },
+			{ status: 403 }
+		);
+	if (body?.status && !['hadir', 'terlambat'].includes(body.status))
+		return json(
+			{
+				ok: false,
+				message:
+					'Scan QR hanya mencatat hadir atau terlambat. Gunakan input manual untuk status lain.'
+			},
+			{ status: 400 }
+		);
 	if (mode === 'kegiatan') assertAbsensiKegiatanAccess(locals.user);
 	else assertAbsensiDigitalAccess(locals.user);
 
@@ -129,6 +165,20 @@ export async function POST({ request, locals }) {
 			{ status: 404 }
 		);
 	}
+	const academic = await resolveSekolahAcademicContext(sekolahId);
+	if (
+		!(await assertStudentAccess(locals.user, sekolahId, qr.murid.id, true)) ||
+		academic.activeSemesterId !== qr.murid.semesterId
+	) {
+		return json(
+			{
+				ok: false,
+				code: 'forbidden_student',
+				message: 'Murid di luar penugasan akun atau tidak aktif.'
+			},
+			{ status: 403 }
+		);
+	}
 	if (qr.revokedAt) {
 		return json(
 			{
@@ -141,17 +191,6 @@ export async function POST({ request, locals }) {
 		);
 	}
 	if (mode === 'kegiatan') {
-		const kegiatanId =
-			typeof body?.kegiatanId === 'number'
-				? body.kegiatanId
-				: Number.parseInt(body?.kegiatanId?.toString() ?? '', 10);
-		if (!Number.isInteger(kegiatanId) || kegiatanId <= 0) {
-			return json(
-				{ ok: false, code: 'invalid_activity', message: 'Kegiatan belum dipilih.' },
-				{ status: 400 }
-			);
-		}
-
 		const kegiatan = await db.query.tableKegiatanAbsensi.findFirst({
 			where: and(
 				eq(tableKegiatanAbsensi.id, kegiatanId),
@@ -207,7 +246,8 @@ export async function POST({ request, locals }) {
 				eq(tableMurid.id, qr.murid.id),
 				eq(tableMurid.sekolahId, sekolahId),
 				eq(tableMurid.semesterId, qr.murid.semesterId),
-				eq(tableMurid.kelasId, qr.murid.kelasId)
+				eq(tableMurid.kelasId, qr.murid.kelasId),
+				activeMuridFilter()
 			)
 		});
 		if (!murid) {
@@ -227,27 +267,25 @@ export async function POST({ request, locals }) {
 					? 'terlambat'
 					: getLateAwareKegiatanStatus(kegiatan, nowDate);
 
-		await db.insert(tableAbsensiKegiatan).values({
-			sekolahId,
+		const saved = await saveAttendance({
+			locals,
+			request,
 			semesterId: qr.murid.semesterId,
 			kelasId: qr.murid.kelasId,
-			muridId: qr.murid.id,
+			muridIds: [qr.murid.id],
 			kegiatanId: kegiatan.id,
 			tanggal,
 			status,
-			waktuScan: now,
 			metode: 'qr',
-			petugasUserId: locals.user.id,
-			createdAt: now,
-			updatedAt: now
+			waktuScan: now
 		});
 
 		return json({
 			ok: true,
-			code: 'success',
+			code: saved.skipped ? 'already_present' : 'success',
 			message: `Absensi ${kegiatan.nama} berhasil dicatat sebagai ${status}.`,
-			status,
-			waktuScan: now,
+			status: saved.records[0]?.status ?? status,
+			waktuScan: saved.records[0]?.waktuScan ?? now,
 			kegiatan: { id: kegiatan.id, nama: kegiatan.nama },
 			murid: muridPayload(qr.murid)
 		});
@@ -293,7 +331,8 @@ export async function POST({ request, locals }) {
 			eq(tableMurid.id, qr.murid.id),
 			eq(tableMurid.sekolahId, sekolahId),
 			eq(tableMurid.semesterId, qr.murid.semesterId),
-			eq(tableMurid.kelasId, qr.murid.kelasId)
+			eq(tableMurid.kelasId, qr.murid.kelasId),
+			activeMuridFilter()
 		)
 	});
 	if (!murid) {
@@ -303,29 +342,28 @@ export async function POST({ request, locals }) {
 		);
 	}
 
-	await db.insert(tableAbsensiHarian).values({
-		sekolahId,
+	const saved = await saveAttendance({
+		locals,
+		request,
 		semesterId: qr.murid.semesterId,
 		kelasId: qr.murid.kelasId,
-		muridId: qr.murid.id,
+		muridIds: [qr.murid.id],
 		tanggal,
 		status,
-		waktuScan: now,
 		metode: 'qr',
-		petugasUserId: locals.user.id,
-		createdAt: now,
-		updatedAt: now
+		waktuScan: now
 	});
 
 	return json({
 		ok: true,
-		code: 'success',
+		code: saved.skipped ? 'already_present' : 'success',
 		message:
 			status === 'terlambat'
 				? 'Absensi berhasil dicatat sebagai terlambat.'
 				: 'Absensi berhasil dicatat.',
-		status,
-		waktuScan: now,
+		status: saved.records[0]?.status ?? status,
+		waktuScan: saved.records[0]?.waktuScan ?? now,
 		murid: muridPayload(qr.murid)
 	});
 }
+import { activeMuridFilter } from '$lib/server/murid-query';

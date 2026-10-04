@@ -6,6 +6,7 @@ import {
 	type IzinPulangStatus
 } from '$lib/server/absence-monitoring';
 import db from '$lib/server/db';
+import { studentAccessCondition } from './student-access';
 import { ensureAbsenceMonitoringSchema } from '$lib/server/db/ensure-absence-monitoring';
 import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
 import {
@@ -112,6 +113,7 @@ export async function loadAttendanceMonitoring(params: {
 	kelasIds: number[];
 	today: string;
 	lookbackDays?: number;
+	user?: App.Locals['user'];
 }) {
 	await Promise.all([ensureAbsensiDigitalSchema(), ensureAbsenceMonitoringSchema()]);
 	if (!params.kelasIds.length) {
@@ -135,7 +137,8 @@ export async function loadAttendanceMonitoring(params: {
 					and(
 						eq(tableMurid.sekolahId, params.sekolahId),
 						eq(tableMurid.semesterId, params.semesterId),
-						inArray(tableMurid.kelasId, params.kelasIds)
+						inArray(tableMurid.kelasId, params.kelasIds),
+						params.user ? await studentAccessCondition(params.user, params.sekolahId) : undefined
 					)
 				)
 				.orderBy(asc(tableMurid.nama)),
@@ -288,7 +291,8 @@ export async function loadAttendanceMonitoring(params: {
 		}
 	}
 
-	const izinPulang = izinRows.map((row) => {
+	const visibleStudentIds = new Set(students.map(student => student.id));
+	const izinPulang = izinRows.filter(row => !params.user || (row.muridId != null && visibleStudentIds.has(row.muridId))).map((row) => {
 		const status = effectiveIzinPulangStatus(row, params.today);
 		const startIndex = schoolDayIndex.get(row.tanggalKeluar);
 		const endDate = row.tanggalKembali ?? params.today;

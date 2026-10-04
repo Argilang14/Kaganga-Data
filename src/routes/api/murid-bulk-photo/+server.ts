@@ -3,7 +3,12 @@ import path from 'node:path';
 import { Readable } from 'stream';
 import db from '$lib/server/db/index.js';
 import { tableMurid } from '$lib/server/db/schema.js';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
+import { validNisn } from '$lib/server/murid-identity';
+import { activeMuridFilter } from '$lib/server/murid-query';
+import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
+import { getKelasContextForUser } from '$lib/server/route-utils';
+import { canEditMurid } from '$lib/murid-permissions';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let unzipper: any;
 
@@ -83,7 +88,7 @@ async function extractPhotosFromZip(zipBuffer: Buffer): Promise<Map<string, Phot
 						}
 					}
 
-					if (!nisn) {
+					if (!nisn || !validNisn(nisn)) {
 						entry.autodrain();
 						return;
 					}
@@ -128,6 +133,10 @@ export async function POST({
 	locals: App.Locals;
 }): Promise<Response> {
 	const sekolahId = locals.sekolah?.id;
+	if (!canEditMurid(locals.user))
+		return new Response(JSON.stringify({ error: 'Tidak memiliki izin mengubah foto murid.' }), {
+			status: 403
+		});
 	if (!sekolahId) {
 		return new Response(JSON.stringify({ message: 'Unauthorized - no sekolah' }), { status: 401 });
 	}
@@ -172,8 +181,18 @@ export async function POST({
 
 		// Find all murid with matching NISN
 		const nisnList = Array.from(photosByNisn.keys());
+		const academic = await resolveSekolahAcademicContext(sekolahId);
+		if (!academic.activeSemesterId)
+			return new Response(JSON.stringify({ error: 'Semester aktif tidak ditemukan.' }), {
+				status: 400
+			});
 		const murids = await db.query.tableMurid.findMany({
-			where: (tbl) => inArray(tbl.nisn, nisnList),
+			where: and(
+				eq(tableMurid.sekolahId, sekolahId),
+				eq(tableMurid.semesterId, academic.activeSemesterId),
+				inArray(tableMurid.nisn, nisnList),
+				activeMuridFilter()
+			),
 			columns: {
 				id: true,
 				nisn: true,
@@ -206,6 +225,13 @@ export async function POST({
 
 		// Process each murid with photos (only first murid per NISN if duplicate)
 		for (const murid of allowedMurids) {
+			if (
+				allowedMurids.filter((other) => other.nisn === murid.nisn).length !== 1 ||
+				!(await getKelasContextForUser(locals, new URL(request.url), String(murid.id))).hasAccess
+			) {
+				failedCount++;
+				continue;
+			}
 			// Skip if this NISN already processed
 			if (processedNisn.has(murid.nisn)) {
 				continue;
@@ -219,17 +245,10 @@ export async function POST({
 				const photo = photos[0];
 
 				// Use NISN as filename (guaranteed unique per murid)
-				const filename = `${murid.nisn}${photo.ext}`;
+				const filename = `murid-${sekolahId}-${murid.id}${photo.ext}`;
 				const filePath = path.join(uploadsPath, filename);
 
-				// Remove old file if exists and has different name
-				if (murid.foto && murid.foto !== filename) {
-					try {
-						await fs.unlink(path.join(uploadsPath, murid.foto));
-					} catch {
-						// ignore if file doesn't exist
-					}
-				}
+				// Keep legacy files until orphan cleanup confirms no other student uses them.
 
 				// Write file (will replace if exists)
 				await fs.writeFile(filePath, photo.buffer, { mode: 0o644 });

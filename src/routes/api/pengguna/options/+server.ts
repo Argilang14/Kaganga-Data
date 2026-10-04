@@ -1,11 +1,18 @@
 import db from '$lib/server/db';
 import { ensurePenggunaIdentitySchema } from '$lib/server/db/ensure-pengguna';
-import { tableAuthUser, tableKelas, tableMataPelajaran, tablePegawai } from '$lib/server/db/schema';
+import {
+	tableAuthUser,
+	tableKelas,
+	tableMataPelajaran,
+	tablePegawai,
+	tableSemester,
+	tableTahunAjaran
+} from '$lib/server/db/schema';
 import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import { authority } from '../../../pengguna/utils.server';
 
 export async function GET({ locals, url }) {
-	authority('user_add');
+	authority('user_add', 'user_set_permissions');
 	await ensurePenggunaIdentitySchema();
 
 	const sekolahId = locals.sekolah?.id;
@@ -42,11 +49,24 @@ export async function GET({ locals, url }) {
 			.where(eq(tableKelas.sekolahId, sekolahId))
 			.orderBy(asc(tableMataPelajaran.nama)),
 		db
-			.select({ id: tableKelas.id, nama: tableKelas.nama, fase: tableKelas.fase })
+			.select({
+				id: tableKelas.id,
+				nama: tableKelas.nama,
+				fase: tableKelas.fase,
+				tahunAjaran: tableTahunAjaran.nama,
+				semester: tableSemester.tipe
+			})
 			.from(tableKelas)
+			.innerJoin(tableSemester, eq(tableKelas.semesterId, tableSemester.id))
+			.innerJoin(tableTahunAjaran, eq(tableKelas.tahunAjaranId, tableTahunAjaran.id))
 			.where(eq(tableKelas.sekolahId, sekolahId))
 			.orderBy(asc(tableKelas.nama))
 	]);
 
-	return Response.json({ pegawaiList, mataPelajaran, kelasList });
+	return Response.json(
+		{ pegawaiList, mataPelajaran, kelasList },
+		{
+			headers: { 'cache-control': 'no-store, private' }
+		}
+	);
 }

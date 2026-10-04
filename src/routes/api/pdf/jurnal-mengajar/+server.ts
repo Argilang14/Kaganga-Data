@@ -28,7 +28,7 @@ import {
 	getLogoSrc
 } from '$lib/server/pdf/preview-utils';
 import type { RequestHandler } from './$types';
-import { hasSchoolWideOperationalAccess } from '$lib/access-position';
+import { hasSchoolWideOperationalAccess, isRestrictedTeacher } from '$lib/access-position';
 
 export const GET = (async ({ locals, url }) => {
 	const sekolahId = locals.sekolah?.id;
@@ -101,7 +101,7 @@ export const GET = (async ({ locals, url }) => {
 	if (selectedKelas && user.type === 'wali_kelas') {
 		hasClassAccess =
 			selectedKelas.waliKelasId === user.pegawaiId || selectedKelas.id === user.kelasId;
-	} else if (selectedKelas && user.type === 'user') {
+	} else if (selectedKelas && isRestrictedTeacher(user)) {
 		const [directAccess, assignedClasses] = await Promise.all([
 			db.query.tableAuthUserKelas.findFirst({
 				columns: { id: true },
@@ -125,6 +125,7 @@ export const GET = (async ({ locals, url }) => {
 		(user.type === 'user' && selectedMapel?.guruPegawaiId === user.pegawaiId);
 	const accessError = getJurnalPrintAccessError({
 		userType: user.type,
+		schoolWide: hasSchoolWideOperationalAccess(user),
 		lingkup,
 		penandatangan,
 		hasSelectedClass: Boolean(selectedKelas),
@@ -196,7 +197,7 @@ export const GET = (async ({ locals, url }) => {
 				),
 				jadwalMapelId ? eq(tableJurnalMengajar.jadwalMapelId, jadwalMapelId) : undefined,
 				eq(tableJurnalMengajar.jenisJadwal, jenisJadwal),
-				user.type === 'user' ? eq(tableJurnalMengajar.authUserId, user.id) : undefined,
+				isRestrictedTeacher(user) ? eq(tableJurnalMengajar.authUserId, user.id) : undefined,
 				sql`${tableJurnalMengajar.tanggal} >= ${tanggalMulai}`,
 				sql`${tableJurnalMengajar.tanggal} <= ${tanggalSelesai}`
 			)

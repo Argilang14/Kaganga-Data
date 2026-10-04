@@ -1,4 +1,6 @@
 import db from '$lib/server/db';
+import { hasSchoolWideOperationalAccess } from '$lib/access-position';
+import { isAuthorizedUser } from '../../../pengguna/permissions';
 import { writeAuditLog } from '$lib/server/audit-log';
 import { syncDocumentApproval } from '$lib/server/document-approval';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
@@ -82,7 +84,8 @@ export async function load({ locals }) {
 		pegawai,
 		daftar,
 		pegawaiAktifId: locals.user?.pegawaiId ?? null,
-		isAdmin: locals.user?.type === 'admin'
+		isAdmin: hasSchoolWideOperationalAccess(locals.user),
+		canApprove: isAuthorizedUser(['surat_persetujuan'], locals.user)
 	};
 }
 
@@ -95,7 +98,9 @@ export const actions = {
 
 		const formData = await request.formData();
 		const selectedPegawaiId = positiveId(formData.get('pegawaiId'));
-		const pegawaiId = locals.user.type === 'admin' ? selectedPegawaiId : locals.user.pegawaiId;
+		const pegawaiId = hasSchoolWideOperationalAccess(locals.user)
+			? selectedPegawaiId
+			: locals.user.pegawaiId;
 		const maksud = text(formData, 'maksud');
 		const tempatTujuan = text(formData, 'tempatTujuan');
 		const tanggalBerangkat = text(formData, 'tanggalBerangkat');
@@ -130,19 +135,37 @@ export const actions = {
 			);
 		}
 		try {
-			const [created] = await db.insert(tableDinasLuarPermohonan).values({
+			const [created] = await db
+				.insert(tableDinasLuarPermohonan)
+				.values({
+					sekolahId,
+					pegawaiId: Number(pegawaiId),
+					maksud,
+					tempatTujuan,
+					tanggalBerangkat: tanggalBerangkat!,
+					tanggalKembali: tanggalKembali!,
+					status: 'diajukan',
+					catatan: text(formData, 'catatan'),
+					undanganFile
+				})
+				.returning({ id: tableDinasLuarPermohonan.id });
+			await writeAuditLog({
+				locals,
+				request,
+				action: 'create',
+				entityType: 'dinas_luar',
+				entityId: String(created.id),
+				summary: 'Pengajuan dinas luar ditambahkan.',
+				after: { pegawaiId, maksud, tempatTujuan, tanggalBerangkat, tanggalKembali }
+			});
+			await syncDocumentApproval({
 				sekolahId,
-				pegawaiId: Number(pegawaiId),
-				maksud,
-				tempatTujuan,
-				tanggalBerangkat: tanggalBerangkat!,
-				tanggalKembali: tanggalKembali!,
+				documentType: 'dinas_luar',
+				entityId: String(created.id),
+				title: `Dinas luar: ${maksud}`,
 				status: 'diajukan',
-				catatan: text(formData, 'catatan'),
-				undanganFile
-			}).returning({ id: tableDinasLuarPermohonan.id });
-			await writeAuditLog({ locals, request, action: 'create', entityType: 'dinas_luar', entityId: String(created.id), summary: 'Pengajuan dinas luar ditambahkan.', after: { pegawaiId, maksud, tempatTujuan, tanggalBerangkat, tanggalKembali } });
-			await syncDocumentApproval({ sekolahId, documentType: 'dinas_luar', entityId: String(created.id), title: `Dinas luar: ${maksud}`, status: 'diajukan', userId: locals.user.id });
+				userId: locals.user.id
+			});
 		} catch (cause) {
 			await deleteDinasLuarFile(undanganFile);
 			throw cause;
@@ -151,8 +174,10 @@ export const actions = {
 	},
 	setStatus: async ({ request, locals }) => {
 		authority('surat_dinas_luar');
-		if (locals.user?.type !== 'admin')
-			return fail(403, { fail: 'Hanya admin yang dapat mengubah status pengajuan.' });
+		if (!isAuthorizedUser(['surat_persetujuan'], locals.user))
+			return fail(403, {
+				fail: 'Izin persetujuan surat diperlukan untuk mengubah status pengajuan.'
+			});
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(400, { fail: 'Sekolah aktif tidak ditemukan.' });
 		const formData = await request.formData();
@@ -200,8 +225,26 @@ export const actions = {
 			.where(
 				and(eq(tableDinasLuarPermohonan.id, id), eq(tableDinasLuarPermohonan.sekolahId, sekolahId))
 			);
-		await writeAuditLog({ locals, request, action: 'status_change', entityType: 'dinas_luar', entityId: String(id), summary: `Status dinas luar diubah menjadi ${status}.`, before: requestRow, after: { status, sppdId } });
-		if (status === 'disetujui' || status === 'ditolak') await syncDocumentApproval({ sekolahId, documentType: 'dinas_luar', entityId: String(id), title: `Dinas luar: ${requestRow.maksud}`, status, userId: locals.user?.id, snapshot: status === 'disetujui' ? requestRow : undefined });
+		await writeAuditLog({
+			locals,
+			request,
+			action: 'status_change',
+			entityType: 'dinas_luar',
+			entityId: String(id),
+			summary: `Status dinas luar diubah menjadi ${status}.`,
+			before: requestRow,
+			after: { status, sppdId }
+		});
+		if (status === 'disetujui' || status === 'ditolak')
+			await syncDocumentApproval({
+				sekolahId,
+				documentType: 'dinas_luar',
+				entityId: String(id),
+				title: `Dinas luar: ${requestRow.maksud}`,
+				status,
+				userId: locals.user?.id,
+				snapshot: status === 'disetujui' ? requestRow : undefined
+			});
 		return { message: 'Status dinas luar berhasil diperbarui.' };
 	},
 	uploadBukti: async ({ request, locals }) => {
@@ -223,7 +266,8 @@ export const actions = {
 		});
 		if (
 			!requestRow ||
-			(locals.user.type !== 'admin' && requestRow.pegawaiId !== locals.user.pegawaiId)
+			(!hasSchoolWideOperationalAccess(locals.user) &&
+				requestRow.pegawaiId !== locals.user.pegawaiId)
 		) {
 			return fail(403, { fail: 'Tidak dapat mengunggah bukti perjalanan ini.' });
 		}
@@ -272,7 +316,7 @@ export const actions = {
 		});
 		if (!proof || proof.sppd.sekolahId !== sekolahId)
 			return fail(404, { fail: 'Bukti tidak ditemukan.' });
-		if (locals.user.type !== 'admin' && proof.authUserId !== locals.user.id)
+		if (!hasSchoolWideOperationalAccess(locals.user) && proof.authUserId !== locals.user.id)
 			return fail(403, { fail: 'Tidak dapat menghapus bukti pengguna lain.' });
 		await deleteDinasLuarFile(proof.namaFile);
 		await db.delete(tableDinasLuarBukti).where(eq(tableDinasLuarBukti.id, id));
@@ -293,7 +337,10 @@ export const actions = {
 		});
 		if (!existing || existing.status !== 'diajukan')
 			return fail(409, { fail: 'Pengajuan tidak dapat dihapus.' });
-		if (locals.user?.type !== 'admin' && existing.pegawaiId !== locals.user?.pegawaiId) {
+		if (
+			!hasSchoolWideOperationalAccess(locals.user) &&
+			existing.pegawaiId !== locals.user?.pegawaiId
+		) {
 			return fail(403, { fail: 'Tidak dapat menghapus pengajuan pegawai lain.' });
 		}
 		await deleteDinasLuarFile(existing.undanganFile);
@@ -302,7 +349,15 @@ export const actions = {
 			.where(
 				and(eq(tableDinasLuarPermohonan.id, id), eq(tableDinasLuarPermohonan.sekolahId, sekolahId))
 			);
-		await writeAuditLog({ locals, request, action: 'delete', entityType: 'dinas_luar', entityId: String(id), summary: 'Pengajuan dinas luar dihapus.', before: existing });
+		await writeAuditLog({
+			locals,
+			request,
+			action: 'delete',
+			entityType: 'dinas_luar',
+			entityId: String(id),
+			summary: 'Pengajuan dinas luar dihapus.',
+			before: existing
+		});
 		return { message: 'Pengajuan dinas luar berhasil dihapus.' };
 	}
 };

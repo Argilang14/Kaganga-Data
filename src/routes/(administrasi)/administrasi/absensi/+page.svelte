@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/icon.svelte';
+	import ClearAttendance from '$lib/components/absensi/ClearAttendance.svelte';
 
 	type StatusKey = 'hadir' | 'terlambat' | 'sakit' | 'izin' | 'alfa';
 	type Row = {
@@ -19,6 +20,8 @@
 	};
 
 	type PageData = {
+		canEdit: boolean;
+		canSyncRapor: boolean;
 		tanggal: string;
 		activeSemesterId: number | null;
 		kelasId: number | null;
@@ -120,21 +123,21 @@
 			</div>
 		</div>
 
-		<form
-			method="POST"
-			action="?/syncRapor"
-			class="card bg-base-100 border-base-200 rounded-lg border p-4 shadow-sm"
-		>
-			<input type="hidden" name="semesterId" value={data.activeSemesterId ?? ''} />
-			<input type="hidden" name="kelasId" value={data.kelasId ?? ''} />
-			<button class="btn btn-accent shadow-none" type="submit" disabled={!data.activeSemesterId}>
-				<Icon name="repeat" />
-				Sinkronkan ke Kehadiran Rapor
-			</button>
-			<p class="text-base-content/60 mt-2 text-xs">
-				Hanya sakit, izin, dan alfa yang dikirim ke rekap rapor lama.
-			</p>
-		</form>
+		{#if data.canSyncRapor}<form
+				method="POST"
+				action="?/syncRapor"
+				class="card bg-base-100 border-base-200 rounded-lg border p-4 shadow-sm"
+			>
+				<input type="hidden" name="semesterId" value={data.activeSemesterId ?? ''} />
+				<input type="hidden" name="kelasId" value={data.kelasId ?? ''} />
+				<button class="btn btn-accent shadow-none" type="submit" disabled={!data.activeSemesterId}>
+					<Icon name="repeat" />
+					Sinkronkan ke Kehadiran Rapor
+				</button>
+				<p class="text-base-content/60 mt-2 text-xs">
+					Hanya sakit, izin, dan alfa yang dikirim ke rekap rapor lama.
+				</p>
+			</form>{/if}
 	</div>
 
 	<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -217,6 +220,7 @@
 										form={`manual-${row.id}`}
 										value={row.catatan}
 										placeholder="Catatan opsional"
+										disabled={!data.canEdit}
 									/>
 								</td>
 								<td class="min-w-56">
@@ -229,6 +233,7 @@
 											<select
 												class="select select-sm select-bordered join-item flex-1"
 												name="status"
+												disabled={!data.canEdit}
 												value={row.status ?? ''}
 												aria-label={`Status absensi ${row.nama}`}
 												required
@@ -249,24 +254,20 @@
 											form={`manual-${row.id}`}
 											title="Simpan absensi"
 											aria-label={`Simpan absensi ${row.nama}`}
+											disabled={!data.canEdit}
 										>
 											<Icon name="save" />
 										</button>
-										<form method="POST" action="?/clearStatus">
-											<input type="hidden" name="tanggal" value={data.tanggal} />
-											<input type="hidden" name="kelasId" value={data.kelasId ?? ''} />
-											<input type="hidden" name="semesterId" value={data.activeSemesterId ?? ''} />
-											<input type="hidden" name="muridId" value={row.id} />
-											<button
-												class="btn btn-error btn-outline btn-square btn-sm shadow-none"
-												type="submit"
-												disabled={!row.status}
-												title={row.status ? 'Hapus status absensi' : 'Belum ada status'}
-												aria-label={`Hapus status absensi ${row.nama}`}
-											>
-												<Icon name="del" />
-											</button>
-										</form>
+										<ClearAttendance
+											nama={row.nama}
+											disabled={!row.status || !data.canEdit}
+											fields={{
+												tanggal: data.tanggal,
+												kelasId: data.kelasId ?? '',
+												semesterId: data.activeSemesterId ?? '',
+												muridId: row.id
+											}}
+										/>
 									</div>
 								</td>
 							</tr>

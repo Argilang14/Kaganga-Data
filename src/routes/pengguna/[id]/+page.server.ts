@@ -5,6 +5,7 @@ import { error } from '@sveltejs/kit';
 import { and, eq, sql } from 'drizzle-orm';
 import {
 	defaultPermissionsForType,
+	basicAttendancePermissionsForType,
 	effectivePermissions,
 	permissionsForAccessPosition,
 	systemOnlyPermissions,
@@ -56,7 +57,10 @@ export const actions = {
 			.from(u)
 			.where(and(eq(u.id, +params.id), eq(u.sekolahId, locals.sekolah.id)));
 		if (!target) error(404, 'Data pengguna tidak ditemukan');
-		const baseline = new Set(permissionsForAccessPosition(target.jabatanAkses));
+		const baseline = new Set([
+			...permissionsForAccessPosition(target.jabatanAkses),
+			...basicAttendancePermissionsForType(target.type)
+		]);
 		const permissions = userPermissions.filter(
 			(permission) =>
 				submitted.has(permission) &&

@@ -189,7 +189,7 @@ export async function load({ parent, url, depends, locals }) {
 		{ id?: number; type?: string; mataPelajaranId?: number } | undefined;
 	const assignedMapelIds = new Set<number>();
 
-	if (maybeUser && maybeUser.type === 'user' && maybeUser.id) {
+	if (maybeUser && isRestrictedTeacher(maybeUser) && maybeUser.id) {
 		try {
 			// Try to fetch from join table (multi-mapel)
 			const multiMapels = await db.query.tableAuthUserMataPelajaran.findMany({
@@ -302,7 +302,7 @@ export async function load({ parent, url, depends, locals }) {
 	// assignedIsAgamaVariant is set if any of the assigned mapel is agama variant.
 	let assignedLocalMapelId: number | null = null;
 	let assignedIsAgamaVariant = false;
-	if (maybeUser && maybeUser.type === 'user') {
+	if (maybeUser && isRestrictedTeacher(maybeUser)) {
 		// Check multi-mapel first
 		if (assignedMapelIds.size > 0) {
 			// Pick first assigned mapel from the filtered list
@@ -342,7 +342,7 @@ export async function load({ parent, url, depends, locals }) {
 	// Derive human readable agama labels for the assigned agama-variant(s).
 	// Support both multi-mapel (join table) and legacy single-mapel.
 	const allowedAgamaVariants = new Set<string>();
-	if (maybeUser && maybeUser.type === 'user' && maybeUser.id) {
+	if (maybeUser && isRestrictedTeacher(maybeUser) && maybeUser.id) {
 		try {
 			// First try multi-mapel from join table
 			const multiMapels = await db.query.tableAuthUserMataPelajaran.findMany({
@@ -503,6 +503,7 @@ export async function load({ parent, url, depends, locals }) {
 				: null;
 
 	const muridFilter = and(
+		activeMuridFilter(),
 		eq(tableMurid.kelasId, kelasAktif.id),
 		search ? sql`${tableMurid.nama} LIKE ${'%' + search + '%'} COLLATE NOCASE` : undefined
 	);
@@ -647,7 +648,7 @@ export async function load({ parent, url, depends, locals }) {
 			: null;
 
 		const canAccess = (() => {
-			if (!maybeUser || maybeUser.type !== 'user') return true;
+			if (!isRestrictedTeacher(maybeUser)) return true;
 
 			// If agama is selected and user has assigned agama variants, restrict by agama
 			if (isAgamaSelected && allowedAgamaVariants.size > 0) {
@@ -726,3 +727,5 @@ export async function load({ parent, url, depends, locals }) {
 		page: pageState
 	};
 }
+import { activeMuridFilter } from '$lib/server/murid-query';
+import { isRestrictedTeacher } from '$lib/access-position';

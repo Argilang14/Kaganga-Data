@@ -20,12 +20,19 @@
 		status: string;
 	};
 	type MapelOption = { id: number; nama: string };
-	type KelasOption = { id: number; nama: string; fase: string | null };
+	type KelasOption = {
+		id: number;
+		nama: string;
+		fase: string | null;
+		tahunAjaran?: string;
+		semester?: string;
+	};
 	type EditUser = {
 		id: number;
 		username: string;
 		type: Role;
 		pegawaiId: number | null;
+		updatedAt?: string | null;
 		pegawaiName?: string | null;
 		pegawaiNip?: string | null;
 		pegawaiJenis?: string | null;
@@ -63,6 +70,7 @@
 	let saving = $state(false);
 	let optionsError = $state('');
 	let showPassword = $state(false);
+	let optionsVersion = 0;
 
 	const isEditMode = $derived(editUser !== null);
 	const isLegacyWaliKelas = $derived(editUser?.type === 'wali_kelas');
@@ -74,19 +82,22 @@
 		admin: []
 	};
 	let filteredPegawai = $derived(
-		pegawaiList.filter((pegawai) =>
-			pegawai.status === 'aktif' &&
-			(jabatanAkses !== '' || allowedJenis[type].includes(pegawai.jenis))
+		pegawaiList.filter(
+			(pegawai) =>
+				pegawai.status === 'aktif' &&
+				(jabatanAkses !== '' || allowedJenis[type].includes(pegawai.jenis))
 		)
 	);
 	let selectedPegawai = $derived(
 		filteredPegawai.find((pegawai) => pegawai.id === Number(pegawaiId)) ?? null
 	);
 	let uniqueMataPelajaran = $derived.by(() => {
-		const unique = new Map<string, MapelOption>();
+		const unique = new Map<string, MapelOption & { ids: number[] }>();
 		for (const mapel of mataPelajaran) {
 			const key = mapel.nama.trim().toLowerCase();
-			if (!unique.has(key)) unique.set(key, mapel);
+			const group = unique.get(key);
+			if (group) group.ids.push(mapel.id);
+			else unique.set(key, { ...mapel, ids: [mapel.id] });
 		}
 		return [...unique.values()];
 	});
@@ -107,15 +118,17 @@
 	});
 
 	$effect(() => {
-		if (pegawaiId && pegawaiList.length > 0 && !filteredPegawai.some((pegawai) => String(pegawai.id) === pegawaiId)) {
+		if (
+			!isEditMode &&
+			!loadingOptions &&
+			pegawaiId &&
+			pegawaiList.length > 0 &&
+			!filteredPegawai.some((pegawai) => String(pegawai.id) === pegawaiId)
+		) {
 			pegawaiId = '';
 		}
 		if (type !== 'user' && type !== 'wali_kelas') {
-			jabatanAkses = '';
-			mataPelajaranIds = new Set<number>();
-			kelasIds = new Set<number>();
-		}
-		if (jabatanAkses !== '') {
+			if (!isEditMode) jabatanAkses = '';
 			mataPelajaranIds = new Set<number>();
 			kelasIds = new Set<number>();
 		}
@@ -131,15 +144,20 @@
 		kelasIds = new Set(editUser?.kelasIds ?? []);
 		showPassword = false;
 		optionsError = '';
+		pegawaiList = [];
+		mataPelajaran = [];
+		kelasList = [];
 	}
 
 	async function loadOptions() {
+		const version = ++optionsVersion;
 		loadingOptions = true;
 		optionsError = '';
 		try {
 			const suffix = editUser?.id ? `?includeUserId=${editUser.id}` : '';
 			const response = await fetch(`/api/pengguna/options${suffix}`);
 			const body = await response.json().catch(() => ({}));
+			if (version !== optionsVersion || !open) return;
 			if (!response.ok) throw new Error(body.message || 'Gagal memuat data');
 			pegawaiList = body.pegawaiList ?? [];
 			mataPelajaran = body.mataPelajaran ?? [];
@@ -154,16 +172,18 @@
 						id: editUser.pegawaiId,
 						nama: editUser.pegawaiName ?? editUser.username,
 						nip: editUser.pegawaiNip ?? '',
-						jenis: editUser.pegawaiJenis ?? (editUser.type === 'wali_kelas' ? 'guru' : editUser.type),
+						jenis:
+							editUser.pegawaiJenis ?? (editUser.type === 'wali_kelas' ? 'guru' : editUser.type),
 						jabatan: null,
 						status: 'aktif'
 					}
 				];
 			}
 		} catch (error) {
-			optionsError = error instanceof Error ? error.message : 'Gagal memuat data';
+			if (version === optionsVersion)
+				optionsError = error instanceof Error ? error.message : 'Gagal memuat data';
 		} finally {
-			loadingOptions = false;
+			if (version === optionsVersion) loadingOptions = false;
 		}
 	}
 
@@ -173,9 +193,18 @@
 		else next.add(id);
 		return next;
 	}
+	function toggleMapel(mapel: MapelOption & { ids: number[] }) {
+		const next = new Set(mataPelajaranIds);
+		if (mapel.ids.some((id) => next.has(id))) {
+			for (const id of mapel.ids) next.delete(id);
+		} else next.add(mapel.id);
+		mataPelajaranIds = next;
+	}
 
 	function close() {
 		if (saving) return;
+		optionsVersion++;
+		loadingOptions = false;
 		open = false;
 		dispatch('cancel');
 	}
@@ -191,6 +220,7 @@
 		}
 		const form = new FormData();
 		if (editUser?.id) form.set('id', String(editUser.id));
+		if (editUser?.id) form.set('updatedAt', editUser.updatedAt ?? '');
 		form.set('username', username.trim());
 		form.set('password', password);
 		form.set('type', type);
@@ -230,7 +260,7 @@
 </script>
 
 {#if open}
-	<div class="modal modal-open">
+	<div class="modal modal-open" id="edit-user-modal">
 		<div class="modal-box flex max-h-[92vh] w-[min(94vw,52rem)] max-w-4xl flex-col p-4 sm:p-6">
 			<header class="mb-4">
 				<h3 class="text-xl font-bold">{isEditMode ? 'Edit Pengguna' : 'Tambah Pengguna'}</h3>
@@ -253,7 +283,7 @@
 						<select
 							class="select bg-base-200 w-full"
 							bind:value={type}
-							disabled={isLegacyWaliKelas || loadingOptions}
+							disabled={isLegacyWaliKelas || loadingOptions || saving}
 						>
 							{#if isLegacyWaliKelas}<option value="wali_kelas">Wali Kelas (akun lama)</option>{/if}
 							<option value="user">Guru Mapel</option>
@@ -280,37 +310,56 @@
 								</option>
 							{/each}
 						</select>
-						{#if isEditMode}<p class="label">Tautan pegawai tidak dipindahkan saat edit akun.</p>{/if}
+						{#if isEditMode}<p class="label">
+								Tautan pegawai tidak dipindahkan saat edit akun.
+							</p>{/if}
 					</fieldset>
 				</div>
 
-				{#if type === 'user'}
+				{#if type === 'user' || isEditMode}
 					<fieldset class="fieldset">
 						<legend class="fieldset-legend">Jabatan Akses</legend>
-						<select class="select bg-base-200 w-full" bind:value={jabatanAkses}>
+						<select
+							id="user-jabatan-akses"
+							class="select bg-base-200 w-full"
+							bind:value={jabatanAkses}
+							disabled={loadingOptions || saving}
+						>
 							<option value="">Tanpa jabatan akses khusus</option>
-							{#each accessPositionValues as position}
+							{#each accessPositionValues as position (position)}
 								<option value={position}>{accessPositionLabels[position]}</option>
 							{/each}
 						</select>
 						<p class="label text-wrap">
-							Jabatan akses membuka seluruh fitur operasional sekolah. Pengaturan sistem dan manajemen pengguna tetap khusus admin.
+							Jabatan akses membuka seluruh fitur operasional sekolah. Pengaturan sistem dan
+							manajemen pengguna tetap khusus admin.
 						</p>
 					</fieldset>
 				{/if}
 
-				{#if type === 'user' && jabatanAkses === ''}
+				{#if type === 'user' || type === 'wali_kelas'}
 					<div class="grid gap-3 sm:grid-cols-2">
 						<fieldset class="fieldset">
 							<legend class="fieldset-legend">Mata Pelajaran</legend>
-							<details class="dropdown w-full">
+							<details id="user-mapel-options" class="w-full rounded-lg border border-base-300">
 								<summary class="select bg-base-200 flex w-full cursor-pointer items-center">
-									{mataPelajaranIds.size ? `${mataPelajaranIds.size} dipilih` : 'Pilih mata pelajaran'}
+									{uniqueMataPelajaran.filter((mapel) =>
+										mapel.ids.some((id) => mataPelajaranIds.has(id))
+									).length || 'Pilih'} mata pelajaran
 								</summary>
-								<div class="dropdown-content bg-base-100 border-base-300 rounded-box z-50 mt-1 max-h-64 w-full overflow-y-auto border p-2 shadow">
+								<div class="bg-base-100 max-h-52 w-full overflow-y-auto p-2">
 									{#each uniqueMataPelajaran as mapel (mapel.id)}
-										<label class="hover:bg-base-200 flex cursor-pointer items-center gap-2 rounded p-2">
-											<input class="checkbox checkbox-sm" type="checkbox" checked={mataPelajaranIds.has(mapel.id)} onchange={() => (mataPelajaranIds = toggle(mataPelajaranIds, mapel.id))} />
+										<label
+											class="hover:bg-base-200 flex cursor-pointer items-center gap-2 rounded p-2"
+										>
+											<input
+												class="checkbox checkbox-sm"
+												type="checkbox"
+												aria-label={`Mata pelajaran ${mapel.nama}`}
+												checked={mapel.ids.some((id) => mataPelajaranIds.has(id))}
+												onchange={() => toggleMapel(mapel)}
+												disabled={loadingOptions || saving}
+											/>
 											<span>{mapel.nama}</span>
 										</label>
 									{:else}
@@ -321,16 +370,29 @@
 						</fieldset>
 
 						<fieldset class="fieldset">
-							<legend class="fieldset-legend">Kelas</legend>
-							<details class="dropdown w-full">
+							<legend class="fieldset-legend">Kelas Mengajar</legend>
+							<details id="user-kelas-options" class="w-full rounded-lg border border-base-300">
 								<summary class="select bg-base-200 flex w-full cursor-pointer items-center">
 									{kelasIds.size ? `${kelasIds.size} dipilih` : 'Pilih kelas'}
 								</summary>
-								<div class="dropdown-content bg-base-100 border-base-300 rounded-box z-50 mt-1 max-h-64 w-full overflow-y-auto border p-2 shadow">
+								<div class="bg-base-100 max-h-52 w-full overflow-y-auto p-2">
 									{#each kelasList as kelas (kelas.id)}
-										<label class="hover:bg-base-200 flex cursor-pointer items-center gap-2 rounded p-2">
-											<input class="checkbox checkbox-sm" type="checkbox" checked={kelasIds.has(kelas.id)} onchange={() => (kelasIds = toggle(kelasIds, kelas.id))} />
-											<span>{kelas.nama}{kelas.fase ? ` (${kelas.fase})` : ''}</span>
+										<label
+											class="hover:bg-base-200 flex cursor-pointer items-center gap-2 rounded p-2"
+										>
+											<input
+												class="checkbox checkbox-sm"
+												type="checkbox"
+												aria-label={`Kelas ${kelas.nama} ${kelas.id}`}
+												checked={kelasIds.has(kelas.id)}
+												onchange={() => (kelasIds = toggle(kelasIds, kelas.id))}
+												disabled={loadingOptions || saving}
+											/>
+											<span
+												>{kelas.nama}{kelas.fase ? ` (${kelas.fase})` : ''}{kelas.tahunAjaran
+													? ` - ${kelas.tahunAjaran} ${kelas.semester === 'genap' ? 'Genap' : 'Ganjil'}`
+													: ''}</span
+											>
 										</label>
 									{:else}
 										<p class="p-2 text-sm opacity-60">Belum ada kelas</p>
@@ -346,18 +408,39 @@
 					<div class="grid gap-3 sm:grid-cols-2">
 						<label class="input validator bg-base-200 w-full">
 							<Icon name="user" />
-							<input id="user-username" required minlength="3" placeholder="Nama pengguna" bind:value={username} />
+							<input
+								id="user-username"
+								required
+								minlength="3"
+								placeholder="Nama pengguna"
+								bind:value={username}
+							/>
 						</label>
 						<label class="input bg-base-200 w-full">
 							<Icon name="lock" />
-							<input id="user-password" type={showPassword ? 'text' : 'password'} required={!isEditMode} minlength="8" maxlength="128" placeholder={isEditMode ? 'Kata sandi baru (opsional)' : 'Kata sandi'} bind:value={password} />
-							<button type="button" class="btn btn-ghost btn-xs btn-square" onclick={() => (showPassword = !showPassword)} aria-label="Lihat atau sembunyikan kata sandi">
+							<input
+								id="user-password"
+								autocomplete="new-password"
+								type={showPassword ? 'text' : 'password'}
+								required={!isEditMode}
+								minlength="8"
+								maxlength="128"
+								placeholder={isEditMode ? 'Kata sandi baru (opsional)' : 'Kata sandi'}
+								bind:value={password}
+							/>
+							<button
+								type="button"
+								class="btn btn-ghost btn-xs btn-square"
+								onclick={() => (showPassword = !showPassword)}
+								aria-label="Lihat atau sembunyikan kata sandi"
+							>
 								<Icon name={showPassword ? 'eye-off' : 'eye'} />
 							</button>
 						</label>
 					</div>
 					<p class="label text-wrap">
-						Minimal 8 karakter dengan huruf dan angka. Kata sandi buatan admin wajib diganti saat pengguna masuk.
+						Minimal 8 karakter dengan huruf dan angka. Kata sandi buatan admin wajib diganti saat
+						pengguna masuk.
 					</p>
 				</fieldset>
 			</div>
@@ -366,8 +449,14 @@
 				<button class="btn btn-soft shadow-none" type="button" onclick={close} disabled={saving}>
 					<Icon name="close" /> Batal
 				</button>
-				<button class="btn btn-primary shadow-none" type="button" onclick={save} disabled={!isValid || loadingOptions || saving}>
-					<Icon name="save" /> {saving ? 'Menyimpan...' : 'Simpan'}
+				<button
+					class="btn btn-primary shadow-none"
+					type="button"
+					onclick={save}
+					disabled={!isValid || loadingOptions || saving}
+				>
+					<Icon name="save" />
+					{saving ? 'Menyimpan...' : 'Simpan'}
 				</button>
 			</div>
 		</div>

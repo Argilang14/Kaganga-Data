@@ -1,7 +1,8 @@
 import db from '$lib/server/db';
 import { tableMurid, tableKelas } from '$lib/server/db/schema';
 import { error, json } from '@sveltejs/kit';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
+import { activeMuridFilter } from '$lib/server/murid-query';
 
 export async function GET({ url, locals }) {
 	const sekolahId = locals.sekolah?.id;
@@ -29,7 +30,11 @@ export async function GET({ url, locals }) {
 
 	const muridList = await db.query.tableMurid.findMany({
 		columns: { id: true, nama: true, agama: true },
-		where: eq(tableMurid.kelasId, kelasId),
+		where: and(
+			eq(tableMurid.sekolahId, sekolahId),
+			eq(tableMurid.kelasId, kelasId),
+			activeMuridFilter()
+		),
 		orderBy: asc(tableMurid.nama)
 	});
 

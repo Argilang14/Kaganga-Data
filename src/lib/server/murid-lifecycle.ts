@@ -10,6 +10,7 @@ import {
 } from '$lib/server/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { muridIdentityKey } from '$lib/server/murid-identity';
+import { linkMuridIdentity } from '$lib/server/murid-identity-service';
 
 export const muridLifecycleStatuses = ['aktif', 'pindah', 'keluar', 'alumni'] as const;
 export type MuridLifecycleStatus = (typeof muridLifecycleStatuses)[number];
@@ -18,19 +19,27 @@ export async function syncMuridGovernance(
 	sekolahId: number,
 	muridIds: number[],
 	status?: MuridLifecycleStatus,
-	detail: { tanggalStatus?: string | null; alasan?: string | null } = {}
+	detail: { tanggalStatus?: string | null; alasan?: string | null } = {},
+	transaction?: DBTransaction
 ) {
-	await ensureDataGovernanceSchema();
+	if (!transaction) {
+		await ensureDataGovernanceSchema();
+		return db.transaction(async (tx): Promise<void> => {
+			await syncMuridGovernance(sekolahId, muridIds, status, detail, tx);
+		});
+	}
+	const reader = transaction;
 	const uniqueIds = [...new Set(muridIds.filter((id) => Number.isInteger(id) && id > 0))];
-	if (!uniqueIds.length) return [];
+	if (!uniqueIds.length) return;
 
-	const rows = await db
+	const rows = await reader
 		.select({
 			id: tableMurid.id,
 			sekolahId: tableMurid.sekolahId,
 			nis: tableMurid.nis,
 			nisn: tableMurid.nisn,
 			nama: tableMurid.nama,
+			tanggalLahir: tableMurid.tanggalLahir,
 			kelasId: tableMurid.kelasId,
 			semesterId: tableMurid.semesterId,
 			tahunAjaranId: tableKelas.tahunAjaranId,
@@ -47,8 +56,9 @@ export async function syncMuridGovernance(
 
 	const now = new Date().toISOString();
 	for (const row of rows) {
-		const identityKey = muridIdentityKey(row);
-		await db
+		const identityUid = await linkMuridIdentity(reader, sekolahId, row);
+		const identityKey = muridIdentityKey({ identityUid });
+		await reader
 			.insert(tableMuridLifecycle)
 			.values({
 				sekolahId,
@@ -57,7 +67,7 @@ export async function syncMuridGovernance(
 				nisn: row.nisn?.trim() || null,
 				namaSnapshot: row.nama,
 				status: status ?? 'aktif',
-				tanggalStatus: status ? detail.tanggalStatus ?? now.slice(0, 10) : null,
+				tanggalStatus: status ? (detail.tanggalStatus ?? now.slice(0, 10)) : null,
 				alasan: status ? detail.alasan?.trim() || null : null,
 				lastMuridId: row.id,
 				updatedAt: now
@@ -80,7 +90,7 @@ export async function syncMuridGovernance(
 				}
 			});
 
-		await db
+		await reader
 			.insert(tableMuridRiwayatKelas)
 			.values({
 				sekolahId,
@@ -101,6 +111,9 @@ export async function syncMuridGovernance(
 			.onConflictDoUpdate({
 				target: tableMuridRiwayatKelas.muridId,
 				set: {
+					identityKey,
+					nisSnapshot: row.nis,
+					nisnSnapshot: row.nisn?.trim() || null,
 					tahunAjaranId: row.tahunAjaranId,
 					semesterId: row.semesterId,
 					kelasId: row.kelasId,
@@ -113,6 +126,4 @@ export async function syncMuridGovernance(
 				}
 			});
 	}
-
-	return rows;
 }

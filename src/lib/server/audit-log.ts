@@ -4,28 +4,24 @@ import { tableAuditLog } from '$lib/server/db/schema';
 import { safeAuditRecord } from '$lib/server/audit-sanitize';
 
 export type AuditAction =
-	| 'create'
-	| 'update'
-	| 'delete'
-	| 'import'
-	| 'status_change'
-	| 'promote'
-	| 'archive'
-	| 'restore';
+	'create' | 'update' | 'delete' | 'import' | 'status_change' | 'promote' | 'archive' | 'restore';
 
-export async function writeAuditLog(options: {
-	locals: App.Locals;
-	request?: Request;
-	action: AuditAction;
-	entityType: string;
-	entityId?: string | number | null;
-	summary: string;
-	before?: unknown;
-	after?: unknown;
-}) {
-	await ensureDataGovernanceSchema();
+export async function writeAuditLog(
+	options: {
+		locals: App.Locals;
+		request?: Request;
+		action: AuditAction;
+		entityType: string;
+		entityId?: string | number | null;
+		summary: string;
+		before?: unknown;
+		after?: unknown;
+	},
+	transaction?: DBTransaction
+) {
+	if (!transaction) await ensureDataGovernanceSchema();
 	const user = options.locals.user;
-	await db.insert(tableAuditLog).values({
+	await (transaction ?? db).insert(tableAuditLog).values({
 		sekolahId: options.locals.sekolah?.id ?? null,
 		userId: user?.id ?? null,
 		usernameSnapshot: user?.username ?? 'sistem',

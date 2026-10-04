@@ -5,11 +5,14 @@ import { ensureMuridWaliAsramaSchema } from '$lib/server/db/ensure-murid-wali-as
 import { tableAlamat, tableKelas, tableMurid, tableWaliMurid } from '$lib/server/db/schema.js';
 import { unflattenFormData } from '$lib/utils.js';
 import { canEditMurid } from '$lib/murid-permissions';
+import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 import { error, fail, redirect } from '@sveltejs/kit';
 import { and, eq, ne } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { syncMuridGovernance } from '$lib/server/murid-lifecycle';
 import { writeAuditLog } from '$lib/server/audit-log';
+import { validateMuridIdentityInput } from '$lib/server/murid-identity-service';
+import { ensureDataGovernanceSchema } from '$lib/server/db/ensure-data-governance';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	await ensureMuridWaliAsramaSchema();
@@ -37,6 +40,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 export const actions: Actions = {
 	async save({ locals, request, params }) {
 		await ensureMuridWaliAsramaSchema();
+		await ensureDataGovernanceSchema();
 
 		// Allow homeroom/full users to manage student data; wali_asrama gets limited edit access.
 		if (!canEditMurid(locals.user)) {
@@ -58,7 +62,8 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const uploadedFile = formData.get('foto') as File | null;
 		const formMurid = unflattenFormData<Murid>(formData);
-		const isLimitedWaliAsramaEdit = locals.user?.type === 'wali_asrama';
+		const isLimitedWaliAsramaEdit =
+			locals.user?.type === 'wali_asrama' && !hasSchoolWideOperationalAccess(locals.user);
 
 		function uploadsDir() {
 			const envPhoto = process.env.photo || 'file:./data/uploads';
@@ -179,6 +184,7 @@ export const actions: Actions = {
 		formMurid.semesterId = kelas.semesterId;
 
 		const nis = String(formMurid.nis ?? '').trim();
+		formMurid.nis = nis;
 		if (!nis) {
 			return fail(400, { fail: 'NIS wajib diisi.' });
 		}
@@ -203,8 +209,43 @@ export const actions: Actions = {
 				fail: `NIS ${nis} sudah digunakan oleh ${duplicateNis.nama} pada semester kelas yang dipilih. Gunakan NIS yang berbeda atau edit data murid yang sudah ada.`
 			});
 		}
+		try {
+			formMurid.nisn = await validateMuridIdentityInput(
+				db,
+				sekolahId,
+				{
+					id: muridId ?? undefined,
+					nis,
+					nisn: String(formMurid.nisn ?? ''),
+					nama: formMurid.nama,
+					tanggalLahir: formMurid.tanggalLahir,
+					semesterId: formMurid.semesterId
+				},
+				{ originalNisn: beforeMurid?.nisn }
+			);
+		} catch (validationError) {
+			return fail(400, {
+				fail:
+					validationError instanceof Error
+						? validationError.message
+						: 'Identitas murid tidak valid.'
+			});
+		}
 
 		await db.transaction(async (db) => {
+			await validateMuridIdentityInput(
+				db,
+				sekolahId,
+				{
+					id: muridId ?? undefined,
+					nis,
+					nisn: formMurid.nisn,
+					nama: formMurid.nama,
+					tanggalLahir: formMurid.tanggalLahir,
+					semesterId: formMurid.semesterId
+				},
+				{ originalNisn: beforeMurid?.nisn }
+			);
 			if (params.id) {
 				// update
 				const murid = await db.query.tableMurid.findFirst({
@@ -360,6 +401,8 @@ export const actions: Actions = {
 						.where(eq(tableMurid.id, formMurid.id));
 				}
 			}
+			const identityId = params.id ? Number(muridId) : formMurid.id;
+			if (identityId) await syncMuridGovernance(sekolahId, [identityId], undefined, {}, db);
 		});
 		const savedId = params.id ? Number(muridId) : formMurid.id;
 		const savedMurid = savedId
@@ -369,7 +412,6 @@ export const actions: Actions = {
 				})
 			: null;
 		if (savedId && savedMurid) {
-			await syncMuridGovernance(sekolahId, [savedId]);
 			await writeAuditLog({
 				locals,
 				request,

@@ -39,3 +39,9 @@ export function hasSchoolWideOperationalAccess(
 ) {
 	return user?.type === 'admin' || parseAccessPosition(user?.jabatanAkses) !== null;
 }
+
+export function isRestrictedTeacher(
+	user?: { type?: string | null; jabatanAkses?: string | null } | null
+) {
+	return user?.type === 'user' && !hasSchoolWideOperationalAccess(user);
+}

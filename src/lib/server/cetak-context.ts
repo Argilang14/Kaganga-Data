@@ -1,4 +1,5 @@
 import db from '$lib/server/db';
+import { hasSchoolWideOperationalAccess, isRestrictedTeacher } from '$lib/access-position';
 import {
 	tableJadwalMapel,
 	tableKelas,
@@ -21,14 +22,14 @@ import {
 export async function loadCetakContext({ locals, url, depends, parent }: Pick<RequestEvent, 'locals' | 'url'> & { depends: (...dependencies: string[]) => void; parent: () => Promise<Parameters<typeof buildKelasContext>[1]> }) {
 	depends('app:cetak-sr');
 
-	const user = locals.user as { type?: string; pegawaiId?: number | null } | null;
+	const user = locals.user;
 	const jurnalAccess = {
 		canPrint: ['admin', 'wali_kelas', 'user'].includes(user?.type ?? ''),
-		requiresClass: user?.type !== 'admin',
+		requiresClass: !hasSchoolWideOperationalAccess(user),
 		allowedSigners:
-			user?.type === 'user' ? (['guru_mapel'] as const) : (['wali_kelas', 'guru_mapel'] as const),
-		defaultScope: user?.type === 'user' ? ('mapel' as const) : ('kelas' as const),
-		defaultSigner: user?.type === 'user' ? ('guru_mapel' as const) : ('wali_kelas' as const)
+			isRestrictedTeacher(user) ? (['guru_mapel'] as const) : (['wali_kelas', 'guru_mapel'] as const),
+		defaultScope: isRestrictedTeacher(user) ? ('mapel' as const) : ('kelas' as const),
+		defaultSigner: isRestrictedTeacher(user) ? ('guru_mapel' as const) : ('wali_kelas' as const)
 	};
 	const parentData = await parent();
 	const { sekolahId, kelasId, kelasIds, academicContext } = await buildKelasContext(
@@ -187,8 +188,8 @@ export async function loadCetakContext({ locals, url, depends, parent }: Pick<Re
 					where: and(
 						eq(tableJadwalMapel.sekolahId, sekolahId),
 						eq(tableJadwalMapel.aktif, true),
-						user?.type === 'user'
-							? user.pegawaiId
+						isRestrictedTeacher(user)
+							? user?.pegawaiId
 								? eq(tableJadwalMapel.guruPegawaiId, user.pegawaiId)
 								: eq(tableJadwalMapel.id, -1)
 							: undefined,

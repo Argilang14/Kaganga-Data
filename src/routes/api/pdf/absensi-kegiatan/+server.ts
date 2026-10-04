@@ -14,6 +14,7 @@ import {
 } from '$lib/server/absensi-digital';
 import { loadAttendanceMonitoring } from '$lib/server/attendance-monitoring.server';
 import db from '$lib/server/db';
+import { studentAccessCondition } from '$lib/server/student-access';
 import {
 	tableAbsensiKegiatan,
 	tableKelas,
@@ -72,7 +73,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 				where: and(
 					eq(tableMurid.sekolahId, sekolahId),
 					eq(tableMurid.semesterId, academic.activeSemesterId),
-					eq(tableMurid.kelasId, kelasId)
+					eq(tableMurid.kelasId, kelasId),
+					await studentAccessCondition(locals.user, sekolahId)
 				),
 				orderBy: asc(tableMurid.nama)
 			}),
@@ -102,6 +104,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 				tahunAjaranId: academic.activeTahunAjaranId,
 				semesterId: academic.activeSemesterId,
 				kelasIds: [kelasId],
+				user: locals.user,
 				today: tanggalAkhir > today ? today : tanggalAkhir
 			})
 		]);
@@ -121,6 +124,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const countsByStudent = new Map(students.map((student) => [student.id, emptyCounts()]));
 	const detailByKey = new Map<string, { tanggal: string; kegiatan: string; counts: Counts }>();
 	for (const row of attendanceRows) {
+		if (!countsByStudent.has(row.muridId)) continue;
 		summary[row.status] += 1;
 		const studentCounts = countsByStudent.get(row.muridId);
 		if (studentCounts) studentCounts[row.status] += 1;

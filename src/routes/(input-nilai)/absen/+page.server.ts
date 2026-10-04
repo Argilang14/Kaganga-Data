@@ -83,6 +83,7 @@ export async function load({ parent, locals, url, depends }) {
 	}
 
 	const baseFilter = and(
+		activeMuridFilter(),
 		eq(tableMurid.sekolahId, sekolahId),
 		eq(tableMurid.kelasId, kelasAktif.id)
 	);
@@ -244,3 +245,4 @@ export const actions = {
 		return { message: 'Rekap kehadiran murid berhasil diperbarui' };
 	}
 };
+import { activeMuridFilter } from '$lib/server/murid-query';

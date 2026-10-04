@@ -42,6 +42,7 @@ export async function load({ locals, url, depends, parent }) {
 	}
 
 	const filter = and(
+		activeMuridFilter(),
 		await guardianStudentCondition(locals.user, sekolahId),
 		eq(tableMurid.sekolahId, sekolahId),
 		kelasId ? eq(tableMurid.kelasId, Number(kelasId)) : inArray(tableMurid.kelasId, kelasIds),
@@ -195,7 +196,13 @@ export const actions = {
 		const muridList = await db
 			.select({ id: tableMurid.id })
 			.from(tableMurid)
-			.where(and(eq(tableMurid.sekolahId, sekolahId), inArray(tableMurid.id, muridIds), await guardianStudentCondition(locals.user, sekolahId)));
+			.where(
+				and(
+					eq(tableMurid.sekolahId, sekolahId),
+					inArray(tableMurid.id, muridIds),
+					await guardianStudentCondition(locals.user, sekolahId)
+				)
+			);
 
 		const validIds = muridList.map((item) => item.id);
 		if (!validIds.length) {
@@ -234,3 +241,4 @@ export const actions = {
 	}
 };
 
+import { activeMuridFilter } from '$lib/server/murid-query';

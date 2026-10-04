@@ -111,7 +111,11 @@ export async function load({ parent, url, depends }) {
 
 	const muridRecords = await db.query.tableMurid.findMany({
 		columns: { id: true, nama: true, waliAsuhNama: true },
-		where: and(eq(tableMurid.kelasId, kelasAktif.id), await guardianStudentCondition(user, user?.sekolahId ?? 0)),
+		where: and(
+			eq(tableMurid.kelasId, kelasAktif.id),
+			await guardianStudentCondition(user, user?.sekolahId ?? 0),
+			activeMuridFilter()
+		),
 		orderBy: asc(tableMurid.nama)
 	});
 
@@ -346,3 +350,4 @@ function emptyPayload(meta: PageMeta) {
 		}
 	};
 }
+import { activeMuridFilter } from '$lib/server/murid-query';

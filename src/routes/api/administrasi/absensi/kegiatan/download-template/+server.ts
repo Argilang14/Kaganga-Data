@@ -66,7 +66,9 @@ export async function GET({ locals, url }) {
 		where: and(
 			eq(tableMurid.sekolahId, sekolahId),
 			eq(tableMurid.semesterId, academic.activeSemesterId),
-			eq(tableMurid.kelasId, kelasId)
+			eq(tableMurid.kelasId, kelasId),
+			activeMuridFilter()
+			, await studentAccessCondition(locals.user, sekolahId)
 		),
 		orderBy: asc(tableMurid.nama)
 	});
@@ -176,3 +178,5 @@ export async function GET({ locals, url }) {
 		}
 	});
 }
+import { activeMuridFilter } from '$lib/server/murid-query';
+import { studentAccessCondition } from '$lib/server/student-access';

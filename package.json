@@ -1,7 +1,7 @@
 {
 	"name": "kaganga",
 	"private": true,
-	"version": "2.2.2",
+	"version": "2.2.2-beta.1",
 	"type": "module",
 	"scripts": {
 		"db:push": "node scripts/migrate-installed-db.mjs",
@@ -37,6 +37,8 @@
 		"test:pegawai-copy": "node scripts/test-pegawai-foundation-copy.mjs",
 		"test:database-safety": "node --test src/lib/server/db/database-safety.test.ts src/lib/server/db/database-restore.test.ts",
 		"test:data-governance": "node --test src/lib/server/audit-log.test.ts src/lib/server/murid-lifecycle.test.ts",
+		"test:murid-identity": "node --test src/lib/server/murid-lifecycle.test.ts src/lib/server/db/murid-identity-migration.test.ts",
+		"test:murid-identity-copy": "node scripts/test-murid-identity-copy.mjs",
 		"test:document-management": "node --test src/lib/server/document-attachments.test.ts",
 		"tes-bell": "node scripts/test-bell.mjs",
 		"format": "prettier --write .",

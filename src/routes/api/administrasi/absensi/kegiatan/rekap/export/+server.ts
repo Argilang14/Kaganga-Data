@@ -15,6 +15,8 @@ import {
 	requireAbsensiKegiatanAccess
 } from '$lib/server/absensi-kegiatan';
 import db from '$lib/server/db';
+import { studentAccessCondition } from '$lib/server/student-access';
+import { canAttendance } from '$lib/attendance-access';
 import { tableAbsensiKegiatan, tableMurid } from '$lib/server/db/schema';
 import { json } from '@sveltejs/kit';
 import { and, asc, between, eq, inArray } from 'drizzle-orm';
@@ -74,12 +76,13 @@ export async function GET({ locals, url }) {
 		where: and(
 			eq(tableMurid.sekolahId, sekolahId),
 			eq(tableMurid.semesterId, academic.activeSemesterId),
-			eq(tableMurid.kelasId, kelasId)
+			eq(tableMurid.kelasId, kelasId),
+			await studentAccessCondition(locals.user, sekolahId)
 		),
 		orderBy: asc(tableMurid.nama)
 	});
 	const muridIds = muridList.map((murid) => murid.id);
-	if (muridIds.length) {
+	if (muridIds.length && canAttendance(locals.user, 'pengaturan')) {
 		const kegiatanIds = kegiatanId ? [kegiatanId] : kegiatanList.map((kegiatan) => kegiatan.id);
 		for (const tanggal of listLocalDatesInRange(tanggalAwal, tanggalAkhir)) {
 			await applyAutoAlfaKegiatan({

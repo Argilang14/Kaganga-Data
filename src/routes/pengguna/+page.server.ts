@@ -10,7 +10,6 @@ import {
 	tableMataPelajaran,
 	tableAuthUserMataPelajaran,
 	tableAuthUserKelas,
-	tableMurid,
 	tableAuthSession,
 	tableAbsensiHarian,
 	tableAbsensiKegiatan,
@@ -115,6 +114,7 @@ export async function load({ url, locals }) {
 			id: u.id,
 			username: u.username,
 			createdAt: u.createdAt,
+			updatedAt: u.updatedAt,
 			type: u.type,
 			jabatanAkses: u.jabatanAkses,
 			pegawaiId: u.pegawaiId,
@@ -425,6 +425,11 @@ export const actions = {
 			});
 
 			const created = await db.transaction(async (tx) => {
+				const alreadyLinked = await tx.query.tableAuthUser.findFirst({
+					columns: { id: true },
+					where: eq(tableAuthUser.pegawaiId, pegawaiId)
+				});
+				if (alreadyLinked) throw new Error('pegawai_already_linked');
 				const [user] = await tx
 					.insert(tableAuthUser)
 					.values({
@@ -500,6 +505,11 @@ export const actions = {
 			if (message.includes('auth_user.username_normalized')) {
 				return fail(400, { message: 'Username sudah digunakan' });
 			}
+			if (message.includes('pegawai_already_linked')) {
+				return fail(409, {
+					message: 'Pegawai sudah terhubung ke akun. Muat ulang daftar pengguna.'
+				});
+			}
 			console.error('Failed to create user', err);
 			return fail(500, { message: 'Gagal membuat akun pengguna' });
 		}
@@ -518,6 +528,9 @@ export const actions = {
 		const password = String(form.get('password') ?? '').trim();
 		const requestedRole = String(form.get('type') ?? 'user');
 		const jabatanAkses = parseAccessPosition(form.get('jabatanAkses'));
+		if (form.get('jabatanAkses') && !jabatanAkses) {
+			return fail(400, { message: 'Jabatan akses tidak valid' });
+		}
 		let mataPelajaranIds = parseIdList(form.get('mataPelajaranIds'));
 		let kelasIds = parseIdList(form.get('kelasIds'));
 
@@ -530,21 +543,25 @@ export const actions = {
 				type: true,
 				pegawaiId: true,
 				permissions: true,
-				jabatanAkses: true
+				jabatanAkses: true,
+				updatedAt: true
 			},
 			where: and(eq(tableAuthUser.id, id), eq(tableAuthUser.sekolahId, sekolahId))
 		});
 		if (!target || target.type === 'admin') {
 			return fail(404, { message: 'Pengguna tidak ditemukan' });
 		}
+		if (form.has('updatedAt') && String(form.get('updatedAt')) !== (target.updatedAt ?? '')) {
+			return fail(409, { message: 'Pengguna berubah sejak dibuka. Muat ulang lalu coba kembali.' });
+		}
 
 		const isLegacyWaliKelas = target.type === 'wali_kelas';
+		if (!isLegacyWaliKelas && !CREATABLE_ROLES.includes(requestedRole as CreatableRole)) {
+			return fail(400, { message: 'Role pengguna tidak valid' });
+		}
 		const roleValue: CreatableRole = CREATABLE_ROLES.includes(requestedRole as CreatableRole)
 			? (requestedRole as CreatableRole)
 			: 'user';
-		if (jabatanAkses && roleValue !== 'user') {
-			return fail(400, { message: 'Jabatan akses hanya dapat dipakai pada akun pegawai umum' });
-		}
 		if (isLegacyWaliKelas && requestedRole !== 'wali_kelas') {
 			return fail(400, { message: 'Role wali kelas lama dikelola dari Data Kelas' });
 		}
@@ -616,7 +633,7 @@ export const actions = {
 				username,
 				usernameNormalized: username.toLowerCase(),
 				type: nextType,
-				jabatanAkses: isLegacyWaliKelas ? null : jabatanAkses,
+				jabatanAkses,
 				updatedAt: timestamp
 			};
 			if (!isLegacyWaliKelas) {
@@ -628,6 +645,18 @@ export const actions = {
 					});
 				}
 			}
+			if (isLegacyWaliKelas) updateData.mataPelajaranId = mataPelajaranIds[0] ?? null;
+			if (
+				(nextType === 'user' && kelasIds.length > 1) ||
+				(isLegacyWaliKelas && kelasIds.length > 0)
+			) {
+				updateData.permissions = [
+					...new Set([
+						...(roleChanged ? defaultPermissionsForType(nextType) : (target.permissions ?? [])),
+						'kelas_pindah'
+					])
+				];
+			}
 			if (hashedPassword) {
 				updateData.passwordHash = hashedPassword.hash;
 				updateData.passwordSalt = hashedPassword.salt;
@@ -636,6 +665,19 @@ export const actions = {
 			}
 
 			const updated = await db.transaction(async (tx) => {
+				const current = await tx.query.tableAuthUser.findFirst({
+					columns: { updatedAt: true },
+					where: and(eq(tableAuthUser.id, id), eq(tableAuthUser.sekolahId, sekolahId))
+				});
+				if (!current || current.updatedAt !== target.updatedAt) throw new Error('user_edit_stale');
+				const previousMapel = await tx.query.tableAuthUserMataPelajaran.findMany({
+					columns: { mataPelajaranId: true },
+					where: eq(tableAuthUserMataPelajaran.authUserId, id)
+				});
+				const previousKelas = await tx.query.tableAuthUserKelas.findMany({
+					columns: { kelasId: true },
+					where: eq(tableAuthUserKelas.authUserId, id)
+				});
 				const [user] = await tx
 					.update(tableAuthUser)
 					.set(updateData)
@@ -651,48 +693,51 @@ export const actions = {
 					});
 				if (!user) throw new Error('Pengguna tidak ditemukan');
 
-				if (!isLegacyWaliKelas) {
-					await tx
-						.delete(tableAuthUserMataPelajaran)
-						.where(eq(tableAuthUserMataPelajaran.authUserId, id));
-					await tx.delete(tableAuthUserKelas).where(eq(tableAuthUserKelas.authUserId, id));
-					if (mataPelajaranIds.length) {
-						await tx.insert(tableAuthUserMataPelajaran).values(
-							mataPelajaranIds.map((mataPelajaranId) => ({
-								authUserId: id,
-								mataPelajaranId,
-								createdAt: timestamp,
-								updatedAt: timestamp
-							}))
-						);
-					}
-					if (kelasIds.length) {
-						await tx.insert(tableAuthUserKelas).values(
-							kelasIds.map((kelasId) => ({
-								authUserId: id,
-								kelasId,
-								createdAt: timestamp,
-								updatedAt: timestamp
-							}))
-						);
-					}
+				await tx
+					.delete(tableAuthUserMataPelajaran)
+					.where(eq(tableAuthUserMataPelajaran.authUserId, id));
+				await tx.delete(tableAuthUserKelas).where(eq(tableAuthUserKelas.authUserId, id));
+				if (mataPelajaranIds.length) {
+					await tx.insert(tableAuthUserMataPelajaran).values(
+						mataPelajaranIds.map((mataPelajaranId) => ({
+							authUserId: id,
+							mataPelajaranId,
+							createdAt: timestamp,
+							updatedAt: timestamp
+						}))
+					);
 				}
-				if (hashedPassword || target.jabatanAkses !== jabatanAkses) {
-					await tx.delete(tableAuthSession).where(eq(tableAuthSession.userId, id));
+				if (kelasIds.length) {
+					await tx.insert(tableAuthUserKelas).values(
+						kelasIds.map((kelasId) => ({
+							authUserId: id,
+							kelasId,
+							createdAt: timestamp,
+							updatedAt: timestamp
+						}))
+					);
 				}
+				await tx.delete(tableAuthSession).where(eq(tableAuthSession.userId, id));
+				await writeAuditLog(
+					{
+						locals,
+						request,
+						action: 'update',
+						entityType: 'pengguna',
+						entityId: user.id,
+						summary: `Memperbarui akun ${user.username}`,
+						before: {
+							type: target.type,
+							jabatanAkses: target.jabatanAkses,
+							mataPelajaranIds: previousMapel.map((row) => row.mataPelajaranId),
+							kelasIds: previousKelas.map((row) => row.kelasId)
+						},
+						after: { type: user.type, jabatanAkses: user.jabatanAkses, mataPelajaranIds, kelasIds }
+					},
+					tx
+				);
 				return user;
 			});
-
-			await writeAuditLog({
-				locals,
-				request,
-				action: 'update',
-				entityType: 'pengguna',
-				entityId: updated.id,
-				summary: `Memperbarui akun ${updated.username}`,
-				before: { type: target.type, jabatanAkses: target.jabatanAkses },
-				after: { type: updated.type, jabatanAkses: updated.jabatanAkses }
-			}).catch((auditError) => console.error('Failed to audit user update', auditError));
 			return {
 				success: true,
 				message: 'Pengguna berhasil diperbarui',
@@ -704,10 +749,15 @@ export const actions = {
 			};
 		} catch (err) {
 			const message = String(err);
+			if (message.includes('user_edit_stale')) {
+				return fail(409, {
+					message: 'Pengguna berubah sejak dibuka. Muat ulang lalu coba kembali.'
+				});
+			}
 			if (message.includes('auth_user.username_normalized')) {
 				return fail(400, { message: 'Nama pengguna sudah digunakan' });
 			}
-			console.error('Failed to update user', err);
+			console.error('Failed to update user transaction');
 			return fail(500, { message: 'Gagal memperbarui pengguna' });
 		}
 	},
@@ -724,7 +774,7 @@ export const actions = {
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(400, { message: 'Sekolah aktif tidak ditemukan' });
 
-		let ids: number[] = [];
+		let ids: number[];
 		try {
 			const contentType = request.headers.get('content-type') ?? '';
 			if (contentType.includes('application/json')) {

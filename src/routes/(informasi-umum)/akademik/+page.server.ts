@@ -15,11 +15,20 @@ import {
 } from '$lib/server/db/schema';
 import { cookieNames, unflattenFormData } from '$lib/utils';
 import { readBufferToAoA } from '$lib/utils/excel.js';
-import { error, fail } from '@sveltejs/kit';
+import { error, fail, isActionFailure } from '@sveltejs/kit';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { syncMuridGovernance } from '$lib/server/murid-lifecycle';
 import { writeAuditLog } from '$lib/server/audit-log';
+import { activeMuridFilter } from '$lib/server/murid-query';
+import {
+	normalizedIdentityText,
+	normalizedNisn,
+	sameMuridPerson,
+	validNisn
+} from '$lib/server/murid-identity';
+import { validateMuridIdentityInput } from '$lib/server/murid-identity-service';
+import { ensureDataGovernanceSchema } from '$lib/server/db/ensure-data-governance';
 
 type TahunAjaranRow = typeof tableTahunAjaran.$inferSelect;
 type SemesterRow = typeof tableSemester.$inferSelect;
@@ -268,7 +277,10 @@ async function importKelasDanMuridFromExcel(
 			const nama = normalize(row[idxNama]).trim();
 			const nis = normalize(row[idxNipd]).replace(/\.0$/, '').trim();
 			const rombel = normalize(row[idxRombel]).trim();
-			if (!nama || !nis || !rombel) return null;
+			if (!nama || !nis || !rombel)
+				throw fail(400, {
+					fail: `Nama, NIS, dan Rombel wajib lengkap pada baris ${nama || '(tanpa nama)'}. Impor dibatalkan.`
+				});
 			rombelMap.set(rombel.toLowerCase(), rombel);
 
 			const alamat = normalize(idxAlamat !== undefined ? row[idxAlamat] : '') || 'Belum diisi';
@@ -292,7 +304,7 @@ async function importKelasDanMuridFromExcel(
 				nama,
 				nis,
 				rombel,
-				nisn: normalize(idxNisn !== undefined ? row[idxNisn] : '').trim() || `BELUM-${nis}`,
+				nisn: normalizedNisn(normalize(idxNisn !== undefined ? row[idxNisn] : '')),
 				tempatLahir:
 					normalize(idxTempatLahir !== undefined ? row[idxTempatLahir] : '') || 'Tidak diketahui',
 				tanggalLahir: ensureDate(
@@ -368,6 +380,19 @@ async function importKelasDanMuridFromExcel(
 	if (!students.length) {
 		throw fail(400, { fail: 'Tidak ada baris data valid pada file.' });
 	}
+	const fileNis = new Set<string>();
+	const fileNisn = new Set<string>();
+	for (const student of students) {
+		if (fileNis.has(normalizedIdentityText(student.nis)))
+			throw fail(400, { fail: `NIS ${student.nis} berulang dalam file; tidak ada data diimpor.` });
+		fileNis.add(normalizedIdentityText(student.nis));
+		if (student.nisn && (!validNisn(student.nisn) || fileNisn.has(student.nisn)))
+			throw fail(400, {
+				fail: `NISN ${student.nisn} tidak valid atau berulang. Gunakan teks 10 digit; jangan isi angka perkiraan.`
+			});
+		if (student.nisn) fileNisn.add(student.nisn);
+	}
+	await ensureDataGovernanceSchema();
 
 	const rombelNames = Array.from(rombelMap.values());
 
@@ -437,6 +462,16 @@ async function importKelasDanMuridFromExcel(
 			if (!kelasId) continue;
 
 			const existing = muridByNis.get(student.nis);
+			if (existing && !sameMuridPerson(existing, student))
+				throw new Error(
+					`NIS ${student.nis} mengarah ke identitas berbeda. Periksa nama dan tanggal lahir melalui Edit Murid; impor dibatalkan.`
+				);
+			student.nisn = await validateMuridIdentityInput(
+				tx,
+				opts.sekolahId,
+				{ ...student, id: existing?.id, semesterId: opts.semesterId },
+				{ imported: true }
+			);
 			if (existing) {
 				const ayahId = await upsertWali(tx, existing.ayahId, student.ayah);
 				const ibuId = await upsertWali(tx, existing.ibuId, student.ibu);
@@ -463,6 +498,7 @@ async function importKelasDanMuridFromExcel(
 					})
 					.where(eq(tableMurid.id, existing.id));
 				updatedMurid += 1;
+				await syncMuridGovernance(opts.sekolahId, [existing.id], undefined, {}, tx);
 				continue;
 			}
 
@@ -482,27 +518,31 @@ async function importKelasDanMuridFromExcel(
 			const ibuId = await upsertWali(tx, null, student.ibu);
 			const waliId = await upsertWali(tx, null, student.wali);
 
-			await tx.insert(tableMurid).values({
-				sekolahId: opts.sekolahId,
-				kelasId,
-				semesterId: opts.semesterId,
-				nama: student.nama,
-				nis: student.nis,
-				nisn: student.nisn,
-				tempatLahir: student.tempatLahir,
-				tanggalLahir: student.tanggalLahir,
-				jenisKelamin: student.jk,
-				agama: student.agama,
-				pendidikanSebelumnya: student.pendidikanSebelumnya,
-				tanggalMasuk: student.tanggalMasuk,
-				alamatId: alamat.id,
-				ayahId,
-				ibuId,
-				waliId,
-				waliAsuhNama: student.waliAsuhNama || null,
-				waliAsuhNip: student.waliAsuhNip || null,
-				updatedAt: timestamp
-			});
+			const [inserted] = await tx
+				.insert(tableMurid)
+				.values({
+					sekolahId: opts.sekolahId,
+					kelasId,
+					semesterId: opts.semesterId,
+					nama: student.nama,
+					nis: student.nis,
+					nisn: student.nisn,
+					tempatLahir: student.tempatLahir,
+					tanggalLahir: student.tanggalLahir,
+					jenisKelamin: student.jk,
+					agama: student.agama,
+					pendidikanSebelumnya: student.pendidikanSebelumnya,
+					tanggalMasuk: student.tanggalMasuk,
+					alamatId: alamat.id,
+					ayahId,
+					ibuId,
+					waliId,
+					waliAsuhNama: student.waliAsuhNama || null,
+					waliAsuhNip: student.waliAsuhNip || null,
+					updatedAt: timestamp
+				})
+				.returning({ id: tableMurid.id });
+			await syncMuridGovernance(opts.sekolahId, [inserted.id], undefined, {}, tx);
 			insertedMurid += 1;
 		}
 	});
@@ -618,15 +658,7 @@ async function copyKelasDanMuridDariGanjilKeGenap(opts: {
 					eq(tableMurid.sekolahId, opts.sekolahId),
 					eq(tableMurid.semesterId, opts.sourceSemester.id),
 					eq(tableMurid.kelasId, sourceId),
-					sql`NOT EXISTS (
-						SELECT 1 FROM murid_lifecycle ml
-						WHERE ml.sekolah_id = ${tableMurid.sekolahId}
-						AND ml.identity_key = CASE
-							WHEN trim(coalesce(${tableMurid.nisn}, '')) <> '' THEN 'nisn:' || lower(trim(${tableMurid.nisn}))
-							ELSE 'nis:' || lower(trim(${tableMurid.nis}))
-						END
-						AND ml.status <> 'aktif'
-					)`
+					activeMuridFilter()
 				)
 			});
 			totalSourceMurid += sourceMuridList.length;
@@ -672,7 +704,17 @@ async function copyKelasDanMuridDariGanjilKeGenap(opts: {
 			}
 
 			if (values.length) {
-				await tx.insert(tableMurid).values(values);
+				const inserted = await tx
+					.insert(tableMurid)
+					.values(values)
+					.returning({ id: tableMurid.id });
+				await syncMuridGovernance(
+					opts.sekolahId,
+					inserted.map((row) => row.id),
+					undefined,
+					{},
+					tx
+				);
 				insertedMurid += values.length;
 			}
 		}
@@ -844,13 +886,25 @@ export const actions: Actions = {
 				return fail(400, { fail: 'Pilih tahun ajaran dan semester sebelum mengimpor data.' });
 			}
 
-			const { message } = await importKelasDanMuridFromExcel(fileField, {
-				sekolahId,
-				tahunAjaranId: resolvedTahunAjaranId,
-				semesterId: resolvedSemesterId,
-				kabupatenFallback: locals.sekolah?.alamat?.kabupaten ?? undefined
-			});
-			importMessage = message;
+			try {
+				const { message } = await importKelasDanMuridFromExcel(fileField, {
+					sekolahId,
+					tahunAjaranId: resolvedTahunAjaranId,
+					semesterId: resolvedSemesterId,
+					kabupatenFallback: locals.sekolah?.alamat?.kabupaten ?? undefined
+				});
+				importMessage = message;
+			} catch (cause) {
+				if (isActionFailure(cause))
+					return fail(cause.status, {
+						fail: String(
+							(cause.data as { fail?: unknown } | undefined)?.fail ?? 'Impor dibatalkan.'
+						)
+					});
+				return fail(400, {
+					fail: cause instanceof Error ? cause.message : 'Impor gagal; tidak ada murid diubah.'
+				});
+			}
 		}
 
 		if (semesterRecord) {
@@ -1014,7 +1068,10 @@ export const actions: Actions = {
 			columns: { id: true },
 			where: and(eq(tableMurid.sekolahId, sekolahId), eq(tableMurid.semesterId, targetSemester.id))
 		});
-		await syncMuridGovernance(sekolahId, targetMurid.map((murid) => murid.id));
+		await syncMuridGovernance(
+			sekolahId,
+			targetMurid.map((murid) => murid.id)
+		);
 		await writeAuditLog({
 			locals,
 			request,
@@ -1189,7 +1246,7 @@ export const actions: Actions = {
 			return fail(401, { fail: 'Sekolah tidak ditemukan' });
 		}
 
-		if (locals.user?.type === 'user' || locals.user?.type === 'wali_asuh') {
+		if (!canAttendance(locals.user, 'pengaturan')) {
 			return fail(403, { fail: 'Anda tidak memiliki izin untuk mengubah pengaturan presensi' });
 		}
 
@@ -1328,3 +1385,4 @@ export const actions: Actions = {
 		return { message: 'Pengaturan presensi berhasil disimpan' };
 	}
 };
+import { canAttendance } from '$lib/attendance-access';

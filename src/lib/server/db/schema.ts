@@ -481,12 +481,37 @@ export const tableMuridLifecycle = sqliteTable(
 		tanggalStatus: text(),
 		alasan: text(),
 		lastMuridId: int().references(() => tableMurid.id, { onDelete: 'set null' }),
+		needsIdentityReview: int().notNull().default(0),
 		...audit
 	},
 	(table) => [
 		unique('murid_lifecycle_sekolah_identity_unique').on(table.sekolahId, table.identityKey),
 		index('murid_lifecycle_sekolah_status_idx').on(table.sekolahId, table.status),
 		index('murid_lifecycle_last_murid_idx').on(table.lastMuridId)
+	]
+);
+
+export const tableMuridIdentityLink = sqliteTable(
+	'murid_identity_link',
+	{
+		muridId: int()
+			.primaryKey()
+			.references(() => tableMurid.id, { onDelete: 'cascade' }),
+		sekolahId: int()
+			.notNull()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' }),
+		semesterId: int()
+			.notNull()
+			.references(() => tableSemester.id, { onDelete: 'cascade' }),
+		identityUid: text().notNull()
+	},
+	(table) => [
+		unique('murid_identity_link_context_unique').on(
+			table.sekolahId,
+			table.semesterId,
+			table.identityUid
+		),
+		index('murid_identity_link_identity_idx').on(table.sekolahId, table.identityUid)
 	]
 );
 
@@ -977,11 +1002,7 @@ export const tableIzinPulangMurid = sqliteTable(
 			table.rencanaKembali
 		),
 		index('izin_pulang_murid_murid_status_idx').on(table.muridId, table.status),
-		index('izin_pulang_murid_context_idx').on(
-			table.tahunAjaranId,
-			table.semesterId,
-			table.kelasId
-		)
+		index('izin_pulang_murid_context_idx').on(table.tahunAjaranId, table.semesterId, table.kelasId)
 	]
 );
 
@@ -1131,23 +1152,20 @@ export const tableIzinPulangMuridRelations = relations(tableIzinPulangMurid, ({ 
 	})
 }));
 
-export const tableTindakLanjutAbsensiRelations = relations(
-	tableTindakLanjutAbsensi,
-	({ one }) => ({
-		sekolah: one(tableSekolah, {
-			fields: [tableTindakLanjutAbsensi.sekolahId],
-			references: [tableSekolah.id]
-		}),
-		murid: one(tableMurid, {
-			fields: [tableTindakLanjutAbsensi.muridId],
-			references: [tableMurid.id]
-		}),
-		ditanganiOleh: one(tableAuthUser, {
-			fields: [tableTindakLanjutAbsensi.ditanganiOlehUserId],
-			references: [tableAuthUser.id]
-		})
+export const tableTindakLanjutAbsensiRelations = relations(tableTindakLanjutAbsensi, ({ one }) => ({
+	sekolah: one(tableSekolah, {
+		fields: [tableTindakLanjutAbsensi.sekolahId],
+		references: [tableSekolah.id]
+	}),
+	murid: one(tableMurid, {
+		fields: [tableTindakLanjutAbsensi.muridId],
+		references: [tableMurid.id]
+	}),
+	ditanganiOleh: one(tableAuthUser, {
+		fields: [tableTindakLanjutAbsensi.ditanganiOlehUserId],
+		references: [tableAuthUser.id]
 	})
-);
+}));
 
 export const tableQrMuridRelations = relations(tableQrMurid, ({ one }) => ({
 	murid: one(tableMurid, {

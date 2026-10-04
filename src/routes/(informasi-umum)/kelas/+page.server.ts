@@ -62,7 +62,7 @@ export const load: PageServerLoad = async ({ depends, locals }) => {
 		db
 			.select({ kelasId: tableMurid.kelasId, total: sql<number>`count(*)` })
 			.from(tableMurid)
-			.where(inArray(tableMurid.kelasId, kelasIds))
+			.where(and(inArray(tableMurid.kelasId, kelasIds), activeMuridFilter()))
 			.groupBy(tableMurid.kelasId),
 		db
 			.select({ kelasId: tableMataPelajaran.kelasId, total: sql<number>`count(*)` })
@@ -324,3 +324,4 @@ export const actions: Actions = {
 		};
 	}
 };
+import { activeMuridFilter } from '$lib/server/murid-query';

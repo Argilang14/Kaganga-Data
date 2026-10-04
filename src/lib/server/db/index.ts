@@ -51,6 +51,7 @@ function resolveInstalledDbUrl() {
 	return defaultDbUrl;
 }
 const clientKey = '__rapkumerLibsqlClient';
+export const databaseUrl = resolveInstalledDbUrl();
 
 async function enableWAL(client: Client) {
 	try {
@@ -62,7 +63,7 @@ async function enableWAL(client: Client) {
 }
 
 function createClientInstance(): Client {
-	const url = resolveInstalledDbUrl();
+	const url = databaseUrl;
 	const authToken = env.DB_AUTH_TOKEN;
 	console.info(
 		`[db] creating libsql client; DB_URL=${url ? url : '(none)'}${authToken ? ' (auth token present)' : ''}`

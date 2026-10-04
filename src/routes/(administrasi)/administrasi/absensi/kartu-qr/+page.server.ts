@@ -9,9 +9,13 @@ import {
 	resolvePrintableQrToken
 } from '$lib/server/absensi-digital';
 import db from '$lib/server/db';
+import { canAttendance } from '$lib/attendance-access';
+import { writeAuditLog } from '$lib/server/audit-log';
+import { ensureDataGovernanceSchema } from '$lib/server/db/ensure-data-governance';
+import { studentAccessCondition } from '$lib/server/student-access';
 import { tableKelas, tableMurid, tableQrMurid, tableSekolah } from '$lib/server/db/schema';
 import { formatTanggal } from '$lib/server/pdf/preview-utils';
-import { fail, redirect } from '@sveltejs/kit';
+import { error, fail, redirect } from '@sveltejs/kit';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import QRCode from 'qrcode';
 
@@ -69,7 +73,7 @@ async function getAccessibleActiveKelas(
 	return db.query.tableKelas.findFirst({
 		columns: { id: true, nama: true, fase: true, semesterId: true },
 		where: and(
-			buildKelasAccessWhere(sekolahId, kelasId, user),
+			await buildKelasAccessWhere(sekolahId, kelasId, user),
 			eq(tableKelas.semesterId, academic.activeSemesterId)
 		)
 	});
@@ -98,34 +102,54 @@ async function buildCardFromQr(
 async function generateCard(
 	murid: { id: number; nama: string; nis: string },
 	kelasLabel: string,
-	sekolahNama: string
+	sekolahNama: string,
+	locals: App.Locals,
+	request: Request
 ) {
+	if (!canAttendance(locals.user, 'qr_manage')) throw error(403, 'Izin pengelolaan QR diperlukan.');
 	const now = new Date().toISOString();
-	const latest = await db.query.tableQrMurid.findFirst({
-		columns: { tokenVersion: true },
-		where: eq(tableQrMurid.muridId, murid.id),
-		orderBy: (table, { desc }) => [desc(table.tokenVersion)]
-	});
-	const tokenVersion = (latest?.tokenVersion ?? 0) + 1;
-	const token = createPreviewableQrToken({
-		muridId: murid.id,
-		tokenVersion,
-		issuedAt: now
-	});
-	const tokenHash = hashQrToken(token);
+	await ensureDataGovernanceSchema();
+	const token = await db.transaction(async (tx) => {
+		const latest = await tx.query.tableQrMurid.findFirst({
+			columns: { tokenVersion: true },
+			where: eq(tableQrMurid.muridId, murid.id),
+			orderBy: (table, { desc }) => [desc(table.tokenVersion)]
+		});
+		const tokenVersion = (latest?.tokenVersion ?? 0) + 1;
+		const token = createPreviewableQrToken({
+			muridId: murid.id,
+			tokenVersion,
+			issuedAt: now
+		});
+		const tokenHash = hashQrToken(token);
 
-	await db
-		.update(tableQrMurid)
-		.set({ revokedAt: now, updatedAt: now })
-		.where(and(eq(tableQrMurid.muridId, murid.id), isNull(tableQrMurid.revokedAt)));
+		await tx
+			.update(tableQrMurid)
+			.set({ revokedAt: now, updatedAt: now })
+			.where(and(eq(tableQrMurid.muridId, murid.id), isNull(tableQrMurid.revokedAt)));
 
-	await db.insert(tableQrMurid).values({
-		muridId: murid.id,
-		tokenHash,
-		tokenVersion,
-		issuedAt: now,
-		createdAt: now,
-		updatedAt: now
+		await tx.insert(tableQrMurid).values({
+			muridId: murid.id,
+			tokenHash,
+			tokenVersion,
+			issuedAt: now,
+			createdAt: now,
+			updatedAt: now
+		});
+		await writeAuditLog(
+			{
+				locals,
+				request,
+				action: latest ? 'update' : 'create',
+				entityType: 'qr_murid',
+				entityId: murid.id,
+				summary: 'QR absensi murid diterbitkan ulang.',
+				before: latest ?? null,
+				after: { tokenVersion, issuedAt: now }
+			},
+			tx
+		);
+		return token;
 	});
 
 	return {
@@ -168,7 +192,9 @@ export async function load({ locals, parent }) {
 					where: and(
 						eq(tableMurid.sekolahId, sekolahId),
 						eq(tableMurid.semesterId, academic.activeSemesterId),
-						eq(tableMurid.kelasId, kelasId)
+						eq(tableMurid.kelasId, kelasId),
+						activeMuridFilter(),
+						await studentAccessCondition(locals.user, sekolahId)
 					),
 					orderBy: asc(tableMurid.nama),
 					with: { alamat: true }
@@ -248,7 +274,9 @@ export const actions = {
 				eq(tableMurid.id, muridId),
 				eq(tableMurid.sekolahId, sekolahId),
 				eq(tableMurid.semesterId, kelas.semesterId),
-				eq(tableMurid.kelasId, kelas.id)
+				eq(tableMurid.kelasId, kelas.id),
+				activeMuridFilter(),
+				await studentAccessCondition(locals.user, sekolahId)
 			)
 		});
 		if (!murid) return fail(404, { fail: 'Siswa tidak ditemukan.' });
@@ -295,7 +323,9 @@ export const actions = {
 			where: and(
 				eq(tableMurid.sekolahId, sekolahId),
 				eq(tableMurid.semesterId, kelas.semesterId),
-				eq(tableMurid.kelasId, kelas.id)
+				eq(tableMurid.kelasId, kelas.id),
+				activeMuridFilter(),
+				await studentAccessCondition(locals.user, sekolahId)
 			),
 			orderBy: asc(tableMurid.nama)
 		});
@@ -355,13 +385,23 @@ export const actions = {
 				eq(tableMurid.id, muridId),
 				eq(tableMurid.sekolahId, sekolahId),
 				eq(tableMurid.semesterId, kelas.semesterId),
-				eq(tableMurid.kelasId, kelas.id)
+				eq(tableMurid.kelasId, kelas.id),
+				activeMuridFilter(),
+				await studentAccessCondition(locals.user, sekolahId)
 			)
 		});
 		if (!murid) return fail(404, { fail: 'Siswa tidak ditemukan.' });
 
 		return {
-			cards: [await generateCard(murid, kelasLabel(kelas), locals.sekolah?.nama ?? 'Sekolah')]
+			cards: [
+				await generateCard(
+					murid,
+					kelasLabel(kelas),
+					locals.sekolah?.nama ?? 'Sekolah',
+					locals,
+					request
+				)
+			]
 		};
 	},
 	generateClass: async ({ request, locals }) => {
@@ -380,16 +420,27 @@ export const actions = {
 			where: and(
 				eq(tableMurid.sekolahId, sekolahId),
 				eq(tableMurid.semesterId, kelas.semesterId),
-				eq(tableMurid.kelasId, kelas.id)
+				eq(tableMurid.kelasId, kelas.id),
+				activeMuridFilter(),
+				await studentAccessCondition(locals.user, sekolahId)
 			),
 			orderBy: asc(tableMurid.nama)
 		});
 
 		const cards: CardPayload[] = [];
 		for (const murid of muridList) {
-			cards.push(await generateCard(murid, kelasLabel(kelas), locals.sekolah?.nama ?? 'Sekolah'));
+			cards.push(
+				await generateCard(
+					murid,
+					kelasLabel(kelas),
+					locals.sekolah?.nama ?? 'Sekolah',
+					locals,
+					request
+				)
+			);
 		}
 
 		return { cards };
 	}
 };
+import { activeMuridFilter } from '$lib/server/murid-query';

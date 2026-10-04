@@ -2,6 +2,8 @@
 	import { resolve } from '$app/paths';
 	import KartuPelajarAbsensiPreview from '$lib/components/absensi/KartuPelajarAbsensiPreview.svelte';
 	import Icon from '$lib/components/icon.svelte';
+	import { page } from '$app/state';
+	import { canAttendance } from '$lib/attendance-access';
 
 	type CardPayload = {
 		muridId: number;
@@ -51,7 +53,6 @@
 		if (!kelas) return '-';
 		return kelas.fase ? `${kelas.nama} - ${kelas.fase}` : kelas.nama;
 	});
-
 </script>
 
 <div class="space-y-4">
@@ -81,7 +82,11 @@
 			<form method="POST" action="?/generateClass">
 				<input type="hidden" name="kelasId" value={data.kelasId ?? ''} />
 				<input type="hidden" name="kelasLabel" value={kelasLabel} />
-				<button class="btn btn-primary w-full shadow-none" type="submit" disabled={!data.kelasId}>
+				<button
+					class="btn btn-primary w-full shadow-none"
+					type="submit"
+					disabled={!data.kelasId || !canAttendance(page.data.user, 'qr_manage')}
+				>
 					<Icon name="repeat" />
 					Generate/Perbarui Massal
 				</button>
@@ -114,10 +119,7 @@
 						{form.skipped ? ` ${form.skipped} siswa belum memiliki QR yang bisa direview.` : ''}
 					</div>
 				</div>
-				<a
-					class="btn btn-accent shadow-none"
-					href={`${resolve('/cetak')}?dokumen=kartu-absensi`}
-				>
+				<a class="btn btn-accent shadow-none" href={`${resolve('/cetak')}?dokumen=kartu-absensi`}>
 					<Icon name="print" />
 					Buka Cetak Dokumen
 				</a>
@@ -188,7 +190,11 @@
 									<input type="hidden" name="muridId" value={murid.id} />
 									<input type="hidden" name="kelasId" value={data.kelasId ?? ''} />
 									<input type="hidden" name="kelasLabel" value={kelasLabel} />
-									<button class="btn btn-xs btn-soft w-full shadow-none" type="submit">
+									<button
+										class="btn btn-xs btn-soft w-full shadow-none"
+										type="submit"
+										disabled={!canAttendance(page.data.user, 'qr_manage')}
+									>
 										<Icon name="repeat" />
 										{murid.qr ? 'Perbarui' : 'Generate'}
 									</button>
@@ -200,5 +206,4 @@
 			</div>
 		{/if}
 	</div>
-
 </div>

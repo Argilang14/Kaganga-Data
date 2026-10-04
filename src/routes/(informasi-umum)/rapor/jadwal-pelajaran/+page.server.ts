@@ -217,7 +217,7 @@ export const actions: Actions = {
 	saveJpTargets: async ({ request, locals }) => {
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(400, { fail: 'Pilih sekolah terlebih dahulu' });
-		if (locals.user?.type === 'user' || locals.user?.type === 'wali_asuh') {
+		if (!canManageJadwal(locals.user)) {
 			return fail(403, { fail: 'Anda tidak memiliki izin' });
 		}
 
@@ -313,7 +313,7 @@ export const actions: Actions = {
 	saveSettings: async ({ request, locals }) => {
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(400, { fail: 'Pilih sekolah terlebih dahulu' });
-		if (locals.user?.type === 'user' || locals.user?.type === 'wali_asuh') {
+		if (!canManageJadwal(locals.user)) {
 			return fail(403, { fail: 'Anda tidak memiliki izin' });
 		}
 
@@ -361,7 +361,7 @@ export const actions: Actions = {
 	addKegiatan: async ({ request, locals }) => {
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(400, { fail: 'Pilih sekolah terlebih dahulu' });
-		if (locals.user?.type === 'user' || locals.user?.type === 'wali_asuh') {
+		if (!canManageJadwal(locals.user)) {
 			return fail(403, { fail: 'Anda tidak memiliki izin' });
 		}
 
@@ -391,7 +391,7 @@ export const actions: Actions = {
 	deleteKegiatan: async ({ request, locals }) => {
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(400, { fail: 'Pilih sekolah terlebih dahulu' });
-		if (locals.user?.type === 'user' || locals.user?.type === 'wali_asuh') {
+		if (!canManageJadwal(locals.user)) {
 			return fail(403, { fail: 'Anda tidak memiliki izin' });
 		}
 
@@ -410,7 +410,7 @@ export const actions: Actions = {
 	saveJadwal: async ({ request, locals }) => {
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(400, { fail: 'Pilih sekolah terlebih dahulu' });
-		if (locals.user?.type === 'user' || locals.user?.type === 'wali_asuh') {
+		if (!canManageJadwal(locals.user)) {
 			return fail(403, { fail: 'Anda tidak memiliki izin' });
 		}
 
@@ -704,3 +704,4 @@ export const actions: Actions = {
 		};
 	}
 };
+import { canManageJadwal } from '$lib/server/jadwal';

@@ -2,6 +2,8 @@ import { error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import QRCode from 'qrcode';
 import db from '$lib/server/db';
+import { studentAccessCondition } from '$lib/server/student-access';
+import { canAttendance } from '$lib/attendance-access';
 import { tableKelas, tableMurid, tableSekolah } from '$lib/server/db/schema';
 import { buildKelasAccessWhere, loadActivePrintableQr } from '$lib/server/absensi-digital';
 import {
@@ -76,6 +78,7 @@ export async function getKartuAbsensiPreviewPayload({ locals, url }: KartuAbsens
 	const user = locals.user;
 	if (!sekolah?.id) throw error(404, 'Sekolah aktif tidak ditemukan.');
 	if (!user) throw error(401, 'Anda harus login terlebih dahulu.');
+	if (!canAttendance(user, 'lihat')) throw error(403, 'Izin kartu absensi belum diberikan.');
 
 	const muridId = requireInteger('murid_id', url.searchParams.get('murid_id'));
 	const kelasId = optionalInteger('kelas_id', url.searchParams.get('kelas_id'));
@@ -95,7 +98,8 @@ export async function getKartuAbsensiPreviewPayload({ locals, url }: KartuAbsens
 		where: and(
 			eq(tableMurid.id, muridId),
 			eq(tableMurid.sekolahId, sekolah.id),
-			kelasId ? eq(tableMurid.kelasId, kelasId) : undefined
+			kelasId ? eq(tableMurid.kelasId, kelasId) : undefined,
+			await studentAccessCondition(user, sekolah.id)
 		),
 		with: {
 			alamat: true,
@@ -110,7 +114,7 @@ export async function getKartuAbsensiPreviewPayload({ locals, url }: KartuAbsens
 		throw error(400, 'Murid tidak terdaftar pada kelas yang diminta.');
 	}
 
-	const accessWhere = buildKelasAccessWhere(sekolah.id, murid.kelasId, user);
+	const accessWhere = await buildKelasAccessWhere(sekolah.id, murid.kelasId, user);
 	const kelas = await db.query.tableKelas.findFirst({
 		columns: { id: true, nama: true, fase: true },
 		where: accessWhere

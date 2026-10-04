@@ -16,6 +16,7 @@ import {
 } from '$lib/server/murid-lifecycle';
 import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import { linkMuridIdentity, assertMuridNotArchived } from '$lib/server/murid-identity-service';
 import type { Actions, PageServerLoad } from './$types';
 
 const PER_PAGE = 20;
@@ -31,7 +32,14 @@ function requireAccess(locals: App.Locals) {
 }
 
 function parseIds(form: FormData, key = 'lifecycleIds') {
-	return [...new Set(form.getAll(key).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+	return [
+		...new Set(
+			form
+				.getAll(key)
+				.map(Number)
+				.filter((id) => Number.isInteger(id) && id > 0)
+		)
+	];
 }
 
 async function loadLifecycleRows(sekolahId: number, lifecycleIds: number[]) {
@@ -41,6 +49,7 @@ async function loadLifecycleRows(sekolahId: number, lifecycleIds: number[]) {
 			id: tableMuridLifecycle.id,
 			identityKey: tableMuridLifecycle.identityKey,
 			status: tableMuridLifecycle.status,
+			needsIdentityReview: tableMuridLifecycle.needsIdentityReview,
 			nama: tableMuridLifecycle.namaSnapshot,
 			nis: tableMuridLifecycle.nis,
 			nisn: tableMuridLifecycle.nisn,
@@ -49,7 +58,12 @@ async function loadLifecycleRows(sekolahId: number, lifecycleIds: number[]) {
 			alasan: tableMuridLifecycle.alasan
 		})
 		.from(tableMuridLifecycle)
-		.where(and(eq(tableMuridLifecycle.sekolahId, sekolahId), inArray(tableMuridLifecycle.id, lifecycleIds)));
+		.where(
+			and(
+				eq(tableMuridLifecycle.sekolahId, sekolahId),
+				inArray(tableMuridLifecycle.id, lifecycleIds)
+			)
+		);
 }
 
 async function loadTargetClass(sekolahId: number, targetClassId: number) {
@@ -76,27 +90,47 @@ async function validatePromotion(sekolahId: number, lifecycleIds: number[], targ
 		loadTargetClass(sekolahId, targetClassId)
 	]);
 	if (!targetClass) return { error: 'Kelas tujuan tidak ditemukan.' } as const;
+	if (
+		lifecycles.some(
+			(row) =>
+				row.status !== 'aktif' || row.needsIdentityReview || !row.identityKey.startsWith('uid:')
+		)
+	)
+		return {
+			error: 'Hanya murid aktif dengan identitas yang sudah diperiksa dapat diproses.'
+		} as const;
 	if (lifecycles.length !== lifecycleIds.length || lifecycles.some((row) => !row.lastMuridId)) {
-		return { error: 'Sebagian data murid tidak ditemukan atau tidak lagi memiliki data sumber.' } as const;
+		return {
+			error: 'Sebagian data murid tidak ditemukan atau tidak lagi memiliki data sumber.'
+		} as const;
 	}
 	const sourceIds = lifecycles.map((row) => row.lastMuridId as number);
 	const sourceRows = await db.query.tableMurid.findMany({
 		where: and(eq(tableMurid.sekolahId, sekolahId), inArray(tableMurid.id, sourceIds))
 	});
-	if (sourceRows.length !== sourceIds.length) return { error: 'Data sumber murid tidak lengkap.' } as const;
+	if (sourceRows.length !== sourceIds.length)
+		return { error: 'Data sumber murid tidak lengkap.' } as const;
 	if (sourceRows.some((row) => row.semesterId === targetClass.semesterId)) {
-		return { error: 'Kenaikan kelas harus menuju kelas pada semester yang berbeda agar riwayat lama tetap utuh.' } as const;
+		return {
+			error:
+				'Kenaikan kelas harus menuju kelas pada semester yang berbeda agar riwayat lama tetap utuh.'
+		} as const;
 	}
 	const existing = await db.query.tableMurid.findMany({
 		columns: { nis: true, nama: true },
 		where: and(
 			eq(tableMurid.sekolahId, sekolahId),
 			eq(tableMurid.semesterId, targetClass.semesterId),
-			inArray(tableMurid.nis, sourceRows.map((row) => row.nis))
+			inArray(
+				tableMurid.nis,
+				sourceRows.map((row) => row.nis)
+			)
 		)
 	});
 	if (existing.length) {
-		return { error: `${existing.length} murid sudah tersedia pada semester tujuan: ${existing.map((row) => row.nama).join(', ')}.` } as const;
+		return {
+			error: `${existing.length} murid sudah tersedia pada semester tujuan: ${existing.map((row) => row.nama).join(', ')}.`
+		} as const;
 	}
 	return { lifecycles, sourceRows, targetClass } as const;
 }
@@ -114,6 +148,10 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 	const pattern = `%${q}%`;
 	const filter = and(
 		eq(tableMuridLifecycle.sekolahId, sekolahId),
+		sql`(${tableMuridLifecycle.identityKey} LIKE 'uid:%' OR ${tableMuridLifecycle.status} <> 'aktif')`,
+		url.searchParams.get('perlu_periksa') === '1'
+			? eq(tableMuridLifecycle.needsIdentityReview, 1)
+			: undefined,
 		status ? eq(tableMuridLifecycle.status, status) : undefined,
 		q
 			? or(
@@ -123,7 +161,10 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 				)
 			: undefined
 	);
-	const [{ total }] = await db.select({ total: sql<number>`count(*)` }).from(tableMuridLifecycle).where(filter);
+	const [{ total }] = await db
+		.select({ total: sql<number>`count(*)` })
+		.from(tableMuridLifecycle)
+		.where(filter);
 	const totalItems = Number(total ?? 0);
 	const totalPages = Math.max(1, Math.ceil(totalItems / PER_PAGE));
 	const currentPage = Math.min(requestedPage, totalPages);
@@ -135,6 +176,7 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 			nis: tableMuridLifecycle.nis,
 			nisn: tableMuridLifecycle.nisn,
 			status: tableMuridLifecycle.status,
+			needsIdentityReview: tableMuridLifecycle.needsIdentityReview,
 			tanggalStatus: tableMuridLifecycle.tanggalStatus,
 			alasan: tableMuridLifecycle.alasan,
 			lastMuridId: tableMuridLifecycle.lastMuridId,
@@ -157,7 +199,12 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 		? await db
 				.select()
 				.from(tableMuridRiwayatKelas)
-				.where(and(eq(tableMuridRiwayatKelas.sekolahId, sekolahId), inArray(tableMuridRiwayatKelas.identityKey, identityKeys)))
+				.where(
+					and(
+						eq(tableMuridRiwayatKelas.sekolahId, sekolahId),
+						inArray(tableMuridRiwayatKelas.identityKey, identityKeys)
+					)
+				)
 				.orderBy(desc(tableMuridRiwayatKelas.recordedAt))
 		: [];
 	const historyByIdentity = new Map<string, typeof historyRows>();
@@ -184,7 +231,7 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 		rows: rows.map((row) => ({ ...row, history: historyByIdentity.get(row.identityKey) ?? [] })),
 		targetClasses,
 		statuses: muridLifecycleStatuses,
-		filters: { q, status },
+		filters: { q, status, perluPeriksa: url.searchParams.get('perlu_periksa') === '1' },
 		page: { currentPage, totalPages, totalItems, perPage: PER_PAGE }
 	};
 };
@@ -199,28 +246,64 @@ export const actions: Actions = {
 		const tanggalStatus = String(form.get('tanggalStatus') ?? '').trim();
 		const alasan = String(form.get('alasan') ?? '').trim();
 		if (!lifecycleIds.length) return fail(400, { fail: 'Pilih minimal satu murid.' });
-		if (!muridLifecycleStatuses.includes(status)) return fail(400, { fail: 'Status murid tidak valid.' });
-		if (status !== 'aktif' && !tanggalStatus) return fail(400, { fail: 'Tanggal status wajib diisi.' });
+		if (!muridLifecycleStatuses.includes(status))
+			return fail(400, { fail: 'Status murid tidak valid.' });
+		if (status !== 'aktif' && !tanggalStatus)
+			return fail(400, { fail: 'Tanggal status wajib diisi.' });
 		const before = await loadLifecycleRows(sekolahId, lifecycleIds);
-		if (before.length !== lifecycleIds.length) return fail(404, { fail: 'Sebagian murid tidak ditemukan.' });
-		await db
-			.update(tableMuridLifecycle)
-			.set({
-				status,
-				tanggalStatus: status === 'aktif' ? null : tanggalStatus,
-				alasan: status === 'aktif' ? null : alasan || null,
-				updatedAt: new Date().toISOString()
-			})
-			.where(and(eq(tableMuridLifecycle.sekolahId, sekolahId), inArray(tableMuridLifecycle.id, lifecycleIds)));
-		await writeAuditLog({
-			locals,
-			request,
-			action: status === 'aktif' ? 'restore' : 'archive',
-			entityType: 'murid_lifecycle',
-			entityId: lifecycleIds.join(','),
-			summary: `${before.length} murid diubah menjadi ${status}.`,
-			before,
-			after: { status, tanggalStatus: status === 'aktif' ? null : tanggalStatus, alasan }
+		if (before.length !== lifecycleIds.length)
+			return fail(404, { fail: 'Sebagian murid tidak ditemukan.' });
+		if (before.some((row) => !row.identityKey.startsWith('uid:') || !row.lastMuridId))
+			return fail(400, {
+				fail: 'Snapshot arsip lama tanpa data sumber tidak dapat diaktifkan ulang melalui perubahan status.'
+			});
+		const reviewing = before.some((row) => row.needsIdentityReview);
+		if (
+			reviewing &&
+			(locals.user?.type !== 'admin' || form.get('identityReviewed') !== 'true' || !alasan)
+		)
+			return fail(400, {
+				fail: 'Identitas ambigu harus diperiksa admin. Isi alasan dan konfirmasi pemeriksaan sebelum mengubah status.'
+			});
+		await db.transaction(async (tx) => {
+			await tx
+				.update(tableMuridLifecycle)
+				.set({
+					status,
+					needsIdentityReview: 0,
+					tanggalStatus: status === 'aktif' ? null : tanggalStatus,
+					alasan: alasan || null,
+					updatedAt: new Date().toISOString()
+				})
+				.where(
+					and(
+						eq(tableMuridLifecycle.sekolahId, sekolahId),
+						inArray(tableMuridLifecycle.id, lifecycleIds)
+					)
+				);
+			for (const row of before.filter((row) => row.needsIdentityReview)) {
+				await tx.run(
+					sql`UPDATE murid_identity_review SET resolved_at=${new Date().toISOString()} WHERE sekolah_id=${sekolahId} AND identity_uid=${row.identityKey.slice(4)}`
+				);
+			}
+			await writeAuditLog(
+				{
+					locals,
+					request,
+					action: status === 'aktif' ? 'restore' : 'archive',
+					entityType: 'murid_lifecycle',
+					entityId: lifecycleIds.join(','),
+					summary: `${before.length} murid diubah menjadi ${status}.`,
+					before,
+					after: {
+						status,
+						tanggalStatus: status === 'aktif' ? null : tanggalStatus,
+						alasan,
+						identityReviewed: reviewing
+					}
+				},
+				tx
+			);
 		});
 		return { message: `${before.length} murid berhasil diperbarui menjadi ${status}.` };
 	},
@@ -230,7 +313,8 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const lifecycleIds = parseIds(form);
 		const targetClassId = Number(form.get('targetClassId'));
-		if (!lifecycleIds.length || !Number.isInteger(targetClassId)) return fail(400, { fail: 'Pilih murid dan kelas tujuan.' });
+		if (!lifecycleIds.length || !Number.isInteger(targetClassId))
+			return fail(400, { fail: 'Pilih murid dan kelas tujuan.' });
 		const validation = await validatePromotion(sekolahId, lifecycleIds, targetClassId);
 		if ('error' in validation) return fail(400, { fail: validation.error });
 		return {
@@ -248,13 +332,18 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const lifecycleIds = parseIds(form);
 		const targetClassId = Number(form.get('targetClassId'));
-		if (form.get('confirmed') !== 'true') return fail(400, { fail: 'Pratinjau dan konfirmasi diperlukan.' });
+		if (form.get('confirmed') !== 'true')
+			return fail(400, { fail: 'Pratinjau dan konfirmasi diperlukan.' });
 		const validation = await validatePromotion(sekolahId, lifecycleIds, targetClassId);
 		if ('error' in validation) return fail(400, { fail: validation.error });
 		const insertedIds: number[] = [];
 		const now = new Date().toISOString();
 		await db.transaction(async (tx) => {
 			for (const murid of validation.sourceRows) {
+				const sourceUid = validation.lifecycles
+					.find((row) => row.lastMuridId === murid.id)!
+					.identityKey.slice(4);
+				await assertMuridNotArchived(tx, sekolahId, sourceUid);
 				const [inserted] = await tx
 					.insert(tableMurid)
 					.values({
@@ -287,19 +376,30 @@ export const actions: Actions = {
 						updatedAt: now
 					})
 					.returning({ id: tableMurid.id });
-				if (inserted) insertedIds.push(inserted.id);
+				if (inserted) {
+					await linkMuridIdentity(
+						tx,
+						sekolahId,
+						{ ...murid, id: inserted.id, semesterId: validation.targetClass.semesterId },
+						sourceUid
+					);
+					insertedIds.push(inserted.id);
+				}
 			}
-		});
-		await syncMuridGovernance(sekolahId, insertedIds, 'aktif');
-		await writeAuditLog({
-			locals,
-			request,
-			action: 'promote',
-			entityType: 'murid',
-			entityId: insertedIds.join(','),
-			summary: `${insertedIds.length} murid dinaikkan/dipindahkan ke ${validation.targetClass.nama}.`,
-			before: validation.lifecycles,
-			after: { targetClass: validation.targetClass, insertedIds }
+			await syncMuridGovernance(sekolahId, insertedIds, undefined, {}, tx);
+			await writeAuditLog(
+				{
+					locals,
+					request,
+					action: 'promote',
+					entityType: 'murid',
+					entityId: insertedIds.join(','),
+					summary: `${insertedIds.length} murid dinaikkan/dipindahkan ke ${validation.targetClass.nama}.`,
+					before: validation.lifecycles,
+					after: { targetClass: validation.targetClass, insertedIds }
+				},
+				tx
+			);
 		});
 		return { message: `${insertedIds.length} murid berhasil diproses ke kelas tujuan.` };
 	}

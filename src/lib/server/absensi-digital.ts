@@ -1,11 +1,12 @@
 import db from '$lib/server/db';
 import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
-import { tableAuthUserKelas, tableKelas, tableQrMurid } from '$lib/server/db/schema';
+import { tableKelas, tableQrMurid } from '$lib/server/db/schema';
 import { error, redirect } from '@sveltejs/kit';
-import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
-import { hasSchoolWideOperationalAccess } from '$lib/access-position';
+import { canAttendance } from '$lib/attendance-access';
+import { accessibleClassIds } from './student-access';
 
 export const ABSENSI_PERMISSION = 'administrasi_absensi' as UserPermission;
 export const ABSENSI_STATUSES = ['hadir', 'terlambat', 'sakit', 'izin', 'alfa'] as const;
@@ -14,9 +15,7 @@ export type AbsensiStatus = (typeof ABSENSI_STATUSES)[number];
 export function canAccessAbsensiDigital(
 	user?: (Pick<AuthUser, 'type' | 'permissions'> & { jabatanAkses?: string | null }) | null
 ): boolean {
-	if (!user) return false;
-	if (user.type === 'admin' || user.type === 'wali_kelas') return true;
-	return Array.isArray(user.permissions) && user.permissions.includes(ABSENSI_PERMISSION);
+	return canAttendance(user, 'lihat');
 }
 
 export function requireAbsensiDigitalAccess(user?: Pick<AuthUser, 'type' | 'permissions'> | null) {
@@ -125,6 +124,7 @@ export async function loadAbsensiKelasOptions(
 	sekolahId: number,
 	user: Pick<AuthUser, 'id' | 'type' | 'pegawaiId' | 'permissions'> & {
 		jabatanAkses?: string | null;
+		sekolahId?: number | null;
 	}
 ) {
 	await ensureAbsensiDigitalSchema();
@@ -133,44 +133,20 @@ export async function loadAbsensiKelasOptions(
 	const baseFilter = activeSemesterId
 		? and(eq(tableKelas.sekolahId, sekolahId), eq(tableKelas.semesterId, activeSemesterId))
 		: eq(tableKelas.sekolahId, sekolahId);
-
-	if (!hasSchoolWideOperationalAccess(user)) {
-		const assigned = await db.query.tableAuthUserKelas.findMany({
-			columns: { kelasId: true },
-			where: eq(tableAuthUserKelas.authUserId, user.id)
-		});
-		const assignedIds = assigned.map((item) => item.kelasId);
-		const roleColumn =
-			user.type === 'wali_kelas'
-				? tableKelas.waliKelasId
-				: user.type === 'wali_asrama'
-					? tableKelas.waliAsramaId
-					: user.type === 'wali_asuh'
-						? tableKelas.waliAsuhId
-						: null;
-		const roleFilter = roleColumn && user.pegawaiId ? eq(roleColumn, user.pegawaiId) : undefined;
-		const assignmentFilter = assignedIds.length ? inArray(tableKelas.id, assignedIds) : undefined;
-		const accessFilter =
-			roleFilter && assignmentFilter
-				? or(roleFilter, assignmentFilter)
-				: (roleFilter ?? assignmentFilter ?? eq(tableKelas.id, -1));
-		return {
-			academic,
-			kelasList: await db.query.tableKelas.findMany({
-				columns: { id: true, nama: true, fase: true, semesterId: true },
-				where: and(baseFilter, accessFilter),
-				orderBy: asc(tableKelas.nama)
-			})
-		};
-	}
-
+	const allowedIds = await accessibleClassIds(
+		user as App.Locals['user'],
+		sekolahId,
+		activeSemesterId
+	);
 	return {
 		academic,
-		kelasList: await db.query.tableKelas.findMany({
-			columns: { id: true, nama: true, fase: true, semesterId: true },
-			where: baseFilter,
-			orderBy: asc(tableKelas.nama)
-		})
+		kelasList: allowedIds.length
+			? await db.query.tableKelas.findMany({
+					columns: { id: true, nama: true, fase: true, semesterId: true },
+					where: and(baseFilter, inArray(tableKelas.id, allowedIds)),
+					orderBy: asc(tableKelas.nama)
+				})
+			: []
 	};
 }
 
@@ -179,16 +155,15 @@ export function resolveKelasId(kelasList: Array<{ id: number }>, requested: numb
 	return kelasList[0]?.id ?? null;
 }
 
-export function buildKelasAccessWhere(
+export async function buildKelasAccessWhere(
 	sekolahId: number,
 	kelasId: number,
 	user: Pick<AuthUser, 'id' | 'type' | 'pegawaiId' | 'permissions'> & {
 		jabatanAkses?: string | null;
+		sekolahId?: number | null;
 	}
 ) {
 	const base = and(eq(tableKelas.id, kelasId), eq(tableKelas.sekolahId, sekolahId));
-	if (hasSchoolWideOperationalAccess(user)) return base;
-	if (user.type !== 'wali_kelas') return base;
-	if (!user.pegawaiId) return and(base, eq(tableKelas.id, -1));
-	return and(base, eq(tableKelas.waliKelasId, user.pegawaiId));
+	const ids = await accessibleClassIds(user as App.Locals['user'], sekolahId);
+	return and(base, ids.includes(kelasId) ? undefined : eq(tableKelas.id, -1));
 }

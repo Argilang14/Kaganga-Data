@@ -95,6 +95,7 @@ export async function load({ locals, url, depends, parent }) {
 	}
 
 	const filter = and(
+		activeMuridFilter(),
 		eq(tableMurid.sekolahId, sekolahId),
 		kelasId ? eq(tableMurid.kelasId, Number(kelasId)) : inArray(tableMurid.kelasId, kelasIds),
 		search ? sql`${tableMurid.nama} LIKE ${'%' + search + '%'} COLLATE NOCASE` : undefined
@@ -384,3 +385,4 @@ export const actions = {
 		};
 	}
 };
+import { activeMuridFilter } from '$lib/server/murid-query';

@@ -1,4 +1,6 @@
 import db from '$lib/server/db';
+import { canAttendance, canAttendActivity } from '$lib/attendance-access';
+import { studentAccessCondition } from './student-access';
 import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
 import { withSchemaReady } from '$lib/server/db/schema-guard';
 import {
@@ -146,9 +148,7 @@ export const DEFAULT_ABSENSI_KEGIATAN = [
 export function canAccessAbsensiKegiatan(
 	user?: Pick<AuthUser, 'type' | 'permissions'> | null
 ): boolean {
-	if (!user) return false;
-	if (['admin', 'wali_kelas', 'wali_asrama', 'wali_asuh'].includes(user.type)) return true;
-	return Array.isArray(user.permissions) && user.permissions.includes(ABSENSI_KEGIATAN_PERMISSION);
+	return canAttendance(user, 'lihat');
 }
 
 export function requireAbsensiKegiatanAccess(user?: Pick<AuthUser, 'type' | 'permissions'> | null) {
@@ -166,9 +166,7 @@ export function assertAbsensiKegiatanAccess(user?: Pick<AuthUser, 'type' | 'perm
 export function canManageAbsensiKegiatanSettings(
 	user?: Pick<AuthUser, 'type' | 'permissions'> | null
 ) {
-	if (!user) return false;
-	if (user.type === 'admin') return true;
-	return Array.isArray(user.permissions) && user.permissions.includes(ABSENSI_KEGIATAN_PERMISSION);
+	return canAttendance(user, 'pengaturan');
 }
 
 export function requireAbsensiKegiatanSettingsAccess(
@@ -182,23 +180,14 @@ export function requireAbsensiKegiatanSettingsAccess(
 export function canSyncAbsensiKegiatanToRapor(
 	user?: Pick<AuthUser, 'type' | 'permissions'> | null
 ) {
-	if (!user) return false;
-	if (user.type === 'admin' || user.type === 'wali_kelas') return true;
-	return Array.isArray(user.permissions) && user.permissions.includes(ABSENSI_KEGIATAN_PERMISSION);
+	return canAttendance(user, 'sinkron_rapor');
 }
 
 export function canEditAbsensiKegiatan(
 	user: Pick<AuthUser, 'type' | 'permissions'> | null | undefined,
 	aksesEdit: AbsensiKegiatanEditAccess
 ) {
-	if (!user) return false;
-	if (user.type === 'admin') return true;
-	if (Array.isArray(user.permissions) && user.permissions.includes(ABSENSI_KEGIATAN_PERMISSION)) {
-		return true;
-	}
-	if (aksesEdit === 'sekolah') return user.type === 'wali_kelas';
-	if (aksesEdit === 'asrama') return user.type === 'wali_asrama' || user.type === 'wali_asuh';
-	return ['wali_kelas', 'wali_asrama', 'wali_asuh'].includes(user.type);
+	return canAttendActivity(user, aksesEdit);
 }
 
 export function parseAbsensiKegiatanStatus(
@@ -326,6 +315,7 @@ export async function applyAutoAlfaKegiatan(params: {
 }
 
 export async function syncKegiatanMasukRaporToKehadiran(params: {
+	user?: App.Locals['user'];
 	sekolahId: number;
 	semesterId: number;
 	kelasId: number;
@@ -337,7 +327,8 @@ export async function syncKegiatanMasukRaporToKehadiran(params: {
 		where: and(
 			eq(tableMurid.sekolahId, params.sekolahId),
 			eq(tableMurid.semesterId, params.semesterId),
-			eq(tableMurid.kelasId, params.kelasId)
+			eq(tableMurid.kelasId, params.kelasId),
+			params.user ? await studentAccessCondition(params.user, params.sekolahId) : undefined
 		)
 	});
 	const muridIds = muridRows.map((murid) => murid.id);

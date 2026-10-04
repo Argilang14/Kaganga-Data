@@ -8,6 +8,9 @@ export default defineConfig(({ mode }) => {
 
 	return {
 		plugins: [tailwindcss(), sveltekit(), devtoolsJson()],
+		server: {
+			watch: { ignored: ['**/tmp/**', '**/data/**', '**/dist/**'] }
+		},
 		build: {
 			minify: isProd ? 'esbuild' : false,
 			cssMinify: isProd

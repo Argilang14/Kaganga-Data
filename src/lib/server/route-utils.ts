@@ -3,6 +3,7 @@ import { resolveSekolahAcademicContext, type AcademicContext } from '$lib/server
 import { tableMurid, tablePegawai, tableAuthUserKelas, tableKelas } from '$lib/server/db/schema';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { hasSchoolWideOperationalAccess } from '$lib/access-position';
+import { activeMuridFilter } from '$lib/server/murid-query';
 
 export interface KelasContext {
 	sekolahId: number | null;
@@ -134,7 +135,8 @@ export async function fetchMuridList(
 		}>;
 	const filter = and(
 		eq(tableMurid.sekolahId, sekolahId),
-		kelasId ? eq(tableMurid.kelasId, Number(kelasId)) : inArray(tableMurid.kelasId, kelasIds)
+		kelasId ? eq(tableMurid.kelasId, Number(kelasId)) : inArray(tableMurid.kelasId, kelasIds),
+		activeMuridFilter()
 	);
 	return db.query.tableMurid.findMany({
 		columns: {

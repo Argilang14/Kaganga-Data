@@ -123,8 +123,12 @@ export const load: PageServerLoad = async (event) => {
 		.sort((a, b) => a.label.localeCompare(b.label, 'id'));
 
 	const muridFilter = activeSemesterId
-		? and(eq(tableMurid.sekolahId, sekolahId), eq(tableMurid.semesterId, activeSemesterId))
-		: eq(tableMurid.sekolahId, sekolahId);
+		? and(
+				eq(tableMurid.sekolahId, sekolahId),
+				eq(tableMurid.semesterId, activeSemesterId),
+				activeMuridFilter()
+			)
+		: and(eq(tableMurid.sekolahId, sekolahId), activeMuridFilter());
 
 	const muridCountRows = await db
 		.select({ totalMurid: sql<number>`count(*)` })
@@ -217,7 +221,7 @@ export const load: PageServerLoad = async (event) => {
 
 		const muridRows = await db.query.tableMurid.findMany({
 			columns: { id: true },
-			where: eq(tableMurid.kelasId, kelasAktifId)
+			where: and(eq(tableMurid.kelasId, kelasAktifId), activeMuridFilter())
 		});
 		const muridIds = muridRows.map((murid) => murid.id);
 		const totalStudents = muridIds.length;
@@ -438,3 +442,4 @@ export const load: PageServerLoad = async (event) => {
 		daftarKodeMapel
 	};
 };
+import { activeMuridFilter } from '$lib/server/murid-query';

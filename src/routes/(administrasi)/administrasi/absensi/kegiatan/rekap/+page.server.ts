@@ -171,13 +171,14 @@ export async function load({ locals, url }) {
 		where: and(
 			eq(tableMurid.sekolahId, sekolahId),
 			eq(tableMurid.semesterId, academic.activeSemesterId),
-			eq(tableMurid.kelasId, kelasId)
+			eq(tableMurid.kelasId, kelasId),
+			await studentAccessCondition(locals.user, sekolahId)
 		),
 		orderBy: asc(tableMurid.nama)
 	});
 	const muridIds = muridList.map((murid) => murid.id);
 	let autoAlfaInserted = 0;
-	if (muridIds.length) {
+	if (muridIds.length && canAttendance(locals.user, 'pengaturan')) {
 		const kegiatanIds = kegiatanId ? [kegiatanId] : kegiatanList.map((kegiatan) => kegiatan.id);
 		for (const tanggal of listLocalDatesInRange(tanggalAwal, tanggalAkhir)) {
 			const result = await applyAutoAlfaKegiatan({
@@ -245,6 +246,7 @@ export async function load({ locals, url }) {
 				tahunAjaranId: academic.activeTahunAjaranId,
 				semesterId: academic.activeSemesterId,
 				kelasIds: [kelasId],
+				user: locals.user,
 				today: todayLocalDate()
 			})
 		: { alerts: [], izinPulang: [] };
@@ -308,7 +310,8 @@ export const actions = {
 					eq(tableMurid.id, muridId),
 					eq(tableMurid.sekolahId, sekolahId),
 					eq(tableMurid.semesterId, academic.activeSemesterId),
-					eq(tableMurid.kelasId, kelasId)
+					eq(tableMurid.kelasId, kelasId),
+					await studentAccessCondition(locals.user, sekolahId)
 				)
 			}),
 			db.query.tableKelas.findFirst({
@@ -395,8 +398,7 @@ export const actions = {
 		if (tanggalKembali < existing.tanggalKeluar) {
 			return fail(400, { fail: 'Tanggal kembali tidak boleh sebelum tanggal keluar.' });
 		}
-		const status =
-			tanggalKembali > existing.rencanaKembali ? 'terlambat_kembali' : 'sudah_kembali';
+		const status = tanggalKembali > existing.rencanaKembali ? 'terlambat_kembali' : 'sudah_kembali';
 		const now = new Date().toISOString();
 		await db
 			.update(tableIzinPulangMurid)
@@ -610,16 +612,12 @@ export const actions = {
 
 		const muridRows = await db.query.tableMurid.findMany({
 			columns: { id: true, nama: true, nis: true, nisn: true, kelasId: true, semesterId: true },
-			where: and(eq(tableMurid.sekolahId, sekolahId), eq(tableMurid.semesterId, semesterId))
+			where: and(
+				eq(tableMurid.sekolahId, sekolahId),
+				eq(tableMurid.semesterId, semesterId),
+				await studentAccessCondition(locals.user, sekolahId)
+			)
 		});
-		const muridById = new Map(muridRows.map((murid) => [murid.id, murid]));
-		const muridByNis = new Map(
-			muridRows.filter((murid) => murid.nis).map((murid) => [normalizeIdentity(murid.nis), murid])
-		);
-		const muridByNisn = new Map(
-			muridRows.filter((murid) => murid.nisn).map((murid) => [normalizeIdentity(murid.nisn), murid])
-		);
-		const muridByName = new Map(muridRows.map((murid) => [normalizeIdentity(murid.nama), murid]));
 
 		const kegiatanRows = await db.query.tableKegiatanAbsensi.findMany({
 			where: and(
@@ -640,7 +638,6 @@ export const actions = {
 		let inserted = 0;
 		let skipped = 0;
 		const errors: string[] = [];
-		const now = new Date().toISOString();
 
 		for (let rowNumber = headerRowNumber + 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
 			const row = sheet.getRow(rowNumber);
@@ -648,7 +645,7 @@ export const actions = {
 			const status = normalizeStatusText(row.getCell(column('status')).value);
 			const statusRaw = normalizeImportText(row.getCell(column('status')).value);
 			if (!tanggal && !statusRaw) continue;
-			if (!tanggal || !status) {
+			if (!tanggal || !status || !attendanceDateAllowed(locals.user, tanggal, todayLocalDate())) {
 				skipped += 1;
 				if (errors.length < 5) errors.push(`Baris ${rowNumber}: tanggal atau status tidak valid.`);
 				continue;
@@ -677,11 +674,10 @@ export const actions = {
 			const nis = normalizeIdentity(row.getCell(column('nis')).value);
 			const nisn = normalizeIdentity(row.getCell(column('nisn')).value);
 			const nama = normalizeIdentity(row.getCell(column('nama')).value);
-			const murid =
-				(muridId ? muridById.get(muridId) : undefined) ??
-				(nis ? muridByNis.get(nis) : undefined) ??
-				(nisn ? muridByNisn.get(nisn) : undefined) ??
-				(nama ? muridByName.get(nama) : undefined);
+			const murid = resolveMuridImportIdentity(
+				muridRows.filter((murid) => murid.kelasId === rowKelasId),
+				{ id: muridId, nis, nisn, nama }
+			);
 			if (!murid || murid.kelasId !== rowKelasId || murid.semesterId !== semesterId) {
 				skipped += 1;
 				if (errors.length < 5) errors.push(`Baris ${rowNumber}: siswa tidak ditemukan di kelas.`);
@@ -697,40 +693,25 @@ export const actions = {
 					eq(tableAbsensiKegiatan.tanggal, tanggal)
 				)
 			});
-			if (existing) {
-				await db
-					.update(tableAbsensiKegiatan)
-					.set({
-						sekolahId,
-						semesterId,
-						kelasId: rowKelasId,
-						status,
-						metode: 'manual',
-						autoAlfa: false,
-						petugasUserId: locals.user.id,
-						catatan,
-						updatedAt: now
-					})
-					.where(eq(tableAbsensiKegiatan.id, existing.id));
-				updated += 1;
-			} else {
-				await db.insert(tableAbsensiKegiatan).values({
-					sekolahId,
-					semesterId,
-					kelasId: rowKelasId,
-					muridId: murid.id,
-					kegiatanId: kegiatan.id,
-					tanggal,
-					status,
-					metode: 'manual',
-					autoAlfa: false,
-					petugasUserId: locals.user.id,
-					catatan,
-					createdAt: now,
-					updatedAt: now
-				});
-				inserted += 1;
+			if (existing && !catatan) {
+				skipped++;
+				if (errors.length < 5)
+					errors.push(`Baris ${rowNumber}: koreksi absensi wajib menyertakan catatan alasan.`);
+				continue;
 			}
+			await saveAttendance({
+				locals,
+				request,
+				semesterId,
+				kelasId: rowKelasId,
+				kegiatanId: kegiatan.id,
+				muridIds: [murid.id],
+				tanggal,
+				status,
+				catatan
+			});
+			if (existing) updated++;
+			else inserted++;
 			imported += 1;
 		}
 
@@ -761,7 +742,7 @@ export const actions = {
 		const kelas = await db.query.tableKelas.findFirst({
 			columns: { id: true },
 			where: and(
-				buildKelasAccessWhere(sekolahId, kelasId, locals.user),
+				await buildKelasAccessWhere(sekolahId, kelasId, locals.user),
 				eq(tableKelas.semesterId, semesterId)
 			)
 		});
@@ -769,7 +750,9 @@ export const actions = {
 
 		const kegiatanList = await loadKegiatanAbsensiOptions(sekolahId);
 		const kegiatanIds = kegiatanList.map((kegiatan) => kegiatan.id);
-		for (const tanggal of listLocalDatesInRange(tanggalAwal, tanggalAkhir)) {
+		for (const tanggal of canAttendance(locals.user, 'pengaturan')
+			? listLocalDatesInRange(tanggalAwal, tanggalAkhir)
+			: []) {
 			await applyAutoAlfaKegiatan({
 				sekolahId,
 				semesterId,
@@ -780,6 +763,7 @@ export const actions = {
 		}
 
 		const result = await syncKegiatanMasukRaporToKehadiran({
+			user: locals.user,
 			sekolahId,
 			semesterId,
 			kelasId,
@@ -792,3 +776,7 @@ export const actions = {
 		};
 	}
 };
+import { resolveMuridImportIdentity } from '$lib/server/murid-identity';
+import { studentAccessCondition } from '$lib/server/student-access';
+import { saveAttendance } from '$lib/server/attendance-mutation';
+import { canAttendance, attendanceDateAllowed } from '$lib/attendance-access';

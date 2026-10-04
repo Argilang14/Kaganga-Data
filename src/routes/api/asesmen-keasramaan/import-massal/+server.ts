@@ -228,7 +228,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 		let muridList = await db.query.tableMurid.findMany({
 			columns: { id: true, nama: true, nisn: true, waliAsuhNama: true },
-			where: and(eq(tableMurid.kelasId, kelasId), eq(tableMurid.sekolahId, sekolahId), await guardianStudentCondition(locals.user, sekolahId))
+			where: and(
+				eq(tableMurid.kelasId, kelasId),
+				eq(tableMurid.sekolahId, sekolahId),
+				await guardianStudentCondition(locals.user, sekolahId)
+			)
 		});
 		const user = locals.user as { type?: string; pegawaiId?: number | null } | null;
 		if (user?.type === 'wali_asuh' && user.pegawaiId) {
@@ -241,14 +245,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				? muridList.filter((murid) => murid.waliAsuhNama?.trim().toLowerCase() === namaWaliAsuh)
 				: [];
 		}
-		const muridByNisn = new Map<string, number>();
-		for (const murid of muridList) {
-			const nisn = normalize(murid.nisn);
-			if (nisn) muridByNisn.set(nisn, murid.id);
-		}
-		const muridByName = new Map<string, number>(
-			muridList.map((murid) => [normalize(murid.nama), murid.id])
-		);
 
 		const keasramaanList = await db.query.tableKeasramaan.findMany({
 			columns: { id: true, nama: true },
@@ -366,7 +362,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			if (rowNumber <= 2) return;
 			const nisn = normalize(row.getCell(1).value);
 			const nama = cellText(row.getCell(3).value).trim();
-			const muridId = (nisn ? muridByNisn.get(nisn) : null) ?? muridByName.get(normalize(nama));
+			const muridId = resolveMuridImportIdentity(muridList, { nisn, nama })?.id;
 			if (!muridId) {
 				if (nama || nisn) skippedStudents.push(nama || nisn);
 				return;
@@ -447,3 +443,4 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		);
 	}
 };
+import { resolveMuridImportIdentity } from '$lib/server/murid-identity';

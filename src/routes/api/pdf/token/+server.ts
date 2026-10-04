@@ -118,7 +118,7 @@ export const POST = (async ({ locals, request }) => {
 		body.kartuLayout === 'photo-qr' || body.kartuLayout === 'qr-only' ? body.kartuLayout : 'duplex';
 	const variant = resolveSchoolPdfVariant(docType, locals);
 
-	if (locals.user?.type === 'wali_asrama' && (docType !== 'keasramaan' || variant !== 'sr')) {
+	if (locals.user?.type === 'wali_asrama' && docType !== 'kartu-absensi' && (docType !== 'keasramaan' || variant !== 'sr')) {
 		throw error(403, 'Wali asrama hanya dapat mencetak Dokumen SR Rapor Keasramaan.');
 	}
 

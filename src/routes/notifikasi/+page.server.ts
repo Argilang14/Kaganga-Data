@@ -16,7 +16,6 @@ import {
 	tableAsesmenSumatif,
 	tableMartikulasiHasil,
 	tableMurid,
-	tableMuridLifecycle,
 	tablePengumuman,
 	tableSppd,
 	tableSuratArsip
@@ -143,7 +142,7 @@ export async function _getNotificationData(locals: App.Locals) {
 						eq(tableMurid.sekolahId, sekolahId),
 						eq(tableMurid.semesterId, academic.activeSemesterId),
 						isNull(tableMurid.foto),
-						sql`NOT EXISTS (SELECT 1 FROM ${tableMuridLifecycle} ml WHERE ml.sekolah_id = ${tableMurid.sekolahId} AND ml.identity_key = CASE WHEN trim(coalesce(${tableMurid.nisn}, '')) <> '' THEN 'nisn:' || lower(trim(${tableMurid.nisn})) ELSE 'nis:' || lower(trim(${tableMurid.nis})) END AND ml.status <> 'aktif')`
+						activeMuridFilter()
 					)
 				)
 			: 0,
@@ -155,7 +154,7 @@ export async function _getNotificationData(locals: App.Locals) {
 						eq(tableMurid.sekolahId, sekolahId),
 						eq(tableMurid.semesterId, academic.activeSemesterId),
 						or(isNull(tableMurid.qrToken), eq(tableMurid.qrToken, '')),
-						sql`NOT EXISTS (SELECT 1 FROM ${tableMuridLifecycle} ml WHERE ml.sekolah_id = ${tableMurid.sekolahId} AND ml.identity_key = CASE WHEN trim(coalesce(${tableMurid.nisn}, '')) <> '' THEN 'nisn:' || lower(trim(${tableMurid.nisn})) ELSE 'nis:' || lower(trim(${tableMurid.nis})) END AND ml.status <> 'aktif')`
+						activeMuridFilter()
 					)
 				)
 			: 0,
@@ -448,3 +447,4 @@ export async function load({ locals }) {
 	authority('notifikasi_lihat');
 	return _getNotificationData(locals);
 }
+import { activeMuridFilter } from '$lib/server/murid-query';

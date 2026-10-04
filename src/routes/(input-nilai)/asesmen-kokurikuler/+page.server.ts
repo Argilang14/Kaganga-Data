@@ -139,7 +139,7 @@ export async function load({ parent, url, depends }) {
 
 	const muridRaw = await db.query.tableMurid.findMany({
 		columns: { id: true, nama: true },
-		where: eq(tableMurid.kelasId, kelasId),
+		where: and(eq(tableMurid.kelasId, kelasId), activeMuridFilter()),
 		orderBy: asc(tableMurid.nama)
 	});
 
@@ -356,3 +356,4 @@ export const actions = {
 		};
 	}
 };
+import { activeMuridFilter } from '$lib/server/murid-query';

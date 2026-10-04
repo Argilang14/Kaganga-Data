@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
 	import { page } from '$app/state';
+	import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 	import FormEnhance from '$lib/components/form-enhance.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import { jenisKelamin } from '$lib/statics';
@@ -13,8 +14,8 @@
 		data.murid?.id ? `/murid/form/${data.murid.id}?/save` : '/murid/form?/save'
 	);
 	const isLimitedWaliAsramaEdit = $derived.by(() => {
-		const u = page.data.user as { type?: string } | null | undefined;
-		return u?.type === 'wali_asrama';
+		const u = page.data.user;
+		return u?.type === 'wali_asrama' && !hasSchoolWideOperationalAccess(u);
 	});
 
 	$effect(() => {
@@ -123,10 +124,10 @@
 							<fieldset class="fieldset flex-1">
 								<legend class="fieldset-legend">NISN</legend>
 								<input
-									required
 									type="text"
+									inputmode="numeric"
 									class="input validator bg-base-200 dark:bg-base-300 w-full dark:border-none"
-									placeholder="Contoh: 8371612"
+									placeholder="10 digit atau kosong jika belum tersedia"
 									name="nisn"
 								/>
 							</fieldset>

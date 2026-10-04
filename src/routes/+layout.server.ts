@@ -41,7 +41,7 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 			pegawaiId?: number;
 			jabatanAkses?: string | null;
 		} | null;
-		if (isLegacyWaliKelas(userWithType)) {
+		if (isLegacyWaliKelas(userWithType) && !hasSchoolWideOperationalAccess(user)) {
 			const legacyKelasIds = await getLegacyWaliKelasIds(
 				userWithType,
 				sekolah.id,
@@ -57,12 +57,12 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 			}
 		} else if (
 			(userWithType?.type === 'wali_asuh' || userWithType?.type === 'wali_asrama') &&
-			userWithType.pegawaiId
+			!hasSchoolWideOperationalAccess(user)
 		) {
 			const pegawai = await db.query.tablePegawai.findFirst({
 				columns: { nama: true },
 				where: and(
-					eq(tablePegawai.id, userWithType.pegawaiId),
+					eq(tablePegawai.id, userWithType.pegawaiId ?? -1),
 					eq(tablePegawai.sekolahId, sekolah.id)
 				)
 			});
@@ -104,8 +104,13 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 				where: eq(tableAuthUserKelas.authUserId, userWithType.id)
 			});
 
-			if (allowedKelasRecords.length > 0) {
-				const allowedKelasIds = allowedKelasRecords.map((r) => r.kelasId);
+			const allowedKelasIds = [
+				...new Set([
+					...allowedKelasRecords.map((r) => r.kelasId),
+					...(user?.kelasId ? [user.kelasId] : [])
+				])
+			];
+			if (allowedKelasIds.length > 0) {
 				if (academicContext?.activeSemesterId) {
 					// Prefer explicit assignments in the active semester
 					daftarKelas = await db.query.tableKelas.findMany({
@@ -122,7 +127,13 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 					if (!daftarKelas.length) {
 						const assignedKelas = await db.query.tableKelas.findMany({
 							columns: { nama: true },
-							where: and(inArray(tableKelas.id, allowedKelasIds), eq(tableKelas.sekolahId, sekolah.id), academicContext.activeTahunAjaranId ? eq(tableKelas.tahunAjaranId, academicContext.activeTahunAjaranId) : undefined)
+							where: and(
+								inArray(tableKelas.id, allowedKelasIds),
+								eq(tableKelas.sekolahId, sekolah.id),
+								academicContext.activeTahunAjaranId
+									? eq(tableKelas.tahunAjaranId, academicContext.activeTahunAjaranId)
+									: undefined
+							)
 						});
 						const namaSet = new Set(assignedKelas.map((k) => k.nama));
 						daftarKelas = await db.query.tableKelas.findMany({
@@ -140,7 +151,10 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 					daftarKelas = await db.query.tableKelas.findMany({
 						columns: { id: true, nama: true, fase: true },
 						with: { waliKelas: { columns: { id: true, nama: true } } },
-						where: and(inArray(tableKelas.id, allowedKelasIds), eq(tableKelas.sekolahId, sekolah.id)),
+						where: and(
+							inArray(tableKelas.id, allowedKelasIds),
+							eq(tableKelas.sekolahId, sekolah.id)
+						),
 						orderBy: asc(tableKelas.nama)
 					});
 				}
@@ -180,6 +194,7 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 				};
 				if (
 					isLegacyWaliKelas(userWithType) &&
+					!hasSchoolWideOperationalAccess(user) &&
 					!daftarKelas.some((kelas) => kelas.id === kelasIdNumber)
 				) {
 					throw redirect(303, `/forbidden?required=kelas_id`);
@@ -225,7 +240,9 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 		// - 'user' (guru mapel) CAN manage mata pelajaran (they are filtered server-side)
 		// - Other account types retain full access
 		const userType = (user as { type?: string }).type;
-		const canManageMapel = userType !== 'wali_asuh' && userType !== 'wali_asrama';
+		const canManageMapel =
+			hasSchoolWideOperationalAccess(user) ||
+			(userType !== 'wali_asuh' && userType !== 'wali_asrama');
 		const canEditUrutan =
 			hasSchoolWideOperationalAccess(user) ||
 			userType === 'kepala_sekolah' ||
@@ -277,7 +294,17 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 	}
 
 	return {
-		assignmentSummary: user && sekolah?.id ? (await getAssignmentSummaries([user], sekolah.id, academicContext?.activeSemesterId ?? null, academicContext?.activeTahunAjaranId ?? null)).get(user.id) ?? null : null,
+		assignmentSummary:
+			user && sekolah?.id
+				? ((
+						await getAssignmentSummaries(
+							[user],
+							sekolah.id,
+							academicContext?.activeSemesterId ?? null,
+							academicContext?.activeTahunAjaranId ?? null
+						)
+					).get(user.id) ?? null)
+				: null,
 		sekolah,
 		meta,
 		daftarKelas,

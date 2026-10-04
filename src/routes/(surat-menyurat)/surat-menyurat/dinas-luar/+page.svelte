@@ -93,7 +93,7 @@
 						>
 						<td
 							><div class="flex justify-end gap-1">
-								{#if item.status === 'diajukan' && data.isAdmin}
+								{#if item.status === 'diajukan' && data.canApprove}
 									<form method="POST" action="?/setStatus">
 										<input type="hidden" name="id" value={item.id} /><input
 											type="hidden"
@@ -120,7 +120,7 @@
 										>
 									</form>
 								{/if}
-								{#if item.status === 'disetujui' && data.isAdmin}
+								{#if item.status === 'disetujui' && data.canApprove}
 									<form method="POST" action="?/setStatus">
 										<input type="hidden" name="id" value={item.id} /><input
 											type="hidden"

@@ -1,9 +1,9 @@
 import { ensureSchema } from './ensure-helper';
+import db, { databaseUrl } from '$lib/server/db';
+import path from 'node:path';
+import { migrateMuridIdentity } from './murid-identity-migration';
 
-const identitySql = `CASE
-	WHEN trim(coalesce(nisn, '')) <> '' THEN 'nisn:' || lower(trim(nisn))
-	ELSE 'nis:' || lower(trim(nis))
-END`;
+const migrations = new WeakMap<object, Promise<unknown>>();
 
 export async function ensureDataGovernanceSchema() {
 	await ensureSchema('data-governance-v1', [
@@ -63,38 +63,18 @@ export async function ensureDataGovernanceSchema() {
 			UNIQUE(murid_id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS murid_riwayat_kelas_identity_idx ON murid_riwayat_kelas(sekolah_id, identity_key)`,
-		`CREATE INDEX IF NOT EXISTS murid_riwayat_kelas_context_idx ON murid_riwayat_kelas(tahun_ajaran_id, semester_id, kelas_id)`,
-		`INSERT OR IGNORE INTO murid_lifecycle (
-			sekolah_id, identity_key, nis, nisn, nama_snapshot, status, last_murid_id, created_at, updated_at
-		)
-		SELECT m.sekolah_id, ${identitySql}, m.nis, nullif(trim(m.nisn), ''), m.nama,
-			'aktif', m.id, coalesce(m.created_at, CURRENT_TIMESTAMP), coalesce(m.updated_at, CURRENT_TIMESTAMP)
-		FROM murid m
-		ORDER BY m.id DESC`,
-		`UPDATE murid_lifecycle
-		SET last_murid_id = (
-			SELECT max(m.id) FROM murid m
-			WHERE m.sekolah_id = murid_lifecycle.sekolah_id
-			AND (${identitySql}) = murid_lifecycle.identity_key
-		),
-		nama_snapshot = coalesce((
-			SELECT m.nama FROM murid m
-			WHERE m.sekolah_id = murid_lifecycle.sekolah_id
-			AND (${identitySql}) = murid_lifecycle.identity_key
-			ORDER BY m.id DESC LIMIT 1
-		), nama_snapshot)`,
-		`INSERT OR IGNORE INTO murid_riwayat_kelas (
-			sekolah_id, identity_key, murid_id, tahun_ajaran_id, semester_id, kelas_id,
-			nama_snapshot, nis_snapshot, nisn_snapshot, tahun_ajaran_snapshot,
-			semester_snapshot, kelas_snapshot, fase_snapshot, status_snapshot, recorded_at
-		)
-		SELECT m.sekolah_id, ${identitySql}, m.id, k.tahun_ajaran_id, m.semester_id, m.kelas_id,
-			m.nama, m.nis, nullif(trim(m.nisn), ''), coalesce(ta.nama, '-'),
-			coalesce(s.nama, '-'), coalesce(k.nama, '-'), k.fase, 'aktif',
-			coalesce(m.created_at, CURRENT_TIMESTAMP)
-		FROM murid m
-		JOIN kelas k ON k.id = m.kelas_id
-		JOIN semester s ON s.id = m.semester_id
-		JOIN tahun_ajaran ta ON ta.id = k.tahun_ajaran_id`
+		`CREATE INDEX IF NOT EXISTS murid_riwayat_kelas_context_idx ON murid_riwayat_kelas(tahun_ajaran_id, semester_id, kelas_id)`
 	]);
+	const client = db.$client;
+	if (!migrations.has(client)) {
+		const url = databaseUrl;
+		const migration = migrateMuridIdentity(client, {
+			databasePath: url.startsWith('file:') ? path.resolve(url.slice(5)) : undefined
+		}).catch((error) => {
+			migrations.delete(client);
+			throw error;
+		});
+		migrations.set(client, migration);
+	}
+	await migrations.get(client);
 }

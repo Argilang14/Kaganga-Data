@@ -1,5 +1,6 @@
 export type JurnalPrintAccessInput = {
 	userType: string | null | undefined;
+	schoolWide?: boolean;
 	lingkup: 'kelas' | 'mapel';
 	penandatangan: 'wali_kelas' | 'guru_mapel';
 	hasSelectedClass: boolean;
@@ -9,7 +10,7 @@ export type JurnalPrintAccessInput = {
 };
 
 export function getJurnalPrintAccessError(input: JurnalPrintAccessInput): string | null {
-	if (input.userType === 'admin') return null;
+	if (input.userType === 'admin' || input.schoolWide) return null;
 	if (input.userType !== 'wali_kelas' && input.userType !== 'user') {
 		return 'Akun ini tidak memiliki akses untuk mencetak jurnal mengajar';
 	}

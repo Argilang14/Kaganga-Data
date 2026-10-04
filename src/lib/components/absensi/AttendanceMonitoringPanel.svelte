@@ -2,6 +2,8 @@
 	import { invalidateAll } from '$app/navigation';
 	import FormEnhance from '$lib/components/form-enhance.svelte';
 	import Icon from '$lib/components/icon.svelte';
+	import { page } from '$app/state';
+	import { canAttendance } from '$lib/attendance-access';
 
 	type Alert = {
 		key: string;
@@ -114,7 +116,9 @@
 			<div class="mb-3 flex items-center justify-between gap-2">
 				<div>
 					<h4 class="font-semibold">Murid Memerlukan Tindak Lanjut</h4>
-					<p class="text-base-content/60 text-xs">Indikator untuk ditinjau, bukan keputusan otomatis.</p>
+					<p class="text-base-content/60 text-xs">
+						Indikator untuk ditinjau, bukan keputusan otomatis.
+					</p>
 				</div>
 				<span class="badge badge-soft">{alerts.length}</span>
 			</div>
@@ -122,9 +126,7 @@
 				{#each alerts as alert (alert.key)}
 					<article
 						class={`rounded-lg border p-3 ${
-							alert.severity === 'error'
-								? 'border-error bg-error/5'
-								: 'border-warning bg-warning/5'
+							alert.severity === 'error' ? 'border-error bg-error/5' : 'border-warning bg-warning/5'
 						} ${alert.followUp?.status === 'selesai' ? 'opacity-60' : ''}`}
 					>
 						<div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -139,12 +141,15 @@
 								<p class="mt-1 text-sm font-medium">{alert.title}</p>
 								<p class="text-base-content/65 text-xs">{alert.description}</p>
 								<p class="text-base-content/55 mt-1 text-xs">
-									{dateLabel(alert.periodeMulai)}–{dateLabel(alert.periodeSelesai)} · {alert.duration} hari
+									{dateLabel(alert.periodeMulai)}–{dateLabel(alert.periodeSelesai)} · {alert.duration}
+									hari
 								</p>
 							</div>
 							<details class="dropdown dropdown-end">
 								<summary class="btn btn-soft btn-xs shadow-none">Tindak lanjut</summary>
-								<div class="dropdown-content bg-base-100 border-base-300 z-10 mt-2 w-[min(88vw,22rem)] rounded-lg border p-3 shadow-lg">
+								<div
+									class="dropdown-content bg-base-100 border-base-300 z-10 mt-2 w-[min(88vw,22rem)] rounded-lg border p-3 shadow-lg"
+								>
 									<FormEnhance action="?/saveFollowUp" showToast onsuccess={onSuccess}>
 										<input type="hidden" name="muridId" value={alert.muridId} />
 										<input type="hidden" name="kelasId" value={alert.kelasId} />
@@ -153,7 +158,11 @@
 										<input type="hidden" name="periodeSelesai" value={alert.periodeSelesai} />
 										<label class="form-control">
 											<span class="label-text mb-1 text-xs">Status</span>
-											<select class="select select-bordered select-sm" name="status" value={alert.followUp?.status ?? 'diproses'}>
+											<select
+												class="select select-bordered select-sm"
+												name="status"
+												value={alert.followUp?.status ?? 'diproses'}
+											>
 												<option value="baru">Baru</option>
 												<option value="diproses">Diproses</option>
 												<option value="selesai">Selesai</option>
@@ -161,9 +170,17 @@
 										</label>
 										<label class="form-control mt-2">
 											<span class="label-text mb-1 text-xs">Catatan</span>
-											<textarea class="textarea textarea-bordered textarea-sm" name="catatan" rows="3">{alert.followUp?.catatan ?? ''}</textarea>
+											<textarea
+												class="textarea textarea-bordered textarea-sm"
+												name="catatan"
+												rows="3">{alert.followUp?.catatan ?? ''}</textarea
+											>
 										</label>
-										<button class="btn btn-primary btn-sm mt-3 w-full shadow-none" type="submit">
+										<button
+											class="btn btn-primary btn-sm mt-3 w-full shadow-none"
+											type="submit"
+											disabled={!canAttendance(page.data.user, 'koreksi')}
+										>
 											<Icon name="save" /> Simpan
 										</button>
 									</FormEnhance>
@@ -189,7 +206,7 @@
 					class="btn btn-primary btn-sm shrink-0 shadow-none"
 					type="button"
 					onclick={openPermitDialog}
-					disabled={!kelasId || !students.length}
+					disabled={!kelasId || !students.length || !canAttendance(page.data.user, 'izin_pulang')}
 				>
 					<Icon name="plus" /> Catat Izin Pulang
 				</button>
@@ -203,23 +220,34 @@
 								<strong>{permit.nama}</strong>
 								<p class="text-base-content/60 text-xs">{permit.alasan}</p>
 							</div>
-							<span class={`badge badge-sm ${permitBadge(permit.status)}`}>{permitLabel(permit.status)}</span>
+							<span class={`badge badge-sm ${permitBadge(permit.status)}`}
+								>{permitLabel(permit.status)}</span
+							>
 						</div>
 						<p class="text-base-content/60 mt-2 text-xs">
-							Keluar {dateLabel(permit.tanggalKeluar)} · Rencana {dateLabel(permit.rencanaKembali)} · {permit.duration} hari sekolah
+							Keluar {dateLabel(permit.tanggalKeluar)} · Rencana {dateLabel(permit.rencanaKembali)} ·
+							{permit.duration} hari sekolah
 						</p>
 						{#if !permit.tanggalKembali && ['sedang_izin', 'terlambat_kembali'].includes(permit.status)}
 							<div class="mt-2 flex flex-wrap gap-2">
 								<FormEnhance action="?/markIzinReturned" showToast onsuccess={onSuccess}>
 									<input type="hidden" name="id" value={permit.id} />
 									<input type="hidden" name="tanggalKembali" value={today} />
-									<button class="btn btn-success btn-xs shadow-none" type="submit">
+									<button
+										class="btn btn-success btn-xs shadow-none"
+										type="submit"
+										disabled={!canAttendance(page.data.user, 'izin_pulang')}
+									>
 										<Icon name="check" /> Sudah Kembali
 									</button>
 								</FormEnhance>
 								<FormEnhance action="?/cancelIzinPulang" showToast onsuccess={onSuccess}>
 									<input type="hidden" name="id" value={permit.id} />
-									<button class="btn btn-ghost btn-xs shadow-none" type="submit">Batalkan</button>
+									<button
+										class="btn btn-ghost btn-xs shadow-none"
+										type="submit"
+										disabled={!canAttendance(page.data.user, 'izin_pulang')}>Batalkan</button
+									>
 								</FormEnhance>
 							</div>
 						{/if}
@@ -274,7 +302,13 @@
 						</label>
 						<label class="form-control">
 							<span class="label-text mb-1.5 font-medium">Tanggal keluar</span>
-							<input class="input input-bordered w-full" type="date" name="tanggalKeluar" value={today} required />
+							<input
+								class="input input-bordered w-full"
+								type="date"
+								name="tanggalKeluar"
+								value={today}
+								required
+							/>
 						</label>
 						<label class="form-control">
 							<span class="label-text mb-1.5 font-medium">Waktu keluar</span>
@@ -282,7 +316,13 @@
 						</label>
 						<label class="form-control">
 							<span class="label-text mb-1.5 font-medium">Rencana kembali</span>
-							<input class="input input-bordered w-full" type="date" name="rencanaKembali" value={today} required />
+							<input
+								class="input input-bordered w-full"
+								type="date"
+								name="rencanaKembali"
+								value={today}
+								required
+							/>
 						</label>
 						<label class="form-control">
 							<span class="label-text mb-1.5 font-medium">Waktu kembali</span>
@@ -290,7 +330,12 @@
 						</label>
 						<label class="form-control sm:col-span-2">
 							<span class="label-text mb-1.5 font-medium">Alasan</span>
-							<textarea class="textarea textarea-bordered min-h-24 w-full" name="alasan" rows="3" placeholder="Tuliskan alasan izin pulang" required></textarea>
+							<textarea
+								class="textarea textarea-bordered min-h-24 w-full"
+								name="alasan"
+								rows="3"
+								placeholder="Tuliskan alasan izin pulang"
+								required></textarea>
 						</label>
 					</div>
 				</section>
@@ -302,25 +347,44 @@
 					<div class="grid gap-4 sm:grid-cols-2">
 						<label class="form-control">
 							<span class="label-text mb-1.5 font-medium">Nama penjemput</span>
-							<input class="input input-bordered w-full" name="penjemputNama" placeholder="Nama lengkap" />
+							<input
+								class="input input-bordered w-full"
+								name="penjemputNama"
+								placeholder="Nama lengkap"
+							/>
 						</label>
 						<label class="form-control">
 							<span class="label-text mb-1.5 font-medium">Hubungan dengan murid</span>
-							<input class="input input-bordered w-full" name="penjemputHubungan" placeholder="Contoh: Orang tua" />
+							<input
+								class="input input-bordered w-full"
+								name="penjemputHubungan"
+								placeholder="Contoh: Orang tua"
+							/>
 						</label>
 						<label class="form-control">
 							<span class="label-text mb-1.5 font-medium">Kontak penjemput</span>
-							<input class="input input-bordered w-full" name="penjemputKontak" type="tel" placeholder="Nomor telepon" />
+							<input
+								class="input input-bordered w-full"
+								name="penjemputKontak"
+								type="tel"
+								placeholder="Nomor telepon"
+							/>
 						</label>
 						<label class="form-control">
 							<span class="label-text mb-1.5 font-medium">Nomor dokumen</span>
-							<input class="input input-bordered w-full" name="nomorDokumen" placeholder="Opsional" />
+							<input
+								class="input input-bordered w-full"
+								name="nomorDokumen"
+								placeholder="Opsional"
+							/>
 						</label>
 					</div>
 				</section>
 			</div>
 
-			<div class="border-base-200 flex flex-col-reverse gap-2 border-t bg-base-200/30 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+			<div
+				class="border-base-200 flex flex-col-reverse gap-2 border-t bg-base-200/30 px-5 py-4 sm:flex-row sm:justify-end sm:px-6"
+			>
 				<button class="btn btn-ghost" type="button" onclick={() => permitDialog.close()}>
 					Batal
 				</button>

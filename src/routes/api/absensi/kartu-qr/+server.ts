@@ -6,6 +6,9 @@ import {
 	resolvePrintableQrToken
 } from '$lib/server/absensi-digital';
 import db from '$lib/server/db';
+import { studentAccessCondition } from '$lib/server/student-access';
+import { canAttendance } from '$lib/attendance-access';
+import { writeAuditLog } from '$lib/server/audit-log';
 import { tableMurid, tableQrMurid } from '$lib/server/db/schema';
 import { error, json } from '@sveltejs/kit';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
@@ -30,6 +33,7 @@ export const POST = (async ({ locals, request }) => {
 
 	const body = (await request.json()) as QrRequest;
 	const action = body.action === 'generate-missing' ? body.action : 'status';
+	if (action === 'generate-missing' && !canAttendance(locals.user, 'qr_manage')) throw error(403, 'Izin penerbitan QR belum diberikan.');
 	const muridIds = normalizeMuridIds(body.muridIds);
 	if (!muridIds.length) throw error(400, 'Daftar murid wajib diisi.');
 	if (muridIds.length > MAX_QR_MURID) {
@@ -47,7 +51,8 @@ export const POST = (async ({ locals, request }) => {
 			eq(tableMurid.sekolahId, sekolahId),
 			eq(tableMurid.semesterId, academic.activeSemesterId),
 			inArray(tableMurid.kelasId, kelasIds),
-			inArray(tableMurid.id, muridIds)
+			inArray(tableMurid.id, muridIds),
+			await studentAccessCondition(locals.user, sekolahId)
 		)
 	});
 	if (muridList.length !== muridIds.length) {
@@ -107,6 +112,8 @@ export const POST = (async ({ locals, request }) => {
 					updatedAt: now
 				});
 				generated += 1;
+				await writeAuditLog({ locals, request, action: 'update', entityType: 'qr_murid', entityId: muridId,
+					summary: 'Menerbitkan ulang QR absensi', before: { tokenVersion: latest?.tokenVersion ?? 0 }, after: { tokenVersion } }, tx);
 			}
 		});
 	}

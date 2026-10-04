@@ -11,6 +11,7 @@
 	import NavIndicator from '$lib/components/nav-indicator.svelte';
 	import ScrollToTop from '$lib/components/scroll-to-top.svelte';
 	import '../app.css';
+	import { isRestrictedTeacher } from '$lib/access-position';
 
 	let { data, children } = $props();
 
@@ -28,7 +29,6 @@
 		'/asesmen-kokurikuler',
 		'/nilai-ekstrakurikuler',
 		'/asesmen-keasramaan',
-		'/absen',
 		'/catatan-wali-kelas',
 		'/status-akhir',
 		'/cetak-raport'
@@ -38,7 +38,21 @@
 		readonlyRoutes.some((r) => page.url.pathname === r || page.url.pathname.startsWith(r + '/'))
 	);
 
-	const disableInteraction = $derived(data.user?.type === 'user' && isReadonlyPage);
+	const disableInteraction = $derived(
+		isRestrictedTeacher(data.user) &&
+			isReadonlyPage &&
+			!(
+				page.url.pathname.startsWith('/murid') && data.user?.permissions?.includes('kelas_manage')
+			) &&
+			!(
+				page.url.pathname.startsWith('/keasramaan') &&
+				data.user?.permissions?.includes('keasramaan_manage')
+			) &&
+			!(
+				page.url.pathname.startsWith('/asesmen-keasramaan') &&
+				data.user?.permissions?.includes('keasramaan_input')
+			)
+	);
 
 	onMount(() => {
 		if ('serviceWorker' in navigator) {
@@ -151,9 +165,7 @@
 			<div
 				class="app-page-surface bg-base-300 dark:bg-base-200 dark:border-base-200 border-base-300 flex min-w-0 flex-1 flex-col border lg:mr-2 lg:mb-2 lg:rounded-xl"
 			>
-				<div
-					class="app-page-viewport max-w-none overflow-y-auto"
-				>
+				<div class="app-page-viewport max-w-none overflow-y-auto">
 					<div class="app-page-padding flex min-w-0 flex-row">
 						<div class="app-page-container mx-auto w-full min-w-0 flex-1">
 							<ScrollToTop />

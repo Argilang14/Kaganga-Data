@@ -78,7 +78,7 @@ export async function load({ depends, params, parent }) {
 
 	// Collect user's assigned agama variant names early (for filtering agamaOptions)
 	const userAssignedAgamaNames = new Set<string>();
-	if (user && user.type === 'user' && user.id) {
+	if (user && isRestrictedTeacher(user) && user.id) {
 		try {
 			const userAssignedMapels = await db.query.tableAuthUserMataPelajaran.findMany({
 				columns: { mataPelajaranId: true },
@@ -155,7 +155,7 @@ export async function load({ depends, params, parent }) {
 	let assignedGlobalName: string | null = null;
 	let userHasMultiAgama = false;
 	try {
-		if (user && user.type === 'user') {
+		if (user && isRestrictedTeacher(user)) {
 			// Check if user has multi-mapel in join table FIRST, regardless of legacy mataPelajaranId
 			if (user.id) {
 				const userAssignedMapels = await db.query.tableAuthUserMataPelajaran.findMany({
@@ -238,7 +238,7 @@ export async function load({ depends, params, parent }) {
 	// view a different agama variant — redirect to their assigned local mapel.
 	// For multi-mapel users with multiple agama variants, allow access to all pages
 	// (client-side logic will handle locking when appropriate).
-	if (assignedLocalMapelId && user && user.type === 'user' && !userHasMultiAgama) {
+	if (assignedLocalMapelId && user && isRestrictedTeacher(user) && !userHasMultiAgama) {
 		const requestedId = Number(params.id);
 		if (Number.isFinite(requestedId) && requestedId !== assignedLocalMapelId) {
 			// redirect to the assigned local mapel's TP page
@@ -255,7 +255,7 @@ export async function load({ depends, params, parent }) {
 	if (
 		agamaOptions.length > 0 &&
 		user &&
-		user.type === 'user' &&
+		isRestrictedTeacher(user) &&
 		assignedLocalMapelId &&
 		normalizeText(mapel.nama) === normalizeText(agamaMapelOptions[0].name)
 	) {
@@ -280,7 +280,7 @@ export async function load({ depends, params, parent }) {
 				// server-enforced disabled flag: only disable for single-assignment (legacy) users
 				// For multi-mapel users, client-side logic handles locking based on parent page check
 				agamaSelectDisabled: Boolean(
-					user?.type === 'user' &&
+					isRestrictedTeacher(user) &&
 					user?.mataPelajaranId && // Only if user has legacy single mataPelajaranId
 					assignedGlobalId &&
 					((): boolean => {
@@ -301,7 +301,7 @@ export async function load({ depends, params, parent }) {
 	});
 
 	const agamaSelectDisabledValue = Boolean(
-		user?.type === 'user' &&
+		isRestrictedTeacher(user) &&
 		user?.mataPelajaranId && // Only if user has legacy single mataPelajaranId
 		assignedGlobalId &&
 		((): boolean => {
@@ -799,3 +799,4 @@ export const actions = {
 		return { message: parts.join(' '), longEntryCount };
 	}
 };
+import { isRestrictedTeacher } from '$lib/access-position';

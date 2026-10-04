@@ -189,6 +189,50 @@ try {
 		waitUntil: 'networkidle0'
 	});
 	await page.waitForSelector('button[title="Preview PDF Kartu Ujian Meja"]');
+	assert.deepEqual(
+		await page.$eval('select[title="Pilih dokumen yang ingin dipreview"]', (select) => ({
+			value: select.value,
+			cards: [...select.options]
+				.filter((option) => option.value.startsWith('kartu-ujian'))
+				.map((option) => option.value)
+		})),
+		{ value: 'kartu-ujian', cards: ['kartu-ujian'] },
+		'Legacy desk URL selects the single merged exam-card menu'
+	);
+	async function assertSwitch(label, checked) {
+		const state = await page.$eval(`button[aria-label="${label}"]`, (button) => ({
+			checked: button.getAttribute('aria-checked'),
+			green: button.classList.contains('btn-success'),
+			neutral: button.classList.contains('btn-soft')
+		}));
+		assert.deepEqual(state, { checked: String(checked), green: checked, neutral: !checked }, label);
+		await new Promise((resolve) => setTimeout(resolve, 350));
+		const [red, green, blue] = await page.$eval(`button[aria-label="${label}"]`, (button) => {
+			const canvas = document.createElement('canvas');
+			canvas.width = canvas.height = 1;
+			const context = canvas.getContext('2d');
+			context.fillStyle = getComputedStyle(button).backgroundColor;
+			context.fillRect(0, 0, 1, 1);
+			return [...context.getImageData(0, 0, 1, 1).data];
+		});
+		assert.ok(
+			checked
+				? green > red + 30 && green > blue + 10
+				: Math.abs(red - green) < 15 && Math.abs(green - blue) < 15,
+			`${label} ${checked ? 'ON green' : 'OFF neutral'}: ${red},${green},${blue}`
+		);
+	}
+	async function previewPageCount() {
+		await page.waitForSelector('object[type="application/pdf"]');
+		const bytes = await page.$eval('object[type="application/pdf"]', async (object) => {
+			const response = await fetch(object.data);
+			return Array.from(new Uint8Array(await response.arrayBuffer()));
+		});
+		return (await PDFDocument.load(Uint8Array.from(bytes))).getPageCount();
+	}
+	await assertSwitch('Kartu Ujian Meja', true);
+	await assertSwitch('Akun LMS', false);
+	await assertSwitch('TTD Kepsek', true);
 	assert.equal(await page.$('button[aria-label="QR Absensi"]'), null);
 	assert.equal(
 		await page.$eval('button[aria-label="Akun LMS"]', (e) => e.getAttribute('aria-checked')),
@@ -221,6 +265,48 @@ try {
 	await page.waitForSelector('object[type="application/pdf"]');
 	await page.click('button[aria-label="Akun LMS"]');
 	await page.waitForFunction(() => !document.querySelector('object[type="application/pdf"]'));
+	await assertSwitch('Akun LMS', true);
+	await assertSwitch('TTD Kepsek', false);
+	await page.click('button[aria-label="Kartu Ujian Meja"]');
+	await page.waitForSelector('button[title="Preview PDF Kartu Ujian"]');
+	await assertSwitch('Kartu Ujian Meja', false);
+	await assertSwitch('QR Absensi', false);
+	assert.equal(await page.$('button[aria-label="TTD Kepsek"]'), null);
+	const regularResponse = page.waitForResponse((r) => {
+		const url = new URL(r.url());
+		return url.pathname === '/api/pdf/kartu-ujian' && url.searchParams.get('layout') === 'kartu';
+	});
+	await page.click('button[title="Preview PDF Kartu Ujian"]');
+	const regular = await regularResponse;
+	assert.equal(regular.status(), 200);
+	assert.equal(new URL(regular.url()).searchParams.get('akun_lms'), '1');
+	assert.equal(new URL(regular.url()).searchParams.has('ttd_kepsek'), false);
+	assert.equal(await previewPageCount(), 5);
+	await page.waitForSelector('object[type="application/pdf"]');
+	await page.click('button[aria-label="QR Absensi"]');
+	await page.waitForFunction(() => !document.querySelector('object[type="application/pdf"]'));
+	await assertSwitch('QR Absensi', true);
+	await page.screenshot({ path: 'tmp/pdfs/exam-ui-regular-desktop.png' });
+	await page.click('button[aria-label="Kartu Ujian Meja"]');
+	await page.waitForSelector('button[title="Preview PDF Kartu Ujian Meja"]');
+	await assertSwitch('Kartu Ujian Meja', true);
+	await assertSwitch('TTD Kepsek', false);
+	assert.equal(await page.$('button[aria-label="QR Absensi"]'), null);
+	const mergedDeskResponse = page.waitForResponse((r) => {
+		const url = new URL(r.url());
+		return url.pathname === '/api/pdf/kartu-ujian' && url.searchParams.get('layout') === 'meja';
+	});
+	await page.click('button[title="Preview PDF Kartu Ujian Meja"]');
+	const desk = await mergedDeskResponse;
+	assert.equal(desk.status(), 200);
+	assert.equal(new URL(desk.url()).searchParams.get('qr_absensi'), '0');
+	assert.equal(new URL(desk.url()).searchParams.get('ttd_kepsek'), '0');
+	assert.equal(await previewPageCount(), 3);
+	await page.waitForSelector('object[type="application/pdf"]');
+	await page.click('button[aria-label="Kartu Ujian Meja"]');
+	await page.waitForFunction(() => !document.querySelector('object[type="application/pdf"]'));
+	await assertSwitch('QR Absensi', true);
+	await page.click('button[aria-label="Kartu Ujian Meja"]');
 	await page.screenshot({ path: 'tmp/pdfs/desk-ui-desktop.png' });
 	for (const [width, height, name] of [
 		[768, 1024, 'tablet'],
@@ -233,7 +319,19 @@ try {
 		await new Promise((resolve) => setTimeout(resolve, 300));
 		assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), name);
 		await page.screenshot({ path: `tmp/pdfs/desk-ui-${name}.png` });
+		await page.click('button[aria-label="Kartu Ujian Meja"]');
+		await page.waitForSelector('button[aria-label="QR Absensi"]');
+		assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), name);
+		await assertSwitch('QR Absensi', true);
+		await page.screenshot({ path: `tmp/pdfs/exam-ui-regular-${name}.png` });
+		await page.click('button[aria-label="Kartu Ujian Meja"]');
 	}
+	await page.goto(`${base}/cetak?dokumen=kartu-ujian&session_id=${sessionId}`, {
+		waitUntil: 'networkidle0'
+	});
+	await assertSwitch('Kartu Ujian Meja', false);
+	await assertSwitch('QR Absensi', false);
+	await assertSwitch('Akun LMS', false);
 	assert.deepEqual(errors, []);
 	const school = (
 		await db.execute({
@@ -303,7 +401,7 @@ try {
 		});
 	}
 	console.log(
-		'PASS embedded preview, LMS toggle, desktop/tablet/mobile, long name, 94x62 mm dimensions and non-overlapping signatures'
+		'PASS merged menu, legacy links, green/neutral switches, both PDF formats, preview invalidation, QR preference, desktop/tablet/mobile, long name, 94x62 mm dimensions and non-overlapping signatures'
 	);
 } finally {
 	if (browser) await browser.close();

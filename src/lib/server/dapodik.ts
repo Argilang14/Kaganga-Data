@@ -1,4 +1,8 @@
 import db from '$lib/server/db';
+import { normalizedNisn, sameMuridPerson } from '$lib/server/murid-identity';
+import { validateMuridIdentityInput } from '$lib/server/murid-identity-service';
+import { syncMuridGovernance } from '$lib/server/murid-lifecycle';
+import { ensureDataGovernanceSchema } from '$lib/server/db/ensure-data-governance';
 import {
 	tableAlamat,
 	tableDapodikMataPelajaran,
@@ -469,7 +473,6 @@ export async function previewDapodikSync(
 			muridLokal.some(
 				(item) =>
 					item.dapodikPesertaDidikId === str(row, 'peserta_didik_id') ||
-					(Boolean(str(row, 'nisn')) && item.nisn === str(row, 'nisn')) ||
 					(Boolean(str(row, 'nipd')) && item.nis === str(row, 'nipd'))
 			);
 		const matchedPegawai = pegawaiRows.filter(pegawaiMatch).length;
@@ -888,11 +891,16 @@ function intOrNull(value: unknown) {
 	return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-async function uniqueNis(sekolahId: number, semesterId: number, preferred: string) {
+async function uniqueNis(
+	sekolahId: number,
+	semesterId: number,
+	preferred: string,
+	reader: typeof db | DBTransaction = db
+) {
 	let candidate = preferred || 'DAPODIK';
 	let suffix = 1;
 	while (
-		await db.query.tableMurid.findFirst({
+		await reader.query.tableMurid.findFirst({
 			columns: { id: true },
 			where: and(
 				eq(tableMurid.sekolahId, sekolahId),
@@ -914,107 +922,123 @@ async function applyMurid(
 	anggota: Map<string, { kelasId: number; anggotaId: string | null }>,
 	sekolahPayload: Row
 ) {
-	const result = { created: 0, updated: 0, skipped: 0 };
-	for (const row of rows) {
-		const pdId = str(row, 'peserta_didik_id');
-		const nama = str(row, 'nama');
-		if (!pdId || !nama) {
-			result.skipped++;
-			continue;
-		}
-		const directRombel = str(row, 'rombongan_belajar_id');
-		const placement =
-			directRombel && kelasByRombel.has(directRombel)
-				? {
-						kelasId: kelasByRombel.get(directRombel)!,
-						anggotaId: str(row, 'anggota_rombel_id') ?? null
-					}
-				: anggota.get(pdId);
-		if (!placement) {
-			result.skipped++;
-			continue;
-		}
-		const nisn = str(row, 'nisn') ?? '';
-		const nis = str(row, 'nipd') ?? '';
-		const existing =
-			(await db.query.tableMurid.findFirst({
-				where: and(
-					eq(tableMurid.sekolahId, sekolahId),
-					eq(tableMurid.semesterId, target.id),
-					eq(tableMurid.dapodikPesertaDidikId, pdId)
-				)
-			})) ??
-			(nisn
-				? await db.query.tableMurid.findFirst({
-						where: and(
-							eq(tableMurid.sekolahId, sekolahId),
-							eq(tableMurid.semesterId, target.id),
-							eq(tableMurid.nisn, nisn)
-						)
+	await ensureDataGovernanceSchema();
+	return db.transaction(async (db) => {
+		const result = { created: 0, updated: 0, skipped: 0 };
+		for (const row of rows) {
+			const pdId = str(row, 'peserta_didik_id');
+			const nama = str(row, 'nama');
+			if (!pdId || !nama) {
+				result.skipped++;
+				continue;
+			}
+			const directRombel = str(row, 'rombongan_belajar_id');
+			const placement =
+				directRombel && kelasByRombel.has(directRombel)
+					? {
+							kelasId: kelasByRombel.get(directRombel)!,
+							anggotaId: str(row, 'anggota_rombel_id') ?? null
+						}
+					: anggota.get(pdId);
+			if (!placement) {
+				result.skipped++;
+				continue;
+			}
+			const nisn = normalizedNisn(str(row, 'nisn'));
+			const nis = str(row, 'nipd') ?? '';
+			const existing =
+				(await db.query.tableMurid.findFirst({
+					where: and(
+						eq(tableMurid.sekolahId, sekolahId),
+						eq(tableMurid.semesterId, target.id),
+						eq(tableMurid.dapodikPesertaDidikId, pdId)
+					)
+				})) ??
+				(nis
+					? await db.query.tableMurid.findFirst({
+							where: and(
+								eq(tableMurid.sekolahId, sekolahId),
+								eq(tableMurid.semesterId, target.id),
+								eq(tableMurid.nis, nis)
+							)
+						})
+					: null);
+			const incoming = {
+				nis: existing?.nis || nis || pdId.slice(0, 16),
+				nisn,
+				nama,
+				tanggalLahir: str(row, 'tanggal_lahir') ?? '1900-01-01',
+				semesterId: target.id
+			};
+			if (existing && !sameMuridPerson(existing, incoming))
+				throw new DapodikError(
+					`Identitas ${nama} tidak cocok dengan murid bernomor ${existing.nis}; impor murid dibatalkan.`
+				);
+			await validateMuridIdentityInput(
+				db,
+				sekolahId,
+				{ ...incoming, id: existing?.id },
+				{ imported: true }
+			);
+			if (existing) {
+				await db
+					.update(tableMurid)
+					.set({
+						dapodikPesertaDidikId: pdId,
+						dapodikAnggotaRombelId: placement.anggotaId,
+						kelasId: placement.kelasId,
+						nik: existing.nik || str(row, 'nik') || null,
+						anakKe: existing.anakKe || intOrNull(row.anak_keberapa),
+						nisn: nisn || existing.nisn,
+						updatedAt: new Date().toISOString()
 					})
-				: null) ??
-			(nis
-				? await db.query.tableMurid.findFirst({
-						where: and(
-							eq(tableMurid.sekolahId, sekolahId),
-							eq(tableMurid.semesterId, target.id),
-							eq(tableMurid.nis, nis)
-						)
-					})
-				: null);
-		if (existing) {
-			await db
-				.update(tableMurid)
-				.set({
+					.where(eq(tableMurid.id, existing.id));
+				result.updated++;
+				await syncMuridGovernance(sekolahId, [existing.id], undefined, {}, db);
+				continue;
+			}
+
+			const [alamat] = await db
+				.insert(tableAlamat)
+				.values({
+					jalan: str(row, 'alamat_jalan') ?? '-',
+					desa: str(row, 'desa_kelurahan') ?? str(sekolahPayload, 'desa_kelurahan') ?? '-',
+					kecamatan: str(row, 'kecamatan') ?? str(sekolahPayload, 'kecamatan') ?? '-',
+					kabupaten: str(row, 'kabupaten_kota') ?? str(sekolahPayload, 'kabupaten_kota') ?? '-',
+					provinsi: str(row, 'provinsi') ?? str(sekolahPayload, 'provinsi') ?? null,
+					kodePos: str(row, 'kode_pos') ?? null
+				})
+				.returning({ id: tableAlamat.id });
+			if (!alamat) throw new DapodikError(`Gagal membuat alamat untuk ${nama}.`);
+			const agamaId = str(row, 'agama_id') ?? '';
+			const jenisKelamin = (str(row, 'jenis_kelamin') ?? 'L').toUpperCase() === 'P' ? 'P' : 'L';
+			const [inserted] = await db
+				.insert(tableMurid)
+				.values({
+					sekolahId,
+					semesterId: target.id,
+					kelasId: placement.kelasId,
+					nis: await uniqueNis(sekolahId, target.id, incoming.nis, db),
+					nisn,
+					nama,
+					tempatLahir: str(row, 'tempat_lahir') ?? '-',
+					tanggalLahir: str(row, 'tanggal_lahir') ?? '1900-01-01',
+					jenisKelamin,
+					agama: str(row, 'agama_id_str') ?? AGAMA[agamaId] ?? '-',
+					pendidikanSebelumnya: str(row, 'sekolah_asal') ?? '-',
+					tanggalMasuk: str(row, 'tanggal_masuk_sekolah') ?? new Date().toISOString().slice(0, 10),
+					alamatId: alamat.id,
 					dapodikPesertaDidikId: pdId,
 					dapodikAnggotaRombelId: placement.anggotaId,
-					kelasId: placement.kelasId,
-					nik: existing.nik || str(row, 'nik') || null,
-					anakKe: existing.anakKe || intOrNull(row.anak_keberapa),
-					nisn: existing.nisn || nisn,
-					updatedAt: new Date().toISOString()
+					nik: str(row, 'nik') ?? null,
+					anakKe: intOrNull(row.anak_keberapa)
 				})
-				.where(eq(tableMurid.id, existing.id));
-			result.updated++;
-			continue;
+				.returning({ id: tableMurid.id });
+			await syncMuridGovernance(sekolahId, [inserted.id], undefined, {}, db);
+			result.created++;
 		}
-
-		const [alamat] = await db
-			.insert(tableAlamat)
-			.values({
-				jalan: str(row, 'alamat_jalan') ?? '-',
-				desa: str(row, 'desa_kelurahan') ?? str(sekolahPayload, 'desa_kelurahan') ?? '-',
-				kecamatan: str(row, 'kecamatan') ?? str(sekolahPayload, 'kecamatan') ?? '-',
-				kabupaten: str(row, 'kabupaten_kota') ?? str(sekolahPayload, 'kabupaten_kota') ?? '-',
-				provinsi: str(row, 'provinsi') ?? str(sekolahPayload, 'provinsi') ?? null,
-				kodePos: str(row, 'kode_pos') ?? null
-			})
-			.returning({ id: tableAlamat.id });
-		if (!alamat) throw new DapodikError(`Gagal membuat alamat untuk ${nama}.`);
-		const agamaId = str(row, 'agama_id') ?? '';
-		const jenisKelamin = (str(row, 'jenis_kelamin') ?? 'L').toUpperCase() === 'P' ? 'P' : 'L';
-		await db.insert(tableMurid).values({
-			sekolahId,
-			semesterId: target.id,
-			kelasId: placement.kelasId,
-			nis: await uniqueNis(sekolahId, target.id, nis || nisn || pdId.slice(0, 16)),
-			nisn,
-			nama,
-			tempatLahir: str(row, 'tempat_lahir') ?? '-',
-			tanggalLahir: str(row, 'tanggal_lahir') ?? '1900-01-01',
-			jenisKelamin,
-			agama: str(row, 'agama_id_str') ?? AGAMA[agamaId] ?? '-',
-			pendidikanSebelumnya: str(row, 'sekolah_asal') ?? '-',
-			tanggalMasuk: str(row, 'tanggal_masuk_sekolah') ?? new Date().toISOString().slice(0, 10),
-			alamatId: alamat.id,
-			dapodikPesertaDidikId: pdId,
-			dapodikAnggotaRombelId: placement.anggotaId,
-			nik: str(row, 'nik') ?? null,
-			anakKe: intOrNull(row.anak_keberapa)
-		});
-		result.created++;
-	}
-	return result;
+		return result;
+	});
 }
 
 function dapodikFlag(value: unknown) {

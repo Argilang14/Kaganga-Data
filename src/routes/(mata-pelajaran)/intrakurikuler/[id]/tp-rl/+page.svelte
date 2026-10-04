@@ -2,6 +2,7 @@
 	/* eslint-disable svelte/no-navigation-without-resolve -- page uses goto/href for TP/RL navigation */
 	import { goto, invalidate } from '$app/navigation';
 	import Icon from '$lib/components/icon.svelte';
+	import { isRestrictedTeacher } from '$lib/access-position';
 	import BobotInfoAlert from '$lib/components/tp-rl/bobot-info-alert.svelte';
 	import BulkDeleteDialog from '$lib/components/tp-rl/bulk-delete-dialog.svelte';
 	import DeleteEntryDialog from '$lib/components/tp-rl/delete-entry-dialog.svelte';
@@ -107,7 +108,7 @@
 		const assignedLocal = (data?.assignedLocalMapelId ?? null) as number | null;
 		const u = page.data && page.data.user ? page.data.user : null;
 		const fallbackAssigned =
-			u && u.type === 'user' && u.mataPelajaranId ? Number(u.mataPelajaranId) : null;
+			u && isRestrictedTeacher(u) && u.mataPelajaranId ? Number(u.mataPelajaranId) : null;
 		const checkId = Number.isFinite(Number(assignedLocal))
 			? Number(assignedLocal)
 			: Number.isFinite(Number(fallbackAssigned))
@@ -275,7 +276,7 @@
 		if (!kelasAktif) return;
 		if (!isReligionBasedMapel) return;
 		const u = page.data?.user;
-		if (!u || u.type !== 'user' || !u.mataPelajaranId) return;
+		if (!u || !isRestrictedTeacher(u) || !u.mataPelajaranId) return;
 		(async () => {
 			try {
 				const res = await fetch(`/api/assigned-mapel/resolve?kelas_id=${kelasAktif.id}`);

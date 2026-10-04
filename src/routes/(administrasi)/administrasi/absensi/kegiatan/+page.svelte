@@ -3,7 +3,10 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { canAttendance } from '$lib/attendance-access';
 	import Icon from '$lib/components/icon.svelte';
+	import ClearAttendance from '$lib/components/absensi/ClearAttendance.svelte';
+	import AttendanceSummaryDialog from '$lib/components/absensi/AttendanceSummaryDialog.svelte';
 
 	type StatusKey = 'hadir' | 'terlambat' | 'sakit' | 'izin' | 'alfa' | 'pulang';
 	type Kegiatan = {
@@ -92,6 +95,11 @@
 			<p class="text-base-content/70 text-sm">{kelasAktifLabel}</p>
 		</div>
 		<div class="flex flex-wrap gap-2">
+			<AttendanceSummaryDialog
+				tanggal={data.tanggal}
+				kegiatanId={data.kegiatanId}
+				kelasId={data.kelasId}
+			/>
 			<a
 				class="btn btn-soft btn-sm shadow-none"
 				href={resolve('/administrasi/absensi/kegiatan/rekap')}
@@ -99,13 +107,15 @@
 				<Icon name="table" />
 				Rekap Kegiatan
 			</a>
-			<a
-				class="btn btn-soft btn-sm shadow-none"
-				href={resolve('/administrasi/absensi/kegiatan/pengaturan')}
-			>
-				<Icon name="gear" />
-				Pengaturan
-			</a>
+			{#if canAttendance(page.data.user, 'pengaturan')}
+				<a
+					class="btn btn-soft btn-sm shadow-none"
+					href={resolve('/administrasi/absensi/kegiatan/pengaturan')}
+				>
+					<Icon name="gear" />
+					Pengaturan
+				</a>
+			{/if}
 		</div>
 	</div>
 
@@ -370,22 +380,17 @@
 										>
 											<Icon name="save" />
 										</button>
-										<form method="POST" action="?/clearStatus">
-											<input type="hidden" name="tanggal" value={data.tanggal} />
-											<input type="hidden" name="kelasId" value={data.kelasId ?? ''} />
-											<input type="hidden" name="semesterId" value={data.activeSemesterId ?? ''} />
-											<input type="hidden" name="kegiatanId" value={data.kegiatanId ?? ''} />
-											<input type="hidden" name="muridId" value={row.id} />
-											<button
-												class="btn btn-error btn-outline btn-square btn-sm shadow-none"
-												type="submit"
-												disabled={!row.status || !data.canEditSelected}
-												title={row.status ? 'Hapus status kegiatan' : 'Belum ada status'}
-												aria-label={`Hapus status kegiatan ${row.nama}`}
-											>
-												<Icon name="del" />
-											</button>
-										</form>
+										<ClearAttendance
+											nama={row.nama}
+											disabled={!row.status || !data.canEditSelected}
+											fields={{
+												tanggal: data.tanggal,
+												kelasId: data.kelasId ?? '',
+												semesterId: data.activeSemesterId ?? '',
+												kegiatanId: data.kegiatanId ?? '',
+												muridId: row.id
+											}}
+										/>
 									</div>
 								</td>
 							</tr>

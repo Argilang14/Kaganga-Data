@@ -63,7 +63,11 @@ export async function load({ locals, url, depends, parent }) {
 	const muridList = selectedKelas
 		? await db.query.tableMurid.findMany({
 				columns: { id: true, nis: true, nisn: true, nama: true },
-				where: and(eq(tableMurid.sekolahId, sekolahId), eq(tableMurid.kelasId, selectedKelas.id)),
+				where: and(
+					eq(tableMurid.sekolahId, sekolahId),
+					eq(tableMurid.kelasId, selectedKelas.id),
+					activeMuridFilter()
+				),
 				orderBy: asc(tableMurid.nama)
 			})
 		: [];
@@ -484,3 +488,4 @@ export const actions = {
 		};
 	}
 };
+import { activeMuridFilter } from '$lib/server/murid-query';

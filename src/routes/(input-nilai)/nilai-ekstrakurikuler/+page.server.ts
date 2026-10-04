@@ -13,7 +13,7 @@ import {
 	isEkstrakurikulerNilaiKategori
 } from '$lib/ekstrakurikuler';
 import { redirect, error } from '@sveltejs/kit';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 
 const PER_PAGE = 20;
 
@@ -87,7 +87,7 @@ export async function load({ parent, url, depends }) {
 
 	const muridRecords = await db.query.tableMurid.findMany({
 		columns: { id: true, nama: true },
-		where: eq(tableMurid.kelasId, kelasAktif.id),
+		where: and(eq(tableMurid.kelasId, kelasAktif.id), activeMuridFilter()),
 		orderBy: asc(tableMurid.nama)
 	});
 
@@ -264,3 +264,4 @@ function emptyPayload(meta: PageMeta) {
 		}
 	};
 }
+import { activeMuridFilter } from '$lib/server/murid-query';

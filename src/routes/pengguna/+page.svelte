@@ -6,6 +6,8 @@
 	import Icon from '$lib/components/icon.svelte';
 	import UsersHeader from '$lib/components/pengguna/UsersHeader.svelte';
 	import AddUserModal from '$lib/components/pengguna/AddUserModal.svelte';
+	import BulkUserModal from '$lib/components/pengguna/BulkUserModal.svelte';
+	import { page } from '$app/state';
 	import ExistingUserRow from '$lib/components/pengguna/ExistingUserRow.svelte';
 	import { accessPositionLabels, accessPositionValues } from '$lib/access-position';
 
@@ -18,6 +20,7 @@
 
 	let selectedIds = $state<number[]>([]);
 	let showUserModal = $state(false);
+	let showBulkModal = $state(false);
 	let editingUser = $state<EditableUser | null>(null);
 	const users = $derived(data.users ?? []);
 	const filters = $derived(data.filters ?? { q: '', role: 'all', jabatan: 'all', status: 'all' });
@@ -103,10 +106,25 @@
 				<h1 class="text-2xl font-bold">Daftar Pengguna</h1>
 				<p class="text-base-content/65 text-sm">{pagination.totalItems} akun pada sekolah aktif</p>
 			</div>
-			<UsersHeader {selectedIds} onDelete={() => openDeleteModal(selectedIds)} onAdd={openCreate} />
+			<div class="flex flex-wrap gap-2">
+				<UsersHeader
+					{selectedIds}
+					onDelete={() => openDeleteModal(selectedIds)}
+					onAdd={openCreate}
+				/>
+				{#if page.data.user?.type === 'admin'}<button
+						type="button"
+						class="btn btn-soft"
+						aria-label="Buat Akun Massal"
+						onclick={() => (showBulkModal = true)}><Icon name="users" /> Buat Akun Massal</button
+					>{/if}
+			</div>
 		</header>
 
-		<form method="GET" class="grid gap-2 lg:grid-cols-[minmax(14rem,1fr)_11rem_13rem_10rem_auto_auto]">
+		<form
+			method="GET"
+			class="grid gap-2 lg:grid-cols-[minmax(14rem,1fr)_11rem_13rem_10rem_auto_auto]"
+		>
 			<label class="input bg-base-200 w-full">
 				<Icon name="search" />
 				<input name="q" value={filters.q} placeholder="Cari nama atau nama pengguna" />
@@ -223,4 +241,12 @@
 		await invalidateAll();
 	}}
 	on:cancel={() => (editingUser = null)}
+/>
+
+<BulkUserModal
+	bind:open={showBulkModal}
+	onSaved={async () => {
+		selectedIds = [];
+		await invalidateAll();
+	}}
 />

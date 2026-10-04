@@ -104,11 +104,28 @@ export const groupedUserPermissions = {
 	},
 	administrasi: {
 		values: [
-			['absensi', 'Kelola Absensi Digital dan Kegiatan'],
+			['absensi', 'Akses dasar absensi (izin lama; tidak membuka pengaturan)'],
+			['jadwal', 'Kelola Jadwal Pelajaran'],
 			['buku_tamu', 'Kelola Buku Tamu Digital'],
 			['presensi_pegawai', 'Kelola Presensi Pegawai']
 		],
 		description: 'Administrasi'
+	},
+	absensi: {
+		values: [
+			['lihat', 'Lihat Absensi dan Rekap Sesuai Penugasan'],
+			['scan', 'Scan QR Sesuai Penugasan'],
+			['input', 'Input Absensi Hari Ini'],
+			['koreksi', 'Koreksi Absensi Hari Ini dengan Alasan'],
+			['koreksi_lama', 'Input dan Koreksi Tanggal Lama'],
+			['export', 'Ekspor Rekap Sesuai Penugasan'],
+			['izin_pulang', 'Kelola Izin Pulang dan Kepulangan'],
+			['impor', 'Impor Absensi Massal'],
+			['pengaturan', 'Kelola Pengaturan Kegiatan'],
+			['qr_manage', 'Terbitkan Ulang atau Reset QR'],
+			['sinkron_rapor', 'Sinkronkan Absensi ke Raport']
+		],
+		description: 'Absensi - Izin Tindakan, Tetap Mengikuti Penugasan'
 	},
 	mata_pelajaran: {
 		values: [['keasramaan', 'Ekspor Mata Evaluasi Keasramaan pada Kelas Ditugaskan']],
@@ -201,6 +218,12 @@ export function permissionsForAccessPosition(position?: AccessPosition | null): 
 	);
 }
 
+export function basicAttendancePermissionsForType(type?: string | null): UserPermission[] {
+	return ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama'].includes(type ?? '')
+		? ['absensi_lihat', 'absensi_scan', 'absensi_input', 'absensi_koreksi', 'absensi_export']
+		: [];
+}
+
 export function effectivePermissions(
 	user?: {
 		type?: string | null;
@@ -215,7 +238,8 @@ export function effectivePermissions(
 	const stored = (user.permissions ?? []).filter(
 		(permission) => !position || !systemOnlyPermissions.has(permission)
 	);
-	return [...new Set([...positionPermissions, ...stored])];
+	const basic = basicAttendancePermissionsForType(user.type);
+	return [...new Set([...positionPermissions, ...basic, ...stored])];
 }
 
 export function defaultPermissionsForType(

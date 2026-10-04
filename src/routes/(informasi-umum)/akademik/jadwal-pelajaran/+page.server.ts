@@ -152,7 +152,7 @@ export const actions: Actions = {
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(401, { fail: 'Sekolah tidak ditemukan' });
 
-		if (locals.user?.type === 'user' || locals.user?.type === 'wali_asuh') {
+		if (!canManageJadwal(locals.user)) {
 			return fail(403, { fail: 'Anda tidak memiliki izin' });
 		}
 
@@ -200,7 +200,7 @@ export const actions: Actions = {
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(401, { fail: 'Sekolah tidak ditemukan' });
 
-		if (locals.user?.type === 'user' || locals.user?.type === 'wali_asuh') {
+		if (!canManageJadwal(locals.user)) {
 			return fail(403, { fail: 'Anda tidak memiliki izin' });
 		}
 
@@ -258,7 +258,7 @@ export const actions: Actions = {
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(401, { fail: 'Sekolah tidak ditemukan' });
 
-		if (locals.user?.type === 'user' || locals.user?.type === 'wali_asuh') {
+		if (!canManageJadwal(locals.user)) {
 			return fail(403, { fail: 'Anda tidak memiliki izin' });
 		}
 
@@ -284,7 +284,7 @@ export const actions: Actions = {
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(401, { fail: 'Sekolah tidak ditemukan' });
 
-		if (locals.user?.type === 'user' || locals.user?.type === 'wali_asuh') {
+		if (!canManageJadwal(locals.user)) {
 			return fail(403, { fail: 'Anda tidak memiliki izin' });
 		}
 
@@ -364,7 +364,7 @@ export const actions: Actions = {
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(401, { fail: 'Sekolah tidak ditemukan' });
 
-		if (locals.user?.type === 'user' || locals.user?.type === 'wali_asuh') {
+		if (!canManageJadwal(locals.user)) {
 			return fail(403, { fail: 'Anda tidak memiliki izin' });
 		}
 
@@ -405,7 +405,7 @@ export const actions: Actions = {
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(401, { fail: 'Sekolah tidak ditemukan' });
 
-		if (locals.user?.type === 'user' || locals.user?.type === 'wali_asuh') {
+		if (!canManageJadwal(locals.user)) {
 			return fail(403, { fail: 'Anda tidak memiliki izin' });
 		}
 
@@ -432,3 +432,4 @@ export const actions: Actions = {
 		return { message: isActive ? 'Bell diaktifkan' : 'Bell dinonaktifkan' };
 	}
 };
+import { canManageJadwal } from '$lib/server/jadwal';

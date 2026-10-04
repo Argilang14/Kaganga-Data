@@ -58,7 +58,11 @@ export async function load({ locals, url }) {
 	const students = classIds.length
 		? await db.query.tableMurid.findMany({
 				columns: { id: true, kelasId: true, foto: true, qrToken: true },
-				where: and(eq(tableMurid.sekolahId, sekolahId), inArray(tableMurid.kelasId, classIds))
+				where: and(
+					eq(tableMurid.sekolahId, sekolahId),
+					inArray(tableMurid.kelasId, classIds),
+					activeMuridFilter()
+				)
 			})
 		: [];
 	const studentIds = students.map((item) => item.id);
@@ -197,3 +201,4 @@ export async function load({ locals, url }) {
 		classSummary
 	};
 }
+import { activeMuridFilter } from '$lib/server/murid-query';

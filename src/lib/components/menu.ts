@@ -196,23 +196,23 @@ export const appMenuItems: MenuItem[] = [
 			},
 			{
 				title: 'Scan QR',
-				path: '/administrasi/absensi/scan'
+				path: '/administrasi/absensi/scan', permission: 'absensi_scan'
 			},
 			{
 				title: 'Absensi Kegiatan',
-				path: '/administrasi/absensi/kegiatan'
+				path: '/administrasi/absensi/kegiatan', permission: 'absensi_lihat'
 			},
 			{
 				title: 'Rekap Kegiatan',
-				path: '/administrasi/absensi/kegiatan/rekap'
+				path: '/administrasi/absensi/kegiatan/rekap', permission: 'absensi_lihat'
 			},
 			{
 				title: 'Kartu Absensi',
-				path: '/administrasi/absensi/kartu-qr'
+				path: '/administrasi/absensi/kartu-qr', permission: 'absensi_lihat'
 			},
 			{
 				title: 'Pengaturan Kegiatan',
-				path: '/administrasi/absensi/kegiatan/pengaturan'
+				path: '/administrasi/absensi/kegiatan/pengaturan', permission: 'absensi_pengaturan'
 			}
 		]
 	},

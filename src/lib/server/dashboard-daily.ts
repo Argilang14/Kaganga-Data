@@ -1,4 +1,6 @@
 import db from './db';
+import { hasSchoolWideOperationalAccess } from '$lib/access-position';
+import { activeMuridFilter } from './murid-query';
 import {
 	tableKelas as k,
 	tableMurid as m,
@@ -39,7 +41,7 @@ export async function loadDashboardDaily(
 				})
 			: [];
 	let ids = classes.map((row) => row.id);
-	if (user?.type !== 'admin') {
+	if (!hasSchoolWideOperationalAccess(user)) {
 		if (user?.type === 'wali_kelas') {
 			const allowed = new Set(
 				await getLegacyWaliKelasIds(user, schoolId, academic.activeSemesterId)
@@ -58,6 +60,7 @@ export async function loadDashboardDaily(
 	}
 	const studentWhere = and(
 		eq(m.sekolahId, schoolId),
+		activeMuridFilter(),
 		academic.activeSemesterId ? eq(m.semesterId, academic.activeSemesterId) : sql`0`,
 		ids.length ? inArray(m.kelasId, ids) : sql`0`,
 		await guardianStudentCondition(user, schoolId)
@@ -226,7 +229,7 @@ export async function loadDashboardDaily(
 		admin: user?.type === 'admin',
 		canAgenda,
 		jenisKey: context?.jenis ?? 'ganjil',
-		scope: user?.type === 'admin' ? 'Sekolah' : 'Penugasan Anda',
+		scope: hasSchoolWideOperationalAccess(user) ? 'Sekolah' : 'Penugasan Anda',
 		jenis: context?.jenisLabel ?? '-',
 		students: attendanceSummary(Number(student?.total ?? 0), statuses),
 		absences,

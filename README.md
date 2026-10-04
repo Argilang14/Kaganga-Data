@@ -8,6 +8,8 @@
 
 Kaganga membantu berbagai kebutuhan administrasi guru, murid, kurikulum, asrama, absensi, surat menyurat, dan dokumen sekolah dalam satu aplikasi.
 
+Versi pengujian terbaru: **v2.2.2 Beta 1**. Lihat [catatan rilis dan panduan migrasi](docs/releases/v2.2.2-beta.1.md). Installer beta tersedia pada halaman Releases dan tidak menggantikan rilis stabil secara otomatis. Buat backup database beserta foto/lampiran sebelum memperbarui aplikasi server.
+
 > **Mengapa menggunakan Kaganga jika pemerintah sudah menyediakan E-Rapor resmi?**
 
 Karena E-Rapor resmi berfokus pada input nilai akhir serta penentuan Tujuan Pembelajaran (TP) yang tercapai atau belum tercapai secara manual. Kaganga hadir sebagai pelengkap proses tersebut dengan menyediakan pencatatan penilaian harian, pengolahan nilai, hingga rekapitulasi secara otomatis sehingga pekerjaan guru menjadi lebih praktis.

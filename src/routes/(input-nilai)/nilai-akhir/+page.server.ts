@@ -169,7 +169,11 @@ export const load: PageServerLoad = async ({ parent, locals, url, depends }) => 
 
 	const muridRecords = await db.query.tableMurid.findMany({
 		columns: { id: true, nama: true, agama: true },
-		where: and(eq(tableMurid.sekolahId, sekolahId), eq(tableMurid.kelasId, kelasAktif.id)),
+		where: and(
+			eq(tableMurid.sekolahId, sekolahId),
+			eq(tableMurid.kelasId, kelasAktif.id),
+			activeMuridFilter()
+		),
 		orderBy: asc(tableMurid.nama)
 	});
 
@@ -554,3 +558,4 @@ export const load: PageServerLoad = async ({ parent, locals, url, depends }) => 
 
 	return { meta, daftarNilai, page, summary };
 };
+import { activeMuridFilter } from '$lib/server/murid-query';

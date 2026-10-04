@@ -4,7 +4,7 @@
 	import Icon from '$lib/components/icon.svelte';
 	import { showModal } from '$lib/components/global-modal.svelte';
 	import Authority from '../authority.svelte';
-	import { groupedUserPermissions } from '../permissions';
+	import { groupedUserPermissions, basicAttendancePermissionsForType } from '../permissions';
 	import ResetPermissionsBody from './reset-permissions-body.svelte';
 	import { accessPositionLabels, parseAccessPosition } from '$lib/access-position';
 
@@ -38,7 +38,9 @@
 				class: 'btn-warning',
 				action: ({ close }) => {
 					close();
-					(document.getElementById('reset-permissions-form') as HTMLFormElement | null)?.requestSubmit();
+					(
+						document.getElementById('reset-permissions-form') as HTMLFormElement | null
+					)?.requestSubmit();
 				}
 			},
 			onNegative: { label: 'Batal', icon: 'close' },
@@ -61,7 +63,10 @@
 	{#if position}
 		<div class="alert mb-4 text-sm">
 			<Icon name="info" />
-			<span>Jabatan akses memberi izin operasional sekolah secara otomatis. Pengaturan sistem tetap khusus admin.</span>
+			<span
+				>Jabatan akses memberi izin operasional sekolah secara otomatis. Pengaturan sistem tetap
+				khusus admin.</span
+			>
 		</div>
 	{/if}
 
@@ -69,18 +74,31 @@
 		{#snippet children()}
 			<div class="overflow-x-auto">
 				<table class="table w-full">
-					<thead><tr class="bg-base-300"><th class="w-[90%]">Izin</th><th class="text-center">Aktif</th></tr></thead>
+					<thead
+						><tr class="bg-base-300"
+							><th class="w-[90%]">Izin</th><th class="text-center">Aktif</th></tr
+						></thead
+					>
 					<tbody>
 						{#each Object.entries(groupedUserPermissions) as [group, permission] (group)}
 							<tr><td colspan="2" class="font-bold">{permission.description}</td></tr>
 							{#each permission.values as [name, description] (name)}
 								{@const key = `${group}_${name}` as UserPermission}
 								{@const isAdmin = user.type === 'admin'}
-								{@const fromPosition = positionPermissions.has(key)}
+								{@const fromPosition =
+									positionPermissions.has(key) ||
+									basicAttendancePermissionsForType(user.type).includes(key)}
 								<tr>
 									<td class="pl-8 text-sm">{description}</td>
 									<td class="text-center">
-										<input type="checkbox" class="toggle toggle-sm toggle-primary" name={key} value="true" checked={isAdmin || user.permissions.includes(key)} disabled={isAdmin || fromPosition} />
+										<input
+											type="checkbox"
+											class="toggle toggle-sm toggle-primary"
+											name={key}
+											value="true"
+											checked={isAdmin || user.permissions.includes(key)}
+											disabled={isAdmin || fromPosition}
+										/>
 										{#if fromPosition}<span class="ml-2 text-xs opacity-60">Otomatis</span>{/if}
 									</td>
 								</tr>
@@ -92,16 +110,27 @@
 		{/snippet}
 	</FormEnhance>
 
-	<FormEnhance id="reset-permissions-form" action="?/reset_permissions" onsuccess={handleSaveSuccess} class="hidden">
+	<FormEnhance
+		id="reset-permissions-form"
+		action="?/reset_permissions"
+		onsuccess={handleSaveSuccess}
+		class="hidden"
+	>
 		{#snippet children()}<button type="submit">Reset</button>{/snippet}
 	</FormEnhance>
 
-	<footer class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-base-300 pt-4">
+	<footer
+		class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-base-300 pt-4"
+	>
 		<a href="/pengguna" class="btn btn-soft shadow-none"><Icon name="left" /> Kembali</a>
 		<Authority permissions={['user_set_permissions']}>
 			<div class="flex flex-wrap justify-end gap-2">
 				{#if user.type !== 'admin'}
-					<button type="button" class="btn btn-warning btn-soft shadow-none" onclick={confirmResetPermissions}>
+					<button
+						type="button"
+						class="btn btn-warning btn-soft shadow-none"
+						onclick={confirmResetPermissions}
+					>
 						<Icon name="repeat" /> Reset ke Default
 					</button>
 				{/if}

@@ -1,11 +1,24 @@
 import db from '$lib/server/db';
-import { tableMurid } from '$lib/server/db/schema';
+import { tableMurid, tableMuridIdentityLink, tableMuridLifecycle } from '$lib/server/db/schema';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { writeAoaToBuffer } from '$lib/utils/excel.js';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { error } from '@sveltejs/kit';
+import { activeMuridFilter, archivedMuridFilter } from '$lib/server/murid-query';
+import { getKelasContextForUser } from '$lib/server/route-utils';
+import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 
-export async function GET({ locals }) {
+export async function GET({ locals, url }) {
+	if (!locals.user) throw error(401, 'Silakan login.');
+	const status = url.searchParams.get('status') ?? 'aktif';
+	if (!['aktif', 'arsip', 'semua'].includes(status))
+		throw error(400, 'Pilihan status tidak valid.');
+	if (
+		status !== 'aktif' &&
+		locals.user.type !== 'admin' &&
+		!locals.user.permissions?.includes('murid_arsip')
+	)
+		throw error(403, 'Tidak memiliki izin arsip murid.');
 	const sekolahId = locals.sekolah?.id;
 	if (!sekolahId) {
 		throw error(401, 'Sekolah tidak ditemukan');
@@ -17,8 +30,16 @@ export async function GET({ locals }) {
 		throw error(400, 'Belum ada semester aktif. Atur semester aktif di menu Rapor.');
 	}
 
-	const daftarMurid = await db.query.tableMurid.findMany({
-		where: and(eq(tableMurid.sekolahId, sekolahId), eq(tableMurid.semesterId, activeSemesterId)),
+	const candidates = await db.query.tableMurid.findMany({
+		where: and(
+			eq(tableMurid.sekolahId, sekolahId),
+			eq(tableMurid.semesterId, activeSemesterId),
+			status === 'aktif'
+				? activeMuridFilter()
+				: status === 'arsip'
+					? archivedMuridFilter()
+					: undefined
+		),
 		orderBy: [asc(tableMurid.kelasId), asc(tableMurid.nama)],
 		with: {
 			kelas: { columns: { nama: true } },
@@ -30,6 +51,37 @@ export async function GET({ locals }) {
 			wali: { columns: { nama: true, pekerjaan: true, kontak: true } }
 		}
 	});
+	const daftarMurid: typeof candidates = [];
+	for (const row of candidates) {
+		if (
+			hasSchoolWideOperationalAccess(locals.user) ||
+			(await getKelasContextForUser(locals, url, String(row.id))).hasAccess
+		)
+			daftarMurid.push(row);
+	}
+	const lifecycleRows = await db
+		.select({
+			id: tableMuridIdentityLink.muridId,
+			status: tableMuridLifecycle.status,
+			review: tableMuridLifecycle.needsIdentityReview
+		})
+		.from(tableMuridIdentityLink)
+		.innerJoin(
+			tableMuridLifecycle,
+			and(
+				eq(tableMuridIdentityLink.sekolahId, tableMuridLifecycle.sekolahId),
+				eq(tableMuridLifecycle.identityKey, sql`'uid:' || ${tableMuridIdentityLink.identityUid}`)
+			)
+		)
+		.where(
+			and(
+				eq(tableMuridIdentityLink.sekolahId, sekolahId),
+				eq(tableMuridIdentityLink.semesterId, activeSemesterId)
+			)
+		);
+	const lifecycleById = new Map(
+		lifecycleRows.map((row) => [row.id, row.review ? 'Perlu Periksa Identitas' : row.status])
+	);
 
 	const headers = [
 		'Nama',
@@ -58,7 +110,8 @@ export async function GET({ locals }) {
 		'Kontak Ibu',
 		'Nama Wali',
 		'Pekerjaan Wali',
-		'Kontak Wali'
+		'Kontak Wali',
+		'Status Murid'
 	];
 
 	const rows: unknown[][] = [headers];
@@ -96,7 +149,8 @@ export async function GET({ locals }) {
 			ibu?.kontak ?? '',
 			wali?.nama ?? '',
 			wali?.pekerjaan ?? '',
-			wali?.kontak ?? ''
+			wali?.kontak ?? '',
+			lifecycleById.get(murid.id) ?? 'aktif'
 		]);
 	}
 
@@ -105,7 +159,7 @@ export async function GET({ locals }) {
 	return new Response(new Uint8Array(buffer), {
 		headers: {
 			'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-			'Content-Disposition': 'attachment; filename="Data Murid.xlsx"'
+			'Content-Disposition': `attachment; filename="Data Murid-${status}.xlsx"`
 		}
 	});
 }

@@ -123,8 +123,8 @@ export async function load({ locals, url, depends, parent }) {
 
 	if (userType === 'admin' || userType === 'wali_kelas' || userType === 'user') {
 		let userMpIds: number[] = [];
-		if (userType === 'user' && user?.mataPelajaranId) userMpIds.push(user.mataPelajaranId);
-		if (userType === 'user' && user?.id) {
+		if (isRestrictedTeacher(user) && user?.mataPelajaranId) userMpIds.push(user.mataPelajaranId);
+		if (isRestrictedTeacher(user) && user?.id) {
 			const extra = await db.query.tableAuthUserMataPelajaran.findMany({
 				columns: { mataPelajaranId: true },
 				where: eq(tableAuthUserMataPelajaran.authUserId, user.id)
@@ -191,7 +191,7 @@ export async function load({ locals, url, depends, parent }) {
 				mataPelajaranList = globalMapels
 					.filter(
 						(mp) =>
-							userType !== 'user' ||
+							!isRestrictedTeacher(user) ||
 							!user?.pegawaiId ||
 							!mp.guruPegawaiId ||
 							mp.guruPegawaiId === user.pegawaiId
@@ -546,7 +546,7 @@ export const actions = {
 				return fail(400, { fail: 'Data tujuan pembelajaran tidak sesuai dengan kelas' });
 			}
 		}
-		if (!id && user.type === 'user') {
+		if (!id && isRestrictedTeacher(user)) {
 			const kelasAssignments = await db.query.tableAuthUserKelas.findMany({
 				columns: { kelasId: true },
 				where: eq(tableAuthUserKelas.authUserId, user.id)
@@ -578,7 +578,7 @@ export const actions = {
 		if (id) {
 			if (
 				!existing ||
-				(existing.authUserId !== user.id && user.type !== 'admin' && user.type !== 'wali_kelas')
+				(existing.authUserId !== user.id && !hasSchoolWideOperationalAccess(user) && user.type !== 'wali_kelas')
 			) {
 				return fail(404, { fail: 'Jurnal tidak ditemukan' });
 			}
@@ -690,7 +690,7 @@ export const actions = {
 		});
 		if (
 			!existing ||
-			(existing.authUserId !== user.id && user.type !== 'admin' && user.type !== 'wali_kelas')
+			(existing.authUserId !== user.id && !hasSchoolWideOperationalAccess(user) && user.type !== 'wali_kelas')
 		) {
 			return fail(404, { fail: 'Jurnal tidak ditemukan' });
 		}
@@ -707,3 +707,4 @@ export const actions = {
 		return { message: 'Jurnal dihapus' };
 	}
 };
+import { hasSchoolWideOperationalAccess, isRestrictedTeacher } from '$lib/access-position';

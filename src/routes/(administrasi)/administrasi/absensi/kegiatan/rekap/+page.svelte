@@ -3,9 +3,11 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { canAttendance } from '$lib/attendance-access';
 	import FormEnhance from '$lib/components/form-enhance.svelte';
 	import AttendanceMonitoringPanel from '$lib/components/absensi/AttendanceMonitoringPanel.svelte';
 	import Icon from '$lib/components/icon.svelte';
+	import AttendanceSummaryDialog from '$lib/components/absensi/AttendanceSummaryDialog.svelte';
 
 	type StatusKey = 'hadir' | 'terlambat' | 'sakit' | 'izin' | 'alfa' | 'pulang';
 	type Kegiatan = { id: number; nama: string; kategori: string };
@@ -87,7 +89,10 @@
 	const templateHref = $derived(
 		`/api/administrasi/absensi/kegiatan/download-template${page.url.search}`
 	);
-	const canImport = $derived(Boolean(data.activeSemesterId && data.kelasId && data.rows.length));
+	const canImport = $derived(
+		canAttendance(page.data.user, 'impor') &&
+			Boolean(data.activeSemesterId && data.kelasId && data.rows.length)
+	);
 
 	function updateFilter(
 		key: 'tanggal_awal' | 'tanggal_akhir' | 'kelas_id' | 'kegiatan_id',
@@ -122,56 +127,65 @@
 				Rekap kegiatan asrama, makan, sholat, dan apel berdasarkan rentang tanggal.
 			</p>
 		</div>
-		<div class="flex self-start lg:self-auto">
-			<a class="btn btn-soft rounded-r-none shadow-none" href={exportHref}>
-				<Icon name="export" />
-				Ekspor Rekap
-			</a>
-			<div class="dropdown dropdown-end">
-				<button
-					type="button"
-					tabindex="0"
-					class="btn btn-soft rounded-l-none border-l-base-300 border-l shadow-none"
-					title="Menu rekap absensi kegiatan"
-					aria-label="Buka menu rekap absensi kegiatan"
-				>
-					<Icon name="down" />
-				</button>
-				<ul
-					tabindex="-1"
-					class="dropdown-content menu bg-base-100 border-base-300 z-50 mt-2 w-64 rounded-md border p-2 shadow-lg"
-				>
-					<li>
-						<a
-							href={templateHref}
-							aria-disabled={!canImport}
-							class:pointer-events-none={!canImport}
-							class:opacity-50={!canImport}
-						>
-							<Icon name="download" />
-							Template Import
-						</a>
-					</li>
-					<li>
-						<button type="button" onclick={openImportDialog} disabled={!canImport}>
-							<Icon name="import" />
-							Import Excel
-						</button>
-					</li>
-					<li><hr class="border-base-200 my-1" /></li>
-					<li>
-						<a href={resolve('/administrasi/absensi/kegiatan')}>
-							<Icon name="activity" />
-							Absensi Kegiatan
-						</a>
-					</li>
-					<li>
-						<a href={resolve('/administrasi/absensi/kegiatan/pengaturan')}>
-							<Icon name="gear" />
-							Pengaturan Kegiatan
-						</a>
-					</li>
-				</ul>
+		<div class="flex flex-wrap gap-2 self-start lg:self-auto">
+			<AttendanceSummaryDialog
+				tanggal={data.tanggalAkhir}
+				kegiatanId={data.kegiatanId}
+				kelasId={data.kelasId}
+			/>
+			<div class="flex">
+				<a class="btn btn-soft rounded-r-none shadow-none" href={exportHref}>
+					<Icon name="export" />
+					Ekspor Rekap
+				</a>
+				<div class="dropdown dropdown-end">
+					<button
+						type="button"
+						tabindex="0"
+						class="btn btn-soft rounded-l-none border-l-base-300 border-l shadow-none"
+						title="Menu rekap absensi kegiatan"
+						aria-label="Buka menu rekap absensi kegiatan"
+					>
+						<Icon name="down" />
+					</button>
+					<ul
+						tabindex="-1"
+						class="dropdown-content menu bg-base-100 border-base-300 z-50 mt-2 w-64 rounded-md border p-2 shadow-lg"
+					>
+						<li>
+							<a
+								href={templateHref}
+								aria-disabled={!canImport}
+								class:pointer-events-none={!canImport}
+								class:opacity-50={!canImport}
+							>
+								<Icon name="download" />
+								Template Import
+							</a>
+						</li>
+						<li>
+							<button type="button" onclick={openImportDialog} disabled={!canImport}>
+								<Icon name="import" />
+								Import Excel
+							</button>
+						</li>
+						<li><hr class="border-base-200 my-1" /></li>
+						<li>
+							<a href={resolve('/administrasi/absensi/kegiatan')}>
+								<Icon name="activity" />
+								Absensi Kegiatan
+							</a>
+						</li>
+						{#if canAttendance(page.data.user, 'pengaturan')}
+							<li>
+								<a href={resolve('/administrasi/absensi/kegiatan/pengaturan')}>
+									<Icon name="gear" />
+									Pengaturan Kegiatan
+								</a>
+							</li>
+						{/if}
+					</ul>
+				</div>
 			</div>
 		</div>
 	</div>
@@ -411,11 +425,7 @@
 				>
 					Batal
 				</button>
-				<button
-					class="btn btn-primary"
-					type="submit"
-					disabled={importSubmitting || !canImport}
-				>
+				<button class="btn btn-primary" type="submit" disabled={importSubmitting || !canImport}>
 					{#if importSubmitting}
 						<span class="loading loading-spinner loading-sm" aria-hidden="true"></span>
 					{:else}

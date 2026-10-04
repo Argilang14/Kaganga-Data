@@ -34,7 +34,7 @@ export async function canAccessExportClass(user: App.Locals['user'], sekolahId: 
 		const records = await db.query.tableAuthUserKelas.findMany({
 			columns: { kelasId: true }, where: eq(tableAuthUserKelas.authUserId, user.id)
 		});
-		const ids = records.map(row => row.kelasId);
+		const ids = [...new Set([...records.map(row => row.kelasId), ...(user.kelasId ? [user.kelasId] : [])])];
 		const assignments = ids.length ? await db.query.tableKelas.findMany({
 			columns: { id: true, nama: true, semesterId: true, tahunAjaranId: true },
 			where: and(inArray(tableKelas.id, ids), eq(tableKelas.sekolahId, sekolahId))

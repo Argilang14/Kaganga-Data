@@ -2,6 +2,7 @@
 	/* eslint-disable svelte/no-navigation-without-resolve -- small URLSearchParams helpers and goto use */
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { isRestrictedTeacher } from '$lib/access-position';
 	import Icon from '$lib/components/icon.svelte';
 	import { autoSubmit, searchQueryMarker } from '$lib/utils';
 	import { onDestroy } from 'svelte';
@@ -217,7 +218,7 @@
 				name="mapel_id"
 				bind:value={selectedMapelValue}
 				disabled={data.mapelList.length === 0 ||
-					(page.data.user?.type === 'user' && page.data.user?.mataPelajaranId != null)}
+					(isRestrictedTeacher(page.data.user) && page.data.user?.mataPelajaranId != null)}
 			>
 				{#if data.mapelList.length === 0}
 					<option value="">Belum ada mata pelajaran</option>

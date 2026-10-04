@@ -1,4 +1,5 @@
 import db from './db';
+import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 import { tableAuthUserKelas, tableKelas, tableMurid, tablePegawai } from './db/schema';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
@@ -47,6 +48,7 @@ export async function getAssignmentSummaries(users: SummaryUser[], sekolahId: nu
 }
 
 export async function guardianStudentCondition(user: App.Locals['user'] | null, sekolahId: number) {
+	if (hasSchoolWideOperationalAccess(user)) return undefined;
 	if (!user || !['wali_asuh', 'wali_asrama'].includes(user.type)) return undefined;
 	if (!user.pegawaiId) return sql`0`;
 	const employees = await db.query.tablePegawai.findMany({ columns: { id: true, nama: true }, where: eq(tablePegawai.sekolahId, sekolahId) });

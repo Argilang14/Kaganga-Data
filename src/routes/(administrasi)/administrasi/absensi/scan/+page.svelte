@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import Icon from '$lib/components/icon.svelte';
+	import AttendanceSummaryDialog from '$lib/components/absensi/AttendanceSummaryDialog.svelte';
 	import { onDestroy, onMount } from 'svelte';
 
 	type ScanResult = {
@@ -47,6 +48,7 @@
 
 	let videoEl: HTMLVideoElement;
 	let scannerActive = $state(false);
+	let scannerStarting = $state(false);
 	let loading = $state(false);
 	let result = $state<ScanResult | null>(null);
 	let studentInfo = $state<ScanResult | null>(null);
@@ -64,21 +66,12 @@
 	let pendingCount = $state(0);
 	let syncing = $state(false);
 
-	$effect(() => {
-		if (scanMode === 'kegiatan' && !data.kegiatanList.length && data.canScanSekolah) {
-			scanMode = 'sekolah';
-		}
-		if (!kegiatanId && data.kegiatanList[0]?.id) {
-			kegiatanId = String(data.kegiatanList[0].id);
-		}
-	});
-
 	const kegiatanAktif = $derived.by(() => {
 		const id = Number(kegiatanId);
 		return data.kegiatanList.find((item) => item.id === id) ?? null;
 	});
 	const canStartScan = $derived.by(() => {
-		if (!canUseCamera || scannerActive) return false;
+		if (!canUseCamera || scannerActive || scannerStarting) return false;
 		if (scanMode === 'sekolah') return data.canScanSekolah;
 		return !!kegiatanAktif;
 	});
@@ -249,6 +242,11 @@
 	}
 
 	async function submitToken(token: string) {
+		if (loading) return;
+		if (scanMode === 'kegiatan' && !kegiatanAktif) {
+			errorMessage = 'Pilih kegiatan terlebih dahulu sebelum mulai scan.';
+			return;
+		}
 		const now = Date.now();
 		if (token === lastToken && now - lastScanAt < 4000) return;
 		lastToken = token;
@@ -279,9 +277,10 @@
 	}
 
 	async function startScanner() {
-		if (scannerActive) return;
+		if (scannerActive || scannerStarting) return;
 		errorMessage = '';
 		result = null;
+		scannerStarting = true;
 		try {
 			if (!canUseCamera) {
 				errorMessage =
@@ -297,6 +296,8 @@
 				return;
 			}
 			await requestCameraPermission();
+			lastToken = '';
+			lastScanAt = 0;
 			const { BrowserQRCodeReader } = await import('@zxing/browser');
 			const reader = new BrowserQRCodeReader(undefined, {
 				delayBetweenScanAttempts: 80,
@@ -321,6 +322,8 @@
 					? `Kamera tidak bisa dibuka: ${error.message}`
 					: 'Kamera tidak bisa dibuka. Pastikan izin kamera sudah diberikan.';
 			stopScanner();
+		} finally {
+			scannerStarting = false;
 		}
 	}
 
@@ -445,15 +448,10 @@
 				<select
 					class="select select-bordered w-full"
 					bind:value={scanMode}
-					disabled={scannerActive}
+					disabled={scannerActive || scannerStarting}
 					aria-label="Mode scan"
 				>
-					{#if data.kegiatanList.length}
-						<option value="kegiatan">Absensi Kegiatan</option>
-					{/if}
-					{#if data.canScanSekolah && !data.kegiatanList.length}
-						<option value="sekolah">Absensi Sekolah</option>
-					{/if}
+					<option value="kegiatan">Absensi Kegiatan</option>
 				</select>
 			</label>
 			<label class="form-control min-w-0">
@@ -461,12 +459,16 @@
 				<select
 					class="select select-bordered w-full"
 					bind:value={kegiatanId}
-					disabled={scannerActive || scanMode !== 'kegiatan'}
+					disabled={scannerActive ||
+						scannerStarting ||
+						scanMode !== 'kegiatan' ||
+						!data.kegiatanList.length}
 					aria-label="Kegiatan absensi"
+					required
 				>
 					<option value="" disabled>Pilih kegiatan</option>
 					{#each data.kegiatanList as kegiatan (kegiatan.id)}
-						<option value={kegiatan.id}>{kegiatan.nama}</option>
+						<option value={String(kegiatan.id)}>{kegiatan.nama}</option>
 					{/each}
 				</select>
 			</label>
@@ -475,7 +477,7 @@
 				<select
 					class="select select-bordered w-full"
 					bind:value={statusOverride}
-					disabled={scannerActive}
+					disabled={scannerActive || scannerStarting}
 					aria-label="Status scan"
 				>
 					<option value="">Otomatis hadir/terlambat</option>
@@ -526,7 +528,7 @@
 						<select
 							class="select select-sm select-bordered"
 							bind:value={cameraDeviceId}
-							disabled={scannerActive}
+							disabled={scannerActive || scannerStarting}
 							aria-label="Pilih kamera"
 						>
 							<option value="">Otomatis kamera belakang</option>
@@ -547,12 +549,17 @@
 						</div>
 					{/if}
 				</div>
-				<div class="flex w-full gap-2 sm:w-auto">
+				<div class="flex w-full flex-wrap gap-2 sm:w-auto">
+					<AttendanceSummaryDialog {kegiatanId} label="Selesai & Ringkasan" onopen={stopScanner} />
 					<button
 						class="btn btn-primary btn-sm flex-1 shadow-none sm:flex-none"
 						type="button"
 						onclick={startScanner}
 						disabled={!canStartScan}
+						aria-disabled={!canStartScan}
+						title={scanMode === 'kegiatan' && !kegiatanAktif
+							? 'Pilih kegiatan terlebih dahulu'
+							: 'Mulai scan QR'}
 					>
 						<Icon name="activity" />
 						Mulai Scan

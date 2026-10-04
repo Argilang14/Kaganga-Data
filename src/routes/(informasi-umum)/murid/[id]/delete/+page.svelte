@@ -17,7 +17,10 @@
 
 <FormEnhance action="?/delete" onsuccess={handleDeleteSuccess} showToast={false}>
 	{#snippet children({ submitting })}
-		<h3 class="mb-4 text-xl font-bold">Hapus data murid?</h3>
+		<h3 class="mb-4 text-xl font-bold">Arsipkan murid?</h3>
+		<p class="mb-3 text-sm opacity-70">
+			Murid dikeluarkan dari daftar aktif. Nilai, presensi, foto, dan QR tetap tersimpan.
+		</p>
 		<p>NIS: {data.murid.nis}</p>
 		<p>NISN: {data.murid.nisn}</p>
 		<p>Nama: <b>{data.murid.nama}</b></p>
@@ -34,7 +37,7 @@
 				{:else}
 					<Icon name="del" />
 				{/if}
-				Hapus
+				Arsipkan
 			</button>
 		</div>
 	{/snippet}

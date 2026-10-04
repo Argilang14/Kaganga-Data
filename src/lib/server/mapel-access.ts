@@ -2,6 +2,7 @@ import db from '$lib/server/db';
 import { tableAuthUserMataPelajaran, tableMataPelajaran } from '$lib/server/db/schema';
 import { agamaMapelNames, agamaParentName, pksMapelNames, pksParentName } from '$lib/statics';
 import { and, eq, inArray, or, type SQL } from 'drizzle-orm';
+import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 
 // Pusat cek akses mapel untuk akun tipe "user" (guru mapel).
 // Aturan:
@@ -17,12 +18,13 @@ import { and, eq, inArray, or, type SQL } from 'drizzle-orm';
  *  - tipe 'wali_kelas' → filter di kelas BUKAN miliknya, bebas di kelasnya sendiri. */
 export function needsMapelFilter(
 	user:
-		| { type?: string; id?: number; kelasId?: number | null; ownKelasIds?: number[] | null }
+		| { type?: string; id?: number; jabatanAkses?: string | null; kelasId?: number | null; ownKelasIds?: number[] | null }
 		| null
 		| undefined,
 	selectedKelasId: number | null | undefined
 ): boolean {
 	if (!user?.id) return false;
+	if (hasSchoolWideOperationalAccess(user)) return false;
 	if (user.type === 'user') return true;
 	if (user.type === 'wali_kelas' && selectedKelasId != null) {
 		const ownIds = user.ownKelasIds?.length ? user.ownKelasIds : [user.kelasId];

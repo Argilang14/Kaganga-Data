@@ -36,6 +36,8 @@ async function main() {
 		throw new Error('Package version is not defined in package.json');
 	}
 	const versionTag = `v${version}`;
+	const [baseVersion, prerelease] = version.split('-', 2);
+	const fileVersion = `${baseVersion.split('+')[0]}.${prerelease?.match(/(?:^|\.)(\d+)(?:\+.*)?$/)?.[1] ?? '0'}`;
 
 	const installerPath = resolve(rootDir, 'installer/rapkumer.iss');
 	const installerRegex = /(#define\s+AppVersion\s+")([^"]+)(")/;
@@ -47,10 +49,15 @@ async function main() {
 
 	if (
 		await updateFileIfExists(installerPath, (content) =>
-			content.replace(
-				installerRegex,
-				(_match, prefix, _oldVersion, suffix) => `${prefix}${version}${suffix}`
-			)
+			content
+				.replace(
+					installerRegex,
+					(_match, prefix, _oldVersion, suffix) => `${prefix}${version}${suffix}`
+				)
+				.replace(
+					/(#define\s+AppFileVersion\s+")([^"]+)(")/,
+					(_match, prefix, _oldVersion, suffix) => `${prefix}${fileVersion}${suffix}`
+				)
 		)
 	) {
 		updatedFiles.push('installer/rapkumer.iss');

@@ -23,8 +23,11 @@ export type AcademicContext = {
 	};
 };
 
-export async function resolveSekolahAcademicContext(sekolahId: number): Promise<AcademicContext> {
-	const tahunAjaranList = await db.query.tableTahunAjaran.findMany({
+export async function resolveSekolahAcademicContext(
+	sekolahId: number,
+	source: typeof db | DBTransaction = db
+): Promise<AcademicContext> {
+	const tahunAjaranList = await source.query.tableTahunAjaran.findMany({
 		where: eq(tableTahunAjaran.sekolahId, sekolahId),
 		orderBy: [desc(tableTahunAjaran.id)],
 		with: {

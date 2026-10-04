@@ -161,7 +161,7 @@ export async function load({ parent, url, depends }) {
 	// default to it in the UI. This does NOT grant them wider grading
 	// access; that remains restricted to their assigned variant.
 	let treatAssignedAgamaVariantAsBase = false;
-	if (maybeUser && maybeUser.type === 'user' && maybeUser.id) {
+	if (maybeUser && isRestrictedTeacher(maybeUser) && maybeUser.id) {
 		try {
 			// First check join table auth_user_mata_pelajaran for multi-mapel support
 			const multiMapels = await db.query.tableAuthUserMataPelajaran.findMany({
@@ -259,7 +259,7 @@ export async function load({ parent, url, depends }) {
 	// grades students of their agama.
 	let assignedLocalMapelId: number | null = null;
 	let assignedIsAgamaVariant = false;
-	if (maybeUser && maybeUser.type === 'user' && maybeUser.mataPelajaranId) {
+	if (maybeUser && isRestrictedTeacher(maybeUser) && maybeUser.mataPelajaranId) {
 		try {
 			const assigned = await db.query.tableMataPelajaran.findFirst({
 				columns: { id: true, nama: true },
@@ -296,7 +296,7 @@ export async function load({ parent, url, depends }) {
 	// Derive human readable agama labels for the assigned agama/PKS variant(s).
 	// Support both multi-mapel (join table) and legacy single-mapel.
 	const allowedAgamaVariants = new Set<string>();
-	if (maybeUser && maybeUser.type === 'user' && maybeUser.id) {
+	if (maybeUser && isRestrictedTeacher(maybeUser) && maybeUser.id) {
 		try {
 			// First try multi-mapel from join table
 			const multiMapels = await db.query.tableAuthUserMataPelajaran.findMany({
@@ -474,7 +474,7 @@ export async function load({ parent, url, depends }) {
 	}
 
 	// If user is locked to a mapel and no explicit query param is provided, default to user's mapel
-	if (!selectedMapelValue && maybeUser && maybeUser.type === 'user' && maybeUser.mataPelajaranId) {
+	if (!selectedMapelValue && maybeUser && isRestrictedTeacher(maybeUser) && maybeUser.mataPelajaranId) {
 		// If the user's assigned mapel is an agama or PKS variant and we have the
 		// special rule enabled, default to the parent option instead of the variant id.
 		if (treatAssignedAgamaVariantAsBase) {
@@ -514,7 +514,7 @@ export async function load({ parent, url, depends }) {
 	if (
 		(!requestedValue || requestedValue === '') &&
 		maybeUser &&
-		maybeUser.type === 'user' &&
+		isRestrictedTeacher(maybeUser) &&
 		maybeUser.mataPelajaranId
 	) {
 		// Special-case: if assigned to an agama or PKS variant, default to the parent option.
@@ -574,7 +574,7 @@ export async function load({ parent, url, depends }) {
 
 	const muridRecords = await db.query.tableMurid.findMany({
 		columns: { id: true, nama: true, agama: true },
-		where: eq(tableMurid.kelasId, kelasAktif.id),
+		where: and(eq(tableMurid.kelasId, kelasAktif.id), activeMuridFilter()),
 		orderBy: asc(tableMurid.nama)
 	});
 
@@ -787,7 +787,7 @@ export async function load({ parent, url, depends }) {
 		}
 
 		const canAccess = (() => {
-			if (!maybeUser || maybeUser.type !== 'user') return true;
+			if (!isRestrictedTeacher(maybeUser)) return true;
 
 			// If agama is selected and user has assigned agama variants, restrict by agama
 			if (isAgamaSelected && allowedAgamaVariants.size > 0) {
@@ -901,3 +901,5 @@ export async function load({ parent, url, depends }) {
 		}
 	};
 }
+import { activeMuridFilter } from '$lib/server/murid-query';
+import { isRestrictedTeacher } from '$lib/access-position';

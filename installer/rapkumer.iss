@@ -1,5 +1,6 @@
 #define AppName "Kaganga"
-#define AppVersion "2.2.2"
+#define AppVersion "2.2.2-beta.1"
+#define AppFileVersion "2.2.2.1"
 #define StagePath "..\\dist\\windows\\stage\\Kaganga"
 
 [Setup]
@@ -23,7 +24,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ; Do not require administrator privileges when installing to per-user LocalAppData
 PrivilegesRequired=lowest
 UninstallDisplayIcon={app}\kaganga.ico
-VersionInfoVersion={#AppVersion}
+VersionInfoVersion={#AppFileVersion}
 SetupIconFile={#StagePath}\kaganga.ico
 LicenseFile="..\LICENSE"
 ; Code signing configuration (commented out by default)

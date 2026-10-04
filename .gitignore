@@ -8,6 +8,8 @@ node_modules
 /.svelte-kit
 /build
 /dist/windows
+/dist/backups
+/dist/release-tests
 
 # OS
 .DS_Store

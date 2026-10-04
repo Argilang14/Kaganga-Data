@@ -109,7 +109,6 @@
 		{ value: 'keasramaan', label: 'Rapor Keasramaan' },
 		{ value: 'kartu-absensi', label: 'Kartu Absensi Murid' },
 		{ value: 'kartu-ujian', label: 'Kartu Ujian' },
-		{ value: 'kartu-ujian-meja', label: 'Kartu Ujian Meja' },
 		{ value: 'jadwal-pelajaran', label: 'Jadwal Pelajaran' },
 		{ value: 'kalender-pendidikan', label: 'Kalender Pendidikan' },
 		{ value: 'jurnal-mengajar', label: 'Jurnal Mengajar' },
@@ -138,7 +137,11 @@
 		);
 	});
 
-	let selectedDocument = $state<DocumentType | ''>((page.url.searchParams.get('dokumen') as DocumentType) ?? '');
+	let selectedDocument = $state<DocumentType | ''>(
+		page.url.searchParams.get('dokumen') === 'kartu-ujian-meja'
+			? 'kartu-ujian'
+			: ((page.url.searchParams.get('dokumen') as DocumentType) ?? '')
+	);
 	let selectedRaporPeriode = $state<RaporPeriode | ''>('');
 	let selectedMuridId = $state('');
 	let selectedTemplate = $state<'1' | '2'>('1');
@@ -178,6 +181,8 @@
 	);
 	let selectedUjianKelas = $state('');
 	let selectedUjianRuang = $state('');
+	// Keep old desk-card links working under the merged document menu.
+	let showUjianDeskCard = $state(page.url.searchParams.get('dokumen') === 'kartu-ujian-meja');
 	let showUjianAttendanceQr = $state(false);
 	let showUjianLmsAccount = $state(false);
 	let showUjianDeskPrincipalSignature = $state(true);
@@ -262,7 +267,7 @@
 	let pdfViewerTitle = $state('');
 	let pdfViewerEl = $state<HTMLElement | null>(null);
 	const ujianSelectionKey = $derived(
-		[selectedDocument, selectedUjianSessionId, selectedUjianKelas, selectedUjianRuang, showUjianAttendanceQr, showUjianLmsAccount, showUjianDeskPrincipalSignature].join('|')
+		[selectedDocument, selectedUjianSessionId, selectedUjianKelas, selectedUjianRuang, showUjianDeskCard, showUjianAttendanceQr, showUjianLmsAccount, showUjianDeskPrincipalSignature].join('|')
 	);
 	let previousUjianSelectionKey = $state('');
 	$effect(() => {
@@ -377,8 +382,8 @@
 	const isAbsensiKegiatanSelected = $derived.by(
 		() => selectedDocument === 'rekap-absensi-kegiatan'
 	);
-	const isKartuUjianMejaSelected = $derived(selectedDocument === 'kartu-ujian-meja');
-	const isKartuUjianSelected = $derived.by(() => selectedDocument === 'kartu-ujian' || isKartuUjianMejaSelected);
+	const isKartuUjianSelected = $derived(selectedDocument === 'kartu-ujian');
+	const isKartuUjianMejaSelected = $derived(isKartuUjianSelected && showUjianDeskCard);
 	const isMartikulasiSkSelected = $derived.by(() => selectedDocument === 'martikulasi-sk');
 	const isMartikulasiSelected = $derived.by(() =>
 		selectedDocument === 'martikulasi-sk' ||
@@ -678,22 +683,27 @@
 			}
 			if (documentType === 'kartu-ujian' || documentType === 'kartu-ujian-meja') {
 				if (!selectedUjianSessionId) throw new Error('Pilih sesi ujian terlebih dahulu.');
+				const selectionKey = ujianSelectionKey;
+				const isDeskCard = isKartuUjianMejaSelected;
+				const cardLabel = isDeskCard ? 'Kartu Ujian Meja' : 'Kartu Ujian';
+				const sessionLabel = selectedUjianSession?.singkatan || selectedUjianSession?.nama || '';
 				const params = new URLSearchParams({ session_id: String(selectedUjianSessionId) });
-				params.set('layout', documentType === 'kartu-ujian-meja' ? 'meja' : 'kartu');
-				params.set('qr_absensi', documentType === 'kartu-ujian' && showUjianAttendanceQr ? '1' : '0');
+				params.set('layout', isDeskCard ? 'meja' : 'kartu');
+				params.set('qr_absensi', !isDeskCard && showUjianAttendanceQr ? '1' : '0');
 				params.set('akun_lms', showUjianLmsAccount ? '1' : '0');
-				if (documentType === 'kartu-ujian-meja') params.set('ttd_kepsek', showUjianDeskPrincipalSignature ? '1' : '0');
+				if (isDeskCard) params.set('ttd_kepsek', showUjianDeskPrincipalSignature ? '1' : '0');
 				if (selectedUjianKelas) params.set('kelas', selectedUjianKelas);
 				if (selectedUjianRuang) params.set('ruang', selectedUjianRuang);
 				const pdfRes = await fetch(`/api/pdf/kartu-ujian?${params}`);
 				if (!pdfRes.ok) throw new Error(await responseErrorMessage(pdfRes, 'Gagal memuat kartu ujian'));
 				const blob = await pdfRes.blob();
+				if (selectionKey !== ujianSelectionKey) return;
 				pdfViewerFilename = responsePdfFilename(pdfRes);
 				if (pdfViewerUrl) URL.revokeObjectURL(pdfViewerUrl);
 				pdfViewerUrl = URL.createObjectURL(blob);
-				pdfViewerTitle = `${documentType === 'kartu-ujian-meja' ? 'Kartu Ujian Meja' : 'Kartu Ujian'} - ${selectedUjianSession?.singkatan || selectedUjianSession?.nama || ''}`;
+				pdfViewerTitle = `${cardLabel} - ${sessionLabel}`;
 				await scrollToViewer();
-				toast(`PDF ${documentType === 'kartu-ujian-meja' ? 'Kartu Ujian Meja' : 'Kartu Ujian'} berhasil dimuat`, 'success');
+				toast(`PDF ${cardLabel} berhasil dimuat`, 'success');
 				return;
 			}
 			if (
@@ -1183,10 +1193,24 @@
 			</label>
 			<a class="btn btn-soft" href="/ujian"><Icon name="gear" /> Kelola Sesi</a>
 			<div class="md:col-span-2 xl:col-span-4 flex flex-wrap items-center gap-2 text-sm">
+				<button
+					type="button"
+					class="btn btn-sm shadow-none"
+					class:btn-success={showUjianDeskCard}
+					class:btn-soft={!showUjianDeskCard}
+					role="switch"
+					aria-checked={showUjianDeskCard}
+					aria-label="Kartu Ujian Meja"
+					title="Gunakan format kartu ujian meja"
+					disabled={downloadLoading}
+					onclick={() => showUjianDeskCard = !showUjianDeskCard}
+				>Kartu Ujian Meja {showUjianDeskCard ? 'ON' : 'OFF'}</button>
 				{#if !isKartuUjianMejaSelected}
 				<button
 					type="button"
-					class="btn btn-soft btn-sm shadow-none"
+					class="btn btn-sm shadow-none"
+					class:btn-success={showUjianAttendanceQr}
+					class:btn-soft={!showUjianAttendanceQr}
 					role="switch"
 					aria-checked={showUjianAttendanceQr}
 					aria-label="QR Absensi"
@@ -1202,7 +1226,9 @@
 				{/if}
 				<button
 					type="button"
-					class="btn btn-soft btn-sm shadow-none"
+					class="btn btn-sm shadow-none"
+					class:btn-success={showUjianLmsAccount}
+					class:btn-soft={!showUjianLmsAccount}
 					role="switch"
 					aria-checked={showUjianLmsAccount}
 					aria-label="Akun LMS"
@@ -1218,7 +1244,9 @@
 				{#if isKartuUjianMejaSelected}
 					<button
 						type="button"
-						class="btn btn-soft btn-sm shadow-none"
+						class="btn btn-sm shadow-none"
+						class:btn-success={showUjianDeskPrincipalSignature}
+						class:btn-soft={!showUjianDeskPrincipalSignature}
 						role="switch"
 						aria-checked={showUjianDeskPrincipalSignature}
 						aria-label="TTD Kepsek"

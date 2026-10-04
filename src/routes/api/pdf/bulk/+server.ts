@@ -113,7 +113,7 @@ export const POST = (async ({ locals, request }) => {
 			`Maksimal ${MAX_BULK_MURID} murid dalam satu PDF. Cetak per jenjang atau kelas untuk data yang lebih besar.`
 		);
 	}
-	if (locals.user.type === 'wali_asrama' && (body.docType !== 'keasramaan' || variant !== 'sr')) {
+	if (locals.user.type === 'wali_asrama' && body.docType !== 'kartu-absensi' && (body.docType !== 'keasramaan' || variant !== 'sr')) {
 		throw error(403, 'Wali asrama hanya dapat mencetak Dokumen SR Rapor Keasramaan.');
 	}
 

@@ -22,6 +22,7 @@ import { assertKeasramaanTargets } from '$lib/server/keasramaan-target-access';
 import { recordServerHeartbeat, startMaintenanceScheduler } from '$lib/server/system-operations';
 import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 import { effectivePermissions } from './routes/pengguna/permissions';
+import { attendanceGuard } from '$lib/server/attendance-guard';
 
 setTimeout(() => {
 	startBellScheduler().catch((e) => {
@@ -210,7 +211,7 @@ const authGuard: Handle = async ({ event, resolve }) => {
 			const kelasIdNumber = Number(kelasIdParam);
 			if (Number.isInteger(kelasIdNumber)) {
 				const u = event.locals.user;
-				if (isLegacyWaliKelas(u)) {
+				if (isLegacyWaliKelas(u) && !hasSchoolWideOperationalAccess(u)) {
 					const sekolahId = Number(u.sekolahId);
 					const hasAccess =
 						Number.isInteger(sekolahId) &&
@@ -264,7 +265,12 @@ const cookieParser: Handle = async ({ event, resolve }) => {
 	}
 
 	const secure = event.locals.requestIsSecure ?? false;
-	const sekolahId = Number(event.cookies.get(cookieNames.ACTIVE_SEKOLAH_ID) || '');
+	const sekolahId =
+		event.locals.user.type !== 'admin'
+			? Number(event.locals.user.sekolahId)
+			: Number(event.cookies.get(cookieNames.ACTIVE_SEKOLAH_ID) || '');
+	if (event.locals.user.type !== 'admin' && !sekolahId)
+		throw error(403, 'Akun belum ditugaskan ke sekolah.');
 	if (sekolahId === event.locals.sekolah?.id && !event.locals.sekolahDirty) {
 		return resolve(event);
 	}
@@ -275,6 +281,8 @@ const cookieParser: Handle = async ({ event, resolve }) => {
 		where: sekolahId ? eq(tableSekolah.id, sekolahId) : undefined
 	});
 
+	if (!sekolah && event.locals.user.type !== 'admin')
+		throw error(403, 'Sekolah penugasan akun tidak ditemukan.');
 	if (!sekolah) {
 		sekolah = await db.query.tableSekolah.findFirst({
 			columns: { logo: false, logoDinas: false },
@@ -288,7 +296,10 @@ const cookieParser: Handle = async ({ event, resolve }) => {
 		} else if (sekolahId) {
 			event.cookies.delete(cookieNames.ACTIVE_SEKOLAH_ID, { path: '/', secure });
 		}
-	} else if (!sekolahId) {
+	} else if (
+		!sekolahId ||
+		Number(event.cookies.get(cookieNames.ACTIVE_SEKOLAH_ID)) !== sekolah.id
+	) {
 		event.cookies.set(cookieNames.ACTIVE_SEKOLAH_ID, String(sekolah.id), {
 			path: '/',
 			secure
@@ -390,7 +401,7 @@ const menuAccessGuard: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 
-const _composed = sequence(csrfGuard, authGuard, cookieParser, menuAccessGuard);
+const _composed = sequence(csrfGuard, authGuard, cookieParser, menuAccessGuard, attendanceGuard);
 export const handle: Handle = async ({ event, resolve }) => {
 	const bodySizeLimit = parseAsBytes(process.env.BODY_SIZE_LIMIT, '512M');
 	const contentLength = Number(event.request.headers.get('content-length'));

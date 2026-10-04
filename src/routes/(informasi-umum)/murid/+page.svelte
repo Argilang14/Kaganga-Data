@@ -283,6 +283,16 @@
 {/if}
 
 <div class="card bg-base-100 rounded-lg border border-none p-4 shadow-md">
+	{#if data.identityReviewCount}
+		<div class="alert alert-warning mb-4">
+			<Icon name="warning" /><span
+				>{data.identityReviewCount} murid menunggu pemeriksaan identitas lama.</span
+			>{#if page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('murid_arsip')}<a
+					class="link"
+					href="/murid/arsip?perlu_periksa=1">Periksa Arsip</a
+				>{/if}
+		</div>
+	{/if}
 	<div class="mb-6">
 		<div class="flex flex-col sm:flex-row sm:justify-between">
 			<div>
@@ -299,13 +309,13 @@
 					disabled={!hasSelection || formSubmitting || !canEdit}
 					onclick={openBulkDeleteModal}
 					title={!canEdit
-						? 'Anda tidak memiliki izin untuk menghapus'
+						? 'Anda tidak memiliki izin untuk mengarsipkan'
 						: hasSelection
-							? 'Hapus murid terpilih'
+							? 'Arsipkan murid terpilih'
 							: 'Pilih murid terlebih dahulu'}
 				>
 					<Icon name="del" />
-					Hapus
+					Arsipkan
 				</button>
 			{:else}
 				<div class="mt-2 flex max-sm:w-full sm:mt-0">
@@ -351,8 +361,14 @@
 								</li>
 							{/if}
 							<li>
-								<a href="/api/murid/download-excel" class="text-left"> Download Murid </a>
+								<a href="/api/murid/download-excel?status=aktif" class="text-left">
+									Download Murid Aktif
+								</a>
 							</li>
+							{#if page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('murid_arsip')}
+								<li><a href="/api/murid/download-excel?status=arsip">Download Murid Arsip</a></li>
+								<li><a href="/api/murid/download-excel?status=semua">Download Semua Status</a></li>
+							{/if}
 						</ul>
 					</div>
 				</div>
@@ -451,7 +467,7 @@
 												class="btn btn-sm btn-error btn-soft rounded-l-none shadow-none"
 												href="/murid/{murid.id}/delete"
 												use:modalRoute={'delete-murid'}
-												title="Hapus data murid"
+												title="Arsipkan murid"
 											>
 												<Icon name="del" />
 											</a>

@@ -7,6 +7,7 @@ import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 
 import { getAppVersion } from './app-info';
+import { compareVersions, normalizeVersion } from '$lib/version-compare';
 
 const updatesRepository =
 	process.env.KAGANGA_UPDATE_REPOSITORY?.trim() || 'Argilang14/Kaganga-Data';
@@ -28,13 +29,6 @@ async function ensureDir(pathname: string) {
 	await mkdir(pathname, { recursive: true });
 }
 
-function normalizeVersion(input: string | null | undefined): string {
-	if (!input) return '0.0.0';
-	const trimmed = input.trim();
-	if (!trimmed) return '0.0.0';
-	return trimmed.startsWith('v') || trimmed.startsWith('V') ? trimmed.slice(1) : trimmed;
-}
-
 function buildGithubHeaders(): HeadersInit {
 	const headers = new Headers({
 		Accept: 'application/vnd.github+json',
@@ -53,25 +47,6 @@ function buildGithubDownloadHeaders(): HeadersInit {
 	const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 	if (token) headers.set('Authorization', `Bearer ${token}`);
 	return headers;
-}
-
-function compareVersions(a: string, b: string): number {
-	const segmentsA = normalizeVersion(a)
-		.split('.')
-		.map((part) => Number.parseInt(part, 10));
-	const segmentsB = normalizeVersion(b)
-		.split('.')
-		.map((part) => Number.parseInt(part, 10));
-	const length = Math.max(segmentsA.length, segmentsB.length);
-
-	for (let index = 0; index < length; index += 1) {
-		const valueA = Number.isFinite(segmentsA[index]) ? segmentsA[index] : 0;
-		const valueB = Number.isFinite(segmentsB[index]) ? segmentsB[index] : 0;
-		if (valueA > valueB) return 1;
-		if (valueA < valueB) return -1;
-	}
-
-	return 0;
 }
 
 interface GithubReleaseAsset {
@@ -342,7 +317,8 @@ export async function scheduleInstall(downloadId: string): Promise<{ message: st
 		});
 	} catch (error) {
 		throw new Error(
-			error instanceof Error ? error.message : 'Gagal menjalankan proses pemasangan pembaruan.'
+			error instanceof Error ? error.message : 'Gagal menjalankan proses pemasangan pembaruan.',
+			{ cause: error }
 		);
 	}
 

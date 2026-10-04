@@ -112,7 +112,9 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 		for (let attempt = 0; attempt < 100; attempt++) {
 			try {
 				ready = (await fetch(`${base}/login`)).status === 200;
-			} catch {}
+			} catch {
+				// The copied runtime may still be starting up.
+			}
 			if (ready) break;
 			await new Promise((resolve) => setTimeout(resolve, 300));
 		}
@@ -207,6 +209,20 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 				const response = await fetch(base + route, { headers, redirect: 'manual' });
 				assert.equal(response.status, 200, `Paket upgrade ${route}`);
 			}
+			const update = await fetch(`${base}/api/updates/latest`, { headers });
+			assert.equal(update.status, 200, 'Pemeriksaan pembaruan paket');
+			assert.equal(update.headers.get('cache-control'), 'no-store');
+			const payload = await update.json();
+			assert.equal(payload.currentVersion, version);
+			if (process.env.RELEASE_EXPECTED_LATEST) {
+				assert.equal(payload.latest.version, process.env.RELEASE_EXPECTED_LATEST);
+				assert.equal(payload.updateAvailable, false, 'Versi terpasang sudah paling baru');
+			}
+			const anonymous = await fetch(`${base}/api/updates/latest`, { redirect: 'manual' });
+			assert.equal(anonymous.status, 303, 'Updater harus meminta autentikasi');
+			const loginLocation = new URL(anonymous.headers.get('location'), base);
+			assert.equal(loginLocation.pathname, '/login');
+			assert.equal(loginLocation.searchParams.get('redirect'), '/api/updates/latest');
 		}
 		console.log(
 			`PASS package ${scenario}: v${version}, startup, migrasi, integrity, foreign keys, dan alur autentikasi`

@@ -24,7 +24,7 @@ export const GET = async ({ locals }) => {
 			latest
 		};
 
-		return json(payload, { status: 200 });
+		return json(payload, { status: 200, headers: { 'cache-control': 'no-store' } });
 	} catch (error) {
 		console.error('[updates] gagal memeriksa rilis terbaru', error);
 		return json(

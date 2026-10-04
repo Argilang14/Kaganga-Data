@@ -8,7 +8,7 @@
 
 Kaganga membantu berbagai kebutuhan administrasi guru, murid, kurikulum, asrama, absensi, surat menyurat, dan dokumen sekolah dalam satu aplikasi.
 
-Versi pengujian terbaru: **v2.2.2 Beta 1**. Lihat [catatan rilis dan panduan migrasi](docs/releases/v2.2.2-beta.1.md). Installer beta tersedia pada halaman Releases dan tidak menggantikan rilis stabil secara otomatis. Buat backup database beserta foto/lampiran sebelum memperbarui aplikasi server.
+Versi terbaru: **v2.2.3**. Lihat [catatan rilis dan panduan migrasi](docs/releases/v2.2.3.md). Installer tersedia pada halaman Releases. Buat backup database beserta foto/lampiran sebelum memperbarui aplikasi server.
 
 > **Mengapa menggunakan Kaganga jika pemerintah sudah menyediakan E-Rapor resmi?**
 

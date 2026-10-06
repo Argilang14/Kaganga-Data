@@ -8,7 +8,7 @@
 
 Kaganga membantu berbagai kebutuhan administrasi guru, murid, kurikulum, asrama, absensi, surat menyurat, dan dokumen sekolah dalam satu aplikasi.
 
-Versi terbaru: **v2.2.3**. Lihat [catatan rilis dan panduan migrasi](docs/releases/v2.2.3.md). Installer tersedia pada halaman Releases. Buat backup database beserta foto/lampiran sebelum memperbarui aplikasi server.
+Versi terbaru: **v2.2.4**. Lihat [catatan rilis dan panduan migrasi](docs/releases/v2.2.4.md). Installer tersedia pada halaman Releases. Buat backup database beserta foto/lampiran sebelum memperbarui aplikasi server.
 
 > **Mengapa menggunakan Kaganga jika pemerintah sudah menyediakan E-Rapor resmi?**
 
@@ -58,6 +58,13 @@ Dokumentasi lengkap aplikasi ini disusun dalam bahasa Indonesia. File README ini
 
    ```bash
    git clone https://github.com/Argilang14/Kaganga-Data.git && cd Kaganga-Data
+   ```
+
+   Atau gunakan GitHub CLI untuk mengambil source terbaru dari branch utama:
+
+   ```bash
+   gh repo clone Argilang14/Kaganga-Data
+   cd Kaganga-Data
    ```
 
 2. Install seluruh dependency.

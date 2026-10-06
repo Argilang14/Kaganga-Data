@@ -23,6 +23,7 @@ import { recordServerHeartbeat, startMaintenanceScheduler } from '$lib/server/sy
 import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 import { effectivePermissions } from './routes/pengguna/permissions';
 import { attendanceGuard } from '$lib/server/attendance-guard';
+import { canAccessMenu } from '$lib/role-menu-access';
 
 setTimeout(() => {
 	startBellScheduler().catch((e) => {
@@ -401,7 +402,14 @@ const menuAccessGuard: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 
-const _composed = sequence(csrfGuard, authGuard, cookieParser, menuAccessGuard, attendanceGuard);
+const roleMenuGuard: Handle = async ({ event, resolve }) => {
+	if (event.locals.user && event.url.pathname.startsWith('/api/pegawai-photo/') && !event.locals.user.permissions.includes('sekolah_manage') && Number(event.params.id) !== event.locals.user.pegawaiId) throw error(403, 'Foto pegawai di luar akun Anda.');
+	if (event.locals.user && event.route.id && !canAccessMenu(event.locals.user, event.url.pathname))
+		throw error(403, 'Menu ini tidak diizinkan untuk akun Anda. Hubungi admin jika diperlukan.');
+	return resolve(event);
+};
+
+const _composed = sequence(csrfGuard, authGuard, cookieParser, roleMenuGuard, menuAccessGuard, attendanceGuard);
 export const handle: Handle = async ({ event, resolve }) => {
 	const bodySizeLimit = parseAsBytes(process.env.BODY_SIZE_LIMIT, '512M');
 	const contentLength = Number(event.request.headers.get('content-length'));

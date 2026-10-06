@@ -48,7 +48,7 @@ export async function GET({ locals, url }) {
 	const { academic, kelasList } = await loadAbsensiKelasOptions(sekolahId, locals.user);
 	const kelasId = resolveKelasId(kelasList, parsePositiveInteger(url.searchParams.get('kelas_id')));
 	const kelas = kelasList.find((item) => item.id === kelasId);
-	const kegiatanList = await loadKegiatanAbsensiOptions(sekolahId);
+	const kegiatanList = await loadKegiatanAbsensiOptions(sekolahId, true, locals.user);
 	const selectedKegiatanIds =
 		requestedKegiatanId && kegiatanList.some((kegiatan) => kegiatan.id === requestedKegiatanId)
 			? [requestedKegiatanId]

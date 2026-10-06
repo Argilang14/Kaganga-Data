@@ -9,7 +9,9 @@ import path from 'node:path';
 
 const root = process.cwd();
 const stage = path.resolve(process.env.RELEASE_STAGE || 'dist/windows/stage/Kaganga');
-const version = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')).version;
+const version =
+	process.env.RELEASE_RUNTIME_VERSION ||
+	JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')).version;
 assert.equal(JSON.parse(await readFile(path.join(stage, 'package.json'), 'utf8')).version, version);
 await mkdir(path.join(root, 'tmp'), { recursive: true });
 const directory = await mkdtemp(path.join(root, 'tmp', 'release-package-'));
@@ -75,6 +77,7 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 		DB_URL: `file:${databasePath}`,
 		DATABASE_URL: `file:${databasePath}`,
 		KAGANGA_DATA_DIR: state,
+		KAGANGA_UPDATE_DIR: path.join(state, 'updates'),
 		LOCALAPPDATA: state,
 		photo: `file:${path.join(state, 'uploads')}`,
 		sounds: `file:${path.join(state, 'sounds')}`,
@@ -204,8 +207,12 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 				'/berkas',
 				'/persetujuan',
 				'/inventaris',
-				'/notifikasi'
+				'/notifikasi',
+				'/administrasi/absensi/kegiatan',
+				'/administrasi/absensi/monitoring',
+				'/administrasi/absensi/kegiatan/rekap'
 			]) {
+				if (version === '2.2.3' && route === '/administrasi/absensi/monitoring') continue;
 				const response = await fetch(base + route, { headers, redirect: 'manual' });
 				assert.equal(response.status, 200, `Paket upgrade ${route}`);
 			}
@@ -216,7 +223,45 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 			assert.equal(payload.currentVersion, version);
 			if (process.env.RELEASE_EXPECTED_LATEST) {
 				assert.equal(payload.latest.version, process.env.RELEASE_EXPECTED_LATEST);
-				assert.equal(payload.updateAvailable, false, 'Versi terpasang sudah paling baru');
+				assert.equal(
+					payload.updateAvailable,
+					process.env.RELEASE_EXPECT_UPDATE === '1',
+					'Status pembaruan sesuai versi runtime yang diuji'
+				);
+			}
+			if (process.env.RELEASE_INSTALLER_SHA256) {
+				const asset = payload.latest.assets.find(
+					(item) => item.name === `KagangaSetup-v${payload.latest.version}.exe`
+				);
+				assert.ok(asset, 'Installer Kaganga tersedia pada Latest');
+				const response = await fetch(`${base}/api/updates/download`, {
+					method: 'POST',
+					headers: { ...headers, origin: base, 'content-type': 'application/json' },
+					body: JSON.stringify({ version: payload.latest.version, assetId: asset.id })
+				});
+				assert.equal(response.status, 202, await response.clone().text());
+				const started = await response.json();
+				let status = started;
+				for (let attempt = 0; attempt < 240 && status.status !== 'completed'; attempt++) {
+					assert.notEqual(status.status, 'failed', status.error);
+					await new Promise((resolve) => setTimeout(resolve, 1000));
+					const progress = await fetch(`${base}/api/updates/status/${started.id}`, { headers });
+					assert.equal(progress.status, 200);
+					status = await progress.json();
+				}
+				assert.equal(status.status, 'completed', status.error);
+				assert.equal(status.installScheduled, false, 'QA tidak boleh menjalankan installer');
+				const downloaded = await readFile(
+					path.join(state, 'updates', payload.latest.version, asset.name)
+				);
+				assert.equal(downloaded.length, asset.size);
+				assert.equal(
+					createHash('sha256').update(downloaded).digest('hex'),
+					process.env.RELEASE_INSTALLER_SHA256.toLowerCase()
+				);
+				console.log(
+					`PASS updater v${version}: unduhan ${asset.name} dan SHA256 sesuai, tanpa instalasi`
+				);
 			}
 			const anonymous = await fetch(`${base}/api/updates/latest`, { redirect: 'manual' });
 			assert.equal(anonymous.status, 303, 'Updater harus meminta autentikasi');

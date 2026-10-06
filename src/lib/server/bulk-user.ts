@@ -19,6 +19,7 @@ import { writeAuditLog } from './audit-log';
 import { ensureDataGovernanceSchema } from './db/ensure-data-governance';
 import { ensurePenggunaIdentitySchema } from './db/ensure-pengguna';
 import { defaultPermissionsForType, effectivePermissions } from '../../routes/pengguna/permissions';
+import { resolveUserRole } from '../user-role';
 import {
 	BULK_USER_LIMIT,
 	classifyBulkCandidate,
@@ -43,6 +44,9 @@ export async function buildBulkUserPreview(
 	role: BulkUserRole,
 	source: UserDatabase = db
 ): Promise<BulkUserPreview> {
+	const resolvedRole = resolveUserRole(role);
+	if (!resolvedRole) throw error(400, 'Role pengguna tidak valid.');
+	const requiresAcademicAssignment = !['tim_dapur', 'operator'].includes(role);
 	const academic = await resolveSekolahAcademicContext(sekolahId, source);
 	const employees = await source.query.tablePegawai.findMany({
 		columns: { id: true, nama: true, jenis: true, status: true },
@@ -105,7 +109,7 @@ export async function buildBulkUserPreview(
 		const asrama = students.filter(
 			(row) => normalizedEmployeeName(row.waliAsramaNama ?? '') === name
 		);
-		const wards = role === 'wali_asuh' ? asuh : asrama;
+		const wards = role === 'wali_asuh' ? asuh : role === 'wali_asrama' ? asrama : [];
 		const assignedClasses = new Set(
 			role === 'user'
 				? [...ownSubjects.map((row) => row.kelasId), ...ownClasses.map((row) => row.id)]
@@ -133,13 +137,13 @@ export async function buildBulkUserPreview(
 			duplicateName: (nameCounts.get(name) ?? 0) > 1,
 			assignmentCount: role === 'user' ? ownSubjects.length : wards.length,
 			otherResponsibilities,
-			activeSemester: !!semesterId
+			activeSemester: !!semesterId,
+			requiresAcademicAssignment
 		});
 		const kelasIds = [...assignedClasses].sort((a, b) => a - b);
 		const permissions = effectivePermissions({
-			type: role,
-			jabatanAkses: null,
-			permissions: defaultPermissionsForType(role, { kelasCount: kelasIds.length })
+			...resolvedRole,
+			permissions: defaultPermissionsForType(resolvedRole.type, { kelasCount: kelasIds.length })
 		});
 		const candidate: BulkUserCandidate = {
 			pegawaiId: employee.id,
@@ -228,6 +232,8 @@ export async function createBulkUsers(options: {
 		}
 		const timestamp = new Date().toISOString();
 		for (const candidate of pending) {
+			const resolvedRole = resolveUserRole(candidate.role);
+			if (!resolvedRole) throw error(400, 'Role pengguna tidak valid.');
 			const password = `Kg9!${randomBytes(18).toString('base64url')}`;
 			const { hash, salt } = hashPassword(password);
 			const [created] = await tx
@@ -241,11 +247,10 @@ export async function createBulkUsers(options: {
 					mustChangePassword: true,
 					sekolahId,
 					pegawaiId: candidate.pegawaiId,
-					type: candidate.role,
-					jabatanAkses: null,
+					...resolvedRole,
 					kelasId: candidate.role === 'user' ? (candidate.kelasIds[0] ?? null) : null,
 					mataPelajaranId: candidate.mataPelajaranIds[0] ?? null,
-					permissions: defaultPermissionsForType(candidate.role, {
+					permissions: defaultPermissionsForType(resolvedRole.type, {
 						kelasCount: candidate.kelasIds.length
 					}),
 					createdAt: timestamp,
@@ -280,9 +285,8 @@ export async function createBulkUsers(options: {
 					summary: `Membuat akun massal ${candidate.username}`,
 					after: {
 						username: candidate.username,
-						type: candidate.role,
+						...resolvedRole,
 						pegawaiId: candidate.pegawaiId,
-						jabatanAkses: null,
 						kelasIds: candidate.kelasIds,
 						mataPelajaranIds: candidate.mataPelajaranIds,
 						mustChangePassword: true,

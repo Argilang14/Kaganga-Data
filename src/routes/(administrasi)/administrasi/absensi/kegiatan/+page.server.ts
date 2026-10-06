@@ -46,21 +46,23 @@ export async function load({ locals, url }) {
 	const requestedKelasId = parsePositiveInteger(url.searchParams.get('kelas_id'));
 	const requestedKegiatanId = parsePositiveInteger(url.searchParams.get('kegiatan_id'));
 	const { academic, kelasList } = await loadAbsensiKelasOptions(sekolahId, locals.user);
-	const kegiatanList = await loadKegiatanAbsensiOptions(sekolahId);
+	const kegiatanList = await loadKegiatanAbsensiOptions(sekolahId, true, locals.user);
 	const kegiatanId =
 		requestedKegiatanId && kegiatanList.some((kegiatan) => kegiatan.id === requestedKegiatanId)
 			? requestedKegiatanId
 			: (kegiatanList[0]?.id ?? null);
 	const selectedKegiatan = kegiatanList.find((kegiatan) => kegiatan.id === kegiatanId) ?? null;
 	const canEditSelected = selectedKegiatan
-		? canEditAbsensiKegiatan(locals.user, selectedKegiatan.aksesEdit) &&
-			attendanceDateAllowed(locals.user, tanggal, todayLocalDate())
+		? canEditAbsensiKegiatan(locals.user, selectedKegiatan.aksesEdit, selectedKegiatan.kategori, {
+				kode: selectedKegiatan.kode,
+				tanggal
+			}) && attendanceDateAllowed(locals.user, tanggal, todayLocalDate())
 		: false;
 	const kelasId = resolveKelasId(kelasList, requestedKelasId);
 
 	if (!academic.activeSemesterId || !kelasId || !kegiatanId) {
 		return {
-			meta: { title: 'Absensi Kegiatan' } satisfies PageMeta,
+			meta: { title: 'Catat Absensi' } satisfies PageMeta,
 			tanggal,
 			activeSemesterId: academic.activeSemesterId,
 			kelasId,
@@ -140,7 +142,7 @@ export async function load({ locals, url }) {
 	});
 
 	return {
-		meta: { title: 'Absensi Kegiatan' } satisfies PageMeta,
+		meta: { title: 'Catat Absensi' } satisfies PageMeta,
 		tanggal,
 		activeSemesterId: academic.activeSemesterId,
 		kelasId,
@@ -183,7 +185,12 @@ export const actions = {
 			)
 		});
 		if (!kegiatan) return fail(404, { fail: 'Kegiatan tidak ditemukan.' });
-		if (!canEditAbsensiKegiatan(locals.user, kegiatan.aksesEdit)) {
+		if (
+			!canEditAbsensiKegiatan(locals.user, kegiatan.aksesEdit, kegiatan.kategori, {
+				kode: kegiatan.kode,
+				tanggal
+			})
+		) {
 			return fail(403, { fail: 'Anda tidak memiliki akses input kegiatan ini.' });
 		}
 
@@ -246,7 +253,12 @@ export const actions = {
 			)
 		});
 		if (!kegiatan) return fail(404, { fail: 'Kegiatan tidak ditemukan.' });
-		if (!canEditAbsensiKegiatan(locals.user, kegiatan.aksesEdit)) {
+		if (
+			!canEditAbsensiKegiatan(locals.user, kegiatan.aksesEdit, kegiatan.kategori, {
+				kode: kegiatan.kode,
+				tanggal
+			})
+		) {
 			return fail(403, { fail: 'Anda tidak memiliki akses menghapus kegiatan ini.' });
 		}
 
@@ -299,7 +311,12 @@ export const actions = {
 			)
 		});
 		if (!kegiatan) return fail(404, { fail: 'Kegiatan tidak ditemukan.' });
-		if (!canEditAbsensiKegiatan(locals.user, kegiatan.aksesEdit)) {
+		if (
+			!canEditAbsensiKegiatan(locals.user, kegiatan.aksesEdit, kegiatan.kategori, {
+				kode: kegiatan.kode,
+				tanggal
+			})
+		) {
 			return fail(403, { fail: 'Anda tidak memiliki akses input kegiatan ini.' });
 		}
 

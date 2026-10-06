@@ -20,7 +20,7 @@ test('pimpinan dan operator memiliki izin operasional, bukan izin sistem', () =>
 		for (const action of attendanceActions) assert.equal(canAttendance(user, action), true);
 		const permissions = permissionsForAccessPosition(jabatanAkses);
 		for (const permission of ['kelas_manage', 'rapor_manage', 'administrasi_jadwal'] as const)
-			assert.ok(permissions.includes(permission));
+			assert.equal(permissions.includes(permission), jabatanAkses !== 'waka_humas');
 		for (const permission of systemOnlyPermissions) assert.ok(!permissions.includes(permission));
 	}
 });
@@ -80,4 +80,81 @@ test('operator tidak mendapat persetujuan pimpinan atau pengelolaan pengguna', (
 	};
 	assert.equal(effectivePermissions(user).includes('user_add'), false);
 	assert.equal(effectivePermissions(user).includes('persetujuan_setujui'), false);
+});
+
+test('guru dan wali kelas dapat mencatat Zuhur/Asar pada Senin-Jumat saja', () => {
+	for (const type of ['user', 'wali_kelas']) {
+		for (const kode of ['sholat_zuhur', 'sholat_dzuhur', 'sholat_asar', 'sholat_ashar']) {
+			for (const tanggal of [
+				'2026-08-03',
+				'2026-08-04',
+				'2026-08-05',
+				'2026-08-06',
+				'2026-08-07'
+			]) {
+				assert.equal(canAttendActivity({ type }, 'asrama', 'sholat', { kode, tanggal }), true);
+			}
+			for (const tanggal of ['2026-08-08', '2026-08-09', '2026-02-31', 'invalid', undefined]) {
+				assert.equal(canAttendActivity({ type }, 'asrama', 'sholat', { kode, tanggal }), false);
+			}
+		}
+	}
+});
+
+test('guru tidak memperoleh akses sholat lain walaupun akses kegiatan diatur semua', () => {
+	for (const kode of [
+		'sholat_subuh',
+		'sholat_magrib',
+		'sholat_isya',
+		'sholat_tambahan',
+		undefined
+	]) {
+		for (const scope of ['sekolah', 'asrama', 'semua']) {
+			assert.equal(
+				canAttendActivity(
+					{ type: 'user', permissions: ['absensi_pengaturan', 'absensi_koreksi_lama'] },
+					scope,
+					'sholat',
+					{ kode, tanggal: '2026-08-03' }
+				),
+				false
+			);
+		}
+	}
+	assert.equal(
+		canAttendActivity({ type: 'tim_dapur' }, 'semua', 'sholat', {
+			kode: 'sholat_zuhur',
+			tanggal: '2026-08-03'
+		}),
+		false
+	);
+});
+
+test('wali asuh/asrama tetap dapat mencatat lima waktu termasuk Sabtu-Minggu', () => {
+	for (const type of ['wali_asuh', 'wali_asrama']) {
+		for (const kode of [
+			'sholat_subuh',
+			'sholat_zuhur',
+			'sholat_asar',
+			'sholat_magrib',
+			'sholat_isya'
+		]) {
+			for (const tanggal of ['2026-08-03', '2026-08-08', '2026-08-09']) {
+				assert.equal(canAttendActivity({ type }, 'asrama', 'sholat', { kode, tanggal }), true);
+			}
+		}
+	}
+});
+
+test('pimpinan/operator tetap mendapat akses operasional sholat tanpa pembatasan role guru', () => {
+	for (const user of [
+		{ type: 'admin' },
+		{ type: 'user', jabatanAkses: 'kepala_sekolah' },
+		{ type: 'user', jabatanAkses: 'operator' }
+	]) {
+		assert.equal(
+			canAttendActivity(user, 'asrama', 'sholat', { kode: 'sholat_subuh', tanggal: '2026-08-09' }),
+			true
+		);
+	}
 });

@@ -4,7 +4,13 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { canAttendance } from '$lib/attendance-access';
+	import { attendanceReportSearch } from '$lib/attendance-report-navigation';
+	import {
+		attendanceKegiatanSearch,
+		attendanceKegiatanAction
+	} from '$lib/attendance-kegiatan-filters';
 	import Icon from '$lib/components/icon.svelte';
+	import FormEnhance from '$lib/components/form-enhance.svelte';
 	import ClearAttendance from '$lib/components/absensi/ClearAttendance.svelte';
 	import AttendanceSummaryDialog from '$lib/components/absensi/AttendanceSummaryDialog.svelte';
 
@@ -60,7 +66,7 @@
 	});
 
 	function updateFilter(key: 'tanggal' | 'kelas_id' | 'kegiatan_id', value: string) {
-		const params = new URLSearchParams(page.url.search);
+		const params = attendanceKegiatanSearch(data);
 		if (value) params.set(key, value);
 		else params.delete(key);
 		void goto(`${page.url.pathname}?${params.toString()}`, {
@@ -91,7 +97,7 @@
 <div class="space-y-4">
 	<div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
 		<div>
-			<h2 class="text-2xl font-bold">Absensi Kegiatan</h2>
+			<h2 class="text-2xl font-bold">Catat Absensi</h2>
 			<p class="text-base-content/70 text-sm">{kelasAktifLabel}</p>
 		</div>
 		<div class="flex flex-wrap gap-2">
@@ -102,10 +108,11 @@
 			/>
 			<a
 				class="btn btn-soft btn-sm shadow-none"
-				href={resolve('/administrasi/absensi/kegiatan/rekap')}
+				href={resolve('/administrasi/absensi/monitoring') +
+					attendanceReportSearch('monitoring', { date: data.tanggal, classId: data.kelasId })}
 			>
 				<Icon name="table" />
-				Rekap Kegiatan
+				Monitoring &amp; Rekap Absensi
 			</a>
 			{#if canAttendance(page.data.user, 'pengaturan')}
 				<a
@@ -126,6 +133,7 @@
 				<input
 					class="input input-bordered w-full"
 					type="date"
+					aria-label="Tanggal absensi kegiatan"
 					value={data.tanggal}
 					onchange={(event) =>
 						updateFilter('tanggal', (event.currentTarget as HTMLInputElement).value)}
@@ -135,6 +143,7 @@
 				<span class="label-text font-medium">Kelas</span>
 				<select
 					class="select select-bordered w-full"
+					aria-label="Kelas absensi kegiatan"
 					value={data.kelasId ?? ''}
 					onchange={(event) =>
 						updateFilter('kelas_id', (event.currentTarget as HTMLSelectElement).value)}
@@ -148,6 +157,7 @@
 				<span class="label-text font-medium">Kegiatan</span>
 				<select
 					class="select select-bordered w-full"
+					aria-label="Kegiatan absensi"
 					value={data.kegiatanId ?? ''}
 					onchange={(event) =>
 						updateFilter('kegiatan_id', (event.currentTarget as HTMLSelectElement).value)}
@@ -199,7 +209,10 @@
 			</div>
 			<span class="badge badge-soft">{data.rows.length} siswa</span>
 		</div>
-		<form method="POST" action="?/bulkUpdateManual" class="grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+		<FormEnhance
+			action={attendanceKegiatanAction('bulkUpdateManual', data)}
+			class="grid gap-3 lg:grid-cols-[1fr_1fr_auto]"
+		>
 			<input type="hidden" name="tanggal" value={data.tanggal} />
 			<input type="hidden" name="kelasId" value={data.kelasId ?? ''} />
 			<input type="hidden" name="semesterId" value={data.activeSemesterId ?? ''} />
@@ -247,7 +260,7 @@
 					Simpan Massal
 				</button>
 			</div>
-		</form>
+		</FormEnhance>
 	</div>
 
 	{#if data.autoAlfaInserted}
@@ -347,7 +360,10 @@
 									/>
 								</td>
 								<td class="min-w-56">
-									<form id={`manual-kegiatan-${row.id}`} method="POST" action="?/updateManual">
+									<FormEnhance
+										id={`manual-kegiatan-${row.id}`}
+										action={attendanceKegiatanAction('updateManual', data)}
+									>
 										<input type="hidden" name="tanggal" value={data.tanggal} />
 										<input type="hidden" name="kelasId" value={data.kelasId ?? ''} />
 										<input type="hidden" name="semesterId" value={data.activeSemesterId ?? ''} />
@@ -366,7 +382,7 @@
 												<option value={status}>{data.statusLabels[status]}</option>
 											{/each}
 										</select>
-									</form>
+									</FormEnhance>
 								</td>
 								<td>
 									<div class="flex justify-end gap-2">
@@ -381,6 +397,7 @@
 											<Icon name="save" />
 										</button>
 										<ClearAttendance
+											action={attendanceKegiatanAction('clearStatus', data)}
 											nama={row.nama}
 											disabled={!row.status || !data.canEditSelected}
 											fields={{

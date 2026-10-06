@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Icon from '$lib/components/icon.svelte';
 	import { accessPositionLabels, parseAccessPosition } from '$lib/access-position';
+	import { userRoleLabel } from '$lib/user-role';
 
 	let { u, onEdit, onOpenUser, onDelete = undefined } = $props();
 
@@ -17,15 +18,6 @@
 		return `${Math.floor(hours / 24)} hari lalu`;
 	}
 
-	function roleLabel(type: string) {
-		if (type === 'wali_kelas') return 'Wali Kelas';
-		if (type === 'wali_asuh') return 'Wali Asuh';
-		if (type === 'wali_asrama') return 'Wali Asrama';
-		if (type === 'wali_murid') return 'Wali Murid';
-		if (type === 'user') return 'Guru Mapel';
-		return type.replaceAll('_', ' ');
-	}
-
 	function positionLabel(value: unknown) {
 		const position = parseAccessPosition(value);
 		return position ? accessPositionLabels[position] : null;
@@ -38,7 +30,7 @@
 </td>
 <td>
 	<div class="flex flex-col items-start gap-1">
-		<span>{roleLabel(u.type)}{u.kelasName ? ` - ${u.kelasName}` : ''}</span>
+		<span>{userRoleLabel(u)}{u.kelasName ? ` - ${u.kelasName}` : ''}</span>
 		{#if u.roles?.length}
 			<div class="flex max-w-72 flex-wrap gap-1">
 				{#each u.roles as role}<span class="badge badge-ghost badge-sm">{role}</span>{/each}

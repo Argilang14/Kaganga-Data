@@ -20,7 +20,7 @@
 		pegawaiName?: string;
 		username?: string;
 		permissions?: string[];
-		type?: 'admin' | 'user' | 'wali_kelas' | 'wali_asuh' | 'wali_asrama';
+		type?: 'admin' | 'user' | 'wali_kelas' | 'wali_asuh' | 'wali_asrama' | 'wali_murid' | 'tim_dapur';
 	};
 
 	let {
@@ -300,6 +300,11 @@
 							<div role="alert" class="alert alert-info mb-4">
 								<Icon name="info" />
 								<span><strong>{displayUserName}</strong> - Wali Kelas</span>
+							</div>
+						{:else if user?.type === 'tim_dapur'}
+							<div role="alert" class="alert alert-info mb-4">
+								<Icon name="info" />
+								<span><strong>{displayUserName}</strong> - Tim Dapur</span>
 							</div>
 						{/if}
 

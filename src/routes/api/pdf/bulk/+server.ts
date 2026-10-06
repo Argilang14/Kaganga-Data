@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { resolveSchoolPdfVariant } from '$lib/server/pdf/school-variant';
+import { canPrintDocument } from '$lib/role-menu-access';
 import { documentPdfFilename, pdfDisposition } from '$lib/pdf-filename';
 import { generateBulkPDF, type DocumentType, type PdfVariant } from '$lib/server/pdf/generate';
 import { getRaporPreviewPayload } from '../../../cetak/rapor/preview-data';
@@ -113,8 +114,8 @@ export const POST = (async ({ locals, request }) => {
 			`Maksimal ${MAX_BULK_MURID} murid dalam satu PDF. Cetak per jenjang atau kelas untuk data yang lebih besar.`
 		);
 	}
-	if (locals.user.type === 'wali_asrama' && body.docType !== 'kartu-absensi' && (body.docType !== 'keasramaan' || variant !== 'sr')) {
-		throw error(403, 'Wali asrama hanya dapat mencetak Dokumen SR Rapor Keasramaan.');
+	if (!canPrintDocument(locals.user, body.docType)) {
+		throw error(403, 'Jenis dokumen tidak diizinkan untuk akun ini.');
 	}
 
 	const allData: Record<string, unknown>[] = [];

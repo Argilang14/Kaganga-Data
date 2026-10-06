@@ -1,9 +1,13 @@
-export const bulkUserRoles = ['user', 'wali_asuh', 'wali_asrama'] as const;
+import { creatableUserRoles } from './user-role.ts';
+
+export const bulkUserRoles = creatableUserRoles;
 export type BulkUserRole = (typeof bulkUserRoles)[number];
 export const bulkUserRoleLabels: Record<BulkUserRole, string> = {
 	user: 'Guru',
 	wali_asuh: 'Wali Asuh',
-	wali_asrama: 'Wali Asrama'
+	wali_asrama: 'Wali Asrama',
+	tim_dapur: 'Tim Dapur',
+	operator: 'Operator'
 };
 export const BULK_USER_LIMIT = 100;
 export type BulkUserCandidate = {
@@ -62,7 +66,13 @@ export function proposeBulkUsername(
 		.replace(/^\.+|\.+$/g, '')
 		.slice(0, 40)
 		.replace(/\.+$/g, '');
-	const prefix = role === 'user' ? 'guru' : role === 'wali_asuh' ? 'asuh' : 'asrama';
+	const prefix = {
+		user: 'guru',
+		wali_asuh: 'asuh',
+		wali_asrama: 'asrama',
+		tim_dapur: 'dapur',
+		operator: 'operator'
+	}[role];
 	const base = `${prefix}.${slug || `pegawai${id}`}`;
 	let username = base;
 	let suffix = 0;
@@ -81,14 +91,18 @@ export function classifyBulkCandidate(options: {
 	assignmentCount: number;
 	otherResponsibilities: string[];
 	activeSemester: boolean;
+	requiresAcademicAssignment?: boolean;
 }): Pick<BulkUserCandidate, 'status' | 'reasons'> {
 	if (options.accountNames.length)
 		return { status: 'existing', reasons: ['Akun sudah ada; tidak diubah.'] };
 	const reasons: string[] = [];
-	if (!options.activeSemester) reasons.push('Tahun ajaran/semester aktif belum tersedia.');
+	const requiresAcademicAssignment = options.requiresAcademicAssignment !== false;
+	if (requiresAcademicAssignment && !options.activeSemester)
+		reasons.push('Tahun ajaran/semester aktif belum tersedia.');
 	if (!options.name.trim()) reasons.push('Nama pegawai belum diisi.');
 	if (options.duplicateName) reasons.push('Nama pegawai sama; periksa identitas dan penugasan.');
-	if (!options.assignmentCount) reasons.push('Penugasan aktif belum lengkap.');
+	if (requiresAcademicAssignment && !options.assignmentCount)
+		reasons.push('Penugasan aktif belum lengkap.');
 	if (reasons.length) return { status: 'blocked', reasons };
 	return options.otherResponsibilities.length
 		? { status: 'review', reasons: options.otherResponsibilities }

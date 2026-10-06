@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { canPrintDocument } from '$lib/role-menu-access';
 	import PreviewHeader from '$lib/components/cetak/PreviewHeader.svelte';
 	import DocumentMuridSelector from '$lib/components/cetak/DocumentMuridSelector.svelte';
 	import PdfPreviewModal from '$lib/components/cetak/PdfPreviewModal.svelte';
@@ -22,8 +23,6 @@
 	const pdfVariant = 'default';
 	const isSRVariant = false;
 
-	const userType = $derived((page.data.user as { type?: string } | null)?.type);
-
 	const documentOptions = $derived.by<Array<{ value: DocumentType; label: string }>>(() => {
 		const all: Array<{ value: DocumentType; label: string }> = [
 			{ value: 'cover', label: 'Cover' },
@@ -32,13 +31,7 @@
 			{ value: 'piagam', label: 'Piagam' },
 			{ value: 'keasramaan', label: 'Rapor Keasramaan' },
 		];
-		if (userType === 'wali_asuh') {
-			return all.filter((o) => o.value === 'keasramaan');
-		}
-		if (userType === 'user') {
-			return all.filter((o) => o.value === 'jurnal-mengajar');
-		}
-		return all;
+		return all.filter((option) => canPrintDocument(page.data.user, option.value));
 	});
 
 	let selectedDocument = $state<DocumentType | ''>('');

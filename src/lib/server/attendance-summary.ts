@@ -16,7 +16,7 @@ import { loadKegiatanAbsensiOptions } from './absensi-kegiatan';
 import { activeMuridFilter } from './murid-query';
 import { studentAccessCondition } from './student-access';
 
-export async function loadSummaryOptions(locals: App.Locals) {
+export async function loadSummaryOptions(locals: App.Locals, date = todayLocalDate()) {
 	const { user, sekolah } = locals;
 	if (!user || !sekolah) throw error(401, 'Sesi sekolah tidak valid.');
 	if (user.type !== 'admin' && user.sekolahId !== sekolah.id)
@@ -25,8 +25,8 @@ export async function loadSummaryOptions(locals: App.Locals) {
 		throw error(403, 'Izin membagikan rekap absensi belum diberikan.');
 	const { academic, kelasList } = await loadAbsensiKelasOptions(sekolah.id, user);
 	if (!academic.activeSemesterId) throw error(400, 'Semester aktif belum tersedia.');
-	const kegiatanList = (await loadKegiatanAbsensiOptions(sekolah.id)).filter((item) =>
-		canAttendActivity(user, item.aksesEdit)
+	const kegiatanList = (await loadKegiatanAbsensiOptions(sekolah.id, true, user)).filter((item) =>
+		canAttendActivity(user, item.aksesEdit, item.kategori, { kode: item.kode, tanggal: date })
 	);
 	return {
 		semesterId: academic.activeSemesterId,
@@ -45,8 +45,8 @@ export async function loadSummaryOptions(locals: App.Locals) {
 }
 
 export async function loadAttendanceSummary(locals: App.Locals, params: URLSearchParams) {
-	const options = await loadSummaryOptions(locals);
 	const tanggal = params.get('tanggal') ?? '';
+	const options = await loadSummaryOptions(locals, tanggal);
 	if (!isSummaryDate(tanggal) || tanggal > options.today)
 		throw error(400, 'Pilih tanggal absensi yang valid, bukan tanggal mendatang.');
 	const activityId = Number(params.get('kegiatan_id'));

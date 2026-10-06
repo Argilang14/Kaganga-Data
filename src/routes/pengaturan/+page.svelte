@@ -35,7 +35,7 @@
 		protocol={data.protocol ?? 'http:'}
 		{canUpdate}
 		{canManageUsers}
-		profileHref={data.profile ? `/pegawai/${data.profile.id}` : null}
+		profileHref={data.profile ? '/pengaturan/profil' : null}
 	/>
 	<ProfileCard profile={data.profile ?? null} />
 	<AccountCards />

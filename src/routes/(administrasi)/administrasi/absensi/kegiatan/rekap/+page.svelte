@@ -8,6 +8,7 @@
 	import AttendanceMonitoringPanel from '$lib/components/absensi/AttendanceMonitoringPanel.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import AttendanceSummaryDialog from '$lib/components/absensi/AttendanceSummaryDialog.svelte';
+	import AttendanceReportTabs from '$lib/components/absensi/AttendanceReportTabs.svelte';
 
 	type StatusKey = 'hadir' | 'terlambat' | 'sakit' | 'izin' | 'alfa' | 'pulang';
 	type Kegiatan = { id: number; nama: string; kategori: string };
@@ -119,10 +120,11 @@
 	}
 </script>
 
+<AttendanceReportTabs active="rekap" date={data.tanggalAkhir} classId={data.kelasId} />
 <div class="space-y-4">
 	<div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
 		<div>
-			<h2 class="text-2xl font-bold">Rekap Absensi Kegiatan</h2>
+			<h2 class="text-xl font-bold">Rekap Absensi</h2>
 			<p class="text-base-content/70 text-sm">
 				Rekap kegiatan asrama, makan, sholat, dan apel berdasarkan rentang tanggal.
 			</p>
@@ -173,7 +175,7 @@
 						<li>
 							<a href={resolve('/administrasi/absensi/kegiatan')}>
 								<Icon name="activity" />
-								Absensi Kegiatan
+								Catat Absensi
 							</a>
 						</li>
 						{#if canAttendance(page.data.user, 'pengaturan')}

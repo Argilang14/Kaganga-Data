@@ -7,6 +7,8 @@
 	import { appMenuItems } from './menu';
 	import { isAuthorizedUser } from '../../routes/pengguna/permissions';
 	import { canAccessArea, getProtectedArea } from '$lib/menu-access';
+	import { canAccessMenu } from '$lib/role-menu-access';
+	import { attendanceMenuPath } from '$lib/attendance-report-navigation';
 
 	const expanded = new StorageState<boolean>('menu-expanded');
 
@@ -21,6 +23,7 @@
 	function filterMenuByPermission(items: MenuItem[]): MenuItem[] {
 		return items
 			.map((item) => {
+				if (item.path && !canAccessMenu(user, item.path)) return null;
 				const area = item.path ? getProtectedArea(item.path) : null;
 				if (area && !canAccessArea(user, area)) return null;
 				if (item.permission && !isAuthorizedUser([item.permission], user ?? undefined)) return null;
@@ -91,7 +94,7 @@
 	function isMenuActive(currentPath: string, menuPath?: string) {
 		if (!menuPath) return false;
 
-		const normalizedPath = currentPath.replace(/\/+$/, '');
+		const normalizedPath = attendanceMenuPath(currentPath);
 		const normalizedItemPath = menuPath.replace(/\/+$/, '');
 		const bestMatch = leafMenuPaths
 			.filter((path) => normalizedPath === path || normalizedPath.startsWith(path + '/'))

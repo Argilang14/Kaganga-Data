@@ -113,6 +113,7 @@
 		keamanan: 'Keamanan',
 		wali_asuh: 'Wali Asuh',
 		wali_asrama: 'Wali Asrama',
+		tim_dapur: 'Tim Dapur',
 		lainnya: 'Lainnya'
 	};
 	const assignmentLabels: Record<string, string> = {
@@ -130,6 +131,7 @@
 		wali_kelas: 'Wali Kelas',
 		wali_asuh: 'Wali Asuh',
 		wali_asrama: 'Wali Asrama',
+		tim_dapur: 'Tim Dapur',
 		user: 'Guru/User'
 	};
 

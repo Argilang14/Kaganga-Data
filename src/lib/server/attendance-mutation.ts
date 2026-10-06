@@ -51,7 +51,13 @@ export async function saveAttendance(options: {
 				)
 			})
 		: null;
-	if ((kegiatanId && !kegiatan) || !canAttendActivity(user, kegiatan?.aksesEdit ?? 'sekolah'))
+	if (
+		(kegiatanId && !kegiatan) ||
+		!canAttendActivity(user, kegiatan?.aksesEdit ?? 'sekolah', kegiatan?.kategori, {
+			kode: kegiatan?.kode,
+			tanggal
+		})
+	)
 		throw error(403, 'Kegiatan di luar tanggung jawab akun.');
 	if (!kegiatanId && options.status === 'pulang') throw error(400, 'Status harian tidak valid.');
 	const ids = [...new Set(options.muridIds)];

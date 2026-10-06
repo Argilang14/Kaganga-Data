@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import { canPrintDocument } from '$lib/role-menu-access';
 import { resolveSchoolPdfVariant } from '$lib/server/pdf/school-variant';
 import { documentPdfFilename, pdfDisposition } from '$lib/pdf-filename';
 import db from '$lib/server/db';
@@ -22,6 +23,7 @@ export const GET = (async ({ locals, params }) => {
 	if (!stored) {
 		throw error(410, 'Token tidak valid atau sudah kedaluwarsa.');
 	}
+	if (!canPrintDocument(locals.user, stored.docType)) throw error(403, 'Jenis dokumen tidak diizinkan untuk akun ini.');
 
 	const url = new URL('http://localhost');
 	if (stored.muridId) url.searchParams.set('murid_id', String(stored.muridId));

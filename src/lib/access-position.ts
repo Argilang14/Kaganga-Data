@@ -4,6 +4,7 @@ export const accessPositionValues = [
 	'waka_kurikulum',
 	'waka_sarpras',
 	'waka_keasramaan',
+	'waka_humas',
 	'operator'
 ] as const;
 
@@ -15,6 +16,7 @@ export const accessPositionLabels: Record<AccessPosition, string> = {
 	waka_kurikulum: 'Waka Kurikulum',
 	waka_sarpras: 'Waka Sarana Prasarana',
 	waka_keasramaan: 'Waka Keasramaan',
+	waka_humas: 'Waka Humas',
 	operator: 'Operator'
 };
 
@@ -23,7 +25,8 @@ export const leadershipAccessPositions = new Set<AccessPosition>([
 	'waka_kesiswaan',
 	'waka_kurikulum',
 	'waka_sarpras',
-	'waka_keasramaan'
+	'waka_keasramaan',
+	'waka_humas'
 ]);
 
 export function parseAccessPosition(value: unknown): AccessPosition | null {

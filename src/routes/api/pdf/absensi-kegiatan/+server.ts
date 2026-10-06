@@ -60,7 +60,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	if (!kelasId || !kelasList.some((kelas) => kelas.id === kelasId)) {
 		throw error(403, 'Kelas tidak tersedia atau berada di luar penugasan akun.');
 	}
-	const kegiatanList = await loadKegiatanAbsensiOptions(sekolahId);
+	const kegiatanList = await loadKegiatanAbsensiOptions(sekolahId, true, locals.user);
 	const selectedKegiatan = kegiatanId
 		? kegiatanList.find((kegiatan) => kegiatan.id === kegiatanId)
 		: null;

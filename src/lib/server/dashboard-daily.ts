@@ -1,12 +1,14 @@
 import db from './db';
+import { error } from '@sveltejs/kit';
+import { canAttendance } from '$lib/attendance-access';
+import { accessibleClassIds, studentAccessCondition } from './student-access';
+import { loadMonitoringSnapshot } from './attendance-monitoring';
 import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 import { activeMuridFilter } from './murid-query';
 import {
 	tableKelas as k,
 	tableMurid as m,
-	tableAuthUserKelas as assignments,
 	tablePegawai as p,
-	tableAbsensiHarian as a,
 	tablePresensiPegawai as attendance,
 	tableKalenderPendidikan as calendar,
 	tableJadwalPelajaran as schedule,
@@ -14,20 +16,22 @@ import {
 } from './db/schema';
 import { and, eq, inArray, sql, or, isNull, lte, gte, asc } from 'drizzle-orm';
 import type { AcademicContext } from './db/academic';
-import { guardianStudentCondition } from './assignment-summary';
-import { getLegacyWaliKelasIds } from './legacy-wali-kelas';
 import { loadJurnalScheduleContext } from './jurnal-mengajar';
 import { isPresensiPegawaiWorkday } from './presensi-pegawai';
 import { attendanceSummary, jakartaToday } from '$lib/dashboard-summary';
 import { canAccessArea } from '$lib/menu-access';
 
 export async function loadDashboardDaily(
-	user: App.Locals['user'],
-	schoolId: number,
+	locals: App.Locals,
 	academic: AcademicContext,
 	searchParams = new URLSearchParams(),
 	includeAgenda = false
 ) {
+	const { user, sekolah } = locals;
+	if (!user || !sekolah) throw error(401, 'Sesi sekolah tidak valid.');
+	const schoolId = sekolah.id;
+	if (user.type !== 'admin' && user.sekolahId !== schoolId)
+		throw error(403, 'Sekolah di luar penugasan akun.');
 	const date = jakartaToday();
 	const classes =
 		academic.activeSemesterId && academic.activeTahunAjaranId
@@ -40,35 +44,14 @@ export async function loadDashboardDaily(
 					)
 				})
 			: [];
-	let ids = classes.map((row) => row.id);
-	if (!hasSchoolWideOperationalAccess(user)) {
-		if (user?.type === 'wali_kelas') {
-			const allowed = new Set(
-				await getLegacyWaliKelasIds(user, schoolId, academic.activeSemesterId)
-			);
-			ids = ids.filter((id) => allowed.has(id));
-		} else if (!['wali_asuh', 'wali_asrama'].includes(user?.type ?? '')) {
-			const assigned = user
-				? await db.query.tableAuthUserKelas.findMany({
-						columns: { kelasId: true },
-						where: eq(assignments.authUserId, user.id)
-					})
-				: [];
-			const selected = new Set(assigned.map((row) => row.kelasId));
-			ids = ids.filter((id) => selected.has(id));
-		}
-	}
+	const allowed = new Set(await accessibleClassIds(user, schoolId, academic.activeSemesterId));
+	const ids = classes.map((row) => row.id).filter((id) => allowed.has(id));
 	const studentWhere = and(
-		eq(m.sekolahId, schoolId),
+		await studentAccessCondition(user, schoolId, academic.activeSemesterId),
 		activeMuridFilter(),
 		academic.activeSemesterId ? eq(m.semesterId, academic.activeSemesterId) : sql`0`,
-		ids.length ? inArray(m.kelasId, ids) : sql`0`,
-		await guardianStudentCondition(user, schoolId)
+		ids.length ? inArray(m.kelasId, ids) : sql`0`
 	);
-	if (['wali_asuh', 'wali_asrama'].includes(user?.type ?? '')) {
-		const assignedClasses = await db.selectDistinct({ id: m.kelasId }).from(m).where(studentWhere);
-		ids = assignedClasses.map((row) => row.id);
-	}
 	const [student] = await db
 		.select({
 			total: sql<number>`count(*)`,
@@ -77,45 +60,29 @@ export async function loadDashboardDaily(
 		})
 		.from(m)
 		.where(studentWhere);
-	const statuses = await db
-		.select({ status: a.status, count: sql<number>`count(*)` })
-		.from(a)
-		.innerJoin(m, eq(a.muridId, m.id))
-		.where(
-			and(
-				studentWhere,
-				eq(a.sekolahId, schoolId),
-				eq(a.tanggal, date),
-				eq(a.semesterId, academic.activeSemesterId ?? -1)
-			)
-		)
-		.groupBy(a.status);
+	const sourceParams = new URLSearchParams({ tanggal: date, tab: 'sekolah' });
+	if (searchParams.has('sumber_masuk'))
+		sourceParams.set('sumber_masuk', searchParams.get('sumber_masuk')!);
+	const snapshot =
+		canAttendance(user, 'lihat') && user.type !== 'tim_dapur'
+			? await loadMonitoringSnapshot(locals, sourceParams)
+			: null;
+	const entrance = snapshot?.summaries[0];
+	const statuses = entrance
+		? Object.entries(entrance.counts)
+				.filter(([status, count]) => count > 0 && !['belum', 'tanpa_sumber'].includes(status))
+				.map(([status, count]) => ({ status, count }))
+		: [];
 	const absences = [];
-	for (const status of ['sakit', 'izin', 'alfa'] as const) {
+	for (const status of ['sakit', 'izin', 'alfa', 'izin_pulang'] as const) {
 		const total = Number(statuses.find((row) => row.status === status)?.count ?? 0);
 		const pageCount = Math.max(1, Math.ceil(total / 20));
 		const requested = Number(searchParams.get(`${status}_page`) ?? 1);
 		const page = Math.min(pageCount, Math.max(1, Number.isSafeInteger(requested) ? requested : 1));
-		const students = total
-			? await db
-					.select({ id: m.id, nama: m.nama, kelas: k.nama })
-					.from(a)
-					.innerJoin(m, eq(a.muridId, m.id))
-					.innerJoin(k, eq(m.kelasId, k.id))
-					.where(
-						and(
-							studentWhere,
-							eq(a.sekolahId, schoolId),
-							eq(k.sekolahId, schoolId),
-							eq(a.semesterId, academic.activeSemesterId ?? -1),
-							eq(a.tanggal, date),
-							eq(a.status, status)
-						)
-					)
-					.orderBy(asc(m.nama), asc(m.id))
-					.limit(20)
-					.offset((page - 1) * 20)
-			: [];
+		const students = (snapshot?.rows ?? [])
+			.filter((row) => row.cells[0].status === status)
+			.slice((page - 1) * 20, page * 20)
+			.map(({ id, nama, kelas }) => ({ id, nama, kelas }));
 		const pageLink = (number: number) => {
 			const params = new URLSearchParams(searchParams);
 			params.set(`${status}_page`, String(number));
@@ -231,7 +198,11 @@ export async function loadDashboardDaily(
 		jenisKey: context?.jenis ?? 'ganjil',
 		scope: hasSchoolWideOperationalAccess(user) ? 'Sekolah' : 'Penugasan Anda',
 		jenis: context?.jenisLabel ?? '-',
-		students: attendanceSummary(Number(student?.total ?? 0), statuses),
+		students: snapshot ? attendanceSummary(snapshot.rows.length, statuses) : null,
+		studentSource: entrance ? { source: entrance.source, label: entrance.sourceLabel } : null,
+		sourceOptions: snapshot?.sourceOptions[0].options ?? [],
+		monitoringHref: snapshot ? `/administrasi/absensi/monitoring?${sourceParams}` : null,
+		generatedAt: new Date().toISOString(),
 		absences,
 		employees: canEmployees
 			? attendanceSummary(Number(employee?.total ?? 0), employeeStatuses)

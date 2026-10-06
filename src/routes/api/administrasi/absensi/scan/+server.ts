@@ -204,7 +204,12 @@ export async function POST({ request, locals }) {
 				{ status: 404 }
 			);
 		}
-		if (!canEditAbsensiKegiatan(locals.user, kegiatan.aksesEdit)) {
+		if (
+			!canEditAbsensiKegiatan(locals.user, kegiatan.aksesEdit, kegiatan.kategori, {
+				kode: kegiatan.kode,
+				tanggal: todayLocalDate(scanDate)
+			})
+		) {
 			return json(
 				{
 					ok: false,

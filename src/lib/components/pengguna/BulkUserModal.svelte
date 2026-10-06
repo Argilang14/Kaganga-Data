@@ -144,6 +144,8 @@
 		selected = ids.every((id) => selected.includes(id)) ? [] : ids;
 	}
 	function scope(row: BulkUserCandidate) {
+		if (row.role === 'operator') return 'Operasional sekolah';
+		if (row.role === 'tim_dapur') return 'Absensi makan dan surat dinas';
 		return row.role === 'user'
 			? `${row.classes.join(', ') || '-'}; ${row.subjects.join(', ') || 'Belum ada mapel'}`
 			: `${row.studentIds.length} murid; ${row.classes.join(', ') || '-'}`;

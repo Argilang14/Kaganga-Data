@@ -7,19 +7,13 @@
 	import { groupedUserPermissions, basicAttendancePermissionsForType } from '../permissions';
 	import ResetPermissionsBody from './reset-permissions-body.svelte';
 	import { accessPositionLabels, parseAccessPosition } from '$lib/access-position';
+	import { roleMenuPermissions } from '$lib/role-menu-access';
+	import { userRoleLabel } from '$lib/user-role';
 
 	let { data } = $props();
 	let user = $derived(data.userDetail);
 	let position = $derived(parseAccessPosition(user.jabatanAkses));
 	let positionPermissions = $derived(new Set(user.positionPermissions ?? []));
-
-	function formatRole(type?: string) {
-		return (type ?? '')
-			.replaceAll('_', ' ')
-			.split(' ')
-			.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-			.join(' ');
-	}
 
 	function handleSaveSuccess({ data: successData }: { data?: Record<string, unknown> }) {
 		if (successData && Array.isArray(successData.permissions)) {
@@ -31,7 +25,7 @@
 		showModal({
 			title: 'Reset Izin ke Default',
 			body: ResetPermissionsBody,
-			bodyProps: { username: user.username, roleType: formatRole(user.type) },
+			bodyProps: { username: user.username, roleType: userRoleLabel(user) },
 			onPositive: {
 				label: 'Reset',
 				icon: 'repeat',
@@ -55,7 +49,7 @@
 			<h1 class="text-xl font-bold">Izin Pengguna: {user.username}</h1>
 			<p class="text-base-content/70 text-sm">Atur hak akses khusus untuk pengguna ini.</p>
 		</div>
-		<span class="badge badge-soft badge-info sm:ml-auto">{formatRole(user.type)}</span>
+		<span class="badge badge-soft badge-info sm:ml-auto">{userRoleLabel(user)}</span>
 		{#if position}
 			<span class="badge badge-primary badge-soft">{accessPositionLabels[position]}</span>
 		{/if}
@@ -87,7 +81,8 @@
 								{@const isAdmin = user.type === 'admin'}
 								{@const fromPosition =
 									positionPermissions.has(key) ||
-									basicAttendancePermissionsForType(user.type).includes(key)}
+									basicAttendancePermissionsForType(user.type).includes(key) ||
+									roleMenuPermissions(user.type).includes(key)}
 								<tr>
 									<td class="pl-8 text-sm">{description}</td>
 									<td class="text-center">

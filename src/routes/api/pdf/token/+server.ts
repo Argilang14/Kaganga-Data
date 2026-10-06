@@ -1,5 +1,6 @@
 import { error, json } from '@sveltejs/kit';
 import { resolveSchoolPdfVariant } from '$lib/server/pdf/school-variant';
+import { canPrintDocument } from '$lib/role-menu-access';
 import { storePdfParams } from '$lib/server/pdf/token-store';
 import { getCoverPreviewPayload } from '../../../cetak/cover/preview-data';
 import { getRaporPreviewPayload } from '../../../cetak/rapor/preview-data';
@@ -118,8 +119,8 @@ export const POST = (async ({ locals, request }) => {
 		body.kartuLayout === 'photo-qr' || body.kartuLayout === 'qr-only' ? body.kartuLayout : 'duplex';
 	const variant = resolveSchoolPdfVariant(docType, locals);
 
-	if (locals.user?.type === 'wali_asrama' && docType !== 'kartu-absensi' && (docType !== 'keasramaan' || variant !== 'sr')) {
-		throw error(403, 'Wali asrama hanya dapat mencetak Dokumen SR Rapor Keasramaan.');
+	if (!canPrintDocument(locals.user, docType)) {
+		throw error(403, 'Jenis dokumen tidak diizinkan untuk akun ini.');
 	}
 
 	const url = new URL('http://localhost');

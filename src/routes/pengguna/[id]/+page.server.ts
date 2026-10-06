@@ -13,6 +13,7 @@ import {
 } from '../permissions';
 import { authority } from '../utils.server.js';
 import { writeAuditLog } from '$lib/server/audit-log';
+import { roleMenuPermissions } from '$lib/role-menu-access';
 
 const u = tableAuthUser;
 
@@ -59,6 +60,7 @@ export const actions = {
 		if (!target) error(404, 'Data pengguna tidak ditemukan');
 		const baseline = new Set([
 			...permissionsForAccessPosition(target.jabatanAkses),
+			...roleMenuPermissions(target.type),
 			...basicAttendancePermissionsForType(target.type)
 		]);
 		const permissions = userPermissions.filter(

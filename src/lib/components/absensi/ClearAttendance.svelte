@@ -5,8 +5,14 @@
 	let {
 		fields,
 		nama,
+		action = '?/clearStatus',
 		disabled = false
-	}: { fields: Record<string, string | number>; nama: string; disabled?: boolean } = $props();
+	}: {
+		fields: Record<string, string | number>;
+		nama: string;
+		action?: string;
+		disabled?: boolean;
+	} = $props();
 	let dialog: HTMLDialogElement;
 	let submitting = $state(false);
 </script>
@@ -26,7 +32,7 @@
 		<h3 class="text-lg font-bold">Hapus Status Absensi</h3>
 		<p class="mt-2">{nama}</p>
 		<FormEnhance
-			action="?/clearStatus"
+			{action}
 			submitStateChange={(value) => (submitting = value)}
 			onsuccess={async () => {
 				dialog.close();

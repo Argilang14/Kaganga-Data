@@ -1,6 +1,27 @@
 import { parseAccessPosition, type AccessPosition } from '../../lib/access-position.ts';
+import { roleMenuPermissions } from '../../lib/role-menu-access.ts';
 
 export const groupedUserPermissions = {
+	menu: {
+		values: [
+			['murid', 'Akses Data Murid sesuai penugasan'],
+			['intrakurikuler', 'Akses Mata Pelajaran Intrakurikuler'],
+			['nilai_intrakurikuler', 'Input Nilai Intrakurikuler'],
+			['jurnal', 'Akses Jurnal Mengajar'],
+			['catatan_asrama', 'Akses Catatan Wali Asrama'],
+			['rekap_asrama', 'Akses Rekap Nilai Keasramaan'],
+			['kurikulum', 'Akses Data Mata Pelajaran'],
+			['kokurikuler', 'Akses Kokurikuler'],
+			['ekstrakurikuler', 'Akses Ekstrakurikuler'],
+			['martikulasi', 'Akses Martikulasi'],
+			['pertumbuhan', 'Akses Riwayat Pertumbuhan'],
+			['absensi_harian', 'Akses Absensi Harian']
+		], description: 'Akses Menu Tambahan (cakupan penugasan tetap berlaku)'
+	},
+	cetak: {
+		values: [['dokumen', 'Akses Cetak Dokumen'], ['akademik', 'Cetak Raport Akademik'], ['keasramaan', 'Cetak Raport Keasramaan']],
+		description: 'Akses Cetak'
+	},
 	user: {
 		values: [
 			['list', 'Lihat daftar pengguna'],
@@ -113,7 +134,7 @@ export const groupedUserPermissions = {
 	},
 	absensi: {
 		values: [
-			['lihat', 'Lihat Absensi dan Rekap Sesuai Penugasan'],
+			['lihat', 'Lihat Absensi, Rekap, dan Monitoring Sesuai Penugasan'],
 			['scan', 'Scan QR Sesuai Penugasan'],
 			['input', 'Input Absensi Hari Ini'],
 			['koreksi', 'Koreksi Absensi Hari Ini dengan Alasan'],
@@ -211,6 +232,8 @@ const operatorExcludedPermissions = new Set<UserPermission>([
 export function permissionsForAccessPosition(position?: AccessPosition | null): UserPermission[] {
 	const resolvedPosition = parseAccessPosition(position);
 	if (!resolvedPosition) return [];
+	if (resolvedPosition === 'waka_humas') return userPermissions.filter((permission) =>
+		permission.startsWith('absensi_') || permission.startsWith('surat_') || permission.startsWith('persetujuan_') || permission.startsWith('berkas_') || ['administrasi_absensi', 'administrasi_presensi_pegawai', 'administrasi_buku_tamu', 'menu_absensi_harian'].includes(permission));
 	return userPermissions.filter(
 		(permission) =>
 			!systemOnlyPermissions.has(permission) &&
@@ -219,7 +242,7 @@ export function permissionsForAccessPosition(position?: AccessPosition | null): 
 }
 
 export function basicAttendancePermissionsForType(type?: string | null): UserPermission[] {
-	return ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama'].includes(type ?? '')
+	return ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'tim_dapur'].includes(type ?? '')
 		? ['absensi_lihat', 'absensi_scan', 'absensi_input', 'absensi_koreksi', 'absensi_export']
 		: [];
 }
@@ -239,7 +262,7 @@ export function effectivePermissions(
 		(permission) => !position || !systemOnlyPermissions.has(permission)
 	);
 	const basic = basicAttendancePermissionsForType(user.type);
-	return [...new Set([...positionPermissions, ...basic, ...stored])];
+	return [...new Set([...positionPermissions, ...basic, ...roleMenuPermissions(user.type) as UserPermission[], ...stored])];
 }
 
 export function defaultPermissionsForType(

@@ -418,12 +418,7 @@ export const load: PageServerLoad = async (event) => {
 	return {
 		...parentData,
 		favorites,
-		dailyDashboard: await loadDashboardDaily(
-			event.locals.user,
-			sekolahId,
-			academicContext,
-			event.url.searchParams
-		),
+		dailyDashboard: await loadDashboardDaily(event.locals, academicContext, event.url.searchParams),
 		statistikDashboard,
 		bellActive: bellRow?.isActive === true,
 		hariSekolah,

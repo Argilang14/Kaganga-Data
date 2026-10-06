@@ -10,11 +10,12 @@
 	import { page } from '$app/state';
 	import ExistingUserRow from '$lib/components/pengguna/ExistingUserRow.svelte';
 	import { accessPositionLabels, accessPositionValues } from '$lib/access-position';
+	import { creatableUserRoles, userRoleLabels } from '$lib/user-role';
 
 	let { data } = $props();
 	type UserItem = (typeof data.users)[number];
 	type EditableUser = UserItem & {
-		type: 'user' | 'wali_kelas' | 'wali_asuh' | 'wali_asrama';
+		type: 'user' | 'wali_kelas' | 'wali_asuh' | 'wali_asrama' | 'tim_dapur';
 	};
 	type ActionBody = { message?: string; deleted?: number[] };
 
@@ -131,10 +132,10 @@
 			</label>
 			<select class="select bg-base-200 w-full" name="role" value={filters.role}>
 				<option value="all">Semua role</option>
-				<option value="user">Guru Mapel</option>
+				{#each creatableUserRoles as role (role)}
+					<option value={role}>{userRoleLabels[role]}</option>
+				{/each}
 				<option value="wali_kelas">Wali Kelas Lama</option>
-				<option value="wali_asuh">Wali Asuh</option>
-				<option value="wali_asrama">Wali Asrama</option>
 				<option value="wali_murid">Wali Murid</option>
 			</select>
 			<select class="select bg-base-200 w-full" name="jabatan" value={filters.jabatan}>

@@ -42,6 +42,7 @@ vite.config.ts.timestamp-*
 /.qa-responsive
 /.qa-responsive-profile
 /tmp
+/output
 
 # Our custom
 /src/lib/icons/__icons.d.ts

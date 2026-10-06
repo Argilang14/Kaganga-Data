@@ -25,11 +25,12 @@ export const tableAuthUser = sqliteTable(
 				'waka_kurikulum',
 				'waka_sarpras',
 				'waka_keasramaan',
+				'waka_humas',
 				'operator'
 			]
 		}).$type<import('$lib/access-position').AccessPosition | null>(),
 		// tipe user: admin (penuh), wali_kelas (terbatas ke kelas_id), wali_asuh (terbatas ke keasramaan), atau user (default/other)
-		type: text({ enum: ['admin', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'wali_murid', 'user'] })
+		type: text({ enum: ['admin', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'wali_murid', 'user', 'tim_dapur'] })
 			.notNull()
 			.default('admin'),
 		// optional: directly associate a user to a sekolah so login can pick it reliably
@@ -111,6 +112,7 @@ export const tablePegawai = sqliteTable(
 				'keamanan',
 				'wali_asuh',
 				'wali_asrama',
+				'tim_dapur',
 				'lainnya'
 			]
 		})

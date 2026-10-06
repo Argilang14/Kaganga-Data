@@ -4,7 +4,7 @@ import { loadAttendanceSummary, loadSummaryOptions } from '$lib/server/attendanc
 export async function GET({ locals, url }) {
 	const result =
 		url.searchParams.get('options') === '1'
-			? await loadSummaryOptions(locals)
+			? await loadSummaryOptions(locals, url.searchParams.get('tanggal') ?? undefined)
 			: await loadAttendanceSummary(locals, url.searchParams);
 	return json(result, { headers: { 'cache-control': 'no-store, private' } });
 }

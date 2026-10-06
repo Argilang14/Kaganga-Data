@@ -139,7 +139,7 @@ export async function load({ locals, url }) {
 	const requestedKegiatanId = parsePositiveInteger(url.searchParams.get('kegiatan_id'));
 	const { academic, kelasList } = await loadAbsensiKelasOptions(sekolahId, locals.user);
 	const kelasId = resolveKelasId(kelasList, requestedKelasId);
-	const kegiatanList = await loadKegiatanAbsensiOptions(sekolahId);
+	const kegiatanList = await loadKegiatanAbsensiOptions(sekolahId, true, locals.user);
 	const kegiatanId =
 		requestedKegiatanId && kegiatanList.some((kegiatan) => kegiatan.id === requestedKegiatanId)
 			? requestedKegiatanId
@@ -148,7 +148,7 @@ export async function load({ locals, url }) {
 	if (!academic.activeSemesterId || !kelasId) {
 		const today = todayLocalDate();
 		return {
-			meta: { title: 'Rekap Kegiatan' } satisfies PageMeta,
+			meta: { title: 'Monitoring & Rekap Absensi' } satisfies PageMeta,
 			tanggalAwal,
 			tanggalAkhir,
 			activeSemesterId: academic.activeSemesterId,
@@ -198,6 +198,12 @@ export async function load({ locals, url }) {
 					eq(tableAbsensiKegiatan.semesterId, academic.activeSemesterId),
 					eq(tableAbsensiKegiatan.kelasId, kelasId),
 					kegiatanId ? eq(tableAbsensiKegiatan.kegiatanId, kegiatanId) : undefined,
+					locals.user.type === 'tim_dapur'
+						? inArray(
+								tableAbsensiKegiatan.kegiatanId,
+								kegiatanList.map((item) => item.id)
+							)
+						: undefined,
 					between(tableAbsensiKegiatan.tanggal, tanggalAwal, tanggalAkhir),
 					inArray(tableAbsensiKegiatan.muridId, muridIds)
 				)
@@ -240,19 +246,20 @@ export async function load({ locals, url }) {
 		if (byDate !== 0) return byDate;
 		return a.kegiatanNama.localeCompare(b.kegiatanNama);
 	});
-	const monitoring = academic.activeTahunAjaranId
-		? await loadAttendanceMonitoring({
-				sekolahId,
-				tahunAjaranId: academic.activeTahunAjaranId,
-				semesterId: academic.activeSemesterId,
-				kelasIds: [kelasId],
-				user: locals.user,
-				today: todayLocalDate()
-			})
-		: { alerts: [], izinPulang: [] };
+	const monitoring =
+		academic.activeTahunAjaranId && locals.user.type !== 'tim_dapur'
+			? await loadAttendanceMonitoring({
+					sekolahId,
+					tahunAjaranId: academic.activeTahunAjaranId,
+					semesterId: academic.activeSemesterId,
+					kelasIds: [kelasId],
+					user: locals.user,
+					today: todayLocalDate()
+				})
+			: { alerts: [], izinPulang: [] };
 
 	return {
-		meta: { title: 'Rekap Kegiatan' } satisfies PageMeta,
+		meta: { title: 'Monitoring & Rekap Absensi' } satisfies PageMeta,
 		tanggalAwal,
 		tanggalAkhir,
 		activeSemesterId: academic.activeSemesterId,
@@ -664,7 +671,12 @@ export const actions = {
 				if (errors.length < 5) errors.push(`Baris ${rowNumber}: kelas atau kegiatan tidak valid.`);
 				continue;
 			}
-			if (!canEditAbsensiKegiatan(locals.user, kegiatan.aksesEdit)) {
+			if (
+				!canEditAbsensiKegiatan(locals.user, kegiatan.aksesEdit, kegiatan.kategori, {
+					kode: kegiatan.kode,
+					tanggal
+				})
+			) {
 				skipped += 1;
 				if (errors.length < 5) errors.push(`Baris ${rowNumber}: tidak punya akses edit kegiatan.`);
 				continue;
@@ -748,7 +760,7 @@ export const actions = {
 		});
 		if (!kelas) return fail(403, { fail: 'Anda tidak memiliki akses ke kelas ini.' });
 
-		const kegiatanList = await loadKegiatanAbsensiOptions(sekolahId);
+		const kegiatanList = await loadKegiatanAbsensiOptions(sekolahId, true, locals.user);
 		const kegiatanIds = kegiatanList.map((kegiatan) => kegiatan.id);
 		for (const tanggal of canAttendance(locals.user, 'pengaturan')
 			? listLocalDatesInRange(tanggalAwal, tanggalAkhir)

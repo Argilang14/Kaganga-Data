@@ -60,7 +60,7 @@ export async function GET({ locals, url }) {
 	const { academic, kelasList } = await loadAbsensiKelasOptions(sekolahId, locals.user);
 	const kelasId = resolveKelasId(kelasList, parsePositiveInteger(url.searchParams.get('kelas_id')));
 	const kelas = kelasList.find((item) => item.id === kelasId);
-	const kegiatanList = await loadKegiatanAbsensiOptions(sekolahId);
+	const kegiatanList = await loadKegiatanAbsensiOptions(sekolahId, true, locals.user);
 	const kegiatanId =
 		requestedKegiatanId && kegiatanList.some((kegiatan) => kegiatan.id === requestedKegiatanId)
 			? requestedKegiatanId
@@ -102,6 +102,7 @@ export async function GET({ locals, url }) {
 					eq(tableAbsensiKegiatan.semesterId, academic.activeSemesterId),
 					eq(tableAbsensiKegiatan.kelasId, kelasId),
 					kegiatanId ? eq(tableAbsensiKegiatan.kegiatanId, kegiatanId) : undefined,
+					locals.user?.type === 'tim_dapur' ? inArray(tableAbsensiKegiatan.kegiatanId, kegiatanList.map((item) => item.id)) : undefined,
 					between(tableAbsensiKegiatan.tanggal, tanggalAwal, tanggalAkhir),
 					inArray(tableAbsensiKegiatan.muridId, muridIds)
 				)

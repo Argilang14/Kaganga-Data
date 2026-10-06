@@ -82,8 +82,10 @@
 		const current = revision;
 		controller = new AbortController();
 		try {
+			const params = new URLSearchParams({ options: '1' });
+			if (isSummaryDate(tanggal)) params.set('tanggal', tanggal);
 			const result = await readResponse<Options>(
-				await fetch('/api/administrasi/absensi/kegiatan/ringkasan?options=1', {
+				await fetch(`/api/administrasi/absensi/kegiatan/ringkasan?${params}`, {
 					cache: 'no-store',
 					signal: controller.signal
 				})

@@ -12,6 +12,7 @@ export const PEGAWAI_JENIS = [
 	'keamanan',
 	'wali_asuh',
 	'wali_asrama',
+	'tim_dapur',
 	'lainnya'
 ] as const;
 export const PEGAWAI_STATUS = ['aktif', 'nonaktif'] as const;

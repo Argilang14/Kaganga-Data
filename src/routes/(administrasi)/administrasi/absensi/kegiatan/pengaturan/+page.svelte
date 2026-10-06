@@ -42,14 +42,11 @@
 		<div class="flex flex-wrap gap-2">
 			<a class="btn btn-soft btn-sm shadow-none" href={resolve('/administrasi/absensi/kegiatan')}>
 				<Icon name="activity" />
-				Absensi Kegiatan
+				Catat Absensi
 			</a>
-			<a
-				class="btn btn-soft btn-sm shadow-none"
-				href={resolve('/administrasi/absensi/kegiatan/rekap')}
-			>
+			<a class="btn btn-soft btn-sm shadow-none" href={resolve('/administrasi/absensi/monitoring')}>
 				<Icon name="table" />
-				Rekap Kegiatan
+				Monitoring &amp; Rekap Absensi
 			</a>
 		</div>
 	</div>

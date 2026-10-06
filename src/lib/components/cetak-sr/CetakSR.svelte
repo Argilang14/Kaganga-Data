@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { canPrintDocument } from '$lib/role-menu-access';
 	/* eslint-disable @typescript-eslint/no-unused-vars */
 	import { page } from '$app/state';
 	import Icon from '$lib/components/icon.svelte';
@@ -122,12 +123,13 @@
 	const visibleDocumentOptions = $derived.by(() => {
 		const general = ['kartu-absensi', 'kartu-ujian', 'kartu-ujian-meja', 'jadwal-pelajaran', 'kalender-pendidikan', 'jurnal-mengajar', 'rekap-absensi-kegiatan', 'buku-tamu'];
 		if (documentGroup === 'dokumen') return documentOptions.filter((option) => general.includes(option.value) && (option.value !== 'jurnal-mengajar' || data.jurnalAccess?.canPrint !== false) && (option.value !== 'rekap-absensi-kegiatan' || data.absensiAccess === true) && (option.value !== 'buku-tamu' || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('administrasi_buku_tamu')) && (!['kartu-ujian', 'kartu-ujian-meja'].includes(option.value) || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('ujian_cetak') || page.data.user?.permissions?.includes('ujian_manage')));
-		if (documentGroup === 'raport') return documentOptions.filter((option) => !general.includes(option.value) && (currentUserType !== 'wali_asrama' || option.value === 'keasramaan'));
-		if (currentUserType === 'wali_asrama') {
-			return documentOptions.filter((option) => option.value === 'keasramaan');
+		if (documentGroup === 'raport') return documentOptions.filter((option) => !general.includes(option.value) && canPrintDocument(page.data.user, option.value));
+		if (currentUserType === 'wali_asrama' || currentUserType === 'wali_asuh') {
+			return documentOptions.filter((option) => !general.includes(option.value) && canPrintDocument(page.data.user, option.value));
 		}
 		return documentOptions.filter(
 			(option) =>
+				canPrintDocument(page.data.user, option.value) &&
 				(!option.value.startsWith('martikulasi-') || isSRVariant) &&
 				(((option.value !== 'jurnal-mengajar' || data.jurnalAccess?.canPrint !== false) &&
 					option.value !== 'kartu-absensi' &&

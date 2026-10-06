@@ -52,7 +52,21 @@ export const attendanceGuard: Handle = async ({ event, resolve }) => {
 			? await event.request.clone().formData()
 			: null;
 	const params = event.url.searchParams;
+	if (isAttendance && user.type === 'tim_dapur') {
+		const id = Number(
+			form?.get('kegiatanId') ?? params.get('kegiatan_id') ?? params.get('kegiatanId')
+		);
+		if (id) {
+			const activity = await db.query.tableKegiatanAbsensi.findFirst({
+				where: and(eq(tableKegiatanAbsensi.id, id), eq(tableKegiatanAbsensi.sekolahId, sekolah.id))
+			});
+			if (!activity || activity.kategori !== 'makan')
+				throw error(403, 'Tim Dapur hanya dapat mengakses kegiatan makan.');
+		}
+	}
 	const action = [...params.keys()].find((key) => key.startsWith('/'))?.slice(1) ?? '';
+	if (user.type === 'tim_dapur' && action === 'saveFollowUp')
+		throw error(403, 'Tindak lanjut izin pulang bukan tugas Tim Dapur.');
 	if (isAttendance) {
 		const permission: AttendanceAction = path.endsWith('/pengaturan')
 			? 'pengaturan'
@@ -99,7 +113,13 @@ export const attendanceGuard: Handle = async ({ event, resolve }) => {
 					eq(tableKegiatanAbsensi.sekolahId, sekolah.id)
 				)
 			});
-			if (!kegiatan || !canAttendActivity(user, kegiatan.aksesEdit))
+			if (
+				!kegiatan ||
+				!canAttendActivity(user, kegiatan.aksesEdit, kegiatan.kategori, {
+					kode: kegiatan.kode,
+					tanggal
+				})
+			)
 				throw error(403, 'Kegiatan di luar tanggung jawab akun.');
 		} else if (
 			path === '/administrasi/absensi' &&

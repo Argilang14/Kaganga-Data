@@ -5,12 +5,18 @@
 	import { toast } from '$lib/components/toast.svelte';
 	import { validatePassword } from '$lib/password-policy';
 	import {
+		creatableUserRoles,
+		displayedUserRole,
+		userRoleLabels,
+		type CreatableUserRole
+	} from '$lib/user-role';
+	import {
 		accessPositionLabels,
 		accessPositionValues,
 		type AccessPosition
 	} from '$lib/access-position';
 
-	type Role = 'user' | 'wali_asuh' | 'wali_asrama' | 'wali_kelas' | 'admin';
+	type Role = CreatableUserRole | 'wali_kelas' | 'admin';
 	type PegawaiOption = {
 		id: number;
 		nama: string;
@@ -78,6 +84,8 @@
 		user: ['guru', 'kepala_sekolah'],
 		wali_asuh: ['wali_asuh'],
 		wali_asrama: ['wali_asrama'],
+		tim_dapur: ['tim_dapur', 'lainnya'],
+		operator: [],
 		wali_kelas: ['guru', 'kepala_sekolah'],
 		admin: []
 	};
@@ -85,7 +93,7 @@
 		pegawaiList.filter(
 			(pegawai) =>
 				pegawai.status === 'aktif' &&
-				(jabatanAkses !== '' || allowedJenis[type].includes(pegawai.jenis))
+				(type === 'operator' || jabatanAkses !== '' || allowedJenis[type].includes(pegawai.jenis))
 		)
 	);
 	let selectedPegawai = $derived(
@@ -127,8 +135,8 @@
 		) {
 			pegawaiId = '';
 		}
-		if (type !== 'user' && type !== 'wali_kelas') {
-			if (!isEditMode) jabatanAkses = '';
+		if (type !== 'user' && type !== 'wali_kelas' && type !== 'operator') {
+			if (!isEditMode || type !== editUser?.type) jabatanAkses = '';
 			mataPelajaranIds = new Set<number>();
 			kelasIds = new Set<number>();
 		}
@@ -137,7 +145,7 @@
 	function resetForm() {
 		username = editUser?.username ?? '';
 		password = '';
-		type = editUser?.type ?? 'user';
+		type = (editUser ? displayedUserRole(editUser) : 'user') as Role;
 		jabatanAkses = editUser?.jabatanAkses ?? '';
 		pegawaiId = editUser?.pegawaiId ? String(editUser.pegawaiId) : '';
 		mataPelajaranIds = new Set(editUser?.mataPelajaranIds ?? []);
@@ -147,6 +155,12 @@
 		pegawaiList = [];
 		mataPelajaran = [];
 		kelasList = [];
+	}
+
+	function changeRole(event: Event) {
+		type = (event.currentTarget as HTMLSelectElement).value as Role;
+		if (type === 'operator') jabatanAkses = 'operator';
+		else if (jabatanAkses === 'operator') jabatanAkses = '';
 	}
 
 	async function loadOptions() {
@@ -283,12 +297,13 @@
 						<select
 							class="select bg-base-200 w-full"
 							bind:value={type}
+							onchange={changeRole}
 							disabled={isLegacyWaliKelas || loadingOptions || saving}
 						>
 							{#if isLegacyWaliKelas}<option value="wali_kelas">Wali Kelas (akun lama)</option>{/if}
-							<option value="user">Guru Mapel</option>
-							<option value="wali_asuh">Wali Asuh</option>
-							<option value="wali_asrama">Wali Asrama</option>
+							{#each creatableUserRoles as role (role)}
+								<option value={role}>{userRoleLabels[role]}</option>
+							{/each}
 						</select>
 						{#if isLegacyWaliKelas}
 							<p class="label text-wrap">Role ini mengikuti penugasan pada Data Kelas.</p>
@@ -316,14 +331,14 @@
 					</fieldset>
 				</div>
 
-				{#if type === 'user' || isEditMode}
+				{#if type === 'user' || type === 'operator' || isEditMode}
 					<fieldset class="fieldset">
 						<legend class="fieldset-legend">Jabatan Akses</legend>
 						<select
 							id="user-jabatan-akses"
 							class="select bg-base-200 w-full"
 							bind:value={jabatanAkses}
-							disabled={loadingOptions || saving}
+							disabled={type === 'operator' || loadingOptions || saving}
 						>
 							<option value="">Tanpa jabatan akses khusus</option>
 							{#each accessPositionValues as position (position)}
@@ -331,8 +346,10 @@
 							{/each}
 						</select>
 						<p class="label text-wrap">
-							Jabatan akses membuka seluruh fitur operasional sekolah. Pengaturan sistem dan
-							manajemen pengguna tetap khusus admin.
+							{jabatanAkses === 'waka_humas'
+								? 'Waka Humas mendapat akses penuh Absensi dan Surat Menyurat.'
+								: 'Jabatan akses membuka seluruh fitur operasional sekolah.'} Pengaturan sistem dan manajemen
+							pengguna tetap khusus admin.
 						</p>
 					</fieldset>
 				{/if}

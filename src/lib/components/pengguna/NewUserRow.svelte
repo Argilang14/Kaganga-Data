@@ -17,6 +17,7 @@
 		<option value="user">Guru Mapel</option>
 		<option value="wali_asuh">Wali Asuh</option>
 		<option value="wali_asrama">Wali Asrama</option>
+		<option value="tim_dapur">Tim Dapur</option>
 	</select>
 </td>
 <td class="overflow-hidden">

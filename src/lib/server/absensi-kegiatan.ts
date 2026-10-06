@@ -1,5 +1,9 @@
 import db from '$lib/server/db';
-import { canAttendance, canAttendActivity } from '$lib/attendance-access';
+import {
+	canAttendance,
+	canAttendActivity,
+	type AttendanceActivityContext
+} from '$lib/attendance-access';
 import { studentAccessCondition } from './student-access';
 import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
 import { withSchemaReady } from '$lib/server/db/schema-guard';
@@ -185,9 +189,11 @@ export function canSyncAbsensiKegiatanToRapor(
 
 export function canEditAbsensiKegiatan(
 	user: Pick<AuthUser, 'type' | 'permissions'> | null | undefined,
-	aksesEdit: AbsensiKegiatanEditAccess
+	aksesEdit: AbsensiKegiatanEditAccess,
+	kategori?: string,
+	context?: AttendanceActivityContext
 ) {
-	return canAttendActivity(user, aksesEdit);
+	return canAttendActivity(user, aksesEdit, kategori, context);
 }
 
 export function parseAbsensiKegiatanStatus(
@@ -436,13 +442,18 @@ export async function ensureDefaultAbsensiKegiatan(sekolahId: number) {
 	});
 }
 
-export async function loadKegiatanAbsensiOptions(sekolahId: number, onlyActive = true) {
+export async function loadKegiatanAbsensiOptions(
+	sekolahId: number,
+	onlyActive = true,
+	user?: App.Locals['user']
+) {
 	return withSchemaReady('Absensi Kegiatan', async () => {
 		await ensureDefaultAbsensiKegiatan(sekolahId);
 		return db.query.tableKegiatanAbsensi.findMany({
 			where: and(
 				eq(tableKegiatanAbsensi.sekolahId, sekolahId),
-				onlyActive ? eq(tableKegiatanAbsensi.aktif, true) : undefined
+				onlyActive ? eq(tableKegiatanAbsensi.aktif, true) : undefined,
+				user?.type === 'tim_dapur' ? eq(tableKegiatanAbsensi.kategori, 'makan') : undefined
 			),
 			orderBy: [asc(tableKegiatanAbsensi.urutan), asc(tableKegiatanAbsensi.nama)]
 		});

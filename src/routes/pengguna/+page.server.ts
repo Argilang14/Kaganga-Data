@@ -28,10 +28,10 @@ import { getAssignmentSummaries } from '$lib/server/assignment-summary';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { parseAccessPosition } from '$lib/access-position';
 import { writeAuditLog } from '$lib/server/audit-log';
+import { parseCreatableUserRole, resolveUserRole, displayedUserRole } from '$lib/user-role';
 
 const u = tableAuthUser;
-const CREATABLE_ROLES = ['user', 'wali_asuh', 'wali_asrama'] as const;
-type CreatableRole = (typeof CREATABLE_ROLES)[number];
+type CreatableRole = NonNullable<ReturnType<typeof resolveUserRole>>['type'];
 
 function parseIdList(value: FormDataEntryValue | null) {
 	if (!value) return [];
@@ -70,9 +70,7 @@ export async function load({ url, locals }) {
 	const onlineCutoff = new Date(now.getTime() - onlineThresholdMs).toISOString();
 	const nowIso = now.toISOString();
 	const queryLike = `%${q.toLowerCase()}%`;
-	const isKnownRole = ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'wali_murid'].includes(
-		role
-	);
+	const isKnownRole = !!parseCreatableUserRole(role) || ['wali_kelas', 'wali_murid'].includes(role);
 	const isKnownStatus = status === 'online' || status === 'offline';
 	const parsedJabatan = parseAccessPosition(jabatan);
 	const onlineExpression = sql`exists (
@@ -91,7 +89,14 @@ export async function load({ url, locals }) {
 				)
 			: undefined,
 		isKnownRole
-			? eq(u.type, role as 'user' | 'wali_kelas' | 'wali_asuh' | 'wali_asrama' | 'wali_murid')
+			? role === 'operator'
+				? and(eq(u.type, 'user'), eq(u.jabatanAkses, 'operator'))
+				: role === 'user'
+					? and(eq(u.type, 'user'), sql`coalesce(${u.jabatanAkses}, '') != ${'operator'}`)
+					: eq(
+							u.type,
+							role as 'wali_kelas' | 'wali_asuh' | 'wali_asrama' | 'wali_murid' | 'tim_dapur'
+						)
 			: undefined,
 		parsedJabatan ? eq(u.jabatanAkses, parsedJabatan) : undefined,
 		isKnownStatus
@@ -341,10 +346,9 @@ export const actions = {
 		const username = String(form.get('username') ?? '').trim();
 		const password = String(form.get('password') ?? '').trim();
 		const requestedRole = String(form.get('type') ?? 'user');
-		const roleValue: CreatableRole = CREATABLE_ROLES.includes(requestedRole as CreatableRole)
-			? (requestedRole as CreatableRole)
-			: 'user';
-		const jabatanAkses = parseAccessPosition(form.get('jabatanAkses'));
+		const resolvedRole = resolveUserRole(requestedRole, form.get('jabatanAkses'));
+		if (!resolvedRole) return fail(400, { message: 'Role atau jabatan akses tidak valid' });
+		const { type: roleValue, jabatanAkses } = resolvedRole;
 		const pegawaiId = Number(form.get('pegawaiId'));
 		let mataPelajaranIds = parseIdList(form.get('mataPelajaranIds'));
 		let kelasIds = parseIdList(form.get('kelasIds'));
@@ -363,7 +367,8 @@ export const actions = {
 		const allowedJenis: Record<CreatableRole, string[]> = {
 			user: ['guru', 'kepala_sekolah'],
 			wali_asuh: ['wali_asuh'],
-			wali_asrama: ['wali_asrama']
+			wali_asrama: ['wali_asrama'],
+			tim_dapur: ['tim_dapur', 'lainnya']
 		};
 		const pegawai = await db.query.tablePegawai.findFirst({
 			columns: { id: true, nama: true, jenis: true, status: true },
@@ -527,10 +532,12 @@ export const actions = {
 		const username = String(form.get('username') ?? '').trim();
 		const password = String(form.get('password') ?? '').trim();
 		const requestedRole = String(form.get('type') ?? 'user');
-		const jabatanAkses = parseAccessPosition(form.get('jabatanAkses'));
-		if (form.get('jabatanAkses') && !jabatanAkses) {
-			return fail(400, { message: 'Jabatan akses tidak valid' });
-		}
+		const resolvedRole = resolveUserRole(
+			requestedRole === 'wali_kelas' ? 'user' : requestedRole,
+			form.get('jabatanAkses')
+		);
+		if (!resolvedRole) return fail(400, { message: 'Role atau jabatan akses tidak valid' });
+		const { type: roleValue, jabatanAkses } = resolvedRole;
 		let mataPelajaranIds = parseIdList(form.get('mataPelajaranIds'));
 		let kelasIds = parseIdList(form.get('kelasIds'));
 
@@ -556,12 +563,9 @@ export const actions = {
 		}
 
 		const isLegacyWaliKelas = target.type === 'wali_kelas';
-		if (!isLegacyWaliKelas && !CREATABLE_ROLES.includes(requestedRole as CreatableRole)) {
+		if (!isLegacyWaliKelas && !parseCreatableUserRole(requestedRole)) {
 			return fail(400, { message: 'Role pengguna tidak valid' });
 		}
-		const roleValue: CreatableRole = CREATABLE_ROLES.includes(requestedRole as CreatableRole)
-			? (requestedRole as CreatableRole)
-			: 'user';
 		if (isLegacyWaliKelas && requestedRole !== 'wali_kelas') {
 			return fail(400, { message: 'Role wali kelas lama dikelola dari Data Kelas' });
 		}
@@ -580,10 +584,17 @@ export const actions = {
 		if (!pegawai) return fail(400, { message: 'Data Pegawai aktif tidak ditemukan' });
 
 		if (!isLegacyWaliKelas) {
+			if (
+				jabatanAkses &&
+				roleValue !== 'user' &&
+				(jabatanAkses !== target.jabatanAkses || roleValue !== target.type)
+			)
+				return fail(400, { message: 'Jabatan akses hanya untuk akun pegawai umum' });
 			const allowedJenis: Record<CreatableRole, string[]> = {
 				user: ['guru', 'kepala_sekolah'],
 				wali_asuh: ['wali_asuh'],
-				wali_asrama: ['wali_asrama']
+				wali_asrama: ['wali_asrama'],
+				tim_dapur: ['tim_dapur', 'lainnya']
 			};
 			if (!jabatanAkses && !allowedJenis[roleValue].includes(pegawai.jenis)) {
 				return fail(400, { message: 'Role tidak sesuai dengan jenis Data Pegawai' });
@@ -628,7 +639,8 @@ export const actions = {
 		try {
 			const timestamp = new Date().toISOString();
 			const nextType = isLegacyWaliKelas ? 'wali_kelas' : roleValue;
-			const roleChanged = nextType !== target.type;
+			const roleChanged =
+				displayedUserRole({ type: nextType, jabatanAkses }) !== displayedUserRole(target);
 			const updateData: Record<string, unknown> = {
 				username,
 				usernameNormalized: username.toLowerCase(),

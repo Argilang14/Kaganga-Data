@@ -38,5 +38,6 @@ export function hasClassExportAccess(input: {
 	if (user.type === 'admin') return true;
 	if (user.sekolahId !== sekolahId) return false;
 	if (parseAccessPosition(user.jabatanAkses)) return true;
+	if (user.type === 'tim_dapur') return true;
 	return ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama'].includes(user.type ?? '') && assigned;
 }

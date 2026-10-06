@@ -1,0 +1,440 @@
+import type { PageServerLoad } from './$types';
+import db from '$lib/server/db';
+import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
+import { ensureDashboardSchema } from '$lib/server/db/ensure-dashboard-schema';
+import { loadDashboardDaily } from '$lib/server/dashboard-daily';
+import {
+	tableAsesmenEkstrakurikuler,
+	tableAsesmenKeasramaan,
+	tableAsesmenSumatif,
+	tableAsesmenKokurikuler,
+	tableBellSettings,
+	tableEkstrakurikuler,
+	tableKokurikuler,
+	tableKehadiranMurid,
+	tableKegiatanCustom,
+	tableKelas,
+	tableJadwalPelajaran,
+	tableKeasramaan,
+	tableKeasramaanIndikator,
+	tableKeasramaanTujuan,
+	tableMataPelajaran,
+	tableMurid,
+	tablePegawai,
+	tablePresensiSettings,
+	tableUserFavorites
+} from '$lib/server/db/schema';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+
+const AGAMA_BASE_SUBJECT = 'Pendidikan Agama dan Budi Pekerti';
+
+type MataPelajaranJenis = 'wajib' | 'mulok' | 'pilihan';
+
+type SubjectBucket = {
+	jenis: MataPelajaranJenis;
+	mapelIds: Set<number>;
+};
+
+const normalizeText = (value: string | null | undefined) =>
+	(value ?? '')
+		.normalize('NFD')
+		.replace(/\p{Diacritic}/gu, '')
+		.toLowerCase()
+		.trim();
+
+const isAgamaSubject = (name: string | null | undefined) =>
+	normalizeText(name).startsWith('pendidikan agama');
+
+const calculatePercentage = (completed: number, total: number) =>
+	total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+
+export const load: PageServerLoad = async (event) => {
+	const parentData = await event.parent();
+	const sekolahId = event.locals.sekolah?.id ?? null;
+
+	const statistikDashboard = {
+		rombel: {
+			total: 0,
+			perFase: [] as Array<{ fase: string | null; label: string; jumlah: number }>
+		},
+		murid: {
+			total: 0
+		},
+		pegawai: {
+			total: 0
+		},
+		mapel: {
+			total: 0,
+			wajib: 0,
+			mulok: 0,
+			kokurikuler: 0,
+			lainnya: 0
+		},
+		ekstrakurikuler: {
+			total: 0
+		},
+		keasramaan: {
+			total: 0
+		},
+		progress: {
+			akademik: { percentage: 0, completed: 0, total: 0 },
+			absensi: { percentage: 0, completed: 0, total: 0 },
+			ekstrakurikuler: { percentage: 0, completed: 0, total: 0 },
+			kokurikuler: { percentage: 0, completed: 0, total: 0 },
+			keasramaan: { percentage: 0, completed: 0, total: 0 }
+		}
+	};
+
+	if (!sekolahId) {
+		return {
+			...parentData,
+			statistikDashboard
+		};
+	}
+
+	await ensureDashboardSchema();
+
+	const academicContext = await resolveSekolahAcademicContext(sekolahId);
+	const activeSemesterId = academicContext?.activeSemesterId ?? null;
+
+	const kelasFilter = activeSemesterId
+		? and(eq(tableKelas.sekolahId, sekolahId), eq(tableKelas.semesterId, activeSemesterId))
+		: eq(tableKelas.sekolahId, sekolahId);
+
+	const daftarKelas = await db.query.tableKelas.findMany({
+		columns: { id: true, fase: true },
+		where: kelasFilter
+	});
+
+	statistikDashboard.rombel.total = daftarKelas.length;
+
+	const perFaseMap = new Map<string | null, number>();
+	for (const kelas of daftarKelas) {
+		const key = kelas.fase ?? null;
+		perFaseMap.set(key, (perFaseMap.get(key) ?? 0) + 1);
+	}
+
+	statistikDashboard.rombel.perFase = Array.from(perFaseMap.entries())
+		.map(([fase, jumlah]) => ({
+			fase,
+			label: fase ?? 'Belum diatur',
+			jumlah
+		}))
+		.sort((a, b) => a.label.localeCompare(b.label, 'id'));
+
+	const muridFilter = activeSemesterId
+		? and(
+				eq(tableMurid.sekolahId, sekolahId),
+				eq(tableMurid.semesterId, activeSemesterId),
+				activeMuridFilter()
+			)
+		: and(eq(tableMurid.sekolahId, sekolahId), activeMuridFilter());
+
+	const muridCountRows = await db
+		.select({ totalMurid: sql<number>`count(*)` })
+		.from(tableMurid)
+		.where(muridFilter);
+
+	statistikDashboard.murid.total = muridCountRows[0]?.totalMurid ?? 0;
+
+	const pegawaiCountRows = await db
+		.select({ totalPegawai: sql<number>`count(*)` })
+		.from(tablePegawai)
+		.where(eq(tablePegawai.sekolahId, sekolahId));
+
+	statistikDashboard.pegawai.total = pegawaiCountRows[0]?.totalPegawai ?? 0;
+
+	const kelasAktifId = (parentData.kelasAktif ?? null)?.id ?? null;
+
+	if (kelasAktifId) {
+		const mataPelajaranRows = await db.query.tableMataPelajaran.findMany({
+			columns: { id: true, nama: true, jenis: true },
+			where: eq(tableMataPelajaran.kelasId, kelasAktifId)
+		});
+
+		const uniqueSubjects = new Map<string, SubjectBucket>();
+		const mapelIdToKey = new Map<number, string>();
+
+		for (const mapel of mataPelajaranRows) {
+			const trimmedName = mapel.nama?.trim() ?? '';
+			const key = isAgamaSubject(mapel.nama)
+				? AGAMA_BASE_SUBJECT
+				: trimmedName || `Mata Pelajaran ${mapel.id}`;
+			const jenis = (mapel.jenis ?? 'wajib') as MataPelajaranJenis;
+			let bucket = uniqueSubjects.get(key);
+			if (!bucket) {
+				bucket = { jenis, mapelIds: new Set<number>([mapel.id]) };
+				uniqueSubjects.set(key, bucket);
+			} else {
+				if (bucket.jenis !== 'mulok' && jenis === 'mulok') {
+					bucket.jenis = 'mulok';
+				}
+				bucket.mapelIds.add(mapel.id);
+			}
+			mapelIdToKey.set(mapel.id, key);
+		}
+
+		const uniqueSubjectValues = Array.from(uniqueSubjects.values());
+		statistikDashboard.mapel.total = uniqueSubjectValues.length;
+		statistikDashboard.mapel.wajib = uniqueSubjectValues.filter(
+			(item) => item.jenis === 'wajib'
+		).length;
+		statistikDashboard.mapel.mulok = uniqueSubjectValues.filter(
+			(item) => item.jenis === 'mulok'
+		).length;
+		statistikDashboard.mapel.lainnya = uniqueSubjectValues.filter(
+			(item) => item.jenis === 'pilihan'
+		).length;
+
+		const ekstrakurikulerRows = await db.query.tableEkstrakurikuler.findMany({
+			columns: { id: true },
+			where: eq(tableEkstrakurikuler.kelasId, kelasAktifId)
+		});
+		statistikDashboard.ekstrakurikuler.total = ekstrakurikulerRows.length;
+
+		const keasramaanRows = await db.query.tableKeasramaan.findMany({
+			columns: { id: true },
+			where: eq(tableKeasramaan.kelasId, kelasAktifId)
+		});
+		statistikDashboard.keasramaan.total = keasramaanRows.length;
+
+		// kokurikuler (separate table) — tampilkan jumlahnya di bagian Intrakurikuler
+		const kokurikulerRows = await db.query.tableKokurikuler.findMany({
+			columns: { id: true },
+			where: eq(tableKokurikuler.kelasId, kelasAktifId)
+		});
+		statistikDashboard.mapel.kokurikuler = kokurikulerRows.length;
+
+		// debug: show kokurikuler count for active class in server logs to help troubleshooting
+		console.info(
+			'[dashboard] kelasAktifId=%s kokurikuler=%d mapel=%o',
+			kelasAktifId,
+			kokurikulerRows.length,
+			{
+				total: statistikDashboard.mapel.total,
+				wajib: statistikDashboard.mapel.wajib,
+				mulok: statistikDashboard.mapel.mulok,
+				kokurikuler: statistikDashboard.mapel.kokurikuler,
+				lainnya: statistikDashboard.mapel.lainnya
+			}
+		);
+
+		const muridRows = await db.query.tableMurid.findMany({
+			columns: { id: true },
+			where: and(eq(tableMurid.kelasId, kelasAktifId), activeMuridFilter())
+		});
+		const muridIds = muridRows.map((murid) => murid.id);
+		const totalStudents = muridIds.length;
+		const uniqueSubjectCount = uniqueSubjects.size;
+		const mapelIdList = Array.from(mapelIdToKey.keys());
+
+		let akademikCompleted = 0;
+		if (totalStudents > 0 && uniqueSubjectCount > 0 && mapelIdList.length > 0) {
+			const sumatifRows = await db
+				.select({
+					muridId: tableAsesmenSumatif.muridId,
+					mataPelajaranId: tableAsesmenSumatif.mataPelajaranId
+				})
+				.from(tableAsesmenSumatif)
+				.where(
+					and(
+						inArray(tableAsesmenSumatif.muridId, muridIds),
+						inArray(tableAsesmenSumatif.mataPelajaranId, mapelIdList)
+					)
+				);
+
+			const completedPairs = new Set<string>();
+			for (const row of sumatifRows) {
+				const key = mapelIdToKey.get(row.mataPelajaranId);
+				if (!key) continue;
+				completedPairs.add(`${row.muridId}:${key}`);
+			}
+			akademikCompleted = completedPairs.size;
+		}
+		const expectedAcademic = totalStudents * uniqueSubjectCount;
+
+		let absensiCompleted = 0;
+		if (totalStudents > 0) {
+			const attendanceRows = await db
+				.select({ muridId: tableKehadiranMurid.muridId })
+				.from(tableKehadiranMurid)
+				.where(inArray(tableKehadiranMurid.muridId, muridIds));
+
+			const attendanceSet = new Set(attendanceRows.map((row) => row.muridId));
+			absensiCompleted = attendanceSet.size;
+		}
+
+		let ekstrakCompleted = 0;
+		if (totalStudents > 0) {
+			const asesmenEkstrakRows = await db
+				.select({ muridId: tableAsesmenEkstrakurikuler.muridId })
+				.from(tableAsesmenEkstrakurikuler)
+				.where(inArray(tableAsesmenEkstrakurikuler.muridId, muridIds));
+
+			const ekstrakSet = new Set(asesmenEkstrakRows.map((row) => row.muridId));
+			ekstrakCompleted = ekstrakSet.size;
+		}
+
+		let kokurCompleted = 0;
+		if (totalStudents > 0) {
+			const asesmenKokurRows = await db
+				.select({ muridId: tableAsesmenKokurikuler.muridId })
+				.from(tableAsesmenKokurikuler)
+				.where(inArray(tableAsesmenKokurikuler.muridId, muridIds));
+
+			const kokurSet = new Set(asesmenKokurRows.map((row) => row.muridId));
+			kokurCompleted = kokurSet.size;
+		}
+
+		const keasramaanIds = keasramaanRows.map((item) => item.id);
+		let keasramaanCompleted = 0;
+		let expectedKeasramaan = 0;
+		if (totalStudents > 0 && keasramaanIds.length > 0) {
+			const tujuanRows = await db
+				.select({ id: tableKeasramaanTujuan.id })
+				.from(tableKeasramaanTujuan)
+				.innerJoin(
+					tableKeasramaanIndikator,
+					eq(tableKeasramaanTujuan.indikatorId, tableKeasramaanIndikator.id)
+				)
+				.where(inArray(tableKeasramaanIndikator.keasramaanId, keasramaanIds));
+			const tujuanIds = tujuanRows.map((item) => item.id);
+			expectedKeasramaan = totalStudents * tujuanIds.length;
+
+			if (tujuanIds.length > 0) {
+				const asesmenRows = await db
+					.select({
+						muridId: tableAsesmenKeasramaan.muridId,
+						tujuanId: tableAsesmenKeasramaan.tujuanId
+					})
+					.from(tableAsesmenKeasramaan)
+					.where(
+						and(
+							inArray(tableAsesmenKeasramaan.muridId, muridIds),
+							inArray(tableAsesmenKeasramaan.keasramaanId, keasramaanIds),
+							inArray(tableAsesmenKeasramaan.tujuanId, tujuanIds)
+						)
+					);
+				keasramaanCompleted = new Set(asesmenRows.map((item) => item.muridId + ':' + item.tujuanId))
+					.size;
+			}
+		}
+
+		statistikDashboard.progress = {
+			akademik: {
+				completed: akademikCompleted,
+				total: expectedAcademic,
+				percentage: calculatePercentage(akademikCompleted, expectedAcademic)
+			},
+			absensi: {
+				completed: absensiCompleted,
+				total: totalStudents,
+				percentage: calculatePercentage(absensiCompleted, totalStudents)
+			},
+			ekstrakurikuler: {
+				completed: ekstrakCompleted,
+				total: totalStudents,
+				percentage: calculatePercentage(ekstrakCompleted, totalStudents)
+			},
+			kokurikuler: {
+				completed: kokurCompleted,
+				total: totalStudents,
+				percentage: calculatePercentage(kokurCompleted, totalStudents)
+			},
+			keasramaan: {
+				completed: keasramaanCompleted,
+				total: expectedKeasramaan,
+				percentage: calculatePercentage(keasramaanCompleted, expectedKeasramaan)
+			}
+		};
+	}
+
+	const [bellRow, presensiRow, kegiatanCustom, jadwalPelajaran] = await Promise.all([
+		sekolahId
+			? db.query.tableBellSettings.findFirst({
+					where: eq(tableBellSettings.sekolahId, sekolahId)
+				})
+			: Promise.resolve(null),
+		sekolahId
+			? db.query.tablePresensiSettings.findFirst({
+					columns: { hariSekolah: true, jamPulang: true, liburNasional: true, liburSemester: true },
+					where: eq(tablePresensiSettings.sekolahId, sekolahId),
+					orderBy: [desc(tablePresensiSettings.id)]
+				})
+			: Promise.resolve(null),
+		sekolahId
+			? db.query.tableKegiatanCustom.findMany({
+					where: eq(tableKegiatanCustom.sekolahId, sekolahId),
+					columns: { kode: true, nama: true, durasi: true }
+				})
+			: Promise.resolve([]),
+		sekolahId
+			? db.query.tableJadwalPelajaran.findMany({
+					where: eq(tableJadwalPelajaran.sekolahId, sekolahId),
+					columns: { hari: true, jamKe: true, kelasId: true, kodeKegiatan: true }
+				})
+			: Promise.resolve([])
+	]);
+
+	let daftarKodeMapel: string[] = [];
+	if (sekolahId) {
+		const kelasIds = daftarKelas.map((k) => k.id);
+		if (kelasIds.length > 0) {
+			const mapelRows = await db.query.tableMataPelajaran.findMany({
+				where: inArray(tableMataPelajaran.kelasId, kelasIds),
+				columns: { kode: true }
+			});
+			daftarKodeMapel = [...new Set(mapelRows.map((r) => r.kode).filter(Boolean))] as string[];
+		}
+	}
+
+	const hariSekolah = presensiRow?.hariSekolah ?? 6;
+
+	let liburNasional: string[] = [];
+	let liburSemester: Array<{ start: string; end: string }> = [];
+	if (presensiRow) {
+		try {
+			const parsed = JSON.parse(presensiRow.liburNasional || '[]');
+			if (Array.isArray(parsed)) liburNasional = parsed;
+		} catch {
+			// ignore
+		}
+		try {
+			const parsed = JSON.parse(presensiRow.liburSemester || '[]');
+			if (Array.isArray(parsed)) liburSemester = parsed;
+		} catch {
+			// ignore
+		}
+	}
+
+	const userId = event.locals.user?.id;
+	const favorites = userId
+		? await db.query.tableUserFavorites.findMany({
+				where: eq(tableUserFavorites.userId, userId),
+				orderBy: (fav, { asc }) => [asc(fav.createdAt)]
+			})
+		: [];
+
+	return {
+		...parentData,
+		favorites,
+		dailyDashboard: await loadDashboardDaily(event.locals, academicContext, event.url.searchParams),
+		statistikDashboard,
+		bellActive: bellRow?.isActive === true,
+		hariSekolah,
+		liburNasional,
+		liburSemester,
+		bellSettings: bellRow
+			? {
+					jamMulai: bellRow.jamMulai,
+					jamPelajaranMenit: bellRow.jamPelajaranMenit,
+					durasiIstirahat: bellRow.durasiIstirahat,
+					durasiUpacara: bellRow.durasiUpacara
+				}
+			: null,
+		kegiatanCustom,
+		jadwalPelajaran,
+		daftarKodeMapel
+	};
+};
+import { activeMuridFilter } from '$lib/server/murid-query';

@@ -1,0 +1,11 @@
+---
+title: Petunjuk
+---
+
+Klik <kbd class="kbd">Copy</kbd> pada alamat aplikasi lalu bagikan ke rekan kerja untuk membuka aplikasi pada jaringan yang sama.
+
+Password dan username dapat diganti, dan khusus admin harap simpan password tersebut karena tidak ada garansi lupa password!
+
+Tombol <kbd class="kbd">Cek Update</kbd> berfungsi untuk mengecek perbaruan aplikasi dan <kbd class="kbd">Manajemen Pengguna</kbd> digunakan untuk mengatur akun yang bisa login ke Kaganga. Dua tombol ini hanya bisa diakses melalui akun admin.
+
+Admin dapat mengaktifkan Generator Tujuan Pembelajaran melalui bagian **Generator Tujuan Pembelajaran**. Konfigurasi berlaku per sekolah aktif. Gunakan Base URL HTTPS resmi penyedia dan jangan membagikan kunci API kepada pengguna lain.

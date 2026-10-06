@@ -1,0 +1,22 @@
+{
+	"name": "Kaganga",
+	"short_name": "Kaganga",
+	"description": "Sistem data sekolah Kaganga",
+	"start_url": "/administrasi/absensi/scan",
+	"scope": "/",
+	"display": "standalone",
+	"background_color": "#f3f4f6",
+	"theme_color": "#4f46e5",
+	"icons": [
+		{
+			"src": "/kaganga-pwa-192.png",
+			"sizes": "192x192",
+			"type": "image/png"
+		},
+		{
+			"src": "/kaganga-pwa-512.png",
+			"sizes": "512x512",
+			"type": "image/png"
+		}
+	]
+}

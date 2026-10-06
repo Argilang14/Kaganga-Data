@@ -1,0 +1,21 @@
+{
+	"editor.defaultFormatter": "esbenp.prettier-vscode",
+	"svelte.enable-ts-plugin": true,
+	"explorer.autoReveal": true,
+	"eslint.format.enable": true,
+	"files.associations": {
+		"*.css": "tailwindcss"
+	},
+	"cSpell.customDictionaries": {
+		"project-words": {
+			"name": "project-words",
+			"path": "${workspaceRoot}/spelling.txt",
+			"description": "Words used in this project",
+			"addWords": true,
+			"scope": "workspace"
+		}
+	},
+	"[html]": {
+		"editor.defaultFormatter": "vscode.html-language-features"
+	}
+}

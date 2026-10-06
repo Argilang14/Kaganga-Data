@@ -1,0 +1,707 @@
+import {
+	canPlaceJadwalItem,
+	normalizeJadwalKegiatanKode,
+	normalizeJadwalKode
+} from '$lib/jadwal-slots';
+import { ensureJadwalKegiatanTerintegrasi } from '$lib/server/db/reconcile-jadwal-kegiatan';
+import {
+	ensureDefaultJadwalFoundation,
+	ensureJadwalPelajaranTemplate,
+	inferKelasJadwalJenjang,
+	JADWAL_JENIS,
+	JADWAL_JENIS_LABELS,
+	mapelSesuaiJenjang,
+	selectJadwalContext
+} from '$lib/server/jadwal';
+import { calculateWeeklyJp, summarizeWeeklyJp } from '$lib/jadwal-jp';
+import db from '$lib/server/db';
+import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
+import { ensureJadwalBellSchema } from '$lib/server/db/ensure-jadwal-bell';
+import { ensureJadwalKurikulumSchema } from '$lib/server/db/ensure-jadwal-kurikulum';
+import {
+	tableBellSettings,
+	tableJadwalJam,
+	tableJadwalKegiatan,
+	tableJadwalMapel,
+	tableJadwalPelajaran,
+	tableJadwalTargetJp,
+	tableKegiatanCustom,
+	tableKelas
+} from '$lib/server/db/schema';
+import { fail } from '@sveltejs/kit';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import type { Actions, PageServerLoad } from './$types';
+
+const HARI_LIST = ['senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu'];
+const AGAMA_MAPEL_NAMES = new Set([
+	'Pendidikan Agama dan Budi Pekerti',
+	'Pendidikan Agama Islam dan Budi Pekerti',
+	'Pendidikan Agama Kristen dan Budi Pekerti',
+	'Pendidikan Agama Katolik dan Budi Pekerti',
+	'Pendidikan Agama Buddha dan Budi Pekerti',
+	'Pendidikan Agama Hindu dan Budi Pekerti',
+	'Pendidikan Agama Konghuchu dan Budi Pekerti'
+]);
+
+export const load: PageServerLoad = async ({ locals, depends, url }) => {
+	depends('app:jadwal-pelajaran');
+	const sekolahId = locals.sekolah?.id ?? null;
+	const meta = { title: 'Jadwal Pelajaran' };
+	if (!sekolahId) {
+		return {
+			meta,
+			bellSettings: null,
+			kegiatanCustom: [],
+			jadwalPelajaran: [],
+			daftarKelas: [],
+			targetJp: [],
+			daftarKodeMapel: [],
+			daftarKodeKokurikuler: []
+		};
+	}
+
+	await ensureJadwalBellSchema();
+	await ensureJadwalKurikulumSchema();
+	const academicContext = await resolveSekolahAcademicContext(sekolahId);
+	await ensureJadwalKegiatanTerintegrasi();
+	const context = selectJadwalContext(academicContext, {
+		tahunAjaranId: url.searchParams.get('tahunAjaranId'),
+		jenis: url.searchParams.get('jenis')
+	});
+	if (!context.tahunAjaranId) {
+		return {
+			meta,
+			jadwalPelajaran: [],
+			jadwalJam: [],
+			daftarKelas: [],
+			daftarMapelItems: [],
+			targetJp: [],
+			daftarKegiatanItems: [],
+			tahunAjaranList: [],
+			jenisOptions: JADWAL_JENIS.map((value) => ({ value, label: JADWAL_JENIS_LABELS[value] })),
+			selectedContext: context
+		};
+	}
+	const selectedYear = academicContext.tahunAjaranList.find(
+		(item) => item.id === context.tahunAjaranId
+	);
+	const classSemesterId =
+		context.semesterId ?? selectedYear?.semester.find((item) => item.tipe === 'ganjil')?.id ?? null;
+	const scheduleTemplate = await ensureJadwalPelajaranTemplate(sekolahId, context);
+	const scheduleTemplateIds = scheduleTemplate.contextTemplateIds;
+	const settingFoundation = await ensureDefaultJadwalFoundation(sekolahId, {
+		...context,
+		jenjang: 'srd'
+	});
+	const settingTemplateIds = settingFoundation.templates.map((template) => template.id);
+	if (
+		context.tahunAjaranId === academicContext.activeTahunAjaranId &&
+		context.jenis === (academicContext.activeSemesterTipe ?? 'ganjil')
+	) {
+		await db
+			.update(tableJadwalPelajaran)
+			.set({ templateId: scheduleTemplate.id, semesterId: context.semesterId })
+			.where(
+				and(eq(tableJadwalPelajaran.sekolahId, sekolahId), isNull(tableJadwalPelajaran.templateId))
+			);
+	}
+
+	const daftarKelas = await db.query.tableKelas.findMany({
+		where: classSemesterId
+			? and(eq(tableKelas.sekolahId, sekolahId), eq(tableKelas.semesterId, classSemesterId))
+			: eq(tableKelas.sekolahId, sekolahId),
+		columns: { id: true, nama: true, fase: true },
+		orderBy: [asc(tableKelas.nama)]
+	});
+
+	const [bellSettings, kegiatanCustom, jadwalPelajaran, mapelRows, kegiatanRows] =
+		await Promise.all([
+			db.query.tableBellSettings.findFirst({
+				where: eq(tableBellSettings.sekolahId, sekolahId)
+			}),
+			db.query.tableKegiatanCustom.findMany({
+				where: eq(tableKegiatanCustom.sekolahId, sekolahId),
+				orderBy: [asc(tableKegiatanCustom.kode)]
+			}),
+			db.query.tableJadwalPelajaran.findMany({
+				where: and(
+					eq(tableJadwalPelajaran.sekolahId, sekolahId),
+					inArray(tableJadwalPelajaran.templateId, scheduleTemplateIds)
+				),
+				orderBy: [asc(tableJadwalPelajaran.hari), asc(tableJadwalPelajaran.jamKe)]
+			}),
+			db.query.tableJadwalMapel.findMany({
+				where: eq(tableJadwalMapel.sekolahId, sekolahId),
+				with: { guru: { columns: { id: true, nama: true } } },
+				orderBy: [asc(tableJadwalMapel.jenjang), asc(tableJadwalMapel.nama)]
+			}),
+			db.query.tableJadwalKegiatan.findMany({
+				where: eq(tableJadwalKegiatan.sekolahId, sekolahId),
+				orderBy: [asc(tableJadwalKegiatan.kategori), asc(tableJadwalKegiatan.nama)]
+			})
+		]);
+
+	const kodeSet = new Set<string>();
+	const mapelItems = mapelRows
+		.filter((mapel) => mapel.aktif && mapel.kode)
+		.map((mapel) => {
+			const kode = AGAMA_MAPEL_NAMES.has(mapel.nama) ? 'PAPB' : normalizeJadwalKode(mapel.kode);
+			kodeSet.add(kode);
+			return {
+				id: mapel.id,
+				kode,
+				nama: mapel.nama,
+				jenjang: mapel.jenjang,
+				kategori: mapel.kategori,
+				warna: mapel.warna,
+				jpPerMinggu: mapel.jpPerMinggu ?? 0,
+				guruId: mapel.guru?.id ?? null,
+				guru: mapel.guru?.nama ?? null
+			};
+		});
+
+	const jadwalJam = settingTemplateIds.length
+		? await db.query.tableJadwalJam.findMany({
+				where: and(
+					eq(tableJadwalJam.sekolahId, sekolahId),
+					inArray(tableJadwalJam.templateId, settingTemplateIds)
+				),
+				orderBy: [asc(tableJadwalJam.urutan), asc(tableJadwalJam.jamKe)]
+			})
+		: [];
+	const kegiatanItems = kegiatanRows
+		.filter((kegiatan) => kegiatan.aktif && kegiatan.kode)
+		.map((kegiatan) => ({
+			id: kegiatan.id,
+			kode: normalizeJadwalKegiatanKode(kegiatan.kode),
+			nama: kegiatan.nama,
+			kategori: kegiatan.kategori,
+			warna: kegiatan.warna
+		}));
+	const targetJp = await db.query.tableJadwalTargetJp.findMany({
+		where: and(
+			eq(tableJadwalTargetJp.sekolahId, sekolahId),
+			eq(tableJadwalTargetJp.tahunAjaranId, context.tahunAjaranId),
+			eq(tableJadwalTargetJp.jenis, context.jenis)
+		),
+		columns: { kelasId: true, jadwalMapelId: true, jpPerMinggu: true }
+	});
+
+	return {
+		meta,
+		tahunAjaranList: academicContext.tahunAjaranList.map((item) => ({
+			id: item.id,
+			nama: item.nama
+		})),
+		jenisOptions: JADWAL_JENIS.map((value) => ({ value, label: JADWAL_JENIS_LABELS[value] })),
+		selectedContext: context,
+		bellSettings,
+		kegiatanCustom,
+		jadwalPelajaran: jadwalPelajaran.map((entry) => ({
+			...entry,
+			kodeKegiatan: entry.kegiatanId
+				? normalizeJadwalKegiatanKode(entry.kodeKegiatan)
+				: normalizeJadwalKode(entry.kodeKegiatan)
+		})),
+		jadwalJam,
+		daftarKelas,
+		daftarKodeMapel: [...kodeSet].sort(),
+		daftarKodeKokurikuler: [],
+		daftarMapelItems: mapelItems,
+		targetJp,
+		daftarKegiatanItems: kegiatanItems
+	};
+};
+
+export const actions: Actions = {
+	saveJpTargets: async ({ request, locals }) => {
+		const sekolahId = locals.sekolah?.id;
+		if (!sekolahId) return fail(400, { fail: 'Pilih sekolah terlebih dahulu' });
+		if (!canManageJadwal(locals.user)) {
+			return fail(403, { fail: 'Anda tidak memiliki izin' });
+		}
+
+		const formData = await request.formData();
+		const academic = await resolveSekolahAcademicContext(sekolahId);
+		const context = selectJadwalContext(academic, {
+			tahunAjaranId: formData.get('tahunAjaranId')?.toString(),
+			jenis: formData.get('jenis')?.toString()
+		});
+		if (!context.tahunAjaranId) return fail(400, { fail: 'Tahun ajaran belum tersedia.' });
+
+		let targets: Array<{ kelasId: number; jadwalMapelId: number; jpPerMinggu: number }>;
+		try {
+			targets = JSON.parse(formData.get('targets')?.toString() ?? '[]');
+		} catch {
+			return fail(400, { fail: 'Format target JP tidak valid.' });
+		}
+		if (!Array.isArray(targets) || targets.length > 5000) {
+			return fail(400, { fail: 'Jumlah target JP tidak valid.' });
+		}
+
+		const selectedYear = academic.tahunAjaranList.find((item) => item.id === context.tahunAjaranId);
+		const classSemesterId =
+			context.semesterId ??
+			selectedYear?.semester.find((item) => item.tipe === 'ganjil')?.id ??
+			null;
+		const [kelasRows, mapelRows] = await Promise.all([
+			db.query.tableKelas.findMany({
+				where: classSemesterId
+					? and(eq(tableKelas.sekolahId, sekolahId), eq(tableKelas.semesterId, classSemesterId))
+					: eq(tableKelas.sekolahId, sekolahId),
+				columns: { id: true, fase: true, nama: true }
+			}),
+			db.query.tableJadwalMapel.findMany({
+				where: eq(tableJadwalMapel.sekolahId, sekolahId),
+				columns: { id: true, jenjang: true, aktif: true }
+			})
+		]);
+		const kelasById = new Map(kelasRows.map((kelas) => [kelas.id, inferKelasJadwalJenjang(kelas)]));
+		const mapelById = new Map(
+			mapelRows.filter((mapel) => mapel.aktif).map((mapel) => [mapel.id, mapel])
+		);
+		const cleanTargets = new Map<string, (typeof targets)[number]>();
+		for (const raw of targets) {
+			const target = {
+				kelasId: Number(raw.kelasId),
+				jadwalMapelId: Number(raw.jadwalMapelId),
+				jpPerMinggu: Number(raw.jpPerMinggu)
+			};
+			const kelasJenjang = kelasById.get(target.kelasId);
+			const mapel = mapelById.get(target.jadwalMapelId);
+			if (
+				!kelasJenjang ||
+				!mapel ||
+				!mapelSesuaiJenjang(mapel.jenjang, kelasJenjang) ||
+				!Number.isInteger(target.jpPerMinggu) ||
+				target.jpPerMinggu < 0 ||
+				target.jpPerMinggu > 50
+			) {
+				return fail(400, { fail: 'Ada target JP yang tidak valid atau tidak sesuai jenjang.' });
+			}
+			cleanTargets.set(`${target.kelasId}|${target.jadwalMapelId}`, target);
+		}
+
+		const now = new Date().toISOString();
+		await db.transaction(async (tx) => {
+			for (const target of cleanTargets.values()) {
+				await tx
+					.delete(tableJadwalTargetJp)
+					.where(
+						and(
+							eq(tableJadwalTargetJp.sekolahId, sekolahId),
+							eq(tableJadwalTargetJp.tahunAjaranId, context.tahunAjaranId!),
+							eq(tableJadwalTargetJp.jenis, context.jenis),
+							eq(tableJadwalTargetJp.kelasId, target.kelasId),
+							eq(tableJadwalTargetJp.jadwalMapelId, target.jadwalMapelId)
+						)
+					);
+				await tx.insert(tableJadwalTargetJp).values({
+					sekolahId,
+					tahunAjaranId: context.tahunAjaranId!,
+					jenis: context.jenis,
+					...target,
+					createdAt: now,
+					updatedAt: now
+				});
+			}
+		});
+
+		return { message: `${cleanTargets.size} target JP berhasil disimpan.` };
+	},
+
+	saveSettings: async ({ request, locals }) => {
+		const sekolahId = locals.sekolah?.id;
+		if (!sekolahId) return fail(400, { fail: 'Pilih sekolah terlebih dahulu' });
+		if (!canManageJadwal(locals.user)) {
+			return fail(403, { fail: 'Anda tidak memiliki izin' });
+		}
+
+		const formData = await request.formData();
+		const jamPelajaranMenit = Number(formData.get('jamPelajaranMenit'));
+		const durasiIstirahat = Number(formData.get('durasiIstirahat'));
+		const durasiUpacara = Number(formData.get('durasiUpacara'));
+		const jamMulai = formData.get('jamMulai')?.toString().trim() ?? '';
+		const isActive = formData.get('isActive') === '1';
+
+		if (!Number.isInteger(jamPelajaranMenit) || jamPelajaranMenit < 1) {
+			return fail(400, { fail: 'Durasi jam pelajaran tidak valid' });
+		}
+		if (!Number.isInteger(durasiIstirahat) || durasiIstirahat < 1) {
+			return fail(400, { fail: 'Durasi istirahat tidak valid' });
+		}
+		if (!Number.isInteger(durasiUpacara) || durasiUpacara < 1) {
+			return fail(400, { fail: 'Durasi upacara tidak valid' });
+		}
+		if (!/^\d{2}:\d{2}$/.test(jamMulai)) {
+			return fail(400, { fail: 'Jam mulai tidak valid' });
+		}
+
+		await ensureJadwalBellSchema();
+		await ensureJadwalKurikulumSchema();
+		await db
+			.insert(tableBellSettings)
+			.values({
+				sekolahId,
+				jamPelajaranMenit,
+				durasiIstirahat,
+				durasiUpacara,
+				jamMulai,
+				isActive,
+				updatedAt: new Date().toISOString()
+			})
+			.onConflictDoUpdate({
+				target: [tableBellSettings.sekolahId],
+				set: { jamPelajaranMenit, durasiIstirahat, durasiUpacara, jamMulai, isActive }
+			});
+
+		return { message: 'Pengaturan jadwal tersimpan' };
+	},
+
+	addKegiatan: async ({ request, locals }) => {
+		const sekolahId = locals.sekolah?.id;
+		if (!sekolahId) return fail(400, { fail: 'Pilih sekolah terlebih dahulu' });
+		if (!canManageJadwal(locals.user)) {
+			return fail(403, { fail: 'Anda tidak memiliki izin' });
+		}
+
+		const formData = await request.formData();
+		const nama = formData.get('nama')?.toString().trim() ?? '';
+		const kode = normalizeJadwalKode(formData.get('kode'));
+		const durasiRaw = formData.get('durasi')?.toString().trim() ?? '';
+		const durasi = durasiRaw ? Number(durasiRaw) : null;
+
+		if (!nama || !kode) return fail(400, { fail: 'Nama dan kode wajib diisi' });
+		if (kode.length > 12) return fail(400, { fail: 'Kode maksimal 12 karakter' });
+		if (durasi !== null && (!Number.isInteger(durasi) || durasi < 1)) {
+			return fail(400, { fail: 'Durasi harus berupa angka positif' });
+		}
+
+		await ensureJadwalBellSchema();
+		await ensureJadwalKurikulumSchema();
+		const existing = await db.query.tableKegiatanCustom.findFirst({
+			where: and(eq(tableKegiatanCustom.sekolahId, sekolahId), eq(tableKegiatanCustom.kode, kode))
+		});
+		if (existing) return fail(400, { fail: 'Kode kegiatan sudah digunakan' });
+
+		await db.insert(tableKegiatanCustom).values({ sekolahId, nama, kode, durasi });
+		return { message: 'Kegiatan ditambahkan' };
+	},
+
+	deleteKegiatan: async ({ request, locals }) => {
+		const sekolahId = locals.sekolah?.id;
+		if (!sekolahId) return fail(400, { fail: 'Pilih sekolah terlebih dahulu' });
+		if (!canManageJadwal(locals.user)) {
+			return fail(403, { fail: 'Anda tidak memiliki izin' });
+		}
+
+		const formData = await request.formData();
+		const kode = normalizeJadwalKode(formData.get('kode'));
+		if (!kode) return fail(400, { fail: 'Kode kegiatan tidak valid' });
+
+		await ensureJadwalBellSchema();
+		await ensureJadwalKurikulumSchema();
+		await db
+			.delete(tableKegiatanCustom)
+			.where(and(eq(tableKegiatanCustom.sekolahId, sekolahId), eq(tableKegiatanCustom.kode, kode)));
+		return { message: 'Kegiatan dihapus' };
+	},
+
+	saveJadwal: async ({ request, locals }) => {
+		const sekolahId = locals.sekolah?.id;
+		if (!sekolahId) return fail(400, { fail: 'Pilih sekolah terlebih dahulu' });
+		if (!canManageJadwal(locals.user)) {
+			return fail(403, { fail: 'Anda tidak memiliki izin' });
+		}
+
+		const formData = await request.formData();
+		const academic = await resolveSekolahAcademicContext(sekolahId);
+		const context = selectJadwalContext(academic, {
+			tahunAjaranId: formData.get('tahunAjaranId')?.toString(),
+			jenis: formData.get('jenis')?.toString()
+		});
+		if (!context.tahunAjaranId) return fail(400, { fail: 'Tahun ajaran belum tersedia.' });
+		const scheduleSemesterId =
+			context.semesterId ??
+			academic.tahunAjaranList
+				.find((item) => item.id === context.tahunAjaranId)
+				?.semester.find((item) => item.tipe === 'ganjil')?.id ??
+			null;
+		if (!scheduleSemesterId) return fail(400, { fail: 'Semester tahun ajaran belum tersedia.' });
+
+		const scheduleTemplate = await ensureJadwalPelajaranTemplate(sekolahId, context);
+		const scheduleTemplateIds = scheduleTemplate.contextTemplateIds;
+		const settingFoundation = await ensureDefaultJadwalFoundation(sekolahId, {
+			...context,
+			jenjang: 'srd'
+		});
+		await ensureJadwalKegiatanTerintegrasi();
+		const settingTemplateIds = settingFoundation.templates.map((template) => template.id);
+		const raw = formData.get('data')?.toString() ?? '';
+		let entries: Array<{ hari: string; jamKe: number; kelasId: number; kodeKegiatan: string }>;
+		try {
+			entries = JSON.parse(raw);
+		} catch {
+			return fail(400, { fail: 'Format jadwal tidak valid' });
+		}
+
+		const [kelasRows, mapelRows, kegiatanRows, jamRows, targetJpRows] = await Promise.all([
+			db.query.tableKelas.findMany({
+				where: eq(tableKelas.sekolahId, sekolahId),
+				columns: { id: true, nama: true, fase: true, semesterId: true }
+			}),
+			db.query.tableJadwalMapel.findMany({
+				where: eq(tableJadwalMapel.sekolahId, sekolahId),
+				columns: {
+					id: true,
+					kode: true,
+					nama: true,
+					jenjang: true,
+					aktif: true,
+					jpPerMinggu: true,
+					guruPegawaiId: true
+				},
+				with: { guru: { columns: { nama: true } } }
+			}),
+			db.query.tableJadwalKegiatan.findMany({
+				where: eq(tableJadwalKegiatan.sekolahId, sekolahId)
+			}),
+			settingTemplateIds.length
+				? db.query.tableJadwalJam.findMany({
+						where: and(
+							eq(tableJadwalJam.sekolahId, sekolahId),
+							inArray(tableJadwalJam.templateId, settingTemplateIds)
+						)
+					})
+				: [],
+			db.query.tableJadwalTargetJp.findMany({
+				where: and(
+					eq(tableJadwalTargetJp.sekolahId, sekolahId),
+					eq(tableJadwalTargetJp.tahunAjaranId, context.tahunAjaranId),
+					eq(tableJadwalTargetJp.jenis, context.jenis)
+				),
+				columns: { kelasId: true, jadwalMapelId: true, jpPerMinggu: true }
+			})
+		]);
+		const kelasIds = new Set(kelasRows.map((row) => row.id));
+		const kelasNama = new Map(kelasRows.map((row) => [row.id, row.nama]));
+		const mapelByCode = new Map<string, typeof mapelRows>();
+		for (const mapel of mapelRows) {
+			if (!mapel.aktif || !mapel.kode) continue;
+			const kode = AGAMA_MAPEL_NAMES.has(mapel.nama) ? 'PAPB' : normalizeJadwalKode(mapel.kode);
+			const group = mapelByCode.get(kode) ?? [];
+			group.push(mapel);
+			mapelByCode.set(kode, group);
+		}
+		const kegiatanByCode = new Map(
+			kegiatanRows
+				.filter((row) => row.aktif)
+				.map((row) => [normalizeJadwalKegiatanKode(row.kode), row])
+		);
+		const jamBySlot = new Map(
+			jamRows.map((slot) => [`${slot.jenjang}|${slot.hari}|${slot.jamKe}`, slot])
+		);
+		const kelasById = new Map(
+			kelasRows.map((kelas) => [kelas.id, { ...kelas, jenjang: inferKelasJadwalJenjang(kelas) }])
+		);
+		const activeSlotKeys = new Set(
+			jamRows
+				.filter((slot) => slot.aktif)
+				.map((slot) => `${slot.jenjang}|${slot.hari}|${slot.jamKe}`)
+		);
+
+		const cleaned = entries
+			.map((entry) => {
+				const kode = normalizeJadwalKode(entry.kodeKegiatan);
+				const kegiatanKode = normalizeJadwalKegiatanKode(entry.kodeKegiatan);
+				return {
+					hari: entry.hari,
+					jamKe: Number(entry.jamKe),
+					kelasId: Number(entry.kelasId),
+					kodeKegiatan: kegiatanByCode.has(kegiatanKode) ? kegiatanKode : kode
+				};
+			})
+			.filter(
+				(entry) =>
+					HARI_LIST.includes(entry.hari) &&
+					Number.isInteger(entry.jamKe) &&
+					entry.jamKe > 0 &&
+					entry.jamKe <= 30 &&
+					kelasIds.has(entry.kelasId) &&
+					entry.kodeKegiatan
+			);
+
+		for (const entry of cleaned) {
+			const kelas = kelasById.get(entry.kelasId);
+			if (!kelas) continue;
+			const candidates = mapelByCode.get(entry.kodeKegiatan) ?? [];
+			const slot = jamBySlot.get(kelas.jenjang + '|' + entry.hari + '|' + entry.jamKe);
+			if (candidates.length && !canPlaceJadwalItem(slot?.tipe, 'mapel')) {
+				return fail(400, {
+					fail:
+						'Mata pelajaran ' +
+						entry.kodeKegiatan +
+						' hanya dapat ditempatkan pada slot bertipe Pelajaran. Ubah tipe slot di Pengaturan Jadwal terlebih dahulu.'
+				});
+			}
+			if (
+				candidates.length &&
+				!candidates.some((mapel) => mapelSesuaiJenjang(mapel.jenjang, kelas.jenjang))
+			) {
+				return fail(400, {
+					fail: `Mata pelajaran ${entry.kodeKegiatan} tidak tersedia untuk kelas ${kelas.nama} (${kelas.jenjang.toUpperCase()}).`
+				});
+			}
+			if (!activeSlotKeys.has(`${kelas.jenjang}|${entry.hari}|${entry.jamKe}`)) {
+				return fail(400, {
+					fail: `Jam ke-${entry.jamKe} pada ${entry.hari} tidak aktif untuk kelas ${kelas.nama} (${kelas.jenjang.toUpperCase()}).`
+				});
+			}
+		}
+
+		const resolved = cleaned.map((entry) => {
+			const kelas = kelasById.get(entry.kelasId)!;
+			const candidates = (mapelByCode.get(entry.kodeKegiatan) ?? []).filter((mapel) =>
+				mapelSesuaiJenjang(mapel.jenjang, kelas.jenjang)
+			);
+			const guruIds = [...new Set(candidates.map((mapel) => mapel.guruPegawaiId).filter(Boolean))];
+			const match = candidates.length === 1 ? candidates[0] : null;
+			const guruId = guruIds.length === 1 ? Number(guruIds[0]) : null;
+			const kegiatan = kegiatanByCode.get(entry.kodeKegiatan);
+			const jam = jamBySlot.get(`${kelas.jenjang}|${entry.hari}|${entry.jamKe}`);
+			return {
+				...entry,
+				jadwalMapelId: match?.id ?? null,
+				guruPegawaiId: guruId,
+				jamId: jam?.id ?? null,
+				kegiatanId: kegiatan?.id ?? null,
+				tipe: match
+					? 'pelajaran'
+					: kegiatan?.kategori === 'istirahat'
+						? 'istirahat'
+						: kegiatan
+							? 'kegiatan'
+							: (jam?.tipe ?? 'kosong'),
+				guruNama: guruId
+					? (candidates.find((mapel) => mapel.guruPegawaiId === guruId)?.guru?.nama ?? 'Guru')
+					: null
+			};
+		});
+		const teacherSlots = new Map<string, typeof resolved>();
+		for (const entry of resolved) {
+			if (!entry.guruPegawaiId) continue;
+			const key = entry.hari + '|' + entry.jamKe + '|' + entry.guruPegawaiId;
+			const group = teacherSlots.get(key) ?? [];
+			group.push(entry);
+			teacherSlots.set(key, group);
+		}
+		const warnings: string[] = [];
+		for (const group of teacherSlots.values()) {
+			const classIds = [...new Set(group.map((entry) => entry.kelasId))];
+			if (classIds.length < 2) continue;
+			const first = group[0];
+			const classes = classIds.map((id) => kelasNama.get(id) ?? 'Kelas ' + id).join(', ');
+			warnings.push(
+				'Bentrok guru ' +
+					first.guruNama +
+					': ' +
+					first.hari +
+					' jam ke-' +
+					first.jamKe +
+					' di ' +
+					classes +
+					'.'
+			);
+		}
+		const jpResults = calculateWeeklyJp({
+			classes: kelasRows
+				.filter((kelas) => kelas.semesterId === scheduleSemesterId)
+				.map((kelas) => ({
+					id: kelas.id,
+					nama: kelas.nama,
+					jenjang: inferKelasJadwalJenjang(kelas)
+				})),
+			targets: mapelRows
+				.filter((mapel) => mapel.aktif)
+				.map((mapel) => ({
+					kode: AGAMA_MAPEL_NAMES.has(mapel.nama) ? 'PAPB' : normalizeJadwalKode(mapel.kode),
+					nama: mapel.nama,
+					jenjang: mapel.jenjang,
+					jpPerMinggu: mapel.jpPerMinggu ?? 0
+				}))
+				.concat(
+					targetJpRows.flatMap((target) => {
+						const mapel = mapelRows.find((item) => item.id === target.jadwalMapelId);
+						if (!mapel?.aktif) return [];
+						return [
+							{
+								kelasId: target.kelasId,
+								kode: AGAMA_MAPEL_NAMES.has(mapel.nama) ? 'PAPB' : normalizeJadwalKode(mapel.kode),
+								nama: mapel.nama,
+								jenjang: mapel.jenjang,
+								jpPerMinggu: target.jpPerMinggu
+							}
+						];
+					})
+				),
+			slots: jamRows,
+			entries: resolved.map((entry) => ({
+				hari: entry.hari,
+				jamKe: entry.jamKe,
+				kelasId: entry.kelasId,
+				kode: entry.kodeKegiatan
+			}))
+		});
+		const jpSummary = summarizeWeeklyJp(jpResults);
+		if (jpSummary.kurang || jpSummary.lebih) {
+			warnings.push(
+				`Target JP mingguan: ${jpSummary.kurang} kurang, ${jpSummary.tepat} tepat, ${jpSummary.lebih} lebih.`
+			);
+		}
+
+		await ensureJadwalBellSchema();
+		await ensureJadwalKurikulumSchema();
+		await db.transaction(async (tx) => {
+			await tx
+				.delete(tableJadwalPelajaran)
+				.where(
+					and(
+						eq(tableJadwalPelajaran.sekolahId, sekolahId),
+						inArray(tableJadwalPelajaran.templateId, scheduleTemplateIds)
+					)
+				);
+			if (cleaned.length) {
+				await tx.insert(tableJadwalPelajaran).values(
+					resolved.map((entry) => ({
+						sekolahId,
+						templateId: scheduleTemplate.id,
+						semesterId: scheduleSemesterId,
+						hari: entry.hari,
+						jamKe: entry.jamKe,
+						kelasId: entry.kelasId,
+						kodeKegiatan: entry.kodeKegiatan,
+						jamId: entry.jamId,
+						tipe: entry.tipe,
+						kegiatanId: entry.kegiatanId,
+						jadwalMapelId: entry.jadwalMapelId,
+						guruPegawaiId: entry.guruPegawaiId,
+						updatedAt: new Date().toISOString()
+					}))
+				);
+			}
+		});
+
+		return {
+			message: 'Jadwal pelajaran tersimpan',
+			warnings,
+			jpSummary,
+			savedEntries: resolved.map(({ hari, jamKe, kelasId, kodeKegiatan }) => ({
+				hari,
+				jamKe,
+				kelasId,
+				kodeKegiatan
+			}))
+		};
+	}
+};
+import { canManageJadwal } from '$lib/server/jadwal';

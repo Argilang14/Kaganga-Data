@@ -1,0 +1,73 @@
+node_modules
+
+# Output
+.output
+.vercel
+.netlify
+.wrangler
+/.svelte-kit
+/build
+/dist/windows
+/dist/backups
+/dist/release-tests
+
+# OS
+.DS_Store
+Thumbs.db
+NUL
+
+# Env
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Local development artifacts
+/.pnpm-store
+/.release-tests
+/dev-server-*.log
+/dev-server.out.log
+/dev-server.err.log
+/dev-server-*.pid
+/gh-auth.*.log
+/run-dev-*.cmd
+/vite-*.log
+/server-*.log
+/server-*.out.log
+/server-*.err.log
+/.qa-responsive
+/.qa-responsive-profile
+/tmp
+/output
+
+# Our custom
+/src/lib/icons/__icons.d.ts
+/data/*.sqlite3
+/data/*.sqlite3-shm
+/data/*.sqlite3-wal
+/data/.kaganga-server-instance
+/data/backups
+/data/*.attachments.json
+# Uploaded photos
+/data/uploads
+# Bell sounds
+/data/sounds
+
+#cert
+/installer/cert
+
+# sync scripts
+/installer/scripts/ensure-columns.mjs
+/installer/scripts/fix-drizzle-indexes.mjs
+/installer/scripts/grant-admin-permissions.mjs
+/installer/scripts/migrate-installed-db.mjs
+/installer/scripts/notify-server-reload.mjs
+/installer/scripts/seed-default-admin.mjs
+/installer/scripts/start-build.mjs
+
+# csrf
+/data/csrf-origins.txt

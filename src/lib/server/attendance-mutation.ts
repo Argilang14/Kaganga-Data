@@ -8,7 +8,7 @@ import {
 	tableMurid
 } from './db/schema';
 import db from './db';
-import { studentAccessCondition } from './student-access';
+import { studentAccessCondition } from './attendance-student-access';
 import { activeMuridFilter } from './murid-query';
 import { resolveSekolahAcademicContext } from './db/academic';
 import { todayLocalDate, type AbsensiStatus } from './absensi-digital';

@@ -1,6 +1,11 @@
 import db from '$lib/server/db';
+import { createHash } from 'node:crypto';
 import { ensureUjianSchema } from '$lib/server/db/ensure-ujian';
 import { writeAuditLog } from '$lib/server/audit-log';
+import {
+	getClassEducationIdentity,
+	getStudentEducationIdentity
+} from '$lib/server/education-units';
 import {
 	examParticipantNumber,
 	isValidExamNpsn,
@@ -20,6 +25,55 @@ const integer = (form: FormData, key: string) => {
 	return Number.isInteger(value) && value > 0 ? value : null;
 };
 const statuses = ['draft', 'aktif', 'selesai'] as const;
+const planHash = (plan: Awaited<ReturnType<typeof renumberPlan>>) =>
+	createHash('sha256').update(JSON.stringify(plan)).digest('hex');
+
+async function renumberPlan(sessionId: number, sekolahId: number) {
+	const session = await sessionForSchool(sessionId, sekolahId);
+	if (!session || session.status !== 'draft')
+		throw new Error('Penyusunan ulang hanya tersedia untuk sesi draf.');
+	const result = await db.$client.execute({
+		sql: 'SELECT id,murid_id,nomor_peserta,murid_nama_snapshot AS nama,kelas_nama_snapshot AS kelas,sekolah_nama_snapshot,sekolah_npsn_snapshot,jenjang_snapshot,satuan_id_snapshot FROM ujian_peserta WHERE session_id=? ORDER BY id',
+		args: [sessionId]
+	});
+	const participants = participantsInClassAdditionOrder(
+		result.rows.map((row) => ({
+			id: Number(row.id),
+			murid_id: row.murid_id,
+			sekolah_nama_snapshot: row.sekolah_nama_snapshot,
+			sekolah_npsn_snapshot: row.sekolah_npsn_snapshot,
+			jenjang_snapshot: row.jenjang_snapshot,
+			satuan_id_snapshot: row.satuan_id_snapshot,
+			nomor_peserta: row.nomor_peserta,
+			nama: row.nama,
+			kelas: row.kelas == null ? null : String(row.kelas)
+		}))
+	);
+	const sequences = new Map<string, number>();
+	const plan = [];
+	for (const row of participants) {
+		const identity =
+			row.sekolah_nama_snapshot && row.sekolah_npsn_snapshot
+				? {
+						nama: String(row.sekolah_nama_snapshot),
+						npsn: String(row.sekolah_npsn_snapshot),
+						jenjang: String(row.jenjang_snapshot || ''),
+						satuanId: row.satuan_id_snapshot == null ? null : Number(row.satuan_id_snapshot)
+					}
+				: await getStudentEducationIdentity(sekolahId, Number(row.murid_id));
+		const next = (sequences.get(identity.npsn) ?? 0) + 1;
+		sequences.set(identity.npsn, next);
+		plan.push({
+			id: row.id,
+			nama: String(row.nama),
+			kelas: row.kelas,
+			before: row.nomor_peserta == null ? '' : String(row.nomor_peserta),
+			after: examParticipantNumber(identity.npsn, next),
+			identity
+		});
+	}
+	return plan;
+}
 
 async function sessionForSchool(sessionId: number, sekolahId: number) {
 	const result = await db.$client.execute({
@@ -165,6 +219,20 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 };
 
 export const actions: Actions = {
+	previewRenumber: async ({ request, locals }) => {
+		authority('ujian_manage');
+		const form = await request.formData();
+		const sessionId = integer(form, 'sessionId');
+		if (!sessionId || !locals.sekolah) return fail(400, { fail: 'Sesi ujian tidak valid.' });
+		try {
+			const rows = await renumberPlan(sessionId, locals.sekolah.id);
+			return { renumberPreview: { sessionId, rows, hash: planHash(rows) } };
+		} catch (cause) {
+			return fail(400, {
+				fail: cause instanceof Error ? cause.message : 'Identitas peserta belum lengkap.'
+			});
+		}
+	},
 	saveSession: async ({ request, locals }) => {
 		authority('ujian_manage');
 		await ensureUjianSchema();
@@ -260,13 +328,11 @@ export const actions: Actions = {
 			return fail(400, { fail: 'Kelas tidak memiliki murid yang dapat ditambahkan.' });
 		const now = new Date().toISOString();
 		const room = text(form, 'room', 50) || null;
+		const identity = await getClassEducationIdentity(sekolahId, classId);
 		let added = 0;
 		const tx = await db.$client.transaction('write');
 		try {
-			const school = (
-				await tx.execute({ sql: 'SELECT npsn FROM sekolah WHERE id=?', args: [sekolahId] })
-			).rows[0];
-			const npsn = String(school?.npsn ?? '').trim();
+			const npsn = identity.npsn;
 			if (!isValidExamNpsn(npsn))
 				return fail(400, {
 					fail: 'Lengkapi NPSN sekolah aktif dengan 8 digit di Data Sekolah sebelum menomori peserta.'
@@ -278,12 +344,14 @@ export const actions: Actions = {
 			const existingIds = new Set(existing.rows.map((row) => Number(row.murid_id)));
 			let sequence = nextExamSequence(
 				npsn,
-				existing.rows.map((row) => (row.nomor_peserta == null ? null : String(row.nomor_peserta)))
+				existing.rows
+					.filter((row) => String(row.nomor_peserta ?? '').startsWith(npsn))
+					.map((row) => (row.nomor_peserta == null ? null : String(row.nomor_peserta)))
 			);
 			for (const row of murid.rows) {
 				if (existingIds.has(Number(row.id))) continue;
 				await tx.execute({
-					sql: `INSERT INTO ujian_peserta (session_id,murid_id,nomor_peserta,ruang,username_lms,murid_nama_snapshot,nis_snapshot,nisn_snapshot,kelas_nama_snapshot,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+					sql: `INSERT INTO ujian_peserta (session_id,murid_id,nomor_peserta,ruang,username_lms,murid_nama_snapshot,nis_snapshot,nisn_snapshot,kelas_nama_snapshot,created_at,satuan_id_snapshot,sekolah_nama_snapshot,sekolah_npsn_snapshot,jenjang_snapshot,kelas_id_snapshot) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 					args: [
 						sessionId,
 						Number(row.id),
@@ -294,7 +362,12 @@ export const actions: Actions = {
 						row.nis,
 						row.nisn,
 						row.kelas,
-						now
+						now,
+						identity.satuanId,
+						identity.nama,
+						identity.npsn,
+						identity.jenjang,
+						classId
 					]
 				});
 				sequence += 1;
@@ -326,19 +399,39 @@ export const actions: Actions = {
 		const sekolahId = locals.sekolah?.id;
 		const form = await request.formData();
 		const sessionId = integer(form, 'sessionId');
+		if (form.get('confirmed') !== 'yes')
+			return fail(400, {
+				fail: 'Periksa pratinjau dan konfirmasi penyusunan ulang nomor terlebih dahulu.'
+			});
 		if (!sekolahId || !sessionId || !(await sessionForSchool(sessionId, sekolahId)))
 			return fail(404, { fail: 'Sesi ujian tidak ditemukan.' });
+		if ((await sessionForSchool(sessionId, sekolahId))?.status !== 'draft')
+			return fail(400, { fail: 'Nomor peserta hanya dapat disusun ulang pada sesi draf.' });
+		if (text(form, 'previewHash', 64) !== planHash(await renumberPlan(sessionId, sekolahId)))
+			return fail(409, {
+				fail: 'Pratinjau nomor sudah berubah. Periksa pratinjau kembali sebelum menerapkan.'
+			});
+		const source = await db.$client.execute({
+			sql: 'SELECT id,murid_id,kelas_nama_snapshot AS kelas,sekolah_nama_snapshot,sekolah_npsn_snapshot,jenjang_snapshot,satuan_id_snapshot FROM ujian_peserta WHERE session_id=? ORDER BY id',
+			args: [sessionId]
+		});
+		const identities = new Map<number, Awaited<ReturnType<typeof getStudentEducationIdentity>>>();
+		for (const row of source.rows) {
+			const identity =
+				row.sekolah_nama_snapshot && row.sekolah_npsn_snapshot
+					? {
+							nama: String(row.sekolah_nama_snapshot),
+							npsn: String(row.sekolah_npsn_snapshot),
+							jenjang: String(row.jenjang_snapshot || ''),
+							satuanId: row.satuan_id_snapshot == null ? null : Number(row.satuan_id_snapshot)
+						}
+					: await getStudentEducationIdentity(sekolahId, Number(row.murid_id));
+			if (!isValidExamNpsn(identity.npsn)) return fail(400, { fail: 'NPSN peserta belum valid.' });
+			identities.set(Number(row.id), identity);
+		}
 		const tx = await db.$client.transaction('write');
-		let count = 0;
+		let count: number;
 		try {
-			const school = (
-				await tx.execute({ sql: 'SELECT npsn FROM sekolah WHERE id=?', args: [sekolahId] })
-			).rows[0];
-			const npsn = String(school?.npsn ?? '').trim();
-			if (!isValidExamNpsn(npsn))
-				return fail(400, {
-					fail: 'Lengkapi NPSN sekolah aktif dengan 8 digit di Data Sekolah sebelum menomori peserta.'
-				});
 			const result = await tx.execute({
 				sql: 'SELECT id, kelas_nama_snapshot AS kelas FROM ujian_peserta WHERE session_id=? ORDER BY id',
 				args: [sessionId]
@@ -350,10 +443,23 @@ export const actions: Actions = {
 				}))
 			);
 			const now = new Date().toISOString();
-			for (const [index, participant] of participants.entries()) {
+			const sequences = new Map<string, number>();
+			for (const participant of participants) {
+				const identity = identities.get(participant.id)!;
+				const sequence = (sequences.get(identity.npsn) ?? 0) + 1;
+				sequences.set(identity.npsn, sequence);
 				await tx.execute({
-					sql: 'UPDATE ujian_peserta SET nomor_peserta=?, updated_at=? WHERE id=? AND session_id=?',
-					args: [examParticipantNumber(npsn, index + 1), now, participant.id, sessionId]
+					sql: 'UPDATE ujian_peserta SET nomor_peserta=?, sekolah_nama_snapshot=?, sekolah_npsn_snapshot=?, jenjang_snapshot=?, satuan_id_snapshot=?, updated_at=? WHERE id=? AND session_id=?',
+					args: [
+						examParticipantNumber(identity.npsn, sequence),
+						identity.nama,
+						identity.npsn,
+						identity.jenjang,
+						identity.satuanId,
+						now,
+						participant.id,
+						sessionId
+					]
 				});
 			}
 			count = participants.length;

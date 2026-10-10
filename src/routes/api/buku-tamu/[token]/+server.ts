@@ -3,6 +3,7 @@ import { pdfFilename, pdfDisposition } from '$lib/pdf-filename';
 import { and, asc, eq, like, or, sql } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 import db from '$lib/server/db';
+import { isIntegratedSchool } from '$lib/education-unit';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { tableBukuTamu, tableSekolah } from '$lib/server/db/schema';
 import { getBukuTamuSettingsByToken, isBukuTamuUnlocked } from '$lib/server/buku-tamu-pass';
@@ -132,8 +133,7 @@ export const GET = (async ({ params, locals, url }) => {
 		const buffer = await workbook.xlsx.writeBuffer();
 		return new Response(buffer as unknown as BodyInit, {
 			headers: {
-				'content-type':
-					'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+				'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 				'content-disposition': `attachment; filename="buku-tamu-${start}-${end}.xlsx"`,
 				'cache-control': 'no-store'
 			}
@@ -141,7 +141,14 @@ export const GET = (async ({ params, locals, url }) => {
 	}
 
 	const sekolah = await db.query.tableSekolah.findFirst({
-		columns: { nama: true, npsn: true, naungan: true, email: true },
+		columns: {
+			nama: true,
+			npsn: true,
+			naungan: true,
+			email: true,
+			jenjangPendidikan: true,
+			jenjangVariant: true
+		},
 		where: eq(tableSekolah.id, sekolahId)
 	});
 	const [logoUrl, logoDinasUrl, printRows] = await Promise.all([
@@ -166,7 +173,7 @@ export const GET = (async ({ params, locals, url }) => {
 	const html = renderBukuTamuHTML({
 		sekolah: {
 			nama: sekolah?.nama ?? '',
-			npsn: sekolah?.npsn ?? '',
+			npsn: sekolah && !isIntegratedSchool(sekolah) ? sekolah.npsn : '',
 			naungan: sekolah?.naungan ?? 'kemendikbud',
 			alamat: composeAlamat(locals.sekolah),
 			email: sekolah?.email ?? '',

@@ -1,6 +1,7 @@
 import { normalizeJadwalKegiatanKode, normalizeJadwalKode } from '$lib/jadwal-slots';
 import { error, redirect } from '@sveltejs/kit';
 import db from '$lib/server/db';
+import { getDocumentEducationIdentity } from '$lib/server/education-units';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { ensureJadwalKegiatanTerintegrasi } from '$lib/server/db/reconcile-jadwal-kegiatan';
 import {
@@ -244,7 +245,7 @@ export async function getJadwalPelajaranPreviewPayload({
 		meta: { title: 'Jadwal Pelajaran - ' + jenjangLabel },
 		jadwalPelajaranData: {
 			sekolah: {
-				nama: sekolah?.nama ?? sekolahAktif.nama ?? 'Sekolah',
+				nama: (await getDocumentEducationIdentity(sekolahAktif, { jenjang: selectedJenjang })).nama,
 				naungan: sekolahAktif.naungan,
 				alamat: composeAlamat(sekolahAktif),
 				email: sekolahAktif.email,

@@ -6,7 +6,7 @@ import { error, redirect } from '@sveltejs/kit';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { canAttendance } from '$lib/attendance-access';
-import { accessibleClassIds } from './student-access';
+import { accessibleClassIds } from './attendance-student-access';
 
 export const ABSENSI_PERMISSION = 'administrasi_absensi' as UserPermission;
 export const ABSENSI_STATUSES = ['hadir', 'terlambat', 'sakit', 'izin', 'alfa'] as const;

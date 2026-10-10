@@ -2,6 +2,7 @@ import db from '$lib/server/db';
 import { ensureAsesmenSumatifSchema } from '$lib/server/db/ensure-asesmen-sumatif';
 import { tableAsesmenSumatif, tableMataPelajaran, tableMurid } from '$lib/server/db/schema';
 import { and, asc, eq, inArray } from 'drizzle-orm';
+import { activeMuridFilter } from './murid-query';
 
 function formatScore(value: number | null | undefined) {
 	if (value == null || Number.isNaN(value)) return null;
@@ -144,14 +145,20 @@ export type NilaiAkhirRekap = {
 
 export async function computeNilaiAkhirRekap({
 	sekolahId,
-	kelasId
+	kelasId,
+	activeOnly = false
 }: {
 	sekolahId: number;
 	kelasId: number;
+	activeOnly?: boolean;
 }): Promise<NilaiAkhirRekap> {
 	const muridRecords = await db.query.tableMurid.findMany({
 		columns: { id: true, nama: true, agama: true },
-		where: and(eq(tableMurid.sekolahId, sekolahId), eq(tableMurid.kelasId, kelasId)),
+		where: and(
+			eq(tableMurid.sekolahId, sekolahId),
+			eq(tableMurid.kelasId, kelasId),
+			activeOnly ? activeMuridFilter() : undefined
+		),
 		orderBy: asc(tableMurid.nama)
 	});
 

@@ -47,6 +47,12 @@ export function canViewAttendanceActivity(user: AttendanceUser, category?: strin
 	return user?.type !== 'tim_dapur' || hasSchoolWideOperationalAccess(user) || category === 'makan';
 }
 
+export function hasSchoolWideAttendanceStudentAccess(user: AttendanceUser, sekolahId: number) {
+	return (
+		user?.type === 'wali_asrama' && user.sekolahId === sekolahId && canAttendance(user, 'lihat')
+	);
+}
+
 export type AttendanceActivityContext = { kode?: string; tanggal?: string };
 
 export function canAttendActivity(

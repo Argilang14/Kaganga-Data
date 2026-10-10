@@ -16,7 +16,7 @@ import {
 	requireAbsensiKegiatanAccess
 } from '$lib/server/absensi-kegiatan';
 import db from '$lib/server/db';
-import { studentAccessCondition } from '$lib/server/student-access';
+import { studentAccessCondition } from '$lib/server/attendance-student-access';
 import { saveAttendance } from '$lib/server/attendance-mutation';
 import { canAttendance, attendanceDateAllowed } from '$lib/attendance-access';
 import {

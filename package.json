@@ -1,7 +1,7 @@
 {
 	"name": "kaganga",
 	"private": true,
-	"version": "2.2.4",
+	"version": "2.2.5",
 	"type": "module",
 	"scripts": {
 		"db:push": "node scripts/migrate-installed-db.mjs",

@@ -1,6 +1,10 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, eq, inArray, lte, gt, ne, or, isNull } from 'drizzle-orm';
-import { canAttendance, canAttendActivity } from '$lib/attendance-access';
+import {
+	canAttendance,
+	canAttendActivity,
+	hasSchoolWideAttendanceStudentAccess
+} from '$lib/attendance-access';
 import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 import {
 	buildAttendanceSummary,
@@ -14,7 +18,7 @@ import { tableAbsensiKegiatan, tableIzinPulangMurid, tableMurid } from './db/sch
 import { loadAbsensiKelasOptions, todayLocalDate } from './absensi-digital';
 import { loadKegiatanAbsensiOptions } from './absensi-kegiatan';
 import { activeMuridFilter } from './murid-query';
-import { studentAccessCondition } from './student-access';
+import { studentAccessCondition } from './attendance-student-access';
 
 export async function loadSummaryOptions(locals: App.Locals, date = todayLocalDate()) {
 	const { user, sekolah } = locals;
@@ -28,6 +32,8 @@ export async function loadSummaryOptions(locals: App.Locals, date = todayLocalDa
 	const kegiatanList = (await loadKegiatanAbsensiOptions(sekolah.id, true, user)).filter((item) =>
 		canAttendActivity(user, item.aksesEdit, item.kategori, { kode: item.kode, tanggal: date })
 	);
+	const allStudents =
+		hasSchoolWideOperationalAccess(user) || hasSchoolWideAttendanceStudentAccess(user, sekolah.id);
 	return {
 		semesterId: academic.activeSemesterId,
 		tahunAjaranId: academic.activeTahunAjaranId,
@@ -37,9 +43,8 @@ export async function loadSummaryOptions(locals: App.Locals, date = todayLocalDa
 			jenjang: inferSummaryLevel(item, sekolah.jenjangPendidikan)
 		})),
 		activities: kegiatanList.map((item) => ({ id: item.id, nama: item.nama })),
-		canAllScopes: hasSchoolWideOperationalAccess(user),
-		restrictedStudents:
-			!hasSchoolWideOperationalAccess(user) && ['wali_asuh', 'wali_asrama'].includes(user.type),
+		canAllScopes: allStudents,
+		restrictedStudents: !allStudents && ['wali_asuh', 'wali_asrama'].includes(user.type),
 		today: todayLocalDate()
 	};
 }

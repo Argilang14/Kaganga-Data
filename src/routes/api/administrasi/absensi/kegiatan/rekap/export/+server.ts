@@ -3,9 +3,9 @@ import {
 	loadAbsensiKelasOptions,
 	normalizeDateInput,
 	parsePositiveInteger,
-	resolveKelasId,
 	todayLocalDate
 } from '$lib/server/absensi-digital';
+import { attendanceReportClasses } from '$lib/attendance-report-navigation';
 import {
 	ABSENSI_KEGIATAN_STATUS_LABELS,
 	ABSENSI_KEGIATAN_STATUSES,
@@ -15,7 +15,7 @@ import {
 	requireAbsensiKegiatanAccess
 } from '$lib/server/absensi-kegiatan';
 import db from '$lib/server/db';
-import { studentAccessCondition } from '$lib/server/student-access';
+import { studentAccessCondition } from '$lib/server/attendance-student-access';
 import { canAttendance } from '$lib/attendance-access';
 import { tableAbsensiKegiatan, tableMurid } from '$lib/server/db/schema';
 import { json } from '@sveltejs/kit';
@@ -58,7 +58,11 @@ export async function GET({ locals, url }) {
 	);
 	const requestedKegiatanId = parsePositiveInteger(url.searchParams.get('kegiatan_id'));
 	const { academic, kelasList } = await loadAbsensiKelasOptions(sekolahId, locals.user);
-	const kelasId = resolveKelasId(kelasList, parsePositiveInteger(url.searchParams.get('kelas_id')));
+	const { kelasId, kelasIds, allKelas } = attendanceReportClasses(
+		kelasList,
+		url.searchParams.get('kelas_id')
+	);
+	const kelasNames = new Map(kelasList.map((item) => [item.id, item.nama]));
 	const kelas = kelasList.find((item) => item.id === kelasId);
 	const kegiatanList = await loadKegiatanAbsensiOptions(sekolahId, true, locals.user);
 	const kegiatanId =
@@ -67,31 +71,33 @@ export async function GET({ locals, url }) {
 			: null;
 	const selectedKegiatan = kegiatanList.find((kegiatan) => kegiatan.id === kegiatanId);
 
-	if (!academic.activeSemesterId || !kelasId) {
+	if (!academic.activeSemesterId || !kelasIds.length) {
 		return json({ message: 'Kelas atau semester aktif belum tersedia.' }, { status: 400 });
 	}
 
 	const muridList = await db.query.tableMurid.findMany({
-		columns: { id: true, nama: true, nis: true, nisn: true },
+		columns: { id: true, nama: true, nis: true, nisn: true, kelasId: true },
 		where: and(
 			eq(tableMurid.sekolahId, sekolahId),
 			eq(tableMurid.semesterId, academic.activeSemesterId),
-			eq(tableMurid.kelasId, kelasId),
+			inArray(tableMurid.kelasId, kelasIds),
 			await studentAccessCondition(locals.user, sekolahId)
 		),
-		orderBy: asc(tableMurid.nama)
+		orderBy: [asc(tableMurid.kelasId), asc(tableMurid.nama)]
 	});
 	const muridIds = muridList.map((murid) => murid.id);
 	if (muridIds.length && canAttendance(locals.user, 'pengaturan')) {
 		const kegiatanIds = kegiatanId ? [kegiatanId] : kegiatanList.map((kegiatan) => kegiatan.id);
-		for (const tanggal of listLocalDatesInRange(tanggalAwal, tanggalAkhir)) {
-			await applyAutoAlfaKegiatan({
-				sekolahId,
-				semesterId: academic.activeSemesterId,
-				kelasId,
-				tanggal,
-				kegiatanIds
-			});
+		for (const targetKelasId of kelasIds) {
+			for (const tanggal of listLocalDatesInRange(tanggalAwal, tanggalAkhir)) {
+				await applyAutoAlfaKegiatan({
+					sekolahId,
+					semesterId: academic.activeSemesterId,
+					kelasId: targetKelasId,
+					tanggal,
+					kegiatanIds
+				});
+			}
 		}
 	}
 
@@ -100,9 +106,14 @@ export async function GET({ locals, url }) {
 				where: and(
 					eq(tableAbsensiKegiatan.sekolahId, sekolahId),
 					eq(tableAbsensiKegiatan.semesterId, academic.activeSemesterId),
-					eq(tableAbsensiKegiatan.kelasId, kelasId),
+					inArray(tableAbsensiKegiatan.kelasId, kelasIds),
 					kegiatanId ? eq(tableAbsensiKegiatan.kegiatanId, kegiatanId) : undefined,
-					locals.user?.type === 'tim_dapur' ? inArray(tableAbsensiKegiatan.kegiatanId, kegiatanList.map((item) => item.id)) : undefined,
+					locals.user?.type === 'tim_dapur'
+						? inArray(
+								tableAbsensiKegiatan.kegiatanId,
+								kegiatanList.map((item) => item.id)
+							)
+						: undefined,
 					between(tableAbsensiKegiatan.tanggal, tanggalAwal, tanggalAkhir),
 					inArray(tableAbsensiKegiatan.muridId, muridIds)
 				)
@@ -140,7 +151,14 @@ export async function GET({ locals, url }) {
 	rekapSheet.addRows([
 		['Rekap Absensi Kegiatan'],
 		['Sekolah', locals.sekolah?.nama ?? '-'],
-		['Kelas', kelas ? `${kelas.nama}${kelas.fase ? ` - ${kelas.fase}` : ''}` : '-'],
+		[
+			'Kelas',
+			allKelas
+				? 'Semua Kelas yang Diizinkan'
+				: kelas
+					? `${kelas.nama}${kelas.fase ? ` - ${kelas.fase}` : ''}`
+					: '-'
+		],
 		['Kegiatan', selectedKegiatan?.nama ?? 'Semua kegiatan'],
 		['Tanggal', `${tanggalAwal} s.d. ${tanggalAkhir}`],
 		[],
@@ -149,6 +167,7 @@ export async function GET({ locals, url }) {
 			'Nama',
 			'NIS',
 			'NISN',
+			...(allKelas ? ['Kelas'] : []),
 			...ABSENSI_KEGIATAN_STATUSES.map((status) => ABSENSI_KEGIATAN_STATUS_LABELS[status])
 		]
 	]);
@@ -159,6 +178,7 @@ export async function GET({ locals, url }) {
 			murid.nama,
 			murid.nis,
 			murid.nisn,
+			...(allKelas ? [kelasNames.get(murid.kelasId) ?? '-'] : []),
 			...ABSENSI_KEGIATAN_STATUSES.map((status) => counts[status])
 		]);
 	}
@@ -185,7 +205,16 @@ export async function GET({ locals, url }) {
 
 	const dataSheet: any = workbook.addWorksheet('Data Scan');
 	dataSheet.addRows([
-		['Tanggal', 'Kegiatan', 'Nama', 'Status', 'Metode', 'Waktu Scan', 'Catatan'],
+		[
+			'Tanggal',
+			'Kegiatan',
+			'Nama',
+			...(allKelas ? ['Kelas'] : []),
+			'Status',
+			'Metode',
+			'Waktu Scan',
+			'Catatan'
+		],
 		...absensiRows
 			.slice()
 			.sort((a, b) => {
@@ -199,6 +228,7 @@ export async function GET({ locals, url }) {
 				row.tanggal,
 				kegiatanNameById.get(row.kegiatanId) ?? 'Kegiatan',
 				muridNameById.get(row.muridId) ?? '-',
+				...(allKelas ? [kelasNames.get(row.kelasId) ?? '-'] : []),
 				ABSENSI_KEGIATAN_STATUS_LABELS[row.status],
 				row.metode,
 				row.waktuScan ?? '',
@@ -221,7 +251,7 @@ export async function GET({ locals, url }) {
 		buffer instanceof ArrayBuffer
 			? buffer
 			: new Uint8Array(buffer.buffer as ArrayBuffer, buffer.byteOffset, buffer.byteLength);
-	const kelasLabel = sanitizeFilename(kelas?.nama ?? 'kelas');
+	const kelasLabel = sanitizeFilename(allKelas ? 'semua-kelas' : (kelas?.nama ?? 'kelas'));
 	return new Response(body, {
 		headers: {
 			'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

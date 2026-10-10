@@ -10,7 +10,7 @@ import {
 	todayLocalDate
 } from '$lib/server/absensi-digital';
 import db from '$lib/server/db';
-import { studentAccessCondition } from '$lib/server/student-access';
+import { studentAccessCondition } from '$lib/server/attendance-student-access';
 import { saveAttendance } from '$lib/server/attendance-mutation';
 import { canAttendance, canAttendActivity, attendanceDateAllowed } from '$lib/attendance-access';
 import {

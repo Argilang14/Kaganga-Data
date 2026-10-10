@@ -8,7 +8,6 @@
 	import AttendanceMonitoringPanel from '$lib/components/absensi/AttendanceMonitoringPanel.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import AttendanceSummaryDialog from '$lib/components/absensi/AttendanceSummaryDialog.svelte';
-	import AttendanceReportTabs from '$lib/components/absensi/AttendanceReportTabs.svelte';
 
 	type StatusKey = 'hadir' | 'terlambat' | 'sakit' | 'izin' | 'alfa' | 'pulang';
 	type Kegiatan = { id: number; nama: string; kategori: string };
@@ -18,6 +17,7 @@
 		nama: string;
 		nis: string;
 		nisn: string;
+		kelasNama: string;
 		counts: Record<StatusKey, number>;
 	};
 	type DetailRow = {
@@ -65,6 +65,7 @@
 		tanggalAkhir: string;
 		activeSemesterId: number | null;
 		kelasId: number | null;
+		allKelas: boolean;
 		kelasList: Array<{ id: number; nama: string; fase: string | null }>;
 		kegiatanId: number | null;
 		kegiatanList: Kegiatan[];
@@ -120,11 +121,10 @@
 	}
 </script>
 
-<AttendanceReportTabs active="rekap" date={data.tanggalAkhir} classId={data.kelasId} />
 <div class="space-y-4">
 	<div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
 		<div>
-			<h2 class="text-xl font-bold">Rekap Absensi</h2>
+			<h1 class="text-xl font-bold">Rekap Absensi</h1>
 			<p class="text-base-content/70 text-sm">
 				Rekap kegiatan asrama, makan, sholat, dan apel berdasarkan rentang tanggal.
 			</p>
@@ -219,10 +219,13 @@
 					<span class="label-text mb-1">Kelas</span>
 					<select
 						class="select select-bordered"
-						value={data.kelasId ?? ''}
+						value={data.allKelas ? 'all' : (data.kelasId ?? '')}
+						aria-label="Kelas rekap"
+						title={data.allKelas ? 'Semua kelas yang diizinkan untuk akun ini' : undefined}
 						onchange={(event) =>
 							updateFilter('kelas_id', (event.currentTarget as HTMLSelectElement).value)}
 					>
+						<option value="all">Semua Kelas</option>
 						{#each data.kelasList as kelas (kelas.id)}
 							<option value={kelas.id}>{kelas.nama}{kelas.fase ? ` - ${kelas.fase}` : ''}</option>
 						{/each}
@@ -329,6 +332,9 @@
 								<td>{row.no}</td>
 								<td>
 									<div class="font-medium">{row.nama}</div>
+									{#if data.allKelas}<div class="text-base-content/70 text-xs">
+											{row.kelasNama}
+										</div>{/if}
 									<div class="text-base-content/60 text-xs">NIS {row.nis} · NISN {row.nisn}</div>
 								</td>
 								{#each statusOrder as status (status)}

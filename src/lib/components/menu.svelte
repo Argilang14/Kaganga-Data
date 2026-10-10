@@ -8,7 +8,11 @@
 	import { isAuthorizedUser } from '../../routes/pengguna/permissions';
 	import { canAccessArea, getProtectedArea } from '$lib/menu-access';
 	import { canAccessMenu } from '$lib/role-menu-access';
-	import { attendanceMenuPath } from '$lib/attendance-report-navigation';
+	import {
+		attendanceMenuPath,
+		attendanceReportMenuLink,
+		type AttendanceReportContext
+	} from '$lib/attendance-report-navigation';
 
 	const expanded = new StorageState<boolean>('menu-expanded');
 
@@ -61,7 +65,12 @@
 				if (isMatch || filteredSubMenu.length > 0) {
 					return {
 						...item,
-						subMenu: filteredSubMenu.length > 0 ? filteredSubMenu : undefined
+						subMenu:
+							isMatch && item.subMenu
+								? item.subMenu.filter((child) => filterByCondition(child, activeSemesterTipe))
+								: filteredSubMenu.length > 0
+									? filteredSubMenu
+									: undefined
 					};
 				}
 
@@ -108,13 +117,25 @@
 		const drawer = document.getElementById('my-drawer-2') as HTMLInputElement | null;
 		if (drawer) drawer.checked = false;
 	}
+
+	function hasActiveChild(item: MenuItem): boolean {
+		return isMenuActive(page.url.pathname, item.path) || !!item.subMenu?.some(hasActiveChild);
+	}
+	function menuHref(path?: string) {
+		return attendanceReportMenuLink(
+			path,
+			page.url.pathname,
+			page.url.search,
+			page.data as AttendanceReportContext
+		);
+	}
 </script>
 
 {#snippet menu_item(item: MenuItem)}
 	{@const active = isMenuActive(page.url.pathname, item.path)}
 	<li>
 		{#if item.subMenu}
-			<details open={expanded.value || !!search}>
+			<details open={expanded.value || !!search || hasActiveChild(item)}>
 				<summary>
 					{@render menu_item_label(item)}
 				</summary>
@@ -126,7 +147,7 @@
 			</details>
 		{:else}
 			<!-- `class:menu-active` is shorthand for `class="{active ? 'menu-active': ''}"` -->
-			<a class:menu-active={active} href={item.path} onclick={closeMobileDrawer}>
+			<a class:menu-active={active} href={menuHref(item.path)} onclick={closeMobileDrawer}>
 				{@render menu_item_label(item)}
 			</a>
 		{/if}

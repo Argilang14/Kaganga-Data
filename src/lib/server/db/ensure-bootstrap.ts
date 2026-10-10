@@ -20,17 +20,16 @@ import { ensureInventarisPengumumanSchema } from './ensure-inventaris-pengumuman
 import { ensureLongTermFoundationSchema } from './ensure-long-term-foundation';
 import { ensureProductionOperationsSchema } from './ensure-production-operations';
 import { ensureUjianSchema } from './ensure-ujian';
+import { ensureEducationUnitsSchema } from './ensure-education-units';
 import { ensureAbsensiDigitalSchema } from './ensure-absensi-digital';
 import { ensureAbsenceMonitoringSchema } from './ensure-absence-monitoring';
-import {
-	ensurePenggunaIdentitySchema,
-	resetPenggunaIdentitySchemaEnsure
-} from './ensure-pengguna';
+import { ensurePenggunaIdentitySchema, resetPenggunaIdentitySchemaEnsure } from './ensure-pengguna';
 
 let startupPromise: Promise<void> | null = null;
 
 async function applyStartupEnsures() {
 	await ensureCoreSchema();
+	await ensureEducationUnitsSchema();
 	await ensureAbsensiDigitalSchema();
 	await ensureAbsenceMonitoringSchema();
 	await ensureDataGovernanceSchema();

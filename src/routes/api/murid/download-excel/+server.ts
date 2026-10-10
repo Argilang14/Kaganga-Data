@@ -1,4 +1,5 @@
 import db from '$lib/server/db';
+import { ensureEducationUnitsSchema } from '$lib/server/db/ensure-education-units';
 import { tableMurid, tableMuridIdentityLink, tableMuridLifecycle } from '$lib/server/db/schema';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { writeAoaToBuffer } from '$lib/utils/excel.js';
@@ -111,8 +112,17 @@ export async function GET({ locals, url }) {
 		'Nama Wali',
 		'Pekerjaan Wali',
 		'Kontak Wali',
-		'Status Murid'
+		'Status Murid',
+		'Satuan Pendidikan',
+		'Jenjang Satuan',
+		'NPSN Satuan'
 	];
+	await ensureEducationUnitsSchema();
+	const identities = await db.$client.execute({
+		sql: `SELECT m.id AS kelas_id,k.nama_snapshot,k.npsn_snapshot,u.jenjang FROM kelas_satuan_pendidikan k JOIN kelas m ON m.id=k.kelas_id JOIN sekolah_satuan_pendidikan u ON u.id=k.satuan_id WHERE m.sekolah_id=?`,
+		args: [sekolahId]
+	});
+	const identityByClass = new Map(identities.rows.map((row) => [Number(row.kelas_id), row]));
 
 	const rows: unknown[][] = [headers];
 
@@ -150,7 +160,10 @@ export async function GET({ locals, url }) {
 			wali?.nama ?? '',
 			wali?.pekerjaan ?? '',
 			wali?.kontak ?? '',
-			lifecycleById.get(murid.id) ?? 'aktif'
+			lifecycleById.get(murid.id) ?? 'aktif',
+			identityByClass.get(murid.kelasId)?.nama_snapshot ?? '',
+			identityByClass.get(murid.kelasId)?.jenjang ?? '',
+			identityByClass.get(murid.kelasId)?.npsn_snapshot ?? ''
 		]);
 	}
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import type { loadDashboardDaily } from '$lib/server/dashboard-daily';
 	import Icon from '$lib/components/icon.svelte';
 
@@ -46,8 +47,13 @@
 	const totalMissing = $derived(items.reduce((total, item) => total + item.value, 0));
 </script>
 
-<section class="min-w-0 overflow-hidden rounded-lg bg-base-100 shadow-sm" aria-label="Data belum lengkap">
-	<div class="flex items-center justify-between gap-3 border-b border-base-200 px-5 py-4">
+<section
+	class="dashboard-panel dashboard-missing min-w-0 overflow-hidden rounded-lg shadow-sm"
+	aria-label="Data belum lengkap"
+>
+	<div
+		class="dashboard-panel-heading flex flex-wrap items-center justify-between gap-3 border-b border-base-200 px-5 py-4"
+	>
 		<div class="flex min-w-0 items-center gap-3">
 			<span
 				class="bg-info/10 text-info flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
@@ -60,26 +66,35 @@
 				<p class="text-xs text-base-content/55">Ringkasan data yang perlu dilengkapi</p>
 			</div>
 		</div>
-		<span class:badge-success={totalMissing === 0} class:badge-warning={totalMissing > 0} class="badge badge-soft shrink-0">
+		<span
+			class:badge-success={totalMissing === 0}
+			class:badge-warning={totalMissing > 0}
+			class="badge badge-soft shrink-0"
+		>
 			{totalMissing === 0 ? 'Lengkap' : `${totalMissing} temuan`}
 		</span>
 	</div>
 
 	<div class="grid grid-cols-2">
-		{#each items as item, index}
+		{#each items as item, index (item.label)}
 			<div
-				class="flex min-w-0 items-center gap-3 px-4 py-3"
+				class="flex min-w-0 items-center gap-3 border-base-200 px-4 py-3"
 				class:border-t={index >= 2}
 				class:border-l={index % 2 === 1}
 			>
-				<span class={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${item.background} ${item.color}`} aria-hidden="true">
+				<span
+					class={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${item.background} ${item.color}`}
+					aria-hidden="true"
+				>
 					<Icon name={item.icon} class="h-4 w-4" />
 				</span>
 				<div class="min-w-0">
-					<div class="truncate text-xs text-base-content/60">{item.label}</div>
+					<div class="break-words text-xs text-base-content/75">{item.label}</div>
 					<div class="flex items-baseline gap-1">
 						<strong class="text-lg leading-tight">{item.value}</strong>
-						<span class="text-[11px] text-base-content/45">{item.value === 0 ? 'lengkap' : 'belum'}</span>
+						<span class="text-[11px] text-base-content/45"
+							>{item.value === 0 ? 'lengkap' : 'belum'}</span
+						>
 					</div>
 				</div>
 			</div>
@@ -88,11 +103,17 @@
 
 	{#if summary.admin}
 		<div class="grid grid-cols-2 gap-2 border-t border-base-200 bg-base-200/25 px-4 py-3">
-			<a class="btn btn-sm btn-ghost justify-start shadow-none" href="/murid?kelas_id=semua&belum_lengkap=foto">
+			<a
+				class="btn btn-sm btn-ghost justify-start shadow-none"
+				href={resolve('/murid?kelas_id=semua&belum_lengkap=foto')}
+			>
 				<Icon name="image" class="h-4 w-4" />
 				Tanpa foto
 			</a>
-			<a class="btn btn-sm btn-ghost justify-start shadow-none" href="/murid?kelas_id=semua&belum_lengkap=qr">
+			<a
+				class="btn btn-sm btn-ghost justify-start shadow-none"
+				href={resolve('/murid?kelas_id=semua&belum_lengkap=qr')}
+			>
 				<Icon name="grid" class="h-4 w-4" />
 				Tanpa QR
 			</a>

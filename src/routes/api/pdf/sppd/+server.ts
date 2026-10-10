@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import db from '$lib/server/db';
+import { commonSchoolIdentity } from '$lib/server/education-units';
 import { ensureSuratMenyuratSchema } from '$lib/server/db/ensure-surat-menyurat';
 import { tableSekolah, tableSppd } from '$lib/server/db/schema';
 import { renderPDF } from '$lib/server/pdf/pagedpdf';
@@ -59,7 +60,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			jenjang: sekolah.jenjangPendidikan,
 			jenjangVariant: sekolah.jenjangVariant,
 			naungan: sekolah.naungan,
-			npsn: sekolah.npsn,
+			npsn: locals.sekolah ? commonSchoolIdentity(locals.sekolah).npsn : sekolah.npsn,
 			alamat: {
 				jalan: sekolah.alamat?.jalan ?? '',
 				desa: sekolah.alamat?.desa ?? '',

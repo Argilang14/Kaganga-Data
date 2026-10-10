@@ -3,6 +3,8 @@ import db from '$lib/server/db';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { ensureDashboardSchema } from '$lib/server/db/ensure-dashboard-schema';
 import { loadDashboardDaily } from '$lib/server/dashboard-daily';
+import { loadDashboardAchievements } from '$lib/server/dashboard-achievements';
+import { hasEnteredAcademicScore, loadLeadershipOverview } from '$lib/server/dashboard-leadership';
 import {
 	tableAsesmenEkstrakurikuler,
 	tableAsesmenKeasramaan,
@@ -88,6 +90,7 @@ export const load: PageServerLoad = async (event) => {
 	if (!sekolahId) {
 		return {
 			...parentData,
+			leadershipOverview: null,
 			statistikDashboard
 		};
 	}
@@ -140,7 +143,7 @@ export const load: PageServerLoad = async (event) => {
 	const pegawaiCountRows = await db
 		.select({ totalPegawai: sql<number>`count(*)` })
 		.from(tablePegawai)
-		.where(eq(tablePegawai.sekolahId, sekolahId));
+		.where(and(eq(tablePegawai.sekolahId, sekolahId), eq(tablePegawai.status, 'aktif')));
 
 	statistikDashboard.pegawai.total = pegawaiCountRows[0]?.totalPegawai ?? 0;
 
@@ -239,7 +242,8 @@ export const load: PageServerLoad = async (event) => {
 				.where(
 					and(
 						inArray(tableAsesmenSumatif.muridId, muridIds),
-						inArray(tableAsesmenSumatif.mataPelajaranId, mapelIdList)
+						inArray(tableAsesmenSumatif.mataPelajaranId, mapelIdList),
+						hasEnteredAcademicScore()
 					)
 				);
 
@@ -415,10 +419,30 @@ export const load: PageServerLoad = async (event) => {
 			})
 		: [];
 
+	const dailyDashboard = await loadDashboardDaily(
+		event.locals,
+		academicContext,
+		event.url.searchParams
+	);
+	const leadershipOverview = dailyDashboard.leadership
+		? await loadLeadershipOverview(
+				event.locals,
+				academicContext,
+				dailyDashboard.leadership.selectedClassIds
+			)
+		: null;
+	const achievements = await loadDashboardAchievements(
+		event.locals,
+		academicContext,
+		dailyDashboard,
+		event.url.searchParams
+	);
 	return {
 		...parentData,
 		favorites,
-		dailyDashboard: await loadDashboardDaily(event.locals, academicContext, event.url.searchParams),
+		dailyDashboard,
+		achievements,
+		leadershipOverview,
 		statistikDashboard,
 		bellActive: bellRow?.isActive === true,
 		hariSekolah,

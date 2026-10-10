@@ -1,6 +1,6 @@
 import db from './db';
 import { error } from '@sveltejs/kit';
-import { canAttendance } from '$lib/attendance-access';
+import { canAttendance, hasSchoolWideAttendanceStudentAccess } from '$lib/attendance-access';
 import { accessibleClassIds, studentAccessCondition } from './student-access';
 import { loadMonitoringSnapshot } from './attendance-monitoring';
 import { hasSchoolWideOperationalAccess } from '$lib/access-position';
@@ -20,6 +20,13 @@ import { loadJurnalScheduleContext } from './jurnal-mengajar';
 import { isPresensiPegawaiWorkday } from './presensi-pegawai';
 import { attendanceSummary, jakartaToday } from '$lib/dashboard-summary';
 import { canAccessArea } from '$lib/menu-access';
+import { canViewLeadershipDashboard, dashboardClassSummary } from '$lib/dashboard-leadership';
+import { inferSummaryLevel } from '$lib/attendance-summary';
+import {
+	monitoringTabs,
+	monitoringStatusLabels,
+	type MonitoringTab
+} from '$lib/attendance-monitoring';
 
 export async function loadDashboardDaily(
 	locals: App.Locals,
@@ -33,10 +40,12 @@ export async function loadDashboardDaily(
 	if (user.type !== 'admin' && user.sekolahId !== schoolId)
 		throw error(403, 'Sekolah di luar penugasan akun.');
 	const date = jakartaToday();
+	const canLeadership = canViewLeadershipDashboard(user);
 	const classes =
 		academic.activeSemesterId && academic.activeTahunAjaranId
 			? await db.query.tableKelas.findMany({
-					columns: { id: true, waliKelasId: true },
+					columns: { id: true, nama: true, fase: true, waliKelasId: true },
+					with: { waliKelas: { columns: { nama: true } } },
 					where: and(
 						eq(k.sekolahId, schoolId),
 						eq(k.semesterId, academic.activeSemesterId),
@@ -45,7 +54,34 @@ export async function loadDashboardDaily(
 				})
 			: [];
 	const allowed = new Set(await accessibleClassIds(user, schoolId, academic.activeSemesterId));
-	const ids = classes.map((row) => row.id).filter((id) => allowed.has(id));
+	const availableClasses = classes
+		.filter((row) => allowed.has(row.id))
+		.map((row) => ({
+			id: row.id,
+			nama: row.nama,
+			jenjang: inferSummaryLevel(row, sekolah.jenjangPendidikan),
+			waliKelas: row.waliKelas?.nama ?? '-'
+		}));
+	const level = canLeadership ? searchParams.get('jenjang') || 'semua' : 'semua';
+	if (!['semua', 'sd', 'smp', 'sma', 'unknown'].includes(level))
+		throw error(400, 'Jenjang tidak valid.');
+	const classValue = canLeadership ? searchParams.get('kelas_id') || '' : '';
+	const classId = classValue ? Number(classValue) : null;
+	if (
+		classValue &&
+		(!Number.isSafeInteger(classId) || !availableClasses.some((item) => item.id === classId))
+	)
+		throw error(403, 'Kelas di luar penugasan atau semester aktif.');
+	if (
+		classId &&
+		level !== 'semua' &&
+		!availableClasses.some((item) => item.id === classId && item.jenjang === level)
+	)
+		throw error(400, 'Kelas tidak sesuai jenjang yang dipilih.');
+	const selectedClasses = availableClasses.filter(
+		(item) => (level === 'semua' || item.jenjang === level) && (!classId || item.id === classId)
+	);
+	const ids = selectedClasses.map((row) => row.id);
 	const studentWhere = and(
 		await studentAccessCondition(user, schoolId, academic.activeSemesterId),
 		activeMuridFilter(),
@@ -61,12 +97,69 @@ export async function loadDashboardDaily(
 		.from(m)
 		.where(studentWhere);
 	const sourceParams = new URLSearchParams({ tanggal: date, tab: 'sekolah' });
+	if (canLeadership) {
+		sourceParams.set('jenjang', level);
+		if (classId) sourceParams.set('kelas_id', String(classId));
+	}
 	if (searchParams.has('sumber_masuk'))
 		sourceParams.set('sumber_masuk', searchParams.get('sumber_masuk')!);
 	const snapshot =
 		canAttendance(user, 'lihat') && user.type !== 'tim_dapur'
 			? await loadMonitoringSnapshot(locals, sourceParams)
 			: null;
+	const tabs = canAttendance(user, 'lihat')
+		? monitoringTabs.filter(
+				(item) => item.key !== 'asrama' && (user.type !== 'tim_dapur' || item.key === 'makan')
+			)
+		: [];
+	const requestedTab = searchParams.get('absensi_tab') ?? tabs[0]?.key ?? 'sekolah';
+	if (tabs.length && !tabs.some((item) => item.key === requestedTab))
+		throw error(403, 'Tab absensi di luar akses akun.');
+	const activeTab = requestedTab as MonitoringTab;
+	const activityParams = new URLSearchParams(sourceParams);
+	activityParams.set('tab', activeTab);
+	const activitySnapshot = tabs.length
+		? activeTab === 'sekolah'
+			? snapshot
+			: await loadMonitoringSnapshot(locals, activityParams)
+		: null;
+	const timeNow = new Intl.DateTimeFormat('en-GB', {
+		timeZone: 'Asia/Jakarta',
+		hour: '2-digit',
+		minute: '2-digit',
+		hourCycle: 'h23'
+	}).format(new Date());
+	const activitySummaries = (activitySnapshot?.summaries ?? []).map((column, index) => {
+		const recorded =
+			activitySnapshot!.rows.length - column.counts.belum - column.counts.tanpa_sumber;
+		const href = new URLSearchParams(activityParams);
+		href.set('kolom', column.key);
+		return {
+			key: column.key,
+			label: column.label,
+			time: column.time,
+			total: activitySnapshot!.rows.length,
+			recorded,
+			counts: column.counts,
+			state: !column.source
+				? 'unconfigured'
+				: recorded === 0 && column.time && timeNow < column.time.slice(0, 5)
+					? 'upcoming'
+					: 'started',
+			href: `/administrasi/absensi/monitoring?${href}` as const,
+			groups: Object.entries(column.counts)
+				.filter(([, count]) => count > 0)
+				.map(([status, total]) => ({
+					status,
+					label: monitoringStatusLabels[status as keyof typeof monitoringStatusLabels],
+					total,
+					students: activitySnapshot!.rows
+						.filter((row) => row.cells[index].status === status)
+						.slice(0, 20)
+						.map(({ id, nama, kelas }) => ({ id, nama, kelas }))
+				}))
+		};
+	});
 	const entrance = snapshot?.summaries[0];
 	const statuses = entrance
 		? Object.entries(entrance.counts)
@@ -160,6 +253,18 @@ export async function loadDashboardDaily(
 		)
 	});
 	const holiday = !workday.isWorkday || Boolean(calendarHoliday);
+	const classRows = snapshot ? dashboardClassSummary(selectedClasses, snapshot.rows) : [];
+	const classPageCount = Math.max(1, Math.ceil(classRows.length / 12));
+	const requestedClassPage = Number(searchParams.get('kelas_page') ?? 1);
+	const classPage = Math.min(
+		classPageCount,
+		Number.isSafeInteger(requestedClassPage) ? Math.max(1, requestedClassPage) : 1
+	);
+	const classPageHref = (number: number) => {
+		const params = new URLSearchParams(searchParams);
+		params.set('kelas_page', String(number));
+		return `/?${params}#pengawasan-kelas`;
+	};
 	const day = ['minggu', 'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu'][
 		new Date(`${date}T12:00:00+07:00`).getUTCDay()
 	];
@@ -192,17 +297,43 @@ export async function loadDashboardDaily(
 			: [];
 	return {
 		date,
+		selectedClasses,
+		activityTabs: tabs,
+		activityTab: activeTab,
+		activitySummaries,
 		holiday,
 		admin: user?.type === 'admin',
 		canAgenda,
 		jenisKey: context?.jenis ?? 'ganjil',
-		scope: hasSchoolWideOperationalAccess(user) ? 'Sekolah' : 'Penugasan Anda',
+		scope: classId
+			? `Kelas ${selectedClasses[0]?.nama ?? '-'}`
+			: level !== 'semua'
+				? level.toUpperCase()
+				: hasSchoolWideOperationalAccess(user) ||
+					  hasSchoolWideAttendanceStudentAccess(user, schoolId)
+					? 'Sekolah'
+					: 'Penugasan Anda',
 		jenis: context?.jenisLabel ?? '-',
 		students: snapshot ? attendanceSummary(snapshot.rows.length, statuses) : null,
 		studentSource: entrance ? { source: entrance.source, label: entrance.sourceLabel } : null,
 		sourceOptions: snapshot?.sourceOptions[0].options ?? [],
-		monitoringHref: snapshot ? `/administrasi/absensi/monitoring?${sourceParams}` : null,
+		monitoringHref: activitySnapshot ? `/administrasi/absensi/monitoring?${activityParams}` : null,
 		generatedAt: new Date().toISOString(),
+		leadership: canLeadership
+			? {
+					filters: { level, classId },
+					classes: availableClasses,
+					selectedClassIds: ids,
+					classSummary: snapshot ? classRows.slice((classPage - 1) * 12, classPage * 12) : null,
+					pagination: {
+						page: classPage,
+						pageCount: classPageCount,
+						total: classRows.length,
+						previous: classPage > 1 ? classPageHref(classPage - 1) : null,
+						next: classPage < classPageCount ? classPageHref(classPage + 1) : null
+					}
+				}
+			: null,
 		absences,
 		employees: canEmployees
 			? attendanceSummary(Number(employee?.total ?? 0), employeeStatuses)

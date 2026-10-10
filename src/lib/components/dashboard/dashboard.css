@@ -1,0 +1,331 @@
+.dashboard-shell {
+	--dashboard-blue: #2563eb;
+	--dashboard-green: #059669;
+	--dashboard-rose: #e11d48;
+	--dashboard-amber: #d97706;
+}
+
+[data-theme='dark'] .dashboard-shell {
+	--dashboard-blue: #60a5fa;
+	--dashboard-green: #34d399;
+	--dashboard-rose: #fb7185;
+	--dashboard-amber: #fbbf24;
+}
+
+.dashboard-shell svg:not([fill]) {
+	fill: currentColor;
+}
+
+.dashboard-shell .dashboard-header {
+	padding: 24px;
+	border-radius: 8px;
+	background: #0b6e62;
+	color: #fff;
+	box-shadow: 0 3px 8px rgb(11 110 98 / 12%);
+}
+
+.dashboard-shell .dashboard-header-icon {
+	display: flex;
+	width: 40px;
+	height: 40px;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid rgb(255 255 255 / 20%);
+	border-radius: 8px;
+	background: rgb(255 255 255 / 12%);
+}
+
+.dashboard-shell .dashboard-header-date {
+	max-width: 100%;
+	padding: 10px 12px;
+	border-radius: 6px;
+	background: rgb(255 255 255 / 12%);
+}
+
+.dashboard-shell .dashboard-stat--blue {
+	--dashboard-tone: var(--dashboard-blue);
+}
+
+.dashboard-shell .dashboard-stat--green {
+	--dashboard-tone: var(--dashboard-green);
+}
+
+.dashboard-shell .dashboard-stat--rose {
+	--dashboard-tone: var(--dashboard-rose);
+}
+
+.dashboard-shell .dashboard-stat--amber {
+	--dashboard-tone: var(--dashboard-amber);
+}
+
+.dashboard-shell .dashboard-stat {
+	border: 1px solid color-mix(in oklab, var(--dashboard-tone) 20%, var(--color-base-300));
+	border-top: 3px solid var(--dashboard-tone);
+	background: color-mix(in oklab, var(--dashboard-tone) 12%, var(--color-base-100));
+}
+
+.dashboard-shell .dashboard-panel {
+	--dashboard-panel-tone: var(--dashboard-blue);
+	border: 1px solid color-mix(in oklab, var(--dashboard-panel-tone) 18%, var(--color-base-300));
+	background: color-mix(in oklab, var(--dashboard-panel-tone) 4%, var(--color-base-100));
+}
+
+.dashboard-shell .dashboard-panel-heading {
+	background: color-mix(in oklab, var(--dashboard-panel-tone) 10%, var(--color-base-100));
+}
+
+.dashboard-shell .dashboard-school {
+	--dashboard-panel-tone: var(--dashboard-blue);
+	background: color-mix(in oklab, var(--dashboard-blue) 9%, var(--color-base-100));
+}
+
+.dashboard-shell .dashboard-school-logo {
+	background: #fff;
+	border: 1px solid color-mix(in oklab, var(--dashboard-blue) 18%, #fff);
+}
+
+.dashboard-shell .dashboard-attendance {
+	--dashboard-panel-tone: var(--dashboard-green);
+}
+
+.dashboard-shell .dashboard-missing {
+	--dashboard-panel-tone: var(--dashboard-amber);
+}
+
+.dashboard-shell .dashboard-achievements {
+	--dashboard-panel-tone: var(--dashboard-amber);
+}
+
+.dashboard-shell .dashboard-leadership {
+	--dashboard-panel-tone: var(--dashboard-blue);
+}
+
+.dashboard-shell .dashboard-progress {
+	--dashboard-panel-tone: var(--dashboard-rose);
+}
+
+.dashboard-shell .dashboard-actions {
+	--dashboard-panel-tone: var(--dashboard-blue);
+}
+
+.dashboard-shell .dashboard-filter {
+	background: color-mix(in oklab, var(--dashboard-blue) 7%, var(--color-base-100));
+}
+
+.dashboard-shell .dashboard-attendance-summary--students {
+	background: color-mix(in oklab, var(--dashboard-green) 7%, var(--color-base-100));
+}
+
+.dashboard-shell .dashboard-attendance-summary--employees {
+	background: color-mix(in oklab, var(--dashboard-blue) 7%, var(--color-base-100));
+}
+
+.dashboard-shell .dashboard-attendance-status {
+	padding: 4px 7px;
+	border-radius: 4px;
+	background: var(--color-base-200);
+	color: var(--color-base-content);
+}
+
+.dashboard-shell .dashboard-attendance-status--hadir,
+.dashboard-shell .dashboard-attendance-status--pulang {
+	background: color-mix(in oklab, var(--color-success) 18%, var(--color-base-100));
+}
+
+.dashboard-shell .dashboard-attendance-status--sakit,
+.dashboard-shell .dashboard-attendance-status--terlambat {
+	background: color-mix(in oklab, var(--color-warning) 20%, var(--color-base-100));
+}
+
+.dashboard-shell .dashboard-attendance-status--izin,
+.dashboard-shell .dashboard-attendance-status--izin_pulang {
+	background: color-mix(in oklab, var(--color-info) 18%, var(--color-base-100));
+}
+
+.dashboard-shell .dashboard-attendance-status--alfa {
+	background: color-mix(in oklab, var(--color-error) 15%, var(--color-base-100));
+}
+
+.dashboard-shell .dashboard-absence-group--sakit > summary {
+	background: color-mix(in oklab, var(--color-warning) 9%, var(--color-base-100));
+}
+
+.dashboard-shell .dashboard-absence-group--izin > summary,
+.dashboard-shell .dashboard-absence-group--izin_pulang > summary {
+	background: color-mix(in oklab, var(--color-info) 8%, var(--color-base-100));
+}
+
+.dashboard-shell .dashboard-absence-group--alfa > summary {
+	background: color-mix(in oklab, var(--color-error) 8%, var(--color-base-100));
+}
+
+.dashboard-shell .dashboard-detail-grid {
+	display: grid;
+	min-width: 0;
+	gap: 16px;
+	align-items: start;
+}
+
+.dashboard-shell .dashboard-class-list {
+	max-height: 370px;
+	overflow-y: auto;
+}
+
+.dashboard-shell .dashboard-class-list--expanded {
+	max-height: none;
+}
+
+.dashboard-shell .dashboard-class-list thead {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	background: var(--color-base-200);
+}
+
+.dashboard-shell .dashboard-school-stats {
+	display: grid;
+	gap: 1px;
+	padding: 12px 20px;
+}
+
+.dashboard-shell .dashboard-attendance-summary--departure {
+	background: color-mix(in oklab, var(--dashboard-amber) 7%, var(--color-base-100));
+}
+
+.dashboard-shell .dashboard-status-chip {
+	display: inline-flex;
+	min-height: 30px;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 8px;
+	border: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+	border-radius: 6px;
+	color: var(--color-base-content);
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.dashboard-shell .dashboard-status-chip:hover {
+	filter: brightness(0.95);
+}
+
+.dashboard-shell .dashboard-status-chip.dashboard-attendance-status--belum {
+	background: var(--color-base-200);
+}
+
+.dashboard-shell .dashboard-activity-grid {
+	display: grid;
+	min-width: 0;
+	padding: 8px 20px;
+}
+
+.dashboard-shell .dashboard-activity-stat {
+	--activity-tone: var(--dashboard-blue);
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 10px 12px;
+	min-width: 0;
+	padding: 16px 0;
+	border-bottom: 1px solid var(--color-base-200);
+}
+
+.dashboard-shell .dashboard-activity-stat:last-child {
+	border-bottom: 0;
+}
+
+.dashboard-shell .dashboard-activity-stat--1 {
+	--activity-tone: var(--dashboard-green);
+}
+
+.dashboard-shell .dashboard-activity-stat--2 {
+	--activity-tone: var(--dashboard-amber);
+}
+
+.dashboard-shell .dashboard-activity-icon {
+	display: flex;
+	width: 32px;
+	height: 32px;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	border-radius: 6px;
+	background: color-mix(in oklab, var(--activity-tone) 13%, var(--color-base-100));
+	color: var(--activity-tone);
+}
+
+.dashboard-shell .dashboard-activity-value {
+	display: flex;
+	min-height: 38px;
+	align-items: center;
+	color: var(--activity-tone);
+}
+
+.dashboard-shell .dashboard-activity-progress,
+.dashboard-shell .dashboard-activity-statuses {
+	grid-column: 1 / -1;
+}
+
+.dashboard-shell .dashboard-level {
+	display: flex;
+	width: 42px;
+	height: 36px;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	border-radius: 6px;
+	background: color-mix(in oklab, var(--dashboard-blue) 14%, var(--color-base-100));
+	color: var(--dashboard-blue);
+	font-size: 12px;
+	font-weight: 700;
+}
+
+.dashboard-shell .dashboard-level--smp {
+	background: color-mix(in oklab, var(--dashboard-green) 14%, var(--color-base-100));
+	color: var(--dashboard-green);
+}
+
+.dashboard-shell .dashboard-level--sma {
+	background: color-mix(in oklab, var(--dashboard-rose) 14%, var(--color-base-100));
+	color: var(--dashboard-rose);
+}
+
+@media (min-width: 640px) {
+	.dashboard-shell .dashboard-school-stats {
+		grid-template-columns: repeat(var(--school-columns), minmax(0, 1fr));
+	}
+}
+
+@media (min-width: 768px) {
+	.dashboard-shell .dashboard-activity-grid {
+		grid-template-columns: repeat(min(3, var(--activity-columns)), minmax(0, 1fr));
+		padding: 16px 8px;
+		row-gap: 16px;
+	}
+	.dashboard-shell .dashboard-activity-stat {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		padding: 0 16px;
+		border-bottom: 0;
+		border-right: 1px solid var(--color-base-200);
+	}
+	.dashboard-shell .dashboard-activity-value {
+		min-height: 44px;
+	}
+}
+
+@media (min-width: 1280px) {
+	.dashboard-shell .dashboard-detail-grid--paired {
+		grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+	}
+	.dashboard-shell .dashboard-activity-grid {
+		grid-template-columns: repeat(var(--activity-columns), minmax(0, 1fr));
+	}
+}
+
+@media (max-width: 639px) {
+	.dashboard-shell .dashboard-header {
+		padding: 20px 16px;
+	}
+}

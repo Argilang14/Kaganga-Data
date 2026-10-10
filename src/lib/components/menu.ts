@@ -205,9 +205,20 @@ export const appMenuItems: MenuItem[] = [
 				permission: 'absensi_lihat'
 			},
 			{
-				title: 'Monitoring & Rekap Absensi',
-				path: '/administrasi/absensi/monitoring',
+				title: 'Monitoring dan Rekap',
 				permission: 'absensi_lihat',
+				subMenu: [
+					{
+						title: 'Monitoring',
+						path: '/administrasi/absensi/monitoring',
+						permission: 'absensi_lihat'
+					},
+					{
+						title: 'Rekap Absensi',
+						path: '/administrasi/absensi/kegiatan/rekap',
+						permission: 'absensi_lihat'
+					}
+				],
 				tags: [
 					'rekap kegiatan',
 					'monitoring absensi',

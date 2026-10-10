@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import db from '$lib/server/db';
+import { getStudentEducationIdentity } from '$lib/server/education-units';
 import { tableMurid } from '$lib/server/db/schema';
 import { computeNilaiAkhirRekap } from '$lib/server/nilai-akhir';
 import type { PiagamPrintData } from '$lib/server/pdf/templates/piagam';
@@ -133,9 +134,9 @@ export async function getPiagamPreviewPayload({ locals, url }: { locals: App.Loc
 	const piagamData: PiagamPrintData = {
 		sekolah: {
 			id: sekolah.id,
-			nama: sekolah.nama,
+			nama: (await getStudentEducationIdentity(sekolah.id, murid.id)).nama,
 			jenjang: sekolah.jenjangPendidikan,
-			npsn: sekolah.npsn,
+			npsn: (await getStudentEducationIdentity(sekolah.id, murid.id)).npsn,
 			alamat: {
 				jalan: sekolah.alamat?.jalan ?? '',
 				desa: sekolah.alamat?.desa ?? '',

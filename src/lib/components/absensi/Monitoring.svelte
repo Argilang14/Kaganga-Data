@@ -25,14 +25,11 @@
 		if (!signal.aborted && base === initial && search === page.url.search)
 			live = { base, data: updated };
 	}
-	function activityLink(column: Column, classId: number, recap = false) {
+	function activityLink(column: Column, classId: number) {
 		const params = new URLSearchParams({ kelas_id: String(classId) });
 		if (column.activityId) params.set('kegiatan_id', String(column.activityId));
-		if (recap) {
-			params.set('tanggal_awal', data.date);
-			params.set('tanggal_akhir', data.date);
-		} else params.set('tanggal', data.date);
-		return `${recap ? column.recapPath : column.entryPath}?${params}`;
+		params.set('tanggal', data.date);
+		return `${column.entryPath}?${params}`;
 	}
 	const selectedSummary = $derived(data.summaries.find((item) => item.key === data.focus)!);
 	const overview = $derived(monitoringOverview(selectedSummary.counts, data.total));
@@ -65,15 +62,18 @@
 		if (key === 'tab') {
 			params.delete('kolom');
 			params.delete('status');
+			params.delete('perjalanan');
 		}
 		void goto(`${page.url.pathname}?${params}`, { keepFocus: true, noScroll: true });
 	}
 	function link(key: string, value: string) {
 		const params = new URLSearchParams(page.url.search);
 		params.set(key, value);
+		if (key === 'perjalanan') params.delete('page');
 		if (key === 'tab') {
 			params.delete('kolom');
 			params.delete('status');
+			params.delete('perjalanan');
 			params.delete('page');
 		}
 		return `${page.url.pathname}?${params}`;
@@ -99,7 +99,7 @@
 			? 'moon'
 			: tab === 'makan'
 				? 'coffee'
-				: tab === 'malam'
+				: tab === 'asrama'
 					? 'users'
 					: 'school';
 	}
@@ -124,6 +124,7 @@
 			<Icon name={statusIcon(cell.status)} class="h-3.5 w-3.5 shrink-0" />
 			{data.statusLabels[cell.status]}
 		</span>
+		{#if cell.linkedFrom}<span class="monitoring-cell-note">Info dari {cell.linkedFrom}</span>{/if}
 		{#if cell.time || cell.method}
 			<span class="monitoring-cell-note">
 				{#if cell.time}<time datetime={cell.time}>{time(cell.time)}</time>{/if}
@@ -146,11 +147,49 @@
 	</div>
 {/snippet}
 
+{#snippet journeys(row: Row)}
+	<div class="monitoring-journeys">
+		{#each row.journeys as journey (journey.key)}
+			<div class="monitoring-journey" data-status={journey.status}>
+				<Icon
+					name={journey.status === 'tiba'
+						? 'check'
+						: journey.status === 'periksa'
+							? 'warning'
+							: journey.status === 'menunggu'
+								? 'activity'
+								: 'question'}
+					class="monitoring-journey-icon h-3.5 w-3.5 shrink-0"
+				/>
+				<div class="min-w-0">
+					<span class="monitoring-journey-title"
+						>{journey.key === 'pergi' ? 'Menuju sekolah' : 'Kembali ke asrama'}</span
+					>
+					<span
+						class="mt-1 block text-xs font-semibold"
+						class:text-success={journey.status === 'tiba'}
+						class:text-warning={journey.status === 'menunggu'}
+						class:text-error={journey.status === 'periksa'}>{journey.label}</span
+					>
+					{#if journey.note}<span class="monitoring-cell-note mt-1 block">{journey.note}</span>{/if}
+				</div>
+			</div>
+		{/each}
+	</div>
+{/snippet}
+
 <section class="monitoring min-w-0" aria-label="Monitoring Absensi">
 	<header class="monitoring-header mb-5">
-		<div class="min-w-0">
-			<h2 class="text-xl font-bold">Monitoring Absensi</h2>
-			<p class="mt-1 text-sm text-base-content/65">{dateLabel}</p>
+		<div class="monitoring-heading">
+			<span class="monitoring-heading-icon" aria-hidden="true"
+				><Icon name="activity" class="h-5 w-5" /></span
+			>
+			<div class="min-w-0">
+				<h1 class="text-xl font-bold">Monitoring Absensi</h1>
+				<p class="monitoring-date">
+					<Icon name="calendar" class="h-3.5 w-3.5 shrink-0" />{dateLabel}
+				</p>
+			</div>
 		</div>
 		<div class="monitoring-refresh">
 			<AttendanceRefresh context={initial} updatedAt={data.generatedAt} onrefresh={refresh} />
@@ -161,6 +200,7 @@
 			<a
 				class="btn btn-ghost min-w-0 border-0 shadow-none"
 				class:monitoring-tab-active={data.tab === tab.key}
+				data-tab={tab.key}
 				aria-current={data.tab === tab.key ? 'page' : undefined}
 				href={link('tab', tab.key)}
 				><Icon name={tabIcon(tab.key)} class="h-4 w-4 shrink-0" />{tab.label}</a
@@ -272,17 +312,66 @@
 			>
 		</div>
 	{/if}
+	{#if data.connection}
+		<section class="monitoring-connection my-4" aria-label="Hubungan Sekolah dan Asrama">
+			<h2 class="flex items-center gap-2 text-sm font-semibold">
+				<Icon name="users" class="h-4 w-4" />Sekolah &amp; Asrama
+			</h2>
+			<div class="monitoring-connection-counts">
+				<a
+					href={link('perjalanan', 'menunggu_sekolah')}
+					class="monitoring-metric monitoring-connection-card monitoring-connection-school"
+					aria-current={data.travel === 'menunggu_sekolah' ? 'true' : undefined}
+				>
+					<span class="monitoring-metric-title"
+						><Icon name="school" class="h-4 w-4 shrink-0" />Belum tiba di sekolah</span
+					>
+					<strong class="monitoring-number">{data.connection.toSchool}</strong>
+					<span class="monitoring-metric-note">Sudah berangkat dari asrama</span>
+					<Icon name="right" class="monitoring-connection-arrow h-4 w-4" />
+				</a>
+				<a
+					href={link('perjalanan', 'menunggu_asrama')}
+					class="monitoring-metric monitoring-connection-card monitoring-connection-dorm"
+					aria-current={data.travel === 'menunggu_asrama' ? 'true' : undefined}
+				>
+					<span class="monitoring-metric-title"
+						><Icon name="users" class="h-4 w-4 shrink-0" />Belum tiba di asrama</span
+					>
+					<strong class="monitoring-number">{data.connection.toDorm}</strong>
+					<span class="monitoring-metric-note">Sudah pulang dari sekolah</span>
+					<Icon name="right" class="monitoring-connection-arrow h-4 w-4" />
+				</a>
+				<a
+					href={link('perjalanan', 'periksa')}
+					class="monitoring-metric monitoring-connection-card monitoring-connection-review"
+					aria-current={data.travel === 'periksa' ? 'true' : undefined}
+				>
+					<span class="monitoring-metric-title"
+						><Icon name="warning" class="h-4 w-4 shrink-0" />Perlu diperiksa</span
+					>
+					<strong class="monitoring-number">{data.connection.review}</strong>
+					<span class="monitoring-metric-note">Catatan atau waktu berbeda</span>
+					<Icon name="right" class="monitoring-connection-arrow h-4 w-4" />
+				</a>
+			</div>
+		</section>
+	{/if}
 	<dl class="monitoring-metrics mt-5" aria-label={`Ringkasan ${selectedSummary.label}`}>
-		<div class="monitoring-metric">
+		<div class="monitoring-metric monitoring-metric-total">
 			<dt><Icon name="users" class="h-4 w-4 shrink-0" />Total Murid</dt>
 			<dd class="monitoring-number">{data.total}</dd>
 			<dd class="monitoring-metric-note">Cakupan kelas dan akses</dd>
 		</div>
-		<div class="monitoring-metric">
+		<div class="monitoring-metric monitoring-metric-present">
 			<dt>
 				<Icon name="check" class="h-4 w-4 shrink-0 text-success" />{data.focus === 'pulang'
 					? 'Sudah Pulang'
-					: 'Hadir'}
+					: data.focus === 'asrama_tiba'
+						? 'Sudah Tiba'
+						: data.focus === 'asrama_berangkat'
+							? 'Sudah Berangkat'
+							: 'Hadir'}
 			</dt>
 			<dd class="monitoring-number" data-count="present">{overview.present}</dd>
 			<dd class="monitoring-metric-note">
@@ -291,12 +380,12 @@
 					: selectedSummary.label}
 			</dd>
 		</div>
-		<div class="monitoring-metric">
+		<div class="monitoring-metric monitoring-metric-absent">
 			<dt><Icon name="info" class="h-4 w-4 shrink-0 text-info" />Tidak Hadir</dt>
 			<dd class="monitoring-number" data-count="absent">{overview.absent}</dd>
 			<dd class="monitoring-metric-note">{absenceNote}</dd>
 		</div>
-		<div class="monitoring-metric">
+		<div class="monitoring-metric monitoring-metric-pending">
 			<dt><Icon name="question" class="h-4 w-4 shrink-0 text-warning" />Belum Tercatat</dt>
 			<dd class="monitoring-number" data-count="pending">{overview.pending}</dd>
 			<dd class="monitoring-metric-note">
@@ -314,194 +403,347 @@
 		></progress>
 		<span class="whitespace-nowrap tabular-nums">{overview.percentage}% tercatat</span>
 	</div>
-	<div class="monitoring-list-heading mb-3">
-		<div>
-			<h3 class="font-semibold">Daftar Murid</h3>
-			<p class="mt-0.5 text-xs text-base-content/65" aria-live="polite">
-				{data.matched} murid sesuai filter
-			</p>
-			<div class="mt-1 flex flex-wrap gap-x-3 gap-y-2 text-xs text-base-content/65">
-				<p class="min-w-0 break-words">Sumber: {selectedSummary.sourceLabel}</p>
-				{#if data.classId && selectedSummary.recapPath}
-					<a
-						class="link inline-flex items-center gap-1.5"
-						href={activityLink(selectedSummary, data.classId, true)}
+	<section class="monitoring-register" aria-label="Pemantauan murid">
+		<div class="monitoring-list-heading">
+			<div class="monitoring-list-title">
+				<span class="monitoring-list-icon" aria-hidden="true"
+					><Icon name="users" class="h-5 w-5" /></span
+				>
+				<div class="min-w-0">
+					<h3 class="text-base font-bold">Daftar Murid</h3>
+					<p class="mt-0.5 text-xs text-base-content/65" aria-live="polite">
+						{data.matched} murid sesuai filter
+					</p>
+					<div class="mt-1 flex flex-wrap gap-x-3 gap-y-2 text-xs text-base-content/65">
+						<p class="min-w-0 break-words">Sumber: {selectedSummary.sourceLabel}</p>
+					</div>
+				</div>
+			</div>
+			<div class="monitoring-list-controls">
+				{#if data.columns.length > 1}
+					<label class="flex min-w-0 flex-col gap-1 text-sm" for="monitoring-focus">
+						<span>Kolom Pemantauan</span>
+						<select
+							id="monitoring-focus"
+							class="select select-sm w-full"
+							value={data.focus}
+							onchange={(event) => filter('kolom', event.currentTarget.value)}
+						>
+							{#each data.columns as column (column.key)}<option value={column.key}
+									>{column.label}</option
+								>{/each}
+						</select>
+					</label>
+				{/if}
+				<label class="flex min-w-0 flex-col gap-1 text-sm">
+					<span>Status</span>
+					<select
+						class="select select-sm w-full"
+						value={data.status}
+						aria-label="Filter status monitoring"
+						onchange={(event) => filter('status', event.currentTarget.value)}
 					>
-						<Icon name="table" class="h-3.5 w-3.5" />Buka Rekap
-					</a>
+						<option value="">Semua Status</option>
+						{#each Object.entries(data.statusLabels) as [status, label] (status)}
+							<option value={status}
+								>{label} ({selectedSummary.counts[status as MonitoringStatus]})</option
+							>
+						{/each}
+					</select>
+				</label>
+				{#if data.connection}
+					<label class="monitoring-travel-filter flex min-w-0 flex-col gap-1 text-sm">
+						<span>Perjalanan</span>
+						<select
+							class="select select-sm w-full"
+							aria-label="Filter perjalanan"
+							value={data.travel}
+							onchange={(event) => filter('perjalanan', event.currentTarget.value)}
+						>
+							<option value="">Semua Perjalanan</option>
+							<option value="menunggu_sekolah">Belum tiba di sekolah</option>
+							<option value="menunggu_asrama">Belum tiba di asrama</option>
+							<option value="periksa">Perlu diperiksa</option>
+						</select>
+					</label>
 				{/if}
 			</div>
 		</div>
-		<div class="monitoring-list-controls">
-			{#if data.columns.length > 1}
-				<label class="flex min-w-0 flex-col gap-1 text-sm" for="monitoring-focus">
-					<span>Kolom Pemantauan</span>
-					<select
-						id="monitoring-focus"
-						class="select select-sm w-full"
-						value={data.focus}
-						onchange={(event) => filter('kolom', event.currentTarget.value)}
-					>
-						{#each data.columns as column (column.key)}<option value={column.key}
-								>{column.label}</option
-							>{/each}
-					</select>
-				</label>
-			{/if}
-			<label class="flex min-w-0 flex-col gap-1 text-sm">
-				<span>Status</span>
-				<select
-					class="select select-sm w-full"
-					value={data.status}
-					aria-label="Filter status monitoring"
-					onchange={(event) => filter('status', event.currentTarget.value)}
-				>
-					<option value="">Semua Status</option>
-					{#each Object.entries(data.statusLabels) as [status, label] (status)}
-						<option value={status}
-							>{label} ({selectedSummary.counts[status as MonitoringStatus]})</option
-						>
-					{/each}
-				</select>
-			</label>
-		</div>
-	</div>
-	<div class="monitoring-table-wrap rounded-lg border border-base-300">
-		<table class="table" aria-label="Daftar monitoring absensi">
-			<thead>
-				<tr
-					><th class="monitoring-no">No</th><th class="monitoring-name">Nama Murid</th><th
-						class="monitoring-class">Kelas</th
-					>
-					{#each data.columns as column, index (column.key)}
-						<th class="monitoring-activity">
-							<span>{column.label}</span>
-							<span class="mt-1 block text-xs font-normal text-base-content/60">
-								{monitoringOverview(data.summaries[index].counts, data.total).present} / {data.total}
-							</span>
-						</th>
-					{/each}
-				</tr>
-			</thead>
-			<tbody>
-				{#each data.rows as row, index (row.id)}
+		<div class="monitoring-table-wrap rounded-lg border border-base-300">
+			<table class="table" aria-label="Daftar monitoring absensi">
+				<thead>
 					<tr
-						><td class="monitoring-no text-base-content/60">{(data.page - 1) * 30 + index + 1}</td>
-						<td class="monitoring-name"
-							><span class="break-words font-semibold">{row.nama}</span></td
+						><th class="monitoring-no">No</th><th class="monitoring-name">Nama Murid</th><th
+							class="monitoring-class">Kelas</th
 						>
-						<td class="monitoring-class whitespace-normal">{row.kelas}</td>
-						{#each row.cells as cell, cellIndex (data.columns[cellIndex].key)}
-							<td>{@render attendanceCell(cell, data.columns[cellIndex], row)}</td>
+						{#each data.columns as column, index (column.key)}
+							<th class="monitoring-activity" class:monitoring-focused={data.focus === column.key}>
+								<span>{column.label}</span>
+								<span class="mt-1 block text-xs font-normal text-base-content/60">
+									{monitoringOverview(data.summaries[index].counts, data.total).present} / {data.total}
+								</span>
+							</th>
 						{/each}
+						{#if data.connection}<th class="monitoring-journey-heading">Perjalanan</th>{/if}
 					</tr>
-				{:else}
-					<tr
-						><td colspan={3 + data.columns.length} class="py-10 text-center text-base-content/60">
-							Tidak ada murid sesuai filter dan penugasan.
-						</td></tr
-					>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-	<div
-		class="monitoring-mobile-list rounded-lg border border-base-300"
-		aria-label="Daftar monitoring murid"
-	>
-		{#each data.rows as row, index (row.id)}
-			<article class="monitoring-student" aria-label={`Monitoring ${row.nama}`}>
-				<header class="mb-3 flex items-start justify-between gap-3">
-					<div class="min-w-0">
-						<h4 class="break-words font-semibold">{row.nama}</h4>
-						<p class="mt-0.5 text-xs text-base-content/65">Kelas {row.kelas}</p>
-					</div>
-					<span class="pt-0.5 text-xs text-base-content/50">{(data.page - 1) * 30 + index + 1}</span
-					>
-				</header>
-				<dl class="monitoring-student-cells">
-					{#each row.cells.slice(0, 2) as cell, cellIndex (data.columns[cellIndex].key)}
-						<div class="min-w-0">
-							<dt class="mb-1.5 text-xs text-base-content/65">{data.columns[cellIndex].label}</dt>
-							<dd>{@render attendanceCell(cell, data.columns[cellIndex], row)}</dd>
-						</div>
-					{/each}
-				</dl>
-				{#if row.cells.length > 2}
-					<details class="monitoring-student-details mt-3">
-						<summary class="text-sm text-base-content/65"
-							>{row.cells.length - 2} waktu lainnya</summary
-						>
-						<dl class="monitoring-student-cells mt-3">
-							{#each row.cells.slice(2) as cell, cellIndex (data.columns[cellIndex + 2].key)}
-								<div class="min-w-0">
-									<dt class="mb-1.5 text-xs text-base-content/65">
-										{data.columns[cellIndex + 2].label}
-									</dt>
-									<dd>{@render attendanceCell(cell, data.columns[cellIndex + 2], row)}</dd>
-								</div>
+				</thead>
+				<tbody>
+					{#each data.rows as row, index (row.id)}
+						<tr
+							><td class="monitoring-no text-base-content/60">{(data.page - 1) * 30 + index + 1}</td
+							>
+							<td class="monitoring-name"
+								><span class="break-words font-semibold">{row.nama}</span></td
+							>
+							<td class="monitoring-class whitespace-normal"
+								><span class="monitoring-class-label">{row.kelas}</span></td
+							>
+							{#each row.cells as cell, cellIndex (data.columns[cellIndex].key)}
+								<td class:monitoring-focused={data.focus === data.columns[cellIndex].key}
+									>{@render attendanceCell(cell, data.columns[cellIndex], row)}</td
+								>
 							{/each}
-						</dl>
-					</details>
-				{/if}
-			</article>
-		{:else}
-			<p class="px-4 py-10 text-center text-sm text-base-content/60">
-				Tidak ada murid sesuai filter dan penugasan.
-			</p>
-		{/each}
-	</div>
-	<nav class="monitoring-pagination mt-4" aria-label="Halaman monitoring">
-		<span class="min-w-0 text-sm text-base-content/65">
-			{data.matched ? (data.page - 1) * 30 + 1 : 0}-{Math.min(data.page * 30, data.matched)} dari {data.matched}
-			murid
-		</span>
-		<div class="flex shrink-0 items-center gap-2">
-			{#if data.page > 1}<a
-					class="btn btn-sm btn-square"
-					title="Halaman sebelumnya"
-					aria-label="Halaman sebelumnya"
-					href={link('page', String(data.page - 1))}><Icon name="left" class="h-4 w-4" /></a
-				>
-			{:else}<button
-					class="btn btn-sm btn-square"
-					type="button"
-					disabled
-					aria-disabled="true"
-					aria-label="Halaman sebelumnya"
-				>
-					<Icon name="left" class="h-4 w-4" /></button
-				>{/if}
-			<span class="text-sm tabular-nums">{data.page} / {data.pageCount}</span>
-			{#if data.page < data.pageCount}<a
-					class="btn btn-sm btn-square"
-					title="Halaman berikutnya"
-					aria-label="Halaman berikutnya"
-					href={link('page', String(data.page + 1))}><Icon name="right" class="h-4 w-4" /></a
-				>
-			{:else}<button
-					class="btn btn-sm btn-square"
-					type="button"
-					disabled
-					aria-disabled="true"
-					aria-label="Halaman berikutnya"
-				>
-					<Icon name="right" class="h-4 w-4" /></button
-				>{/if}
+							{#if data.connection}<td>{@render journeys(row)}</td>{/if}
+						</tr>
+					{:else}
+						<tr
+							><td
+								colspan={3 + data.columns.length + (data.connection ? 1 : 0)}
+								class="py-10 text-center text-base-content/60"
+							>
+								Tidak ada murid sesuai filter dan penugasan.
+							</td></tr
+						>
+					{/each}
+				</tbody>
+			</table>
 		</div>
-	</nav>
+		<div
+			class="monitoring-mobile-list rounded-lg border border-base-300"
+			aria-label="Daftar monitoring murid"
+		>
+			{#each data.rows as row, index (row.id)}
+				<article class="monitoring-student" aria-label={`Monitoring ${row.nama}`}>
+					<header class="mb-3 flex items-start justify-between gap-3">
+						<div class="min-w-0">
+							<h4 class="break-words font-semibold">{row.nama}</h4>
+							<p class="mt-0.5 text-xs text-base-content/65">Kelas {row.kelas}</p>
+						</div>
+						<span class="pt-0.5 text-xs text-base-content/50"
+							>{(data.page - 1) * 30 + index + 1}</span
+						>
+					</header>
+					<dl class="monitoring-student-cells">
+						{#each row.cells.slice(0, 2) as cell, cellIndex (data.columns[cellIndex].key)}
+							<div class="min-w-0">
+								<dt class="mb-1.5 text-xs text-base-content/65">{data.columns[cellIndex].label}</dt>
+								<dd>{@render attendanceCell(cell, data.columns[cellIndex], row)}</dd>
+							</div>
+						{/each}
+					</dl>
+					{#if row.cells.length > 2}
+						<details class="monitoring-student-details mt-3">
+							<summary class="text-sm text-base-content/65"
+								>{row.cells.length - 2} waktu lainnya</summary
+							>
+							<dl class="monitoring-student-cells mt-3">
+								{#each row.cells.slice(2) as cell, cellIndex (data.columns[cellIndex + 2].key)}
+									<div class="min-w-0">
+										<dt class="mb-1.5 text-xs text-base-content/65">
+											{data.columns[cellIndex + 2].label}
+										</dt>
+										<dd>{@render attendanceCell(cell, data.columns[cellIndex + 2], row)}</dd>
+									</div>
+								{/each}
+							</dl>
+						</details>
+					{/if}
+					{#if data.connection}<div class="mt-3 border-t border-base-300 pt-3">
+							{@render journeys(row)}
+						</div>{/if}
+				</article>
+			{:else}
+				<p class="px-4 py-10 text-center text-sm text-base-content/60">
+					Tidak ada murid sesuai filter dan penugasan.
+				</p>
+			{/each}
+		</div>
+		<nav class="monitoring-pagination mt-4" aria-label="Halaman monitoring">
+			<span class="min-w-0 text-sm text-base-content/65">
+				{data.matched ? (data.page - 1) * 30 + 1 : 0}-{Math.min(data.page * 30, data.matched)} dari {data.matched}
+				murid
+			</span>
+			<div class="flex shrink-0 items-center gap-2">
+				{#if data.page > 1}<a
+						class="btn btn-sm btn-square"
+						title="Halaman sebelumnya"
+						aria-label="Halaman sebelumnya"
+						href={link('page', String(data.page - 1))}><Icon name="left" class="h-4 w-4" /></a
+					>
+				{:else}<button
+						class="btn btn-sm btn-square"
+						type="button"
+						disabled
+						aria-disabled="true"
+						aria-label="Halaman sebelumnya"
+					>
+						<Icon name="left" class="h-4 w-4" /></button
+					>{/if}
+				<span class="text-sm tabular-nums">{data.page} / {data.pageCount}</span>
+				{#if data.page < data.pageCount}<a
+						class="btn btn-sm btn-square"
+						title="Halaman berikutnya"
+						aria-label="Halaman berikutnya"
+						href={link('page', String(data.page + 1))}><Icon name="right" class="h-4 w-4" /></a
+					>
+				{:else}<button
+						class="btn btn-sm btn-square"
+						type="button"
+						disabled
+						aria-disabled="true"
+						aria-label="Halaman berikutnya"
+					>
+						<Icon name="right" class="h-4 w-4" /></button
+					>{/if}
+			</div>
+		</nav>
+	</section>
 </section>
 
 <style>
+	.monitoring-connection {
+		padding-block: 0.5rem;
+	}
+	.monitoring-connection-counts {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0.75rem;
+		margin-top: 0.75rem;
+	}
+	.monitoring-connection-card {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		text-decoration: none;
+		box-shadow: 0 2px 4px #00000005;
+		transition:
+			background-color 150ms,
+			border-color 150ms;
+	}
+	.monitoring-connection-card:hover,
+	.monitoring-connection-card[aria-current='true'] {
+		background: color-mix(in oklab, var(--metric-color) 12%, var(--color-base-100));
+		border-color: var(--metric-color);
+	}
+	.monitoring-connection-card:focus-visible {
+		outline: 2px solid var(--metric-color);
+		outline-offset: 3px;
+	}
+	.monitoring-connection-card.monitoring-connection-school {
+		--metric-color: #0e7490;
+	}
+	.monitoring-connection-card.monitoring-connection-dorm {
+		--metric-color: #a16207;
+	}
+	.monitoring-connection-card.monitoring-connection-review {
+		--metric-color: #be123c;
+	}
+	.monitoring-connection-card :global(.monitoring-connection-arrow) {
+		position: absolute;
+		right: 1rem;
+		bottom: 1rem;
+		color: var(--metric-color);
+	}
+	.monitoring-connection-card .monitoring-metric-note {
+		padding-right: 1.5rem;
+	}
+	.monitoring-journeys {
+		display: grid;
+		gap: 0.625rem;
+		overflow-wrap: anywhere;
+	}
+	.monitoring-journey {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.5rem;
+		border-left: 2px solid var(--color-base-300);
+		padding-left: 0.625rem;
+	}
+	.monitoring-journey-title {
+		display: block;
+		font-size: 0.6875rem;
+		color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+	}
+	.monitoring-journey[data-status='tiba'] {
+		border-color: var(--color-success);
+	}
+	.monitoring-journey[data-status='menunggu'] {
+		border-color: var(--color-warning);
+	}
+	.monitoring-journey[data-status='periksa'] {
+		border-color: var(--color-error);
+	}
+	.monitoring-journey :global(.monitoring-journey-icon) {
+		margin-top: 0.125rem;
+		color: var(--color-base-content);
+	}
+	.monitoring-journey-heading {
+		min-width: 13rem;
+	}
+	.monitoring-travel-filter {
+		min-width: 0;
+	}
+
+	.monitoring :global(svg:not([fill])) {
+		fill: currentColor;
+	}
 	.monitoring-header {
+		padding: 1.25rem;
+		background: #0b6e62;
+		color: #fff;
+		border-radius: 0.5rem;
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;
 		gap: 1rem;
 	}
+	.monitoring-heading {
+		display: flex;
+		align-items: center;
+		gap: 0.875rem;
+		min-width: 0;
+	}
+	.monitoring-heading-icon {
+		display: grid;
+		place-items: center;
+		flex: 0 0 2.5rem;
+		height: 2.5rem;
+		border-radius: 0.5rem;
+		background: #ffffff20;
+	}
+	.monitoring-date {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+		margin-top: 0.375rem;
+		font-size: 0.8125rem;
+		color: #e3f3ee;
+	}
 	.monitoring-refresh {
 		min-width: 0;
+		max-width: 22rem;
+	}
+	.monitoring-refresh :global(.text-base-content\/60) {
+		color: #e3f3ee;
+	}
+	.monitoring-refresh :global(.btn) {
+		background: #fff;
+		color: #0b6e62;
+		border-color: #ffffff40;
+	}
+	.monitoring-refresh :global(.text-warning) {
+		color: #ffe3a2;
 	}
 	.monitoring-tabs {
 		display: grid;
@@ -512,9 +754,25 @@
 		padding: 0.25rem;
 		background: var(--color-base-100);
 	}
+	.monitoring-tabs a {
+		--tab-color: #2563eb;
+		border-radius: 0.375rem;
+		font-size: 0.875rem;
+		min-height: 2.75rem;
+	}
+	.monitoring-tabs a[data-tab='sholat'] {
+		--tab-color: #15803d;
+	}
+	.monitoring-tabs a[data-tab='makan'] {
+		--tab-color: #b45309;
+	}
+	.monitoring-tabs a[data-tab='asrama'] {
+		--tab-color: #be185d;
+	}
 	.monitoring-tabs .monitoring-tab-active {
-		color: color-mix(in oklab, var(--color-success) 55%, var(--color-base-content));
-		background: color-mix(in oklab, var(--color-success) 12%, var(--color-base-100));
+		color: var(--tab-color);
+		background: color-mix(in oklab, var(--tab-color) 12%, var(--color-base-100));
+		box-shadow: inset 0 -2px var(--tab-color);
 	}
 	.monitoring-tabs :global(a) {
 		color: var(--color-base-content);
@@ -527,6 +785,9 @@
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		align-items: end;
 		gap: 0.75rem;
+		padding: 1rem;
+		background: color-mix(in oklab, #2563eb 3%, var(--color-base-100));
+		border-block: 1px solid var(--color-base-300);
 	}
 	.monitoring-search {
 		grid-column: 1 / -1;
@@ -549,40 +810,57 @@
 	.monitoring-metrics {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
-		border-block: 1px solid var(--color-base-300);
-		background: var(--color-base-100);
+		gap: 0.75rem;
 	}
 	.monitoring-metric {
+		--metric-color: #2563eb;
 		min-width: 0;
-		padding: 0.875rem;
-		border-right: 1px solid var(--color-base-300);
+		padding: 1rem;
+		border: 1px solid color-mix(in oklab, var(--metric-color) 18%, var(--color-base-300));
+		border-top: 3px solid var(--metric-color);
+		border-radius: 0.5rem;
+		background: color-mix(in oklab, var(--metric-color) 6%, var(--color-base-100));
 	}
-	.monitoring-metric:nth-child(2n) {
-		border-right: 0;
+	.monitoring-metric-present {
+		--metric-color: #15803d;
 	}
-	.monitoring-metric:nth-child(-n + 2) {
-		border-bottom: 1px solid var(--color-base-300);
+	.monitoring-metric-absent {
+		--metric-color: #be123c;
 	}
-	.monitoring-metric dt {
+	.monitoring-metric-pending {
+		--metric-color: #a16207;
+	}
+	.monitoring-metric dt,
+	.monitoring-metric-title {
 		display: flex;
 		align-items: center;
-		gap: 0.375rem;
-		font-size: 0.75rem;
-		color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+		gap: 0.5rem;
+		min-height: 1.5rem;
+		font-size: 0.8125rem;
+		font-weight: 600;
+		color: var(--color-base-content);
+	}
+	.monitoring-metric dt :global(svg),
+	.monitoring-metric-title :global(svg) {
+		color: var(--metric-color);
 	}
 	.monitoring-number {
-		margin-block: 0.25rem;
+		margin: 0.5rem 0 0.25rem;
 		font-size: 1.75rem;
 		line-height: 1.25;
 		font-weight: 700;
 		font-variant-numeric: tabular-nums;
+		color: var(--metric-color);
 	}
 	.monitoring-metric-note {
 		font-size: 0.75rem;
+		color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
 		overflow-wrap: anywhere;
-		color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
 	}
 	.monitoring-progress {
+		padding: 0.875rem 1rem;
+		background: color-mix(in oklab, #15803d 4%, var(--color-base-100));
+		border-left: 3px solid #15803d;
 		display: grid;
 		grid-template-columns: auto minmax(2rem, 1fr) auto;
 		align-items: center;
@@ -594,19 +872,57 @@
 		background-color: var(--color-base-300);
 	}
 	.monitoring-list-heading {
+		padding: 1rem;
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
-		gap: 0.75rem;
+		gap: 1rem;
 		align-items: center;
 	}
 	.monitoring-list-controls {
 		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: minmax(0, 1fr);
 		align-items: end;
 		gap: 0.75rem;
 	}
 	.monitoring-list-controls > :only-child {
 		grid-column: 1 / -1;
+	}
+	.monitoring-register {
+		min-width: 0;
+		background: var(--color-base-100);
+		border-block: 1px solid var(--color-base-300);
+	}
+	.monitoring-list-title {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+		min-width: 0;
+	}
+	.monitoring-list-icon {
+		display: grid;
+		place-items: center;
+		width: 2.5rem;
+		height: 2.5rem;
+		flex-shrink: 0;
+		border-radius: 0.375rem;
+		color: #0e7490;
+		background: color-mix(in oklab, #0e7490 10%, var(--color-base-100));
+	}
+	.monitoring-list-controls :global(.select) {
+		min-height: 2.75rem;
+		font-size: 0.875rem;
+	}
+	.monitoring-class-label {
+		display: inline-block;
+		padding: 0.25rem 0.5rem;
+		border-radius: 0.25rem;
+		background: var(--color-base-200);
+		font-size: 0.75rem;
+		font-weight: 600;
+	}
+	.monitoring-register .monitoring-pagination {
+		padding: 1rem;
+		margin-top: 0;
 	}
 	.monitoring :global(select) {
 		text-overflow: ellipsis;
@@ -621,6 +937,7 @@
 	}
 	.monitoring-student {
 		padding: 1rem;
+		border-left: 3px solid color-mix(in oklab, #2563eb 45%, var(--color-base-300));
 		border-bottom: 1px solid var(--color-base-300);
 	}
 	.monitoring-student:last-child {
@@ -677,6 +994,9 @@
 		gap: 0.75rem;
 	}
 	@media (min-width: 640px) {
+		.monitoring-connection-counts {
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+		}
 		.monitoring-tabs {
 			grid-template-columns: repeat(4, minmax(0, 1fr));
 		}
@@ -684,16 +1004,13 @@
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 		.monitoring-list-heading {
-			grid-template-columns: minmax(0, 1fr) minmax(20rem, 28rem);
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.monitoring-list-controls {
+			grid-template-columns: repeat(3, minmax(0, 1fr));
 		}
 		.monitoring-metrics {
 			grid-template-columns: repeat(4, minmax(0, 1fr));
-		}
-		.monitoring-metric:nth-child(2) {
-			border-right: 1px solid var(--color-base-300);
-		}
-		.monitoring-metric:nth-child(-n + 2) {
-			border-bottom: 0;
 		}
 	}
 	@media (min-width: 1024px) {
@@ -727,6 +1044,13 @@
 			background: var(--color-base-200);
 			color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
 		}
+		.monitoring-table-wrap :global(thead th.monitoring-focused) {
+			box-shadow: inset 0 3px #0e7490;
+			color: var(--color-base-content);
+		}
+		.monitoring-table-wrap :global(tbody td.monitoring-focused) {
+			background: color-mix(in oklab, #0e7490 3%, var(--color-base-100));
+		}
 		.monitoring-table-wrap :global(tbody td) {
 			background: var(--color-base-100);
 		}
@@ -752,7 +1076,58 @@
 			min-width: 8rem;
 		}
 	}
+	@media (min-width: 1280px) {
+		.monitoring-list-heading {
+			grid-template-columns: minmax(12rem, 1fr) minmax(0, 2fr);
+		}
+	}
+	:global([data-theme='dark']) .monitoring-connection-school,
+	:global([data-theme='dark']) .monitoring-list-icon {
+		--metric-color: #67e8f9;
+		color: #67e8f9;
+	}
+	:global([data-theme='dark']) .monitoring-connection-dorm {
+		--metric-color: #fbbf24;
+	}
+	:global([data-theme='dark']) .monitoring-connection-review {
+		--metric-color: #fb7185;
+	}
+	:global([data-theme='dark']) .monitoring-metric-total,
+	:global([data-theme='dark']) .monitoring-tabs a[data-tab='sekolah'] {
+		--metric-color: #60a5fa;
+		--tab-color: #60a5fa;
+	}
+	:global([data-theme='dark']) .monitoring-metric-present,
+	:global([data-theme='dark']) .monitoring-tabs a[data-tab='sholat'] {
+		--metric-color: #34d399;
+		--tab-color: #34d399;
+	}
+	:global([data-theme='dark']) .monitoring-metric-absent,
+	:global([data-theme='dark']) .monitoring-tabs a[data-tab='asrama'] {
+		--metric-color: #fb7185;
+		--tab-color: #fb7185;
+	}
+	:global([data-theme='dark']) .monitoring-metric-pending,
+	:global([data-theme='dark']) .monitoring-tabs a[data-tab='makan'] {
+		--metric-color: #fbbf24;
+		--tab-color: #fbbf24;
+	}
 	@media (max-width: 639px) {
+		.monitoring-header {
+			padding: 1rem;
+		}
+		.monitoring-metric {
+			padding: 0.75rem;
+		}
+		.monitoring-metric dt {
+			font-size: 0.75rem;
+		}
+		.monitoring-date {
+			align-items: flex-start;
+		}
+		.monitoring-filters {
+			padding: 0.875rem;
+		}
 		.monitoring-refresh {
 			width: 100%;
 		}

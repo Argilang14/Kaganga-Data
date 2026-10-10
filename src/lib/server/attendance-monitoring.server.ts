@@ -6,7 +6,7 @@ import {
 	type IzinPulangStatus
 } from '$lib/server/absence-monitoring';
 import db from '$lib/server/db';
-import { studentAccessCondition } from './student-access';
+import { studentAccessCondition } from './attendance-student-access';
 import { ensureAbsenceMonitoringSchema } from '$lib/server/db/ensure-absence-monitoring';
 import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
 import {

@@ -6,29 +6,30 @@
 	const sekolahNpsn = $derived(sekolah?.npsn ?? '-');
 </script>
 
-<div class="card bg-base-100 rounded-box shadow-md dark:border-none">
-	<div class="card-body">
-		{#if sekolah}
-			<div class="flex items-center gap-4">
-				<div class="avatar">
-					<div class="w-24 rounded">
-						<img src={sekolahLogo} alt={`Logo ${sekolahNama}`} />
-					</div>
-				</div>
-				<div class="space-y-1">
-					<h2 class="card-title">Identitas Sekolah</h2>
-					<p class="text-lg font-bold">{sekolahNama}</p>
-					<p class="text-sm">NPSN: {sekolahNpsn}</p>
-				</div>
+<section
+	class="dashboard-panel dashboard-school min-w-0 rounded-lg p-5 shadow-sm"
+	aria-label="Identitas sekolah"
+>
+	{#if sekolah}
+		<div class="flex items-center gap-4">
+			<div
+				class="dashboard-school-logo flex size-16 shrink-0 items-center justify-center rounded-lg p-2"
+			>
+				<img class="size-full object-contain" src={sekolahLogo} alt={`Logo ${sekolahNama}`} />
 			</div>
-		{:else}
-			<div class="flex flex-col gap-2">
-				<h2 class="card-title">Identitas Sekolah</h2>
-				<p class="text-base-content/70">
-					Belum ada sekolah aktif. Silakan pilih atau buat data sekolah melalui menu Identitas
-					Sekolah.
-				</p>
+			<div class="min-w-0 space-y-1">
+				<h2 class="text-xs font-semibold text-base-content/70">Sekolah Aktif</h2>
+				<p class="break-words text-base font-bold">{sekolahNama}</p>
+				<p class="text-xs text-base-content/60">NPSN: {sekolahNpsn}</p>
 			</div>
-		{/if}
-	</div>
-</div>
+		</div>
+	{:else}
+		<div class="flex flex-col gap-2">
+			<h2 class="card-title">Identitas Sekolah</h2>
+			<p class="text-base-content/70">
+				Belum ada sekolah aktif. Silakan pilih atau buat data sekolah melalui menu Identitas
+				Sekolah.
+			</p>
+		</div>
+	{/if}
+</section>

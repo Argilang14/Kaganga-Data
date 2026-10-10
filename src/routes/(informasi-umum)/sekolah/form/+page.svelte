@@ -7,10 +7,18 @@
 	import { showModal } from '$lib/components/global-modal.svelte';
 	import ImportDatabaseModal from '$lib/components/modals/import-database-modal.svelte';
 	import { jenjangPendidikanSederajat, nauganOptions } from '$lib/statics';
+	import { isIntegratedSchool } from '$lib/education-unit';
+	import { resolve } from '$app/paths';
 
 	let { data } = $props();
 	const isNew = data.isNew as boolean;
 	const initialSekolah = (isNew ? undefined : data.sekolah) as Sekolah | undefined;
+	let integrated = $state(isIntegratedSchool(initialSekolah ?? {}));
+	const canOpenUnits = $derived(
+		integrated &&
+			initialSekolah?.id === data.activeSekolahId &&
+			isIntegratedSchool(initialSekolah ?? {})
+	);
 
 	// typed keys for jenjangPendidikanSederajat to avoid implicit `string` indexing errors
 	const jenjangKeys = Object.keys(jenjangPendidikanSederajat) as Array<
@@ -101,7 +109,7 @@
 				{/if}
 			</h2>
 
-			<div class="grid grid-cols-1 items-center gap-2 md:grid-cols-2">
+			<div class="grid grid-cols-1 items-start gap-2 md:grid-cols-2">
 				<!-- Jenjang Pendidikan & Lokasi Tanda Tangan -->
 				<div class="grid grid-cols-1 gap-2 md:col-span-2 md:grid-cols-2 md:items-end">
 					<div class="fieldset">
@@ -115,6 +123,10 @@
 								const sel = e.currentTarget as HTMLSelectElement;
 								const option = sel.selectedOptions?.[0];
 								const variant = option?.dataset?.variant ?? '';
+								integrated = isIntegratedSchool({
+									jenjangPendidikan: sel.value,
+									jenjangVariant: variant
+								});
 								const hidden = sel.form?.elements.namedItem(
 									'jenjangVariant'
 								) as HTMLInputElement | null;
@@ -167,13 +179,43 @@
 				<div class="fieldset">
 					<!-- NPSN -->
 					<legend class="fieldset-legend">NPSN</legend>
-					<input
-						required
-						type="text"
-						class="input validator bg-base-200 dark:bg-base-300 w-full dark:border-none"
-						placeholder="Contoh: 69856875"
-						name="npsn"
-					/>
+					<div class:hidden={integrated}>
+						<input
+							required={!integrated}
+							disabled={integrated}
+							type="text"
+							class="input validator bg-base-200 dark:bg-base-300 w-full dark:border-none"
+							placeholder="Contoh: 69856875"
+							name="npsn"
+							inputmode="numeric"
+							pattern="[0-9]{8}"
+							minlength="8"
+							maxlength="8"
+						/>
+					</div>
+					{#if integrated}
+						<div class="flex min-w-0 flex-col gap-2">
+							<div
+								class="flex min-h-10 items-center rounded border border-base-300 bg-base-200 px-3 text-sm text-base-content/65"
+							>
+								Diatur di Satuan Pendidikan
+							</div>
+							{#if canOpenUnits}
+								<a class="btn btn-soft w-full" href={resolve('/sekolah/satuan-pendidikan')}
+									><Icon name="school" /> Satuan Pendidikan</a
+								>
+							{:else}
+								<button
+									type="button"
+									class="btn btn-soft w-full"
+									disabled
+									aria-disabled="true"
+									title="Simpan sekolah terlebih dahulu"
+									><Icon name="school" /> Satuan Pendidikan</button
+								>
+							{/if}
+						</div>
+					{/if}
 				</div>
 
 				<div class="fieldset">

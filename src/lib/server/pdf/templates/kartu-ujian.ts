@@ -1,4 +1,8 @@
-import { renderSchoolLetterhead, schoolLetterheadStyles, type SchoolLetterheadData } from './school-letterhead.ts';
+import {
+	renderSchoolLetterhead,
+	schoolLetterheadStyles,
+	type SchoolLetterheadData
+} from './school-letterhead.ts';
 
 type Participant = {
 	nomorPeserta?: string | null;
@@ -10,11 +14,18 @@ type Participant = {
 	usernameLms?: string | null;
 	passwordLms?: string | null;
 	qrDataUrl?: string | null;
+	sekolah?: SchoolLetterheadData;
 };
 
 export type ExamCardData = {
 	sekolah: SchoolLetterheadData;
-	ujian: { nama: string; singkatan?: string | null; tahunAjaran: string; semester?: string | null; tanggalCetak?: string | null };
+	ujian: {
+		nama: string;
+		singkatan?: string | null;
+		tahunAjaran: string;
+		semester?: string | null;
+		tanggalCetak?: string | null;
+	};
 	peserta: Participant[];
 	showAttendanceQr?: boolean;
 	showLmsAccount?: boolean;
@@ -26,7 +37,8 @@ const esc = (value: string | number | null | undefined) =>
 
 function chunks<T>(items: T[], size: number) {
 	const result: T[][] = [];
-	for (let index = 0; index < items.length; index += size) result.push(items.slice(index, index + size));
+	for (let index = 0; index < items.length; index += size)
+		result.push(items.slice(index, index + size));
 	return result;
 }
 
@@ -35,9 +47,11 @@ function row(label: string, value: string | null | undefined, emphasize = false)
 }
 
 function card(data: ExamCardData, participant: Participant) {
-	const examTitle = [data.ujian.nama, data.ujian.semester, `TP. ${data.ujian.tahunAjaran}`].filter(Boolean);
+	const examTitle = [data.ujian.nama, data.ujian.semester, `TP. ${data.ujian.tahunAjaran}`].filter(
+		Boolean
+	);
 	return `<article class="exam-card">
-		${renderSchoolLetterhead(data.sekolah, true)}
+		${renderSchoolLetterhead(participant.sekolah ?? data.sekolah, true)}
 		<div class="exam-title"><div>KARTU PESERTA</div>${examTitle.map((line) => `<div>${esc(line).toUpperCase()}</div>`).join('')}</div>
 		<section class="identity">
 			${row('No. Peserta', participant.nomorPeserta, true)}

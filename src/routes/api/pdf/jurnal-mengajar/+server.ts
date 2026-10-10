@@ -2,6 +2,7 @@ import { error } from '@sveltejs/kit';
 import { pdfFilename, pdfDisposition } from '$lib/pdf-filename';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import db from '$lib/server/db';
+import { getDocumentEducationIdentity } from '$lib/server/education-units';
 import { ensureJurnalMengajarSchema } from '$lib/server/db/ensure-jurnal-mengajar';
 import {
 	tableJurnalMengajar,
@@ -349,8 +350,20 @@ export const GET = (async ({ locals, url }) => {
 	const printData = {
 		backgroundLogoUrl: showBgLogo ? logoUrl : null,
 		sekolah: {
-			nama: sekolah?.nama ?? '',
-			npsn: sekolah?.npsn ?? '',
+			nama: locals.sekolah
+				? (
+						await getDocumentEducationIdentity(locals.sekolah, {
+							kelasId: lingkup === 'kelas' ? kelasId : null
+						})
+					).nama
+				: '',
+			npsn: locals.sekolah
+				? (
+						await getDocumentEducationIdentity(locals.sekolah, {
+							kelasId: lingkup === 'kelas' ? kelasId : null
+						})
+					).npsn
+				: '',
 			naungan: sekolah?.naungan ?? 'kemendikbud',
 			alamat: locals.sekolah ? composeAlamat(locals.sekolah) : '',
 			email: sekolah?.email ?? '',
@@ -408,7 +421,15 @@ export const GET = (async ({ locals, url }) => {
 
 	return new Response(new Blob([pdfBuffer], { type: 'application/pdf' }), {
 		headers: {
-			'Content-Disposition': pdfDisposition(pdfFilename('Jurnal Mengajar', printData.filter.value, printData.filter.jenisJadwal, tanggalMulai, tanggalSelesai))
+			'Content-Disposition': pdfDisposition(
+				pdfFilename(
+					'Jurnal Mengajar',
+					printData.filter.value,
+					printData.filter.jenisJadwal,
+					tanggalMulai,
+					tanggalSelesai
+				)
+			)
 		}
 	});
 }) satisfies RequestHandler;

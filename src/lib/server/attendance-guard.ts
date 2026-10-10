@@ -5,12 +5,17 @@ import {
 	canAttendance,
 	canAttendActivity,
 	attendanceDateAllowed,
+	hasSchoolWideAttendanceStudentAccess,
 	type AttendanceAction
 } from '$lib/attendance-access';
 import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 import db from './db';
 import { tableIzinPulangMurid, tableKegiatanAbsensi } from './db/schema';
 import { accessibleClassIds, assertStudentAccess } from './student-access';
+import {
+	accessibleClassIds as attendanceClasses,
+	assertStudentAccess as attendanceStudent
+} from './attendance-student-access';
 import { resolveSekolahAcademicContext } from './db/academic';
 import { todayLocalDate } from './absensi-digital';
 
@@ -85,7 +90,12 @@ export const attendanceGuard: Handle = async ({ event, resolve }) => {
 	const classId = Number(
 		form?.get('kelasId') ?? form?.get('kelas_id') ?? params.get('kelasId') ?? params.get('kelas_id')
 	);
-	if (classId && !(await accessibleClassIds(user, sekolah.id)).includes(classId))
+	const photoRead = !mutating && /^\/api\/murid-photo\//.test(path);
+	const expandedPhotoRead = photoRead && hasSchoolWideAttendanceStudentAccess(user, sekolah.id);
+	const allowedClasses = isAttendance ? attendanceClasses : accessibleClassIds;
+	const allowedStudent =
+		isAttendance || expandedPhotoRead ? attendanceStudent : assertStudentAccess;
+	if (classId && !(await allowedClasses(user, sekolah.id)).includes(classId))
 		throw error(403, 'Kelas di luar penugasan akun.');
 	const studentId = Number(
 		form?.get('muridId') ??
@@ -95,8 +105,15 @@ export const attendanceGuard: Handle = async ({ event, resolve }) => {
 			/^\/murid\/(?:form\/)?(\d+)(?:\/|$)/.exec(path)?.[1] ??
 			/^\/api\/murid-photo\/(\d+)$/.exec(path)?.[1]
 	);
-	if (studentId && !(await assertStudentAccess(user, sekolah.id, studentId)))
-		throw error(403, 'Murid di luar penugasan akun.');
+	if (studentId) {
+		const student = await allowedStudent(user, sekolah.id, studentId, expandedPhotoRead);
+		if (!student) throw error(403, 'Murid di luar penugasan akun.');
+		if (expandedPhotoRead) {
+			const academic = await resolveSekolahAcademicContext(sekolah.id);
+			if (student.semesterId !== academic.activeSemesterId)
+				throw error(403, 'Foto murid di luar semester aktif.');
+		}
+	}
 	if (form && isAttendance) {
 		const semesterId = Number(form.get('semesterId'));
 		const academic = await resolveSekolahAcademicContext(sekolah.id);
@@ -135,7 +152,7 @@ export const attendanceGuard: Handle = async ({ event, resolve }) => {
 					eq(tableIzinPulangMurid.sekolahId, sekolah.id)
 				)
 			});
-			if (!permit?.muridId || !(await assertStudentAccess(user, sekolah.id, permit.muridId)))
+			if (!permit?.muridId || !(await attendanceStudent(user, sekolah.id, permit.muridId)))
 				throw error(403, 'Izin pulang di luar penugasan akun.');
 		}
 	}

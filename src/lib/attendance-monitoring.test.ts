@@ -91,7 +91,7 @@ test('school, meals and night remain independent; unknowns never become alfa', (
 		permits: [],
 		columns: resolveMonitoringColumns('malam', activities, new URLSearchParams())
 	});
-	assert.equal(night[0].cells[0].status, 'belum');
+	assert.equal(night[0].cells[2].status, 'belum');
 });
 test('each student counted once and duplicate records resolve deterministically', () => {
 	const rows = buildMonitoringRows({
@@ -176,6 +176,6 @@ test('midnight scan remains on the attendance date; monitoring today uses Jakart
 		permits: [],
 		columns: resolveMonitoringColumns('malam', activities, new URLSearchParams())
 	});
-	assert.equal(rows[0].cells[0].time, scan);
+	assert.equal(rows[0].cells[2].time, scan);
 	assert.equal(monitoringToday(new Date(scan)), '2026-10-06');
 });

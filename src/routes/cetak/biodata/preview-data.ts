@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import db from '$lib/server/db';
+import { getStudentEducationIdentity } from '$lib/server/education-units';
 import { tableMurid } from '$lib/server/db/schema';
 import { jenisKelamin } from '$lib/statics';
 import {
@@ -145,7 +146,7 @@ export async function getBiodataPreviewPayload({ locals, url }: BiodataContext) 
 
 	const biodataData: BiodataPrintData = {
 		sekolah: {
-			nama: sekolah.nama,
+			nama: (await getStudentEducationIdentity(sekolah.id, murid.id)).nama,
 			bgLogoSrc,
 			statusKepalaSekolah: sekolah.statusKepalaSekolah ?? 'definitif'
 		},

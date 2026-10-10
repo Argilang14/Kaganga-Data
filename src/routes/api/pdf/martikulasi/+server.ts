@@ -12,7 +12,7 @@ import {
 	tableSekolah,
 	tableTahunAjaran
 } from '$lib/server/db/schema';
-import { inferKelasJadwalJenjang } from '$lib/server/jadwal';
+import { getClassEducationIdentity, commonSchoolIdentity } from '$lib/server/education-units';
 import { renderPDF } from '$lib/server/pdf/pagedpdf';
 import {
 	renderRaportMartikulasiHTML,
@@ -92,7 +92,7 @@ export const GET = (async ({ locals, url }) => {
 	const schoolPrint = {
 		backgroundLogoUrl: showBgLogo ? logoUrl : null,
 		nama: settings.sekolahNamaSnapshot || sekolah.nama,
-		npsn: settings.npsnSnapshot || sekolah.npsn,
+		npsn: locals.sekolah ? commonSchoolIdentity(locals.sekolah).npsn : sekolah.npsn,
 		naungan: settings.naunganSnapshot || sekolah.naungan,
 		alamat: settings.alamatSnapshot || (locals.sekolah ? composeAlamat(locals.sekolah) : ''),
 		email: settings.emailSnapshot || sekolah.email,
@@ -152,13 +152,20 @@ export const GET = (async ({ locals, url }) => {
 				nilai: true
 			}
 		});
+		const identities = new Map<number, Awaited<ReturnType<typeof getClassEducationIdentity>>>();
+		for (const item of hasil) {
+			if (!item.nomorSttm && item.kelas)
+				identities.set(item.id, await getClassEducationIdentity(sekolahId, item.kelasId));
+		}
 		const students: MartikulasiStudentPrint[] = hasil
 			.filter((item) => item.murid && item.kelas)
 			.map((item) => ({
 				nama: item.muridNamaSnapshot || item.murid!.nama,
 				nis: item.nisSnapshot || item.murid!.nis,
 				nisn: item.nisnSnapshot || item.murid!.nisn,
-				jenjang: item.jenjangSnapshot || inferKelasJadwalJenjang(item.kelas!).toUpperCase(),
+				jenjang: item.nomorSttm
+					? item.jenjangSnapshot || ''
+					: identities.get(item.id)!.jenjang.toUpperCase(),
 				kelas: item.kelasNamaSnapshot || item.kelas!.nama,
 				nomorSttm: item.nomorSttm,
 				tanggalSttm: formatTanggal(item.tanggalSttm),
@@ -188,7 +195,11 @@ export const GET = (async ({ locals, url }) => {
 								status: item.kepalaSekolahStatusSnapshot || schoolPrint.kepalaSekolah.status
 							}
 						}
-					: null,
+					: {
+							...schoolPrint,
+							nama: identities.get(item.id)!.nama,
+							npsn: identities.get(item.id)!.npsn
+						},
 				lokasiPenetapanSnapshot: item.lokasiPenetapanSnapshot,
 				nilai: item.nilai
 			}))
@@ -201,7 +212,12 @@ export const GET = (async ({ locals, url }) => {
 					: 'Belum ada hasil Martikulasi untuk pilihan ini.'
 			);
 		}
-		filename = pdfFilename(labels[jenis], muridId ? students[0].nama : `${students.length} Murid`, muridId ? students[0].kelas : 'Semua Kelas', tahun.nama);
+		filename = pdfFilename(
+			labels[jenis],
+			muridId ? students[0].nama : `${students.length} Murid`,
+			muridId ? students[0].kelas : 'Semua Kelas',
+			tahun.nama
+		);
 		html =
 			jenis === 'raport'
 				? renderRaportMartikulasiHTML({ school: schoolPrint, settings: settingsPrint, students })

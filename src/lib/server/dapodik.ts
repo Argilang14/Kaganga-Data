@@ -1,4 +1,6 @@
 import db from '$lib/server/db';
+import { ensureEducationUnitsSchema } from '$lib/server/db/ensure-education-units';
+import { assertSingleSchoolDapodikWrite } from '$lib/server/education-units';
 import { normalizedNisn, sameMuridPerson } from '$lib/server/murid-identity';
 import { validateMuridIdentityInput } from '$lib/server/murid-identity-service';
 import { syncMuridGovernance } from '$lib/server/murid-lifecycle';
@@ -110,7 +112,14 @@ export type DapodikSettingsView = {
 	lastSyncAt: string | null;
 };
 
-type Credentials = { base: string; token: string; npsn: string };
+type Credentials = { base: string; token: string; npsn: string; satuanId?: number };
+type DapodikContextInput = {
+	url?: string;
+	token?: string;
+	npsn?: string;
+	semesterId?: string;
+	satuanId?: number;
+};
 type TargetSemester = { id: number; tahunAjaranId: number; semesterId: string };
 type SourceBundle = {
 	credentials: Credentials;
@@ -195,14 +204,47 @@ async function dapodikGet(credentials: Credentials, endpoint: string, semesterId
 	return rowsOf(data);
 }
 
-async function storedSettings(sekolahId: number) {
+async function storedSettings(
+	sekolahId: number,
+	satuanId?: number
+): Promise<typeof tableDapodikSettings.$inferSelect | undefined> {
+	if (satuanId) {
+		await ensureEducationUnitsSchema();
+		const row = (
+			await db.$client.execute({
+				sql: `SELECT d.*,u.npsn FROM sekolah_satuan_pendidikan u LEFT JOIN dapodik_satuan_settings d ON d.satuan_id=u.id WHERE u.id=? AND u.sekolah_id=?`,
+				args: [satuanId, sekolahId]
+			})
+		).rows[0];
+		if (!row) throw new DapodikError('Satuan pendidikan tidak ditemukan pada sekolah aktif.');
+		return {
+			id: satuanId,
+			sekolahId,
+			url: String(row.url || ''),
+			token: String(row.token || ''),
+			npsn: String(row.npsn),
+			semesterIdDapodikTerakhir: row.semester_id ? String(row.semester_id) : null,
+			lastSyncAt: null,
+			lastPreviewAt: row.last_preview_at ? String(row.last_preview_at) : null,
+			lastPreviewFingerprint: row.last_preview_fingerprint
+				? String(row.last_preview_fingerprint)
+				: null,
+			lastNilaiPreviewAt: null,
+			lastNilaiPreviewFingerprint: null,
+			createdAt: String(row.updated_at || ''),
+			updatedAt: row.updated_at ? String(row.updated_at) : null
+		};
+	}
 	return db.query.tableDapodikSettings.findFirst({
 		where: eq(tableDapodikSettings.sekolahId, sekolahId)
 	});
 }
 
-export async function getDapodikSettings(sekolahId: number): Promise<DapodikSettingsView> {
-	const settings = await storedSettings(sekolahId);
+export async function getDapodikSettings(
+	sekolahId: number,
+	satuanId?: number
+): Promise<DapodikSettingsView> {
+	const settings = await storedSettings(sekolahId, satuanId);
 	return {
 		url: settings?.url ?? '',
 		npsn: settings?.npsn ?? '',
@@ -212,17 +254,36 @@ export async function getDapodikSettings(sekolahId: number): Promise<DapodikSett
 	};
 }
 
+export async function saveDapodikConfiguration(sekolahId: number, input: DapodikContextInput) {
+	const credentials = await resolveCredentials(sekolahId, input);
+	await saveSettings(sekolahId, credentials, input.semesterId);
+	return { message: 'Konfigurasi Dapodik disimpan.' };
+}
+
 async function resolveCredentials(
 	sekolahId: number,
-	input: { url?: string; token?: string; npsn?: string }
+	input: DapodikContextInput
 ): Promise<Credentials> {
-	const saved = await storedSettings(sekolahId);
+	const school = (
+		await db.$client.execute({
+			sql: 'SELECT jenjang_pendidikan,jenjang_variant FROM sekolah WHERE id=?',
+			args: [sekolahId]
+		})
+	).rows[0];
+	if (
+		(school?.jenjang_pendidikan === 'srt' || school?.jenjang_variant === 'srt') &&
+		!input.satuanId
+	)
+		throw new DapodikError('Pilih satuan pendidikan sebelum mengakses Dapodik.');
+	const saved = await storedSettings(sekolahId, input.satuanId);
 	const base = normalizeWebServiceUrl(input.url?.trim() || saved?.url || '');
 	const token = input.token?.trim() || saved?.token || '';
 	const npsn = input.npsn?.trim() || saved?.npsn || '';
+	if (input.satuanId && npsn !== saved?.npsn)
+		throw new DapodikError('NPSN tidak sesuai satuan pendidikan yang dipilih.');
 	if (!token) throw new DapodikError('Token WebService Dapodik wajib diisi.');
 	if (!npsn) throw new DapodikError('NPSN wajib diisi.');
-	return { base, token, npsn };
+	return { base, token, npsn, satuanId: input.satuanId };
 }
 
 async function saveSettings(
@@ -232,6 +293,14 @@ async function saveSettings(
 	markSynced = false
 ) {
 	const now = new Date().toISOString();
+	if (credentials.satuanId) {
+		await storedSettings(sekolahId, credentials.satuanId);
+		await db.$client.execute({
+			sql: `INSERT INTO dapodik_satuan_settings (satuan_id,url,token,semester_id,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(satuan_id) DO UPDATE SET url=excluded.url,token=excluded.token,semester_id=COALESCE(excluded.semester_id,semester_id),last_preview_at=NULL,last_preview_fingerprint=NULL,updated_at=excluded.updated_at`,
+			args: [credentials.satuanId, credentials.base, credentials.token, semesterId || null, now]
+		});
+		return;
+	}
 	const existing = await storedSettings(sekolahId);
 	const values = {
 		url: credentials.base,
@@ -272,6 +341,13 @@ function previewFingerprint(source: SourceBundle) {
 }
 
 async function markPreview(sekolahId: number, source: SourceBundle) {
+	if (source.credentials.satuanId) {
+		await db.$client.execute({
+			sql: 'UPDATE dapodik_satuan_settings SET last_preview_at=?,last_preview_fingerprint=? WHERE satuan_id=?',
+			args: [new Date().toISOString(), previewFingerprint(source), source.credentials.satuanId]
+		});
+		return;
+	}
 	await db
 		.update(tableDapodikSettings)
 		.set({
@@ -299,10 +375,10 @@ async function writeLog(
 	});
 }
 
-async function semesterCandidates(sekolahId: number, requested?: string) {
+async function semesterCandidates(sekolahId: number, requested?: string, satuanId?: number) {
 	const result: string[] = [];
 	if (requested && parseDapodikSemesterId(requested)) result.push(requested);
-	const saved = await storedSettings(sekolahId);
+	const saved = await storedSettings(sekolahId, satuanId);
 	if (saved?.semesterIdDapodikTerakhir) result.push(saved.semesterIdDapodikTerakhir);
 	const active = await db
 		.select({ dapodikId: tableSemester.dapodikSemesterId })
@@ -318,18 +394,17 @@ async function semesterCandidates(sekolahId: number, requested?: string) {
 	return [...new Set(result)];
 }
 
-async function loadSource(
-	sekolahId: number,
-	input: { url?: string; token?: string; npsn?: string; semesterId?: string }
-): Promise<SourceBundle> {
+async function loadSource(sekolahId: number, input: DapodikContextInput): Promise<SourceBundle> {
 	const credentials = await resolveCredentials(sekolahId, input);
 	const sekolahRows = await dapodikGet(credentials, 'getSekolah', input.semesterId);
 	const sekolah = sekolahRows[0];
 	if (!sekolah) throw new DapodikError('Profil sekolah tidak ditemukan di Dapodik.');
+	if (credentials.satuanId && str(sekolah, 'npsn') && str(sekolah, 'npsn') !== credentials.npsn)
+		throw new DapodikError('NPSN sumber Dapodik berbeda dengan satuan yang dipilih.');
 
 	let semesterId = '';
 	let rombel: Row[] = [];
-	for (const candidate of await semesterCandidates(sekolahId, input.semesterId)) {
+	for (const candidate of await semesterCandidates(sekolahId, input.semesterId, input.satuanId)) {
 		try {
 			const rows = await dapodikGet(credentials, 'getRombonganBelajar', candidate);
 			if (rows.some((row) => str(row, 'rombongan_belajar_id'))) {
@@ -359,10 +434,7 @@ async function loadSource(
 	return { credentials, sekolah, semesterId, rombel, pegawai, murid, mapelReferensi, warnings };
 }
 
-export async function testDapodikConnection(
-	sekolahId: number,
-	input: { url?: string; token?: string; npsn?: string }
-) {
+export async function testDapodikConnection(sekolahId: number, input: DapodikContextInput) {
 	try {
 		const credentials = await resolveCredentials(sekolahId, input);
 		const sekolah = (await dapodikGet(credentials, 'getSekolah'))[0];
@@ -420,13 +492,13 @@ async function targetSemesterIfExists(sekolahId: number, semesterId: string) {
 
 export async function previewDapodikSync(
 	sekolahId: number,
-	input: { url?: string; token?: string; npsn?: string; semesterId?: string }
+	input: DapodikContextInput
 ): Promise<DapodikPreview> {
 	try {
 		const source = await loadSource(sekolahId, input);
 		const parsed = parseDapodikSemesterId(source.semesterId)!;
 		const semesterLokal = await targetSemesterIfExists(sekolahId, source.semesterId);
-		const [pegawaiLokal, kelasLokal, muridLokal, sekolahLokal] = await Promise.all([
+		const [pegawaiLokal, allKelas, allMurid, sekolahLokal] = await Promise.all([
 			db.select().from(tablePegawai).where(eq(tablePegawai.sekolahId, sekolahId)),
 			semesterLokal
 				? db
@@ -446,6 +518,20 @@ export async function previewDapodikSync(
 				: Promise.resolve([]),
 			db.query.tableSekolah.findFirst({ where: eq(tableSekolah.id, sekolahId) })
 		]);
+		const unitClasses = source.credentials.satuanId
+			? (
+					await db.$client.execute({
+						sql: `SELECT m.kelas_id FROM kelas_satuan_pendidikan m JOIN kelas k ON k.id=m.kelas_id WHERE m.satuan_id=? AND k.sekolah_id=?`,
+						args: [source.credentials.satuanId, sekolahId]
+					})
+				).rows.map((row) => Number(row.kelas_id))
+			: null;
+		const kelasLokal = unitClasses
+			? allKelas.filter((row) => unitClasses.includes(row.id))
+			: allKelas;
+		const muridLokal = unitClasses
+			? allMurid.filter((row) => unitClasses.includes(row.kelasId))
+			: allMurid;
 
 		const pegawaiRows = source.pegawai.filter((row) => str(row, 'ptk_id') && str(row, 'nama'));
 		const rombelRows = regularRombel(source.rombel);
@@ -1267,6 +1353,7 @@ export async function applyDapodikSync(
 	}
 ): Promise<DapodikApplyResult> {
 	try {
+		await assertSingleSchoolDapodikWrite(sekolahId);
 		if (!input.categories.length) throw new DapodikError('Pilih minimal satu kategori data.');
 		if (input.categories.includes('mapel') && !input.selectedMapelKeys?.length) {
 			throw new DapodikError('Pilih minimal satu mata pelajaran dari pratinjau.');

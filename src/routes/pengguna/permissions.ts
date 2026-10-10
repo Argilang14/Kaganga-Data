@@ -39,8 +39,8 @@ export const groupedUserPermissions = {
 		description: 'Dashboard'
 	},
 	pimpinan: {
-		values: [['lihat', 'Lihat Dashboard Pimpinan']],
-		description: 'Dashboard Pimpinan'
+		values: [['lihat', 'Lihat Ringkasan Pengawasan Dashboard']],
+		description: 'Pengawasan Dashboard'
 	},
 	inventaris: {
 		values: [

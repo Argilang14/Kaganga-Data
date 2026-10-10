@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { asc, and, eq } from 'drizzle-orm';
 import db from '$lib/server/db';
+import { getStudentEducationIdentity } from '$lib/server/education-units';
 import {
 	tableAsesmenKeasramaan,
 	tableKeasramaan,
@@ -467,7 +468,7 @@ export async function getKeasramaanPreviewPayload({ locals, url }: KeasramaanCon
 
 	const keasramaanData: KeasramaanPrintData = {
 		sekolah: {
-			nama: sekolah.nama,
+			nama: (await getStudentEducationIdentity(sekolah.id, murid.id)).nama,
 			alamat: composeAlamat(sekolah),
 			logoUrl: logoSrc,
 			jenjangVariant: sekolah.jenjangVariant ?? null

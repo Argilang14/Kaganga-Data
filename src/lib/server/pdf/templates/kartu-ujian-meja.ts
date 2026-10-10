@@ -14,7 +14,7 @@ function card(data: ExamDeskCardData, participant: ExamCardData['peserta'][numbe
 	const title = `${data.ujian.nama}${data.ujian.singkatan ? ` (${data.ujian.singkatan})` : ''}`;
 	const period = [data.ujian.semester, `TP. ${data.ujian.tahunAjaran}`].filter(Boolean).join(' ');
 	return `<article class="desk-card">
-		${renderSchoolLetterhead(data.sekolah, true)}
+		${renderSchoolLetterhead(participant.sekolah ?? data.sekolah, true)}
 		<div class="desk-title"><div>KARTU PESERTA</div><div>${esc(title).toUpperCase()}</div><div>${esc(period).toUpperCase()}</div></div>
 		<div class="desk-body${data.showPrincipalSignature === false ? ' desk-body--no-signature' : ''}">
 			<section class="desk-identity">

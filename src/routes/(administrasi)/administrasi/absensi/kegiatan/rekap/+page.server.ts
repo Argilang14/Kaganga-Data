@@ -3,9 +3,9 @@ import {
 	loadAbsensiKelasOptions,
 	normalizeDateInput,
 	parsePositiveInteger,
-	resolveKelasId,
 	todayLocalDate
 } from '$lib/server/absensi-digital';
+import { attendanceReportClasses } from '$lib/attendance-report-navigation';
 import {
 	ATTENDANCE_ALERT_TYPES,
 	loadAttendanceMonitoring,
@@ -135,24 +135,27 @@ export async function load({ locals, url }) {
 		url.searchParams.get('tanggal_awal'),
 		url.searchParams.get('tanggal_akhir')
 	);
-	const requestedKelasId = parsePositiveInteger(url.searchParams.get('kelas_id'));
 	const requestedKegiatanId = parsePositiveInteger(url.searchParams.get('kegiatan_id'));
 	const { academic, kelasList } = await loadAbsensiKelasOptions(sekolahId, locals.user);
-	const kelasId = resolveKelasId(kelasList, requestedKelasId);
+	const { kelasId, kelasIds, allKelas } = attendanceReportClasses(
+		kelasList,
+		url.searchParams.get('kelas_id')
+	);
 	const kegiatanList = await loadKegiatanAbsensiOptions(sekolahId, true, locals.user);
 	const kegiatanId =
 		requestedKegiatanId && kegiatanList.some((kegiatan) => kegiatan.id === requestedKegiatanId)
 			? requestedKegiatanId
 			: null;
 
-	if (!academic.activeSemesterId || !kelasId) {
+	if (!academic.activeSemesterId || !kelasIds.length) {
 		const today = todayLocalDate();
 		return {
-			meta: { title: 'Monitoring & Rekap Absensi' } satisfies PageMeta,
+			meta: { title: 'Rekap Absensi' } satisfies PageMeta,
 			tanggalAwal,
 			tanggalAkhir,
 			activeSemesterId: academic.activeSemesterId,
 			kelasId,
+			allKelas,
 			kelasList,
 			kegiatanId,
 			kegiatanList,
@@ -167,28 +170,30 @@ export async function load({ locals, url }) {
 	}
 
 	const muridList = await db.query.tableMurid.findMany({
-		columns: { id: true, nama: true, nis: true, nisn: true },
+		columns: { id: true, nama: true, nis: true, nisn: true, kelasId: true },
 		where: and(
 			eq(tableMurid.sekolahId, sekolahId),
 			eq(tableMurid.semesterId, academic.activeSemesterId),
-			eq(tableMurid.kelasId, kelasId),
+			inArray(tableMurid.kelasId, kelasIds),
 			await studentAccessCondition(locals.user, sekolahId)
 		),
-		orderBy: asc(tableMurid.nama)
+		orderBy: [asc(tableMurid.kelasId), asc(tableMurid.nama)]
 	});
 	const muridIds = muridList.map((murid) => murid.id);
 	let autoAlfaInserted = 0;
 	if (muridIds.length && canAttendance(locals.user, 'pengaturan')) {
 		const kegiatanIds = kegiatanId ? [kegiatanId] : kegiatanList.map((kegiatan) => kegiatan.id);
-		for (const tanggal of listLocalDatesInRange(tanggalAwal, tanggalAkhir)) {
-			const result = await applyAutoAlfaKegiatan({
-				sekolahId,
-				semesterId: academic.activeSemesterId,
-				kelasId,
-				tanggal,
-				kegiatanIds
-			});
-			autoAlfaInserted += result.inserted;
+		for (const targetKelasId of kelasIds) {
+			for (const tanggal of listLocalDatesInRange(tanggalAwal, tanggalAkhir)) {
+				const result = await applyAutoAlfaKegiatan({
+					sekolahId,
+					semesterId: academic.activeSemesterId,
+					kelasId: targetKelasId,
+					tanggal,
+					kegiatanIds
+				});
+				autoAlfaInserted += result.inserted;
+			}
 		}
 	}
 	const absensiRows = muridIds.length
@@ -196,7 +201,7 @@ export async function load({ locals, url }) {
 				where: and(
 					eq(tableAbsensiKegiatan.sekolahId, sekolahId),
 					eq(tableAbsensiKegiatan.semesterId, academic.activeSemesterId),
-					eq(tableAbsensiKegiatan.kelasId, kelasId),
+					inArray(tableAbsensiKegiatan.kelasId, kelasIds),
 					kegiatanId ? eq(tableAbsensiKegiatan.kegiatanId, kegiatanId) : undefined,
 					locals.user.type === 'tim_dapur'
 						? inArray(
@@ -239,6 +244,7 @@ export async function load({ locals, url }) {
 		nama: murid.nama,
 		nis: murid.nis,
 		nisn: murid.nisn,
+		kelasNama: kelasList.find((kelas) => kelas.id === murid.kelasId)?.nama ?? '-',
 		counts: byMurid.get(murid.id) ?? emptySummary()
 	}));
 	const detailRows = Array.from(detailByDateKegiatan.values()).sort((a, b) => {
@@ -252,18 +258,19 @@ export async function load({ locals, url }) {
 					sekolahId,
 					tahunAjaranId: academic.activeTahunAjaranId,
 					semesterId: academic.activeSemesterId,
-					kelasIds: [kelasId],
+					kelasIds,
 					user: locals.user,
 					today: todayLocalDate()
 				})
 			: { alerts: [], izinPulang: [] };
 
 	return {
-		meta: { title: 'Monitoring & Rekap Absensi' } satisfies PageMeta,
+		meta: { title: 'Rekap Absensi' } satisfies PageMeta,
 		tanggalAwal,
 		tanggalAkhir,
 		activeSemesterId: academic.activeSemesterId,
 		kelasId,
+		allKelas,
 		kelasList,
 		kegiatanId,
 		kegiatanList,
@@ -789,6 +796,6 @@ export const actions = {
 	}
 };
 import { resolveMuridImportIdentity } from '$lib/server/murid-identity';
-import { studentAccessCondition } from '$lib/server/student-access';
+import { studentAccessCondition } from '$lib/server/attendance-student-access';
 import { saveAttendance } from '$lib/server/attendance-mutation';
 import { canAttendance, attendanceDateAllowed } from '$lib/attendance-access';

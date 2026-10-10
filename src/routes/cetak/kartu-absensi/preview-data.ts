@@ -2,6 +2,7 @@ import { error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import QRCode from 'qrcode';
 import db from '$lib/server/db';
+import { getStudentEducationIdentity } from '$lib/server/education-units';
 import { studentAccessCondition } from '$lib/server/student-access';
 import { canAttendance } from '$lib/attendance-access';
 import { tableKelas, tableMurid, tableSekolah } from '$lib/server/db/schema';
@@ -143,7 +144,7 @@ export async function getKartuAbsensiPreviewPayload({ locals, url }: KartuAbsens
 	const kartuAbsensiData: KartuAbsensiPrintData = {
 		layout: kartuLayout(url.searchParams.get('kartu_layout')),
 		sekolah: {
-			nama: school.nama,
+			nama: (await getStudentEducationIdentity(sekolah.id, murid.id)).nama,
 			logoSrc: await getLogoSrc(sekolah.id),
 			naungan: naunganLabel(school.naungan),
 			alamat: joinAddress(school.alamat)

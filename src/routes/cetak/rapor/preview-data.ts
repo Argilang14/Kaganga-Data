@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { asc, and, eq } from 'drizzle-orm';
 import db from '$lib/server/db';
+import { getStudentEducationIdentity } from '$lib/server/education-units';
 import { ensureCatatanWaliSchema } from '$lib/server/db/ensure-catatan-wali';
 import {
 	tableAsesmenEkstrakurikuler,
@@ -565,7 +566,7 @@ export async function getRaporPreviewPayload({ locals, url }: RaporContext) {
 
 	const raporData: RaporPrintData = {
 		sekolah: {
-			nama: sekolah.nama,
+			nama: (await getStudentEducationIdentity(sekolah.id, murid.id)).nama,
 			alamat: composeAlamat(sekolah),
 			bgLogoSrc,
 			jenjangVariant: sekolah.jenjangVariant ?? null

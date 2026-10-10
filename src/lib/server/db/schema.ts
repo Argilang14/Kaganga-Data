@@ -30,7 +30,9 @@ export const tableAuthUser = sqliteTable(
 			]
 		}).$type<import('$lib/access-position').AccessPosition | null>(),
 		// tipe user: admin (penuh), wali_kelas (terbatas ke kelas_id), wali_asuh (terbatas ke keasramaan), atau user (default/other)
-		type: text({ enum: ['admin', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'wali_murid', 'user', 'tim_dapur'] })
+		type: text({
+			enum: ['admin', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'wali_murid', 'user', 'tim_dapur']
+		})
 			.notNull()
 			.default('admin'),
 		// optional: directly associate a user to a sekolah so login can pick it reliably
@@ -290,6 +292,49 @@ export const tableTasks = sqliteTable('tasks', {
 		.default('active')
 		.notNull(),
 	...audit
+});
+
+export const tableSekolahSatuanPendidikan = sqliteTable(
+	'sekolah_satuan_pendidikan',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		jenjang: text({ enum: ['sd', 'smp', 'sma'] }).notNull(),
+		nama: text().notNull(),
+		npsn: text().notNull(),
+		...audit
+	},
+	(table) => [unique().on(table.sekolahId, table.jenjang), unique().on(table.sekolahId, table.npsn)]
+);
+
+export const tableKelasSatuanPendidikan = sqliteTable(
+	'kelas_satuan_pendidikan',
+	{
+		kelasId: int()
+			.primaryKey()
+			.references(() => tableKelas.id, { onDelete: 'cascade' }),
+		satuanId: int()
+			.references(() => tableSekolahSatuanPendidikan.id, { onDelete: 'restrict' })
+			.notNull(),
+		namaSnapshot: text().notNull(),
+		npsnSnapshot: text().notNull(),
+		...audit
+	},
+	(table) => [index('kelas_satuan_idx').on(table.satuanId)]
+);
+
+export const tableDapodikSatuanSettings = sqliteTable('dapodik_satuan_settings', {
+	satuanId: int()
+		.primaryKey()
+		.references(() => tableSekolahSatuanPendidikan.id, { onDelete: 'cascade' }),
+	url: text().notNull(),
+	token: text().notNull(),
+	semesterId: text(),
+	lastPreviewAt: text(),
+	lastPreviewFingerprint: text(),
+	updatedAt: text().notNull()
 });
 
 export const tableSekolahRelations = relations(tableSekolah, ({ one, many }) => ({

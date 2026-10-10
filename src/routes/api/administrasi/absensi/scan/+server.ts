@@ -14,7 +14,7 @@ import {
 } from '$lib/server/absensi-kegiatan';
 import db from '$lib/server/db';
 import { canAttendance, canAttendActivity, attendanceDateAllowed } from '$lib/attendance-access';
-import { assertStudentAccess } from '$lib/server/student-access';
+import { assertStudentAccess } from '$lib/server/attendance-student-access';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { saveAttendance } from '$lib/server/attendance-mutation';
 import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';

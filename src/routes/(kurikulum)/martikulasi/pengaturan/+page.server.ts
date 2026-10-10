@@ -12,7 +12,7 @@ import {
 	tableTahunAjaran
 } from '$lib/server/db/schema';
 import { formatNomorSttm, isFormatNomorSttmValid } from '$lib/martikulasi';
-import { inferKelasJadwalJenjang } from '$lib/server/jadwal';
+import { getClassEducationIdentity } from '$lib/server/education-units';
 import { composeAlamat, fallbackTempat } from '$lib/server/pdf/preview-utils';
 import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 
@@ -244,7 +244,7 @@ export const actions = {
 				with: {
 					murid: { columns: { nama: true, nis: true, nisn: true } },
 					kelas: {
-						columns: { nama: true, fase: true },
+						columns: { id: true, nama: true, fase: true },
 						with: { waliKelas: { columns: { nama: true, nip: true } } }
 					}
 				},
@@ -255,11 +255,20 @@ export const actions = {
 		candidates.sort((a, b) => (a.murid?.nama ?? '').localeCompare(b.murid?.nama ?? '', 'id-ID'));
 		if (!candidates.length)
 			return { message: 'Tidak ada hasil lengkap yang memerlukan nomor STTM.' };
+		const identities = new Map<number, Awaited<ReturnType<typeof getClassEducationIdentity>>>();
+		for (const candidate of candidates) {
+			if (candidate.kelas)
+				identities.set(
+					candidate.id,
+					await getClassEducationIdentity(sekolahId, candidate.kelas.id)
+				);
+		}
 
 		await db.transaction(async (tx) => {
 			let urut = settings.nomorUrutSttmBerikutnya;
 			for (const candidate of candidates) {
 				if (!candidate.murid || !candidate.kelas) continue;
+				const identity = identities.get(candidate.id)!;
 				await tx
 					.update(tableMartikulasiHasil)
 					.set({
@@ -274,11 +283,11 @@ export const actions = {
 						nisSnapshot: candidate.murid.nis,
 						nisnSnapshot: candidate.murid.nisn,
 						kelasNamaSnapshot: candidate.kelas.nama,
-						jenjangSnapshot: inferKelasJadwalJenjang(candidate.kelas).toUpperCase(),
+						jenjangSnapshot: identity.jenjang.toUpperCase(),
 						waliKelasNamaSnapshot: candidate.kelas.waliKelas?.nama ?? null,
 						waliKelasNipSnapshot: candidate.kelas.waliKelas?.nip ?? null,
-						sekolahNamaSnapshot: sekolah.nama,
-						npsnSnapshot: sekolah.npsn,
+						sekolahNamaSnapshot: identity.nama,
+						npsnSnapshot: identity.npsn,
 						naunganSnapshot: sekolah.naungan,
 						alamatSnapshot: locals.sekolah ? composeAlamat(locals.sekolah) : null,
 						emailSnapshot: sekolah.email,

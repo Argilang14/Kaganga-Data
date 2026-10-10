@@ -8,6 +8,7 @@ import { once } from 'node:events';
 import path from 'node:path';
 import ExcelJS from 'exceljs';
 import puppeteer from 'puppeteer-core';
+import { isIntegratedSchool, suggestedEducationLevel } from '../src/lib/education-unit.ts';
 
 const project = process.cwd();
 const port = Number(process.env.MURID_IDENTITY_QA_PORT || 5157);
@@ -143,7 +144,9 @@ try {
 				ready = true;
 				break;
 			}
-		} catch {}
+		} catch {
+			// Retry while the isolated server starts.
+		}
 		await new Promise((r) => setTimeout(r, 500));
 	}
 	assert.ok(ready, output.slice(-5000));
@@ -170,7 +173,9 @@ try {
 		let status = response.status;
 		try {
 			status = JSON.parse(body).status || status;
-		} catch {}
+		} catch {
+			// Redirect responses are not JSON action results.
+		}
 		return { status, body };
 	}
 	async function importRows(rows) {
@@ -358,6 +363,67 @@ try {
 			args: [school, `uid:${links[1].identity_uid}`]
 		})
 	).rows[0];
+	result = await post('/murid/arsip?/previewPromotion', {
+		lifecycleIds: sourceLifecycle.id,
+		targetClassId: kelas
+	});
+	assert.equal(result.status, 400, result.body);
+	assert.match(result.body, /Pindah kelas dalam semester yang sama belum tersedia/);
+	let sourceUnit = (
+		await db.execute({
+			sql: 'SELECT * FROM kelas_satuan_pendidikan WHERE kelas_id=?',
+			args: [kelas]
+		})
+	).rows[0];
+	const schoolRow = (
+		await db.execute({
+			sql: 'SELECT jenjang_pendidikan AS jenjangPendidikan, jenjang_variant AS jenjangVariant FROM sekolah WHERE id=?',
+			args: [school]
+		})
+	).rows[0];
+	if (!sourceUnit && isIntegratedSchool(schoolRow)) {
+		const level = suggestedEducationLevel(classRow) ?? 'sma';
+		let unit = (
+			await db.execute({
+				sql: 'SELECT * FROM sekolah_satuan_pendidikan WHERE sekolah_id=? AND jenjang=?',
+				args: [school, level]
+			})
+		).rows[0];
+		if (!unit) {
+			result = await post('/sekolah/satuan-pendidikan?/saveUnit', {
+				jenjang: level,
+				nama: 'Satuan Identity QA',
+				npsn: '99998888'
+			});
+			assert.equal(result.status, 200, result.body);
+			unit = (
+				await db.execute({
+					sql: 'SELECT * FROM sekolah_satuan_pendidikan WHERE sekolah_id=? AND jenjang=?',
+					args: [school, level]
+				})
+			).rows[0];
+		}
+		sourceUnit = { satuan_id: unit.id, nama_snapshot: unit.nama, npsn_snapshot: unit.npsn };
+	}
+	if (sourceUnit) {
+		result = await post('/murid/arsip?/promote', {
+			lifecycleIds: sourceLifecycle.id,
+			targetClassId: Number(target.lastInsertRowid),
+			confirmed: 'true'
+		});
+		assert.equal(result.status, 400, result.body);
+		assert.match(result.body, /Satuan kelas tujuan belum dipetakan/);
+		await db.execute({
+			sql: 'INSERT INTO kelas_satuan_pendidikan(kelas_id,satuan_id,nama_snapshot,npsn_snapshot,created_at) VALUES(?,?,?,?,?)',
+			args: [
+				Number(target.lastInsertRowid),
+				sourceUnit.satuan_id,
+				sourceUnit.nama_snapshot,
+				sourceUnit.npsn_snapshot,
+				new Date().toISOString()
+			]
+		});
+	}
 	result = await post('/murid/arsip?/promote', {
 		lifecycleIds: sourceLifecycle.id,
 		targetClassId: Number(target.lastInsertRowid),
@@ -427,6 +493,93 @@ try {
 	await page.setViewport({ width: 1366, height: 900 });
 	await page.goto(`${base}/murid/arsip?q=Identitas%20QA`, { waitUntil: 'networkidle0' });
 	await page.screenshot({ path: path.join(folder, 'arsip.png'), fullPage: true });
+	result = await post('/murid/arsip?/updateStatus', {
+		lifecycleIds: pending.id,
+		status: 'aktif'
+	});
+	assert.equal(result.status, 200, result.body);
+	await page.goto(`${base}/murid/arsip?q=Identitas%20QA%203`, { waitUntil: 'networkidle0' });
+	await page.click('input[aria-label="Pilih Identitas QA 3"]:not(:disabled)');
+	const statusForm = 'form[action="?/updateStatus"]';
+	const placementForm = 'form[action="?/previewPromotion"]';
+	await page.waitForSelector(statusForm);
+	assert.equal(await page.$(placementForm), null);
+	assert.equal(await page.$eval(`${statusForm} select[name="status"]`, (el) => el.value), '');
+	assert.deepEqual(
+		await page.$$eval(`${statusForm} select option`, (els) =>
+			els.map((el) => el.textContent.trim())
+		),
+		['Pilih status tujuan', 'Aktif', 'Pindah Sekolah', 'Keluar Sekolah', 'Alumni / Lulus']
+	);
+	await page.select(`${statusForm} select[name="status"]`, 'pindah');
+	assert.equal(await page.$eval(statusForm, (el) => el.checkValidity()), false);
+	await page.click(`${statusForm} input[type="checkbox"]`);
+	assert.equal(await page.$eval(statusForm, (el) => el.checkValidity()), true);
+	await page.screenshot({ path: path.join(folder, 'arsip-status-desktop.png'), fullPage: true });
+	await page.click('input[aria-label="Penempatan Kelas"]');
+	await page.waitForSelector(placementForm);
+	assert.equal(await page.$(statusForm), null);
+	assert.equal(
+		await page.$eval(`select[name="targetClassId"] option[value="${kelas}"]`, (el) => el.disabled),
+		true
+	);
+	await page.select('select[name="targetClassId"]', String(target.lastInsertRowid));
+	await page.click(`${placementForm} button[type="submit"]`);
+	await page.waitForSelector('form[action="?/promote"]');
+	for (const [width, height] of [
+		[1366, 900],
+		[390, 844],
+		[320, 800]
+	]) {
+		await page.setViewport({ width, height });
+		await new Promise((resolve) => setTimeout(resolve, 600));
+		await page.evaluate(() => {
+			document.querySelector('.app-page-viewport').scrollTop = 0;
+		});
+		assert.ok(
+			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+			`Arsip overflow at ${width}`
+		);
+		await page.screenshot({
+			path: path.join(folder, `arsip-placement-${width}.png`),
+			fullPage: true
+		});
+		await page.$eval('form[action="?/promote"]', (el) => el.scrollIntoView({ block: 'center' }));
+		await page.screenshot({
+			path: path.join(folder, `arsip-placement-details-${width}.png`),
+			fullPage: true
+		});
+	}
+	await page.select('select[name="targetClassId"]', '');
+	await page.waitForFunction(() => !document.querySelector('form[action="?/promote"]'));
+	await page.select('select[name="targetClassId"]', String(target.lastInsertRowid));
+	await page.click(`${placementForm} button[type="submit"]`);
+	await page.waitForSelector('form[action="?/promote"]');
+	await page.click('input[aria-label="Pilih Identitas QA 3"]:not(:disabled)');
+	await page.waitForFunction(() => !document.querySelector('form[action="?/promote"]'));
+	await page.click('input[aria-label="Pilih Identitas QA 3"]:not(:disabled)');
+	await page.click('input[aria-label="Status Sekolah"]');
+	await page.select(`${statusForm} select[name="status"]`, 'pindah');
+	await page.click(`${statusForm} input[type="checkbox"]`);
+	await page.click(`${statusForm} button[type="submit"]`);
+	await page.waitForFunction(() =>
+		document.querySelector('.alert-success')?.textContent.includes('Pindah Sekolah')
+	);
+	assert.equal(await page.$(statusForm), null);
+	await page.click('input[aria-label="Pilih Identitas QA 3"]:not(:disabled)');
+	await page.waitForSelector('input[aria-label="Penempatan Kelas"]');
+	assert.equal(await page.$eval('input[aria-label="Penempatan Kelas"]', (el) => el.disabled), true);
+	assert.equal(
+		(await db.execute({ sql: 'SELECT status FROM murid_lifecycle WHERE id=?', args: [pending.id] }))
+			.rows[0].status,
+		'pindah'
+	);
+	assert.equal(
+		(await db.execute({ sql: 'SELECT kelas_id FROM murid WHERE id=?', args: [students[2].id] }))
+			.rows[0].kelas_id,
+		kelas
+	);
+	assert.equal((await db.execute('PRAGMA foreign_key_check')).rows.length, 0);
 	assert.deepEqual(errors, []);
 	await writeFile(path.join(folder, 'server.log'), output);
 	console.log(
@@ -434,6 +587,15 @@ try {
 	);
 	console.log('QA artifacts:', folder);
 } catch (error) {
+	if (browser) {
+		const pages = await browser.pages();
+		const lastPage = pages.at(-1);
+		if (lastPage) {
+			await lastPage.screenshot({ path: path.join(folder, 'failure.png'), fullPage: true });
+			await writeFile(path.join(folder, 'failure.html'), await lastPage.content());
+		}
+		console.error('QA failure artifacts:', folder);
+	}
 	console.error(output.slice(-6000));
 	throw error;
 } finally {

@@ -1,9 +1,11 @@
 import db from '$lib/server/db/index.js';
 import { tableAlamat, tablePegawai, tableSekolah } from '$lib/server/db/schema.js';
 import { cookieNames, unflattenFormData } from '$lib/utils';
-import { error } from '@sveltejs/kit';
+import { error, fail } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { authority } from '../../../pengguna/utils.server';
+import { isIntegratedSchool, resolveSchoolFormNpsn } from '$lib/education-unit';
+import { jenjangPendidikanSederajat } from '$lib/statics';
 
 export async function load({ url, locals }) {
 	authority('sekolah_manage');
@@ -38,6 +40,7 @@ export async function load({ url, locals }) {
 	}
 
 	return {
+		activeSekolahId: locals.sekolah?.id ?? null,
 		isInit,
 		isNew,
 		sekolah: sekolahToEdit,
@@ -52,7 +55,22 @@ export const actions = {
 		const formData = await request.formData();
 		const formSekolah = unflattenFormData<Sekolah>(formData);
 
-		// TODO: input validation
+		const level = String(formData.get('jenjangPendidikan') ?? '');
+		const variant = String(formData.get('jenjangVariant') ?? '');
+		if (!Object.hasOwn(jenjangPendidikanSederajat, level))
+			return fail(400, { fail: 'Jenjang pendidikan tidak valid.' });
+		const options = jenjangPendidikanSederajat[level as keyof typeof jenjangPendidikanSederajat];
+		if (!options || (variant && !options.some((option) => option.key === variant)))
+			return fail(400, { fail: 'Jenjang pendidikan atau varian sekolah tidak valid.' });
+		formSekolah.jenjangPendidikan = level as Sekolah['jenjangPendidikan'];
+		formSekolah.jenjangVariant = variant || null;
+		if (!isIntegratedSchool(formSekolah)) {
+			try {
+				formSekolah.npsn = resolveSchoolFormNpsn(formSekolah);
+			} catch (cause) {
+				return fail(400, { fail: cause instanceof Error ? cause.message : 'NPSN tidak valid.' });
+			}
+		}
 
 		// Prepare update data - exclude logo fields if not provided
 		const updateData: Partial<typeof formSekolah> = { ...formSekolah };
@@ -86,6 +104,7 @@ export const actions = {
 					where: eq(tableSekolah.id, +formSekolah.id)
 				});
 				if (!sekolah) error(404, `Data sekolah tidak ditemukan`);
+				formSekolahFinal.npsn = resolveSchoolFormNpsn(formSekolahFinal, sekolah.npsn);
 
 				await db
 					.update(tableAlamat) //
@@ -107,6 +126,7 @@ export const actions = {
 					})
 					.where(eq(tableSekolah.id, formSekolah.id));
 			} else {
+				formSekolahFinal.npsn = resolveSchoolFormNpsn(formSekolahFinal);
 				if (formSekolah.alamat) {
 					const [alamat] = await db
 						.insert(tableAlamat)
@@ -131,6 +151,12 @@ export const actions = {
 					.values(formSekolahFinal)
 					.returning({ id: tableSekolah.id });
 				formSekolah.id = newSekolah?.id;
+				if (newSekolah && formSekolah.kepalaSekolah && formSekolah.kepalaSekolahId) {
+					await db
+						.update(tablePegawai)
+						.set({ sekolahId: newSekolah.id })
+						.where(eq(tablePegawai.id, formSekolah.kepalaSekolahId));
+				}
 			}
 
 			if (!formSekolah.id) error(409, `Gagal simpan data sekolah`);

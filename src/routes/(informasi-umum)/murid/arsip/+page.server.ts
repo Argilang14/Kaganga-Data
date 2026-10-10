@@ -1,5 +1,6 @@
 import { writeAuditLog } from '$lib/server/audit-log';
 import db from '$lib/server/db';
+import { getClassEducationIdentity } from '$lib/server/education-units';
 import { ensureDataGovernanceSchema } from '$lib/server/db/ensure-data-governance';
 import {
 	tableKelas,
@@ -113,7 +114,7 @@ async function validatePromotion(sekolahId: number, lifecycleIds: number[], targ
 	if (sourceRows.some((row) => row.semesterId === targetClass.semesterId)) {
 		return {
 			error:
-				'Kenaikan kelas harus menuju kelas pada semester yang berbeda agar riwayat lama tetap utuh.'
+				'Penempatan kelas hanya tersedia untuk semester berbeda. Pindah kelas dalam semester yang sama belum tersedia.'
 		} as const;
 	}
 	const existing = await db.query.tableMurid.findMany({
@@ -132,7 +133,18 @@ async function validatePromotion(sekolahId: number, lifecycleIds: number[], targ
 			error: `${existing.length} murid sudah tersedia pada semester tujuan: ${existing.map((row) => row.nama).join(', ')}.`
 		} as const;
 	}
-	return { lifecycles, sourceRows, targetClass } as const;
+	try {
+		const identity = await getClassEducationIdentity(sekolahId, targetClass.id);
+		return {
+			lifecycles,
+			sourceRows,
+			targetClass: { ...targetClass, satuanPendidikan: identity }
+		} as const;
+	} catch (cause) {
+		return {
+			error: cause instanceof Error ? cause.message : 'Satuan kelas tujuan belum dipetakan.'
+		} as const;
+	}
 }
 
 export const load: PageServerLoad = async ({ locals, url, depends }) => {
@@ -180,6 +192,7 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 			tanggalStatus: tableMuridLifecycle.tanggalStatus,
 			alasan: tableMuridLifecycle.alasan,
 			lastMuridId: tableMuridLifecycle.lastMuridId,
+			semesterId: tableMurid.semesterId,
 			kelas: tableKelas.nama,
 			fase: tableKelas.fase,
 			semester: tableSemester.nama,
@@ -218,6 +231,7 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 			id: tableKelas.id,
 			nama: tableKelas.nama,
 			fase: tableKelas.fase,
+			semesterId: tableKelas.semesterId,
 			semester: tableSemester.nama,
 			tahunAjaran: tableTahunAjaran.nama
 		})
@@ -305,7 +319,13 @@ export const actions: Actions = {
 				tx
 			);
 		});
-		return { message: `${before.length} murid berhasil diperbarui menjadi ${status}.` };
+		const statusLabel = {
+			aktif: 'Aktif',
+			pindah: 'Pindah Sekolah',
+			keluar: 'Keluar Sekolah',
+			alumni: 'Alumni / Lulus'
+		}[status];
+		return { message: `${before.length} murid berhasil diperbarui menjadi ${statusLabel}.` };
 	},
 	previewPromotion: async ({ request, locals }) => {
 		await ensureDataGovernanceSchema();
@@ -394,7 +414,7 @@ export const actions: Actions = {
 					action: 'promote',
 					entityType: 'murid',
 					entityId: insertedIds.join(','),
-					summary: `${insertedIds.length} murid dinaikkan/dipindahkan ke ${validation.targetClass.nama}.`,
+					summary: `${insertedIds.length} murid ditempatkan ke ${validation.targetClass.nama} pada ${validation.targetClass.semesterNama} (${validation.targetClass.tahunAjaranNama}).`,
 					before: validation.lifecycles,
 					after: { targetClass: validation.targetClass, insertedIds }
 				},

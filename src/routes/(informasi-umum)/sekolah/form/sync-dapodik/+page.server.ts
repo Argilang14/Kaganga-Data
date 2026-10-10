@@ -4,26 +4,58 @@ import {
 	getDapodikSettings,
 	previewDapodikSync,
 	testDapodikConnection,
+	saveDapodikConfiguration,
 	type DapodikCategory
 } from '$lib/server/dapodik';
 import { previewDapodikNilai, sendDapodikNilai } from '$lib/server/dapodik-nilai';
 import { authority } from '../../../../pengguna/utils.server';
+import db from '$lib/server/db';
+import { ensureEducationUnitsSchema } from '$lib/server/db/ensure-education-units';
+import { isIntegratedSchool } from '$lib/education-unit';
 
-export async function load({ locals }) {
+export async function load({ locals, url }) {
 	authority('sekolah_manage');
 	if (!locals.sekolah?.id) {
 		return {
 			meta: { title: 'Sinkronisasi Dapodik' },
 			settings: null,
+			units: [],
+			satuanId: null,
+			integrated: false,
 			npsn: '',
 			blocked: 'Pilih atau buat sekolah terlebih dahulu.'
 		};
 	}
+	await ensureEducationUnitsSchema();
+	const integrated = isIntegratedSchool(locals.sekolah);
+	const rows = await db.$client.execute({
+		sql: 'SELECT id,nama,npsn,jenjang FROM sekolah_satuan_pendidikan WHERE sekolah_id=? ORDER BY jenjang',
+		args: [locals.sekolah.id]
+	});
+	const units = rows.rows.map((row) => ({
+		id: Number(row.id),
+		nama: String(row.nama),
+		npsn: String(row.npsn),
+		jenjang: String(row.jenjang)
+	}));
+	const requested = Number(url.searchParams.get('satuan_id'));
+	const satuanId = integrated
+		? (units.find((row) => row.id === requested)?.id ?? units[0]?.id ?? null)
+		: null;
 	return {
 		meta: { title: 'Sinkronisasi Dapodik' },
-		settings: await getDapodikSettings(locals.sekolah.id),
-		npsn: locals.sekolah.npsn ?? '',
-		blocked: null
+		settings:
+			integrated && !satuanId
+				? null
+				: await getDapodikSettings(locals.sekolah.id, satuanId || undefined),
+		npsn: integrated
+			? units.find((row) => row.id === satuanId)?.npsn || ''
+			: (locals.sekolah.npsn ?? ''),
+		units,
+		satuanId,
+		integrated,
+		blocked:
+			integrated && !units.length ? 'Isi Satuan Pendidikan di Data Sekolah terlebih dahulu.' : null
 	};
 }
 
@@ -41,7 +73,8 @@ function readInput(form: FormData) {
 		url: String(form.get('url') ?? '').trim(),
 		token: String(form.get('token') ?? '').trim(),
 		npsn: String(form.get('npsn') ?? '').trim(),
-		semesterId: String(form.get('semesterId') ?? '').trim()
+		semesterId: String(form.get('semesterId') ?? '').trim(),
+		satuanId: Number(form.get('satuanId')) || undefined
 	};
 }
 
@@ -55,6 +88,16 @@ export const actions = {
 		const input = readInput(form);
 
 		try {
+			if (operation === 'save')
+				return { operation, ...(await saveDapodikConfiguration(sekolahId, input)) };
+			if (
+				isIntegratedSchool(locals.sekolah!) &&
+				['apply', 'preview-nilai', 'send-nilai'].includes(operation)
+			)
+				return fail(409, {
+					message:
+						'Dapodik SRT hanya mendukung konfigurasi dan pratinjau data masuk per satuan untuk saat ini.'
+				});
 			if (operation === 'test') {
 				const result = await testDapodikConnection(sekolahId, input);
 				return { operation, ...result };

@@ -1,4 +1,5 @@
 import db from '$lib/server/db';
+import { ensureEducationUnitsSchema } from '$lib/server/db/ensure-education-units';
 import type { AcademicContext } from '$lib/server/db/academic';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { ensurePresensiSettingsSchema } from '$lib/server/db/ensure-presensi-settings';
@@ -140,6 +141,7 @@ async function importKelasDanMuridFromExcel(
 	}
 
 	const idxNisn = findColumnIndex('NISN');
+	const idxUnitNpsn = findColumnIndex('NPSN Satuan');
 	const idxTempatLahir = findColumnIndex('Tempat Lahir', 'Tempat Lahir Peserta Didik');
 	const idxTanggalLahir = findColumnIndex('Tanggal Lahir', 'Tanggal Lahir Peserta Didik');
 	const idxJk = findColumnIndex('JK', 'Jenis Kelamin');
@@ -234,6 +236,7 @@ async function importKelasDanMuridFromExcel(
 		wali: WaliPayload | null;
 		waliAsuhNama: string;
 		waliAsuhNip: string;
+		unitNpsn: string;
 	};
 
 	const chooseKontak = (row: (string | number)[]): string => {
@@ -304,6 +307,7 @@ async function importKelasDanMuridFromExcel(
 				nama,
 				nis,
 				rombel,
+				unitNpsn: normalize(idxUnitNpsn === undefined ? '' : row[idxUnitNpsn]),
 				nisn: normalizedNisn(normalize(idxNisn !== undefined ? row[idxNisn] : '')),
 				tempatLahir:
 					normalize(idxTempatLahir !== undefined ? row[idxTempatLahir] : '') || 'Tidak diketahui',
@@ -393,6 +397,7 @@ async function importKelasDanMuridFromExcel(
 		if (student.nisn) fileNisn.add(student.nisn);
 	}
 	await ensureDataGovernanceSchema();
+	await ensureEducationUnitsSchema();
 
 	const rombelNames = Array.from(rombelMap.values());
 
@@ -443,6 +448,35 @@ async function importKelasDanMuridFromExcel(
 				.returning({ id: tableKelas.id, nama: tableKelas.nama });
 			inserted.forEach((item) => kelasMap.set(item.nama.toLowerCase(), item.id));
 			insertedKelas += inserted.length;
+		}
+		const unitRows = await tx.all<{ id: number; nama: string; npsn: string }>(
+			sql`SELECT id,nama,npsn FROM sekolah_satuan_pendidikan WHERE sekolah_id=${opts.sekolahId}`
+		);
+		const existingMappings = await tx.all<{ kelas_id: number; npsn_snapshot: string }>(
+			sql`SELECT m.kelas_id,m.npsn_snapshot FROM kelas_satuan_pendidikan m JOIN kelas k ON k.id=m.kelas_id WHERE k.sekolah_id=${opts.sekolahId} AND k.semester_id=${opts.semesterId}`
+		);
+		const importUnits = new Map<number, string>();
+		for (const student of students) {
+			if (!student.unitNpsn) continue;
+			const classId = kelasMap.get(student.rombel.toLowerCase())!;
+			const unit = unitRows.find((row) => row.npsn === student.unitNpsn);
+			const stored = existingMappings.find((row) => row.kelas_id === classId);
+			if (
+				!unit ||
+				(stored && stored.npsn_snapshot !== student.unitNpsn) ||
+				(importUnits.has(classId) && importUnits.get(classId) !== student.unitNpsn)
+			)
+				throw new Error(
+					`NPSN satuan pada kelas ${student.rombel} tidak sesuai pemetaan. Impor dibatalkan.`
+				);
+			importUnits.set(classId, student.unitNpsn);
+		}
+		for (const [classId, npsn] of importUnits) {
+			if (existingMappings.some((row) => row.kelas_id === classId)) continue;
+			const unit = unitRows.find((row) => row.npsn === npsn)!;
+			await tx.run(
+				sql`INSERT INTO kelas_satuan_pendidikan (kelas_id,satuan_id,nama_snapshot,npsn_snapshot,created_at) VALUES (${classId},${unit.id},${unit.nama},${unit.npsn},${timestamp})`
+			);
 		}
 
 		const nisList = students.map((s) => s.nis);
@@ -653,6 +687,26 @@ async function copyKelasDanMuridDariGanjilKeGenap(opts: {
 		let totalSourceMurid = 0;
 
 		for (const [sourceId, targetId] of sourceToTarget) {
+			const unit = (
+				await tx.all<{ satuan_id: number; nama: string; npsn: string }>(
+					sql`SELECT m.satuan_id,u.nama,u.npsn FROM kelas_satuan_pendidikan m JOIN sekolah_satuan_pendidikan u ON u.id=m.satuan_id WHERE m.kelas_id=${sourceId} AND u.sekolah_id=${opts.sekolahId}`
+				)
+			)[0];
+			if (unit) {
+				const targetUnit = (
+					await tx.all<{ satuan_id: number }>(
+						sql`SELECT satuan_id FROM kelas_satuan_pendidikan WHERE kelas_id=${targetId}`
+					)
+				)[0];
+				if (targetUnit && targetUnit.satuan_id !== unit.satuan_id)
+					throw new Error(
+						'Satuan kelas tujuan berbeda dari sumber penyalinan semester. Periksa pemetaan terlebih dahulu.'
+					);
+				if (!targetUnit)
+					await tx.run(
+						sql`INSERT INTO kelas_satuan_pendidikan (kelas_id,satuan_id,nama_snapshot,npsn_snapshot,created_at) VALUES (${targetId},${unit.satuan_id},${unit.nama},${unit.npsn},${timestamp})`
+					);
+			}
 			const sourceMuridList = await tx.query.tableMurid.findMany({
 				where: and(
 					eq(tableMurid.sekolahId, opts.sekolahId),

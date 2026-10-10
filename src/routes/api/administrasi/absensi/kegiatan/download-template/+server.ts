@@ -179,4 +179,4 @@ export async function GET({ locals, url }) {
 	});
 }
 import { activeMuridFilter } from '$lib/server/murid-query';
-import { studentAccessCondition } from '$lib/server/student-access';
+import { studentAccessCondition } from '$lib/server/attendance-student-access';

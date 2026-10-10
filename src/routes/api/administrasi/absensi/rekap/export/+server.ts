@@ -8,7 +8,7 @@ import {
 	todayLocalDate
 } from '$lib/server/absensi-digital';
 import db from '$lib/server/db';
-import { studentAccessCondition } from '$lib/server/student-access';
+import { studentAccessCondition } from '$lib/server/attendance-student-access';
 import { tableAbsensiHarian, tableMurid } from '$lib/server/db/schema';
 import { json } from '@sveltejs/kit';
 import { and, asc, eq, gte, inArray, lte } from 'drizzle-orm';

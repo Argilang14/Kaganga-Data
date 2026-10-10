@@ -14,7 +14,8 @@ import {
 } from '$lib/server/absensi-digital';
 import { loadAttendanceMonitoring } from '$lib/server/attendance-monitoring.server';
 import db from '$lib/server/db';
-import { studentAccessCondition } from '$lib/server/student-access';
+import { getClassEducationIdentity } from '$lib/server/education-units';
+import { studentAccessCondition } from '$lib/server/attendance-student-access';
 import {
 	tableAbsensiKegiatan,
 	tableKelas,
@@ -37,18 +38,23 @@ type Counts = Record<AbsensiKegiatanStatus, number>;
 const emptyCounts = () =>
 	Object.fromEntries(ABSENSI_KEGIATAN_STATUSES.map((status) => [status, 0])) as Counts;
 
-const titleCase = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+const titleCase = (value: string) =>
+	value.replaceAll('_', ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 
 export const GET: RequestHandler = async ({ locals, url }) => {
 	assertAbsensiKegiatanAccess(locals.user);
 	const sekolahId = locals.sekolah?.id;
-	if (!sekolahId || !locals.sekolah || !locals.user) throw error(400, 'Sekolah aktif tidak ditemukan.');
+	if (!sekolahId || !locals.sekolah || !locals.user)
+		throw error(400, 'Sekolah aktif tidak ditemukan.');
 
 	const today = todayLocalDate();
 	const tanggalAwal = normalizeDateInput(url.searchParams.get('tanggal_awal'), today);
 	const tanggalAkhir = normalizeDateInput(url.searchParams.get('tanggal_akhir'), tanggalAwal);
-	if (tanggalAwal > tanggalAkhir) throw error(400, 'Tanggal awal tidak boleh setelah tanggal akhir.');
-	const daySpan = Math.floor((Date.parse(`${tanggalAkhir}T00:00:00Z`) - Date.parse(`${tanggalAwal}T00:00:00Z`)) / 86_400_000);
+	if (tanggalAwal > tanggalAkhir)
+		throw error(400, 'Tanggal awal tidak boleh setelah tanggal akhir.');
+	const daySpan = Math.floor(
+		(Date.parse(`${tanggalAkhir}T00:00:00Z`) - Date.parse(`${tanggalAwal}T00:00:00Z`)) / 86_400_000
+	);
 	if (daySpan > 366) throw error(400, 'Rentang laporan maksimal 1 tahun.');
 
 	const kelasId = parsePositiveInteger(url.searchParams.get('kelas_id'));
@@ -148,8 +154,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const html = renderAbsensiKegiatanHTML({
 		sekolah: {
 			naungan: locals.sekolah.naungan,
-			nama: sekolah.nama,
-			npsn: sekolah.npsn,
+			nama: (await getClassEducationIdentity(sekolahId, kelasId)).nama,
+			npsn: (await getClassEducationIdentity(sekolahId, kelasId)).npsn,
 			alamat: composeAlamat(locals.sekolah),
 			email: locals.sekolah.email,
 			logoUrl,

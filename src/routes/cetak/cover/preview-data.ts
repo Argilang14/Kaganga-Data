@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import db from '$lib/server/db';
+import { getStudentEducationIdentity } from '$lib/server/education-units';
 import { tableMurid } from '$lib/server/db/schema';
 import type { CoverPrintData } from '$lib/server/pdf/templates/cover';
 import { requireInteger, optionalInteger, getLogoSrc } from '$lib/server/pdf/preview-utils';
@@ -43,13 +44,14 @@ export async function getCoverPreviewPayload({ locals, url }: CoverContext) {
 	}
 
 	const logoSrc = await getLogoSrc(sekolah.id);
+	const identity = await getStudentEducationIdentity(sekolah.id, murid.id);
 
 	const coverData: CoverPrintData = {
 		sekolah: {
-			nama: sekolah.nama,
+			nama: identity.nama,
 			jenjang: sekolah.jenjangPendidikan,
 			jenjangVariant: sekolah.jenjangVariant ?? null,
-			npsn: sekolah.npsn,
+			npsn: identity.npsn,
 			naungan: sekolah.naungan ?? null,
 			alamat: {
 				jalan: sekolah.alamat?.jalan ?? '',

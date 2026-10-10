@@ -1,4 +1,5 @@
 import db from '$lib/server/db';
+import { assertSingleSchoolDapodikWrite } from '$lib/server/education-units';
 import {
 	tableAsesmenSumatif,
 	tableAsesmenSumatifTujuan,
@@ -443,6 +444,7 @@ export async function previewDapodikNilai(
 	input: Input
 ): Promise<DapodikNilaiPreview> {
 	try {
+		await assertSingleSchoolDapodikWrite(sekolahId);
 		const built = await buildPreview(sekolahId, input);
 		await request(built.credentials, 'getSekolah', built.semester.dapodikId);
 		await db
@@ -552,6 +554,7 @@ export async function sendDapodikNilai(
 ): Promise<DapodikNilaiSendResult> {
 	let semesterDapodik = input.semesterId;
 	try {
+		await assertSingleSchoolDapodikWrite(sekolahId);
 		if (!input.selectedKeys.length)
 			throw new DapodikNilaiError('Pilih minimal satu mata pelajaran.');
 		const built = await buildPreview(sekolahId, input);

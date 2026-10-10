@@ -11,12 +11,21 @@ import {
 	monitoringStatusLabels,
 	monitoringSlots,
 	monitoringToday,
+	normalizeMonitoringTab,
 	type MonitoringRecord,
 	type MonitoringTab
 } from '$lib/attendance-monitoring';
+import {
+	connectSchoolDormRows,
+	summarizeSchoolDorm,
+	matchesSchoolDormFilter,
+	schoolDormFilters,
+	type SchoolDormFilter
+} from '$lib/attendance-school-dorm';
+import { ensureDefaultAbsensiKegiatan } from './absensi-kegiatan';
 import { inferSummaryLevel, isSummaryDate } from '$lib/attendance-summary';
 import { loadAbsensiKelasOptions } from './absensi-digital';
-import { studentAccessCondition } from './student-access';
+import { studentAccessCondition } from './attendance-student-access';
 import { activeMuridFilter } from './murid-query';
 import {
 	tableMurid as m,
@@ -38,7 +47,7 @@ export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSear
 	// A kitchen account never receives non-meal activity metadata, even with a forged tab.
 	const mealsOnly = user.type === 'tim_dapur';
 	const tabs = availableMonitoringTabs(mealsOnly);
-	const requestedTab = params.get('tab');
+	const requestedTab = normalizeMonitoringTab(params.get('tab'));
 	if (requestedTab && !tabs.some((item) => item.key === requestedTab))
 		throw error(403, 'Tab monitoring di luar akses akun.');
 	const tab = (requestedTab ?? tabs[0].key) as MonitoringTab;
@@ -66,6 +75,8 @@ export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSear
 	const selectedClasses = classes.filter(
 		(item) => (level === 'semua' || item.jenjang === level) && (!classId || item.id === classId)
 	);
+	if (!mealsOnly)
+		await ensureDefaultAbsensiKegiatan(sekolah.id, ['asrama_berangkat', 'asrama_tiba']);
 	const activities = await db.query.tableKegiatanAbsensi.findMany({
 		columns: { id: true, nama: true, kode: true, kategori: true, jamMulai: true, aksesEdit: true },
 		where: and(
@@ -75,9 +86,16 @@ export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSear
 		),
 		orderBy: [asc(activity.urutan), asc(activity.nama)]
 	});
-	let columns;
+	let columns, queryColumns;
+	const connected = tab === 'sekolah' || tab === 'asrama';
 	try {
 		columns = resolveMonitoringColumns(tab, activities, params);
+		queryColumns = connected
+			? [
+					...resolveMonitoringColumns('sekolah', activities, params),
+					...resolveMonitoringColumns('asrama', activities, params)
+				]
+			: columns;
 	} catch {
 		throw error(400, 'Sumber kegiatan tidak tersedia atau tidak sesuai kategori.');
 	}
@@ -98,7 +116,7 @@ export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSear
 			: [];
 	const ids = students.map((item) => item.id);
 	const activityIds = [
-		...new Set(columns.flatMap((column) => (column.activityId ? [column.activityId] : [])))
+		...new Set(queryColumns.flatMap((column) => (column.activityId ? [column.activityId] : [])))
 	];
 	const records: MonitoringRecord[] =
 		ids.length && activityIds.length
@@ -126,7 +144,7 @@ export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSear
 					)
 				})
 			: [];
-	if (!mealsOnly && ids.length && columns.some((column) => column.source === 'harian')) {
+	if (!mealsOnly && ids.length && queryColumns.some((column) => column.source === 'harian')) {
 		const rows = await db.query.tableAbsensiHarian.findMany({
 			columns: {
 				id: true,
@@ -172,13 +190,22 @@ export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSear
 				})
 			: [];
 	const names = new Map(classes.map((item) => [item.id, item.nama]));
-	const rows = buildMonitoringRows({
+	const rawRows = buildMonitoringRows({
 		date,
-		columns,
+		columns: queryColumns,
 		records,
 		permits,
 		students: students.map((item) => ({ ...item, kelas: names.get(item.kelasId) ?? '-' }))
 	});
+	const connectedRows = connected
+		? connectSchoolDormRows(rawRows, queryColumns)
+		: rawRows.map((row) => ({ ...row, journeys: [] }));
+	const rows = connectedRows.map((row) => ({
+		...row,
+		cells: columns.map(
+			(column) => row.cells[queryColumns.findIndex((item) => item.key === column.key)]
+		)
+	}));
 	const linkedColumns = columns.map((column) => {
 		const source = activities.find((item) => item.id === column.activityId);
 		const entryPath =
@@ -217,6 +244,7 @@ export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSear
 		classId,
 		columns: linkedColumns,
 		rows,
+		connection: connected ? summarizeSchoolDorm(rows) : null,
 		sourceOptions: columns.map((column) => ({
 			key: column.key,
 			options: activities
@@ -245,10 +273,14 @@ export async function loadAttendanceMonitoring(locals: App.Locals, params: URLSe
 	if (status && !Object.hasOwn(monitoringStatusLabels, status))
 		throw error(400, 'Status monitoring tidak valid.');
 	const query = (params.get('q') ?? '').trim().slice(0, 100);
+	const travel = params.get('perjalanan') ?? '';
+	if (!schoolDormFilters.includes(travel as SchoolDormFilter) || (travel && !snapshot.connection))
+		throw error(400, 'Filter perjalanan tidak valid untuk tab ini.');
 	const filtered = rows.filter(
 		(row) =>
 			(!query || row.nama.toLocaleLowerCase('id').includes(query.toLocaleLowerCase('id'))) &&
-			(!status || row.cells[index].status === status)
+			(!status || row.cells[index].status === status) &&
+			matchesSchoolDormFilter(row.journeys, travel as SchoolDormFilter)
 	);
 	const pageCount = Math.max(1, Math.ceil(filtered.length / 30));
 	const requestedPage = Number(params.get('page') ?? 1);
@@ -264,6 +296,7 @@ export async function loadAttendanceMonitoring(locals: App.Locals, params: URLSe
 		page,
 		pageCount,
 		query,
+		travel,
 		status,
 		focus,
 		statusLabels: monitoringStatusLabels

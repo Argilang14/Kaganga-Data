@@ -4,7 +4,7 @@ import {
 	canAttendActivity,
 	type AttendanceActivityContext
 } from '$lib/attendance-access';
-import { studentAccessCondition } from './student-access';
+import { studentAccessCondition } from './attendance-student-access';
 import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
 import { withSchemaReady } from '$lib/server/db/schema-guard';
 import {
@@ -77,6 +77,24 @@ export const DEFAULT_ABSENSI_KEGIATAN = [
 		masukRapor: false
 	},
 	{
+		kode: 'asrama_berangkat',
+		nama: 'Berangkat dari Asrama',
+		kategori: 'asrama',
+		urutan: 25,
+		aksesEdit: 'asrama',
+		masukRapor: false,
+		autoAlfa: false
+	},
+	{
+		kode: 'asrama_tiba',
+		nama: 'Tiba di Asrama',
+		kategori: 'asrama',
+		urutan: 26,
+		aksesEdit: 'asrama',
+		masukRapor: false,
+		autoAlfa: false
+	},
+	{
 		kode: 'makan_pagi',
 		nama: 'Makan Pagi',
 		kategori: 'makan',
@@ -147,6 +165,7 @@ export const DEFAULT_ABSENSI_KEGIATAN = [
 	urutan: number;
 	aksesEdit: AbsensiKegiatanEditAccess;
 	masukRapor: boolean;
+	autoAlfa?: boolean;
 }>;
 
 export function canAccessAbsensiKegiatan(
@@ -415,7 +434,7 @@ export function listLocalDatesInRange(tanggalAwal: string, tanggalAkhir: string)
 	return dates;
 }
 
-export async function ensureDefaultAbsensiKegiatan(sekolahId: number) {
+export async function ensureDefaultAbsensiKegiatan(sekolahId: number, codes?: readonly string[]) {
 	await ensureAbsensiDigitalSchema();
 	return withSchemaReady('Absensi Kegiatan', async () => {
 		const existingRows = await db.query.tableKegiatanAbsensi.findMany({
@@ -424,21 +443,22 @@ export async function ensureDefaultAbsensiKegiatan(sekolahId: number) {
 		});
 		const existingCodes = new Set(existingRows.map((row) => row.kode));
 		const now = new Date().toISOString();
-		const values = DEFAULT_ABSENSI_KEGIATAN.filter((item) => !existingCodes.has(item.kode)).map(
-			(item) => ({
-				sekolahId,
-				kode: item.kode,
-				nama: item.nama,
-				kategori: item.kategori,
-				urutan: item.urutan,
-				aksesEdit: item.aksesEdit,
-				masukRapor: item.masukRapor,
-				createdAt: now,
-				updatedAt: now
-			})
-		);
+		const values = DEFAULT_ABSENSI_KEGIATAN.filter(
+			(item) => (!codes || codes.includes(item.kode)) && !existingCodes.has(item.kode)
+		).map((item) => ({
+			sekolahId,
+			kode: item.kode,
+			nama: item.nama,
+			kategori: item.kategori,
+			urutan: item.urutan,
+			aksesEdit: item.aksesEdit,
+			masukRapor: item.masukRapor,
+			autoAlfa: 'autoAlfa' in item ? item.autoAlfa : true,
+			createdAt: now,
+			updatedAt: now
+		}));
 
-		if (values.length) await db.insert(tableKegiatanAbsensi).values(values);
+		if (values.length) await db.insert(tableKegiatanAbsensi).values(values).onConflictDoNothing();
 	});
 }
 

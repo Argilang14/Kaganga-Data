@@ -4,7 +4,8 @@ import {
 	attendanceActions,
 	canAttendance,
 	canAttendActivity,
-	attendanceDateAllowed
+	attendanceDateAllowed,
+	hasSchoolWideAttendanceStudentAccess
 } from './attendance-access.ts';
 import { accessPositionValues, isRestrictedTeacher } from './access-position.ts';
 import {
@@ -12,6 +13,32 @@ import {
 	permissionsForAccessPosition,
 	systemOnlyPermissions
 } from '../routes/pengguna/permissions.ts';
+
+test('cakupan semua murid absensi hanya untuk Wali Asrama di sekolah sendiri', () => {
+	assert.equal(
+		hasSchoolWideAttendanceStudentAccess({ type: 'wali_asrama', sekolahId: 7 }, 7),
+		true
+	);
+	assert.equal(
+		hasSchoolWideAttendanceStudentAccess({ type: 'wali_asrama', sekolahId: 7 }, 8),
+		false
+	);
+	for (const type of ['user', 'wali_kelas', 'wali_asuh', 'tim_dapur', 'admin']) {
+		assert.equal(hasSchoolWideAttendanceStudentAccess({ type, sekolahId: 7 }, 7), false);
+	}
+	assert.equal(hasSchoolWideAttendanceStudentAccess(null, 7), false);
+	assert.equal(hasSchoolWideAttendanceStudentAccess(undefined, 7), false);
+});
+
+test('cakupan Wali Asrama tidak menambah izin berisiko atau input kegiatan sekolah', () => {
+	const user = { type: 'wali_asrama', sekolahId: 7, permissions: [] };
+	assert.equal(hasSchoolWideAttendanceStudentAccess(user, 7), true);
+	assert.equal(canAttendActivity(user, 'asrama'), true);
+	assert.equal(canAttendActivity(user, 'sekolah'), false);
+	for (const action of ['impor', 'pengaturan', 'qr_manage', 'koreksi_lama'] as const) {
+		assert.equal(canAttendance(user, action), false);
+	}
+});
 
 test('pimpinan dan operator memiliki izin operasional, bukan izin sistem', () => {
 	for (const jabatanAkses of accessPositionValues) {

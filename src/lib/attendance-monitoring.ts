@@ -4,7 +4,7 @@ export const monitoringTabs = [
 	{ key: 'sekolah', label: 'Sekolah', icon: 'school' },
 	{ key: 'sholat', label: 'Sholat', icon: 'calendar' },
 	{ key: 'makan', label: 'Makan', icon: 'activity' },
-	{ key: 'malam', label: 'Apel Malam', icon: 'users' }
+	{ key: 'asrama', label: 'Asrama', icon: 'users' }
 ] as const;
 export type MonitoringTab = (typeof monitoringTabs)[number]['key'];
 export const monitoringSlots = [
@@ -36,7 +36,21 @@ export const monitoringSlots = [
 		category: 'makan',
 		code: 'makan_malam'
 	},
-	{ key: 'apel_malam', label: 'Apel Malam', tab: 'malam', category: 'asrama', code: 'apel_malam' }
+	{
+		key: 'asrama_berangkat',
+		label: 'Berangkat dari Asrama',
+		tab: 'asrama',
+		category: 'asrama',
+		code: 'asrama_berangkat'
+	},
+	{
+		key: 'asrama_tiba',
+		label: 'Tiba di Asrama',
+		tab: 'asrama',
+		category: 'asrama',
+		code: 'asrama_tiba'
+	},
+	{ key: 'apel_malam', label: 'Apel Malam', tab: 'asrama', category: 'asrama', code: 'apel_malam' }
 ] as const;
 export type MonitoringSlotKey = (typeof monitoringSlots)[number]['key'];
 export type MonitoringStatus =
@@ -96,20 +110,25 @@ export type MonitoringCell = {
 	status: MonitoringStatus;
 	time: string | null;
 	method: string | null;
-	source: 'catatan' | 'izin_pulang' | 'kosong';
+	source: 'catatan' | 'izin_pulang' | 'kosong' | 'terhubung';
+	linkedFrom?: string;
 };
 
 export function availableMonitoringTabs(mealsOnly: boolean) {
 	return monitoringTabs.filter((tab) => !mealsOnly || tab.key === 'makan');
 }
 
+export function normalizeMonitoringTab(tab: string | null) {
+	return tab === 'malam' ? 'asrama' : tab;
+}
+
 export function resolveMonitoringColumns(
-	tab: MonitoringTab,
+	tab: MonitoringTab | 'malam',
 	activities: MonitoringActivity[],
 	params: URLSearchParams
 ): MonitoringColumn[] {
 	return monitoringSlots
-		.filter((slot) => slot.tab === tab)
+		.filter((slot) => slot.tab === normalizeMonitoringTab(tab))
 		.map((slot) => {
 			const raw = params.get(`sumber_${slot.key}`);
 			const defaultActivity = activities.find(

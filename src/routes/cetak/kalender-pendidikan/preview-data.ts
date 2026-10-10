@@ -1,5 +1,6 @@
 import { error, redirect } from '@sveltejs/kit';
 import db from '$lib/server/db';
+import { getDocumentEducationIdentity } from '$lib/server/education-units';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { tableKalenderPendidikan, tableSemester, tableTahunAjaran } from '$lib/server/db/schema';
 import {
@@ -336,7 +337,7 @@ export async function getKalenderPendidikanPreviewPayload({
 		meta: { title: `Kalender Pendidikan - ${periodeRange.label}` },
 		kalenderPendidikanData: {
 			sekolah: {
-				nama: sekolah.nama,
+				nama: (await getDocumentEducationIdentity(sekolah, { jenjang: selectedJenjang })).nama,
 				naungan: sekolah.naungan,
 				alamat: composeAlamat(sekolah),
 				email: sekolah.email,

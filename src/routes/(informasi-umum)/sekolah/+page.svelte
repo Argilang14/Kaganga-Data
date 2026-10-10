@@ -151,7 +151,11 @@
 
 							<div class="grid grid-cols-1 items-center gap-2 md:grid-cols-3">
 								<span class="text-base-content/70 font-semibold">NPSN</span>
-								<span class="text-base-content md:col-span-2">{sekolah.npsn}</span>
+								<span class="text-base-content md:col-span-2"
+									>{sekolah.jenjangPendidikan === 'srt' || sekolah.jenjangVariant === 'srt'
+										? 'Menurut satuan pendidikan SD, SMP, dan SMA'
+										: sekolah.npsn}</span
+								>
 							</div>
 
 							<div class="grid grid-cols-1 items-center gap-2 md:grid-cols-3">
@@ -198,6 +202,11 @@
 						</div>
 
 						<div class="mt-8 flex flex-col justify-end gap-2 md:flex-row">
+							{#if sekolah.id === activeSekolahId && (sekolah.jenjangPendidikan === 'srt' || sekolah.jenjangVariant === 'srt') && canSekolahManage}
+								<a href="/sekolah/satuan-pendidikan" class="btn btn-soft"
+									><Icon name="school" /> Satuan Pendidikan</a
+								>
+							{/if}
 							<button
 								type="button"
 								class="btn btn-error btn-soft shadow-none"

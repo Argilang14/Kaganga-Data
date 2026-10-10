@@ -77,11 +77,11 @@
 	};
 </script>
 
-<div class="card bg-base-100 rounded-box shadow-md">
-	<div class="card-body">
-		<h2 class="card-title mb-4">
-			<span class="text-xl">
-				<Icon name="gear" />
+<div class="dashboard-panel dashboard-actions min-w-0 rounded-lg shadow-sm">
+	<div class="p-5">
+		<h2 class="mb-4 flex items-center gap-2 text-lg font-bold">
+			<span class="text-info">
+				<Icon name="gear" class="size-5" />
 			</span>
 			Tindakan Cepat
 		</h2>
@@ -131,8 +131,5 @@
 				</button>
 			</div>
 		</div>
-		<p class="mt-4 text-xs text-gray-400">
-			Pastikan semua data sudah terisi lengkap sebelum melakukan export.
-		</p>
 	</div>
 </div>

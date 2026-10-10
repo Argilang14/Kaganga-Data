@@ -1,4 +1,5 @@
 <script lang="ts">
+	import '$lib/components/dashboard/dashboard.css';
 	import SekolahOverviewCard from '$lib/components/dashboard/sekolah-overview-card.svelte';
 	import RombelMuridStats from '$lib/components/dashboard/rombel-murid-stats.svelte';
 	import MapelEkstrakurikulerStats from '$lib/components/dashboard/mapel-ekstrakurikuler-stats.svelte';
@@ -6,14 +7,16 @@
 	import QuickActionsCard from '$lib/components/dashboard/quick-actions-card.svelte';
 	import DailySummary from '$lib/components/dashboard/daily-summary.svelte';
 	import MissingDataCard from '$lib/components/dashboard/missing-data-card.svelte';
+	import DashboardFilters from '$lib/components/dashboard/dashboard-filters.svelte';
+	import LeadershipOverview from '$lib/components/dashboard/leadership-overview.svelte';
+	import Achievements from '$lib/components/dashboard/achievements.svelte';
+	import ClassAttendanceSummary from '$lib/components/dashboard/class-attendance-summary.svelte';
+	import Icon from '$lib/components/icon.svelte';
 	import { computeNextEventMessage } from '$lib/utils/next-event-message';
 	import BellStatus from '$lib/components/jadwal-bell/bell-status.svelte';
 
 	let { data } = $props();
 	const sekolah = (data.sekolah ?? null) as Sekolah | null;
-	const canViewLeadershipDashboard = $derived(
-		data.user?.type === 'admin' || data.user?.permissions?.includes('pimpinan_lihat') === true
-	);
 	const statistikDashboard = $derived(
 		data.statistikDashboard ?? {
 			rombel: { total: 0, perFase: [] },
@@ -43,6 +46,21 @@
 	);
 	const ekstrakurikulerStats = $derived(statistikDashboard.ekstrakurikuler ?? { total: 0 });
 	const keasramaanStats = $derived(statistikDashboard.keasramaan ?? { total: 0 });
+	const pengawasanScope = $derived.by(() => {
+		const scope = data.dailyDashboard?.leadership;
+		if (!scope) return data.dailyDashboard?.scope;
+		if (scope.filters.classId)
+			return `Kelas ${scope.classes.find((kelas) => kelas.id === scope.filters.classId)?.nama ?? '-'}`;
+		const levels: Record<string, string> = {
+			sd: 'SD',
+			smp: 'SMP',
+			sma: 'SMA',
+			unknown: 'Jenjang belum ditentukan'
+		};
+		return scope.filters.level === 'semua'
+			? 'Semua kelas yang diizinkan'
+			: levels[scope.filters.level];
+	});
 	const bellActive = $derived(data.bellActive ?? false);
 	const hariSekolah = $derived((data.hariSekolah as number) ?? 6);
 	const liburNasional = $derived((data.liburNasional as string[]) ?? []);
@@ -209,9 +227,8 @@
 		return () => clearInterval(id);
 	});
 
-	let nextEventMessage = $state('');
-	$effect(() => {
-		nextEventMessage = computeNextEventMessage({
+	const nextEventMessage = $derived.by(() => {
+		return computeNextEventMessage({
 			now: _now,
 			bellActive,
 			isHoliday,
@@ -250,41 +267,66 @@
 	});
 </script>
 
-{#if canViewLeadershipDashboard}
-	<nav class="mb-4 flex justify-end" aria-label="Pilihan dashboard">
-		<div class="join border-base-300 border bg-base-100 shadow-sm">
-			<a class="btn btn-sm btn-active join-item shadow-none" href="/">Dashboard Umum</a>
-			<a class="btn btn-sm btn-ghost join-item shadow-none" href="/dashboard-pimpinan">
-				Dashboard Pimpinan
-			</a>
+<div class="dashboard-shell min-w-0 space-y-5">
+	<header class="dashboard-header flex flex-wrap items-center justify-between gap-4">
+		<div class="flex min-w-0 items-center gap-3">
+			<span class="dashboard-header-icon" aria-hidden="true"
+				><Icon name="bar-chart" class="size-5" /></span
+			>
+			<div class="min-w-0">
+				<h1 class="text-xl font-bold">Dashboard Kaganga</h1>
+				<p class="mt-1 text-sm text-white/85">
+					{data.dailyDashboard?.scope ?? 'Sekolah'}{data.kelasAktif
+						? ` · Kelas aktif: ${data.kelasAktif.nama}`
+						: ''}
+				</p>
+			</div>
 		</div>
-	</nav>
-{/if}
-
-<BellStatus {bellActive} {hariIni} {nextEventMessage} class="alert alert-info alert-soft mb-4" />
-
-<!-- Kontainer Utama Grid -->
-<div class="grid w-full grid-cols-1 gap-4 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-	<!-- Kolom 1: Data Utama & Statistik -->
-	<div class="flex flex-col gap-4">
+		<div class="dashboard-header-date flex items-center gap-2 text-xs">
+			<Icon name="calendar" class="size-4 shrink-0" /><span>{hariIni}</span>
+		</div>
+	</header>
+	<BellStatus {bellActive} {hariIni} {nextEventMessage} class="alert alert-info alert-soft" />
+	<div class="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
 		<SekolahOverviewCard {sekolah} />
 		<RombelMuridStats
 			rombel={statistikDashboard.rombel}
 			murid={statistikDashboard.murid}
 			pegawai={statistikDashboard.pegawai}
 		/>
-		<MapelEkstrakurikulerStats
-			mapel={mapelStats}
-			ekstrakurikuler={ekstrakurikulerStats}
-			keasramaan={keasramaanStats}
-		/>
-		{#if data.dailyDashboard}<DailySummary summary={data.dailyDashboard} />{/if}
 	</div>
-
-	<!-- Kolom 2: Progress & Aksi -->
-	<div class="flex flex-col gap-4">
-		<ProgressCard progress={progressStats} />
-		{#if data.dailyDashboard}<MissingDataCard summary={data.dailyDashboard} />{/if}
-		<QuickActionsCard />
+	<MapelEkstrakurikulerStats
+		mapel={mapelStats}
+		ekstrakurikuler={ekstrakurikulerStats}
+		keasramaan={keasramaanStats}
+	/>
+	{#if data.dailyDashboard?.leadership}<DashboardFilters
+			scope={data.dailyDashboard.leadership}
+		/>{/if}
+	{#if data.dailyDashboard}
+		<DailySummary summary={data.dailyDashboard}>
+			{#snippet children(current)}
+				<div
+					class="dashboard-detail-grid"
+					class:dashboard-detail-grid--paired={!!current.leadership && !!data.achievements}
+				>
+					{#if current.leadership}<ClassAttendanceSummary scope={current.leadership} />{/if}
+					{#if data.achievements}<Achievements summary={data.achievements} />{/if}
+				</div>
+			{/snippet}
+		</DailySummary>
+	{/if}
+	<div class="grid min-w-0 gap-4 xl:grid-cols-2">
+		<div class="min-w-0 space-y-4">
+			{#if data.dailyDashboard}<MissingDataCard summary={data.dailyDashboard} />{/if}
+			<QuickActionsCard />
+		</div>
+		<div class="min-w-0 space-y-4">
+			{#if data.leadershipOverview}<LeadershipOverview
+					summary={data.leadershipOverview}
+					scopeLabel={pengawasanScope}
+				/>{/if}
+			<ProgressCard progress={progressStats} kelasNama={data.kelasAktif?.nama} />
+		</div>
 	</div>
 </div>

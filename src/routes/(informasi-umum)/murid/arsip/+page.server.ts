@@ -1,5 +1,8 @@
 import { writeAuditLog } from '$lib/server/audit-log';
-import db from '$lib/server/db';
+import db, { databaseUrl } from '$lib/server/db';
+import path from 'node:path';
+import { createConsistentDatabaseBackup } from '$lib/server/db/database-safety';
+import { deleteMuridPermanently, loadMuridPurgePlan } from '$lib/server/murid-purge';
 import { getClassEducationIdentity } from '$lib/server/education-units';
 import { ensureDataGovernanceSchema } from '$lib/server/db/ensure-data-governance';
 import {
@@ -17,7 +20,16 @@ import {
 } from '$lib/server/murid-lifecycle';
 import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
-import { linkMuridIdentity, assertMuridNotArchived } from '$lib/server/murid-identity-service';
+import {
+	linkMuridIdentity,
+	assertMuridNotArchived,
+	assertMuridIdentityConsistent,
+	getMuridIdentityMembers
+} from '$lib/server/murid-identity-service';
+import {
+	identityIntegrityProblem,
+	MuridIdentityConflictError
+} from '$lib/server/murid-identity-integrity';
 import type { Actions, PageServerLoad } from './$types';
 
 const PER_PAGE = 20;
@@ -193,6 +205,7 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 			alasan: tableMuridLifecycle.alasan,
 			lastMuridId: tableMuridLifecycle.lastMuridId,
 			semesterId: tableMurid.semesterId,
+			updatedAt: tableMuridLifecycle.updatedAt,
 			kelas: tableKelas.nama,
 			fase: tableKelas.fase,
 			semester: tableSemester.nama,
@@ -240,9 +253,76 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 		.innerJoin(tableTahunAjaran, eq(tableKelas.tahunAjaranId, tableTahunAjaran.id))
 		.where(eq(tableKelas.sekolahId, sekolahId))
 		.orderBy(desc(tableTahunAjaran.nama), asc(tableSemester.nama), asc(tableKelas.nama));
+	const identityEvidence = new Map<
+		number,
+		{
+			sources: Awaited<ReturnType<typeof getMuridIdentityMembers>>;
+			legacy: {
+				id: number;
+				nama: string;
+				nis: string;
+				nisn: string | null;
+				status: string;
+				alasan: string | null;
+			}[];
+			problem: string | null;
+		}
+	>();
+	if (locals.user?.type === 'admin') {
+		for (const row of rows.filter(
+			(item) => item.needsIdentityReview && item.identityKey.startsWith('uid:')
+		)) {
+			const uid = row.identityKey.slice(4);
+			const sources = await getMuridIdentityMembers(db, sekolahId, uid);
+			const review = await db.$client.execute({
+				sql: 'SELECT evidence FROM murid_identity_review WHERE sekolah_id=? AND identity_uid=?',
+				args: [sekolahId, uid]
+			});
+			let legacyIds: number[] = [];
+			try {
+				const evidence = JSON.parse(String(review.rows[0]?.evidence ?? '{}'));
+				if (Array.isArray(evidence.legacyIds))
+					legacyIds = evidence.legacyIds.filter(
+						(id: unknown) => typeof id === 'number' && Number.isInteger(id) && id > 0
+					);
+			} catch {
+				/* Invalid historical evidence is not permission to recover. */
+			}
+			const legacy = legacyIds.length
+				? await db
+						.select({
+							id: tableMuridLifecycle.id,
+							nama: tableMuridLifecycle.namaSnapshot,
+							nis: tableMuridLifecycle.nis,
+							nisn: tableMuridLifecycle.nisn,
+							status: tableMuridLifecycle.status,
+							alasan: tableMuridLifecycle.alasan
+						})
+						.from(tableMuridLifecycle)
+						.where(
+							and(
+								eq(tableMuridLifecycle.sekolahId, sekolahId),
+								inArray(tableMuridLifecycle.id, legacyIds)
+							)
+						)
+				: [];
+			identityEvidence.set(row.id, {
+				sources,
+				legacy,
+				problem: row.lastMuridId
+					? identityIntegrityProblem(sources, sekolahId, row.lastMuridId)
+					: 'Data sumber tidak tersedia.'
+			});
+		}
+	}
 	return {
 		meta: { title: 'Arsip Murid & Alumni' },
-		rows: rows.map((row) => ({ ...row, history: historyByIdentity.get(row.identityKey) ?? [] })),
+		rows: rows.map((row) => ({
+			...row,
+			history: historyByIdentity.get(row.identityKey) ?? [],
+			identityEvidence: identityEvidence.get(row.id) ?? null
+		})),
+		canReviewIdentity: locals.user?.type === 'admin',
 		targetClasses,
 		statuses: muridLifecycleStatuses,
 		filters: { q, status, perluPeriksa: url.searchParams.get('perlu_periksa') === '1' },
@@ -251,6 +331,85 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 };
 
 export const actions: Actions = {
+	previewPurge: async ({ request, locals }) => {
+		await ensureDataGovernanceSchema();
+		const sekolahId = requireAccess(locals);
+		if (locals.user?.type !== 'admin')
+			return fail(403, { fail: 'Hapus permanen hanya untuk admin.' });
+		const ids = parseIds(await request.formData());
+		if (ids.length !== 1) return fail(400, { fail: 'Pilih tepat satu arsip murid.' });
+		try {
+			const purgePreview = await db.transaction((tx) => loadMuridPurgePlan(tx, sekolahId, ids[0]));
+			return { purgePreview };
+		} catch (cause) {
+			if (cause instanceof MuridIdentityConflictError) return fail(409, { fail: cause.message });
+			throw cause;
+		}
+	},
+	purge: async ({ request, locals }) => {
+		await ensureDataGovernanceSchema();
+		const sekolahId = requireAccess(locals);
+		if (locals.user?.type !== 'admin')
+			return fail(403, { fail: 'Hapus permanen hanya untuk admin.' });
+		const form = await request.formData();
+		const ids = parseIds(form);
+		const reason = String(form.get('alasan') ?? '').trim();
+		if (ids.length !== 1 || form.get('purgeAck') !== 'true' || !reason || reason.length > 500)
+			return fail(400, { fail: 'Pratinjau, alasan dan konfirmasi penghapusan wajib diisi.' });
+		if (!databaseUrl.startsWith('file:'))
+			return fail(409, { fail: 'Backup wajib; penghapusan hanya tersedia untuk SQLite lokal.' });
+		try {
+			const before = await db.transaction((tx) => loadMuridPurgePlan(tx, sekolahId, ids[0]));
+			if (before.blockers.length) return fail(409, { fail: before.blockers.join(' ') });
+			if (form.get('fingerprint') !== before.fingerprint || form.get('confirmName') !== before.nama)
+				return fail(409, {
+					fail: 'Ketik nama persis seperti pratinjau. Jika data berubah, buat pratinjau baru.'
+				});
+			let backupPath: string;
+			try {
+				backupPath = await createConsistentDatabaseBackup({
+					client: db.$client,
+					databasePath: path.resolve(databaseUrl.slice(5)),
+					label: `pre-purge-murid-${before.lifecycleId}`
+				});
+			} catch {
+				return fail(500, { fail: 'Backup database gagal; tidak ada data murid yang dihapus.' });
+			}
+			await db.transaction(async (tx) => {
+				const current = await loadMuridPurgePlan(tx, sekolahId, ids[0]);
+				if (current.fingerprint !== before.fingerprint)
+					throw new MuridIdentityConflictError(
+						'Data berubah saat backup. Buat pratinjau baru; tidak ada penghapusan.'
+					);
+				await deleteMuridPermanently(tx, sekolahId, current);
+				await writeAuditLog(
+					{
+						locals,
+						request,
+						action: 'delete',
+						entityType: 'murid_permanent',
+						entityId: current.lifecycleId,
+						summary: `Hapus permanen ${current.nama} (${current.ids.length} data periode).`,
+						before: current,
+						after: {
+							alasan: reason,
+							backupFile: path.basename(backupPath),
+							photoFilesRetained: true
+						}
+					},
+					tx
+				);
+			});
+			return {
+				message: `Arsip ${before.nama} dihapus permanen. Backup database berhasil dibuat.`,
+				backupFile: path.basename(backupPath),
+				purgedLifecycleId: before.lifecycleId
+			};
+		} catch (cause) {
+			if (cause instanceof MuridIdentityConflictError) return fail(409, { fail: cause.message });
+			throw cause;
+		}
+	},
 	updateStatus: async ({ request, locals }) => {
 		await ensureDataGovernanceSchema();
 		const sekolahId = requireAccess(locals);
@@ -271,54 +430,73 @@ export const actions: Actions = {
 			return fail(400, {
 				fail: 'Snapshot arsip lama tanpa data sumber tidak dapat diaktifkan ulang melalui perubahan status.'
 			});
-		const reviewing = before.some((row) => row.needsIdentityReview);
-		if (
-			reviewing &&
-			(locals.user?.type !== 'admin' || form.get('identityReviewed') !== 'true' || !alasan)
-		)
+		if (before.some((row) => row.needsIdentityReview))
 			return fail(400, {
-				fail: 'Identitas ambigu harus diperiksa admin. Isi alasan dan konfirmasi pemeriksaan sebelum mengubah status.'
+				fail: 'Identitas ambigu harus diperiksa admin satu per satu melalui Periksa Identitas.'
 			});
-		await db.transaction(async (tx) => {
-			await tx
-				.update(tableMuridLifecycle)
-				.set({
-					status,
-					needsIdentityReview: 0,
-					tanggalStatus: status === 'aktif' ? null : tanggalStatus,
-					alasan: alasan || null,
-					updatedAt: new Date().toISOString()
-				})
-				.where(
-					and(
-						eq(tableMuridLifecycle.sekolahId, sekolahId),
-						inArray(tableMuridLifecycle.id, lifecycleIds)
-					)
-				);
-			for (const row of before.filter((row) => row.needsIdentityReview)) {
-				await tx.run(
-					sql`UPDATE murid_identity_review SET resolved_at=${new Date().toISOString()} WHERE sekolah_id=${sekolahId} AND identity_uid=${row.identityKey.slice(4)}`
-				);
-			}
-			await writeAuditLog(
-				{
-					locals,
-					request,
-					action: status === 'aktif' ? 'restore' : 'archive',
-					entityType: 'murid_lifecycle',
-					entityId: lifecycleIds.join(','),
-					summary: `${before.length} murid diubah menjadi ${status}.`,
-					before,
-					after: {
+		try {
+			await db.transaction(async (tx) => {
+				const current = await tx
+					.select()
+					.from(tableMuridLifecycle)
+					.where(
+						and(
+							eq(tableMuridLifecycle.sekolahId, sekolahId),
+							inArray(tableMuridLifecycle.id, lifecycleIds)
+						)
+					);
+				if (current.length !== lifecycleIds.length)
+					throw new MuridIdentityConflictError('Data arsip berubah. Muat ulang halaman.');
+				for (const row of current) {
+					if (row.needsIdentityReview || !row.identityKey.startsWith('uid:') || !row.lastMuridId)
+						throw new MuridIdentityConflictError(
+							'Data memerlukan pemeriksaan identitas sebelum perubahan status.'
+						);
+					await assertMuridIdentityConsistent(
+						tx,
+						sekolahId,
+						row.identityKey.slice(4),
+						row.lastMuridId
+					);
+				}
+				await tx
+					.update(tableMuridLifecycle)
+					.set({
 						status,
+						needsIdentityReview: 0,
 						tanggalStatus: status === 'aktif' ? null : tanggalStatus,
-						alasan,
-						identityReviewed: reviewing
-					}
-				},
-				tx
-			);
-		});
+						alasan: alasan || null,
+						updatedAt: new Date().toISOString()
+					})
+					.where(
+						and(
+							eq(tableMuridLifecycle.sekolahId, sekolahId),
+							inArray(tableMuridLifecycle.id, lifecycleIds)
+						)
+					);
+				await writeAuditLog(
+					{
+						locals,
+						request,
+						action: status === 'aktif' ? 'restore' : 'archive',
+						entityType: 'murid_lifecycle',
+						entityId: lifecycleIds.join(','),
+						summary: `${before.length} murid diubah menjadi ${status}.`,
+						before,
+						after: {
+							status,
+							tanggalStatus: status === 'aktif' ? null : tanggalStatus,
+							alasan,
+							identityReviewed: false
+						}
+					},
+					tx
+				);
+			});
+		} catch (cause) {
+			if (cause instanceof MuridIdentityConflictError) return fail(409, { fail: cause.message });
+			throw cause;
+		}
 		const statusLabel = {
 			aktif: 'Aktif',
 			pindah: 'Pindah Sekolah',
@@ -326,6 +504,95 @@ export const actions: Actions = {
 			alumni: 'Alumni / Lulus'
 		}[status];
 		return { message: `${before.length} murid berhasil diperbarui menjadi ${statusLabel}.` };
+	},
+	resolveIdentity: async ({ request, locals }) => {
+		await ensureDataGovernanceSchema();
+		const sekolahId = requireAccess(locals);
+		if (locals.user?.type !== 'admin')
+			return fail(403, { fail: 'Pemeriksaan identitas hanya untuk admin.' });
+		const form = await request.formData();
+		const ids = parseIds(form);
+		const status = String(form.get('status') ?? '');
+		const alasan = String(form.get('alasan') ?? '').trim();
+		const tanggalStatus = String(form.get('tanggalStatus') ?? '').trim();
+		if (
+			ids.length !== 1 ||
+			!['aktif', 'keluar', 'pindah', 'alumni'].includes(status) ||
+			!alasan ||
+			alasan.length > 500 ||
+			form.get('identityReviewed') !== 'true'
+		)
+			return fail(400, {
+				fail: 'Periksa satu murid, isi alasan, pilih status, dan konfirmasi pemeriksaan.'
+			});
+		if (status !== 'aktif' && !/^\d{4}-\d{2}-\d{2}$/.test(tanggalStatus))
+			return fail(400, { fail: 'Tanggal status wajib diisi.' });
+		try {
+			await db.transaction(async (tx) => {
+				const row = await tx.query.tableMuridLifecycle.findFirst({
+					where: and(
+						eq(tableMuridLifecycle.sekolahId, sekolahId),
+						eq(tableMuridLifecycle.id, ids[0])
+					)
+				});
+				if (
+					!row?.needsIdentityReview ||
+					!row.identityKey.startsWith('uid:') ||
+					!row.lastMuridId ||
+					row.identityKey !== form.get('identityKey') ||
+					row.updatedAt !== form.get('expectedUpdatedAt')
+				)
+					throw new MuridIdentityConflictError(
+						'Data pemeriksaan berubah atau tidak memiliki sumber. Muat ulang halaman.'
+					);
+				const sources = await assertMuridIdentityConsistent(
+					tx,
+					sekolahId,
+					row.identityKey.slice(4),
+					row.lastMuridId
+				);
+				await tx
+					.update(tableMuridLifecycle)
+					.set({
+						status: status as MuridLifecycleStatus,
+						needsIdentityReview: 0,
+						tanggalStatus: status === 'aktif' ? null : tanggalStatus,
+						alasan,
+						updatedAt: new Date().toISOString()
+					})
+					.where(eq(tableMuridLifecycle.id, row.id));
+				await tx.run(
+					sql`UPDATE murid_identity_review SET resolved_at=${new Date().toISOString()} WHERE sekolah_id=${sekolahId} AND identity_uid=${row.identityKey.slice(4)}`
+				);
+				await writeAuditLog(
+					{
+						locals,
+						request,
+						action: 'status_change',
+						entityType: 'murid_lifecycle',
+						entityId: row.id,
+						summary: `Pemeriksaan identitas ${row.namaSnapshot}: ${status}.`,
+						before: row,
+						after: {
+							status,
+							alasan,
+							tanggalStatus: status === 'aktif' ? null : tanggalStatus,
+							muridIds: sources.map((source) => source.id)
+						}
+					},
+					tx
+				);
+			});
+		} catch (cause) {
+			if (cause instanceof MuridIdentityConflictError) return fail(409, { fail: cause.message });
+			throw cause;
+		}
+		return {
+			message:
+				status === 'aktif'
+					? 'Identitas diperiksa; murid dipulihkan ke daftar aktif.'
+					: 'Identitas diperiksa; murid tetap diarsipkan.'
+		};
 	},
 	previewPromotion: async ({ request, locals }) => {
 		await ensureDataGovernanceSchema();

@@ -8,6 +8,7 @@ import { canManageMurid } from '$lib/murid-permissions';
 import { getKelasContextForUser } from '$lib/server/route-utils';
 import { fail } from '@sveltejs/kit';
 import { ensureDataGovernanceSchema } from '$lib/server/db/ensure-data-governance';
+import { MuridIdentityConflictError } from '$lib/server/murid-identity-integrity';
 
 export const load: PageServerLoad = async () => {
 	return { meta: { title: 'Arsipkan Murid' } };
@@ -28,30 +29,35 @@ export const actions: Actions = {
 		if (!murid) return { message: 'Data murid tidak ditemukan.' };
 		if (!(await getKelasContextForUser(locals, url, String(id))).hasAccess)
 			return fail(403, { fail: 'Tidak memiliki akses ke kelas murid.' });
-		await db.transaction(async (tx) => {
-			await syncMuridGovernance(
-				sekolahId,
-				[id],
-				'keluar',
-				{
-					tanggalStatus: new Date().toISOString().slice(0, 10),
-					alasan: 'Data murid dihapus dari daftar aktif.'
-				},
-				tx
-			);
-			await writeAuditLog(
-				{
-					locals,
-					request,
-					action: 'archive',
-					entityType: 'murid',
-					entityId: id,
-					summary: `Data murid ${murid.nama} diarsipkan tanpa menghapus nilai dan presensi.`,
-					before: murid
-				},
-				tx
-			);
-		});
+		try {
+			await db.transaction(async (tx) => {
+				await syncMuridGovernance(
+					sekolahId,
+					[id],
+					'keluar',
+					{
+						tanggalStatus: new Date().toISOString().slice(0, 10),
+						alasan: 'Data murid dihapus dari daftar aktif.'
+					},
+					tx
+				);
+				await writeAuditLog(
+					{
+						locals,
+						request,
+						action: 'archive',
+						entityType: 'murid',
+						entityId: id,
+						summary: `Data murid ${murid.nama} diarsipkan tanpa menghapus nilai dan presensi.`,
+						before: murid
+					},
+					tx
+				);
+			});
+		} catch (cause) {
+			if (cause instanceof MuridIdentityConflictError) return fail(409, { fail: cause.message });
+			throw cause;
+		}
 		return { message: 'Murid diarsipkan; nilai dan presensi tetap tersimpan.' };
 	}
 };

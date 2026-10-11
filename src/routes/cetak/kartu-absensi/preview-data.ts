@@ -5,7 +5,7 @@ import db from '$lib/server/db';
 import { getStudentEducationIdentity } from '$lib/server/education-units';
 import { studentAccessCondition } from '$lib/server/student-access';
 import { canAttendance } from '$lib/attendance-access';
-import { tableKelas, tableMurid, tableSekolah } from '$lib/server/db/schema';
+import { tableMurid, tableSekolah } from '$lib/server/db/schema';
 import { buildKelasAccessWhere, loadActivePrintableQr } from '$lib/server/absensi-digital';
 import {
 	formatTanggal,
@@ -30,6 +30,7 @@ export type KartuAbsensiPrintData = {
 	};
 	kelas: {
 		nama: string;
+		jenjang?: string;
 	};
 	murid: {
 		id: number;
@@ -141,16 +142,18 @@ export async function getKartuAbsensiPreviewPayload({ locals, url }: KartuAbsens
 	}
 
 	const kelasNama = kelas.fase ? `${kelas.nama} - ${kelas.fase}` : kelas.nama;
+	const educationIdentity = await getStudentEducationIdentity(sekolah.id, murid.id);
 	const kartuAbsensiData: KartuAbsensiPrintData = {
 		layout: kartuLayout(url.searchParams.get('kartu_layout')),
 		sekolah: {
-			nama: (await getStudentEducationIdentity(sekolah.id, murid.id)).nama,
+			nama: educationIdentity.nama,
 			logoSrc: await getLogoSrc(sekolah.id),
 			naungan: naunganLabel(school.naungan),
 			alamat: joinAddress(school.alamat)
 		},
 		kelas: {
-			nama: kelasNama
+			nama: kelasNama,
+			jenjang: educationIdentity.jenjang
 		},
 		murid: {
 			id: murid.id,
@@ -163,7 +166,10 @@ export async function getKartuAbsensiPreviewPayload({ locals, url }: KartuAbsens
 			alamat: joinAddress(murid.alamat),
 			fotoSrc: readMuridPhotoDataUri(murid.foto)
 		},
-		qrDataUrl: await QRCode.toDataURL(activeQr.token, { margin: 1, width: 480 }),
+		qrDataUrl: await QRCode.toDataURL(activeQr.token, {
+			margin: kartuLayout(url.searchParams.get('kartu_layout')) === 'qr-only' ? 4 : 1,
+			width: 480
+		}),
 		issuedAt: activeQr.qr.issuedAt
 	};
 

@@ -188,7 +188,7 @@
 							placeholder="Contoh: 69856875"
 							name="npsn"
 							inputmode="numeric"
-							pattern="[0-9]{8}"
+							pattern={'[0-9]{8}'}
 							minlength="8"
 							maxlength="8"
 						/>

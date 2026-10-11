@@ -35,6 +35,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	});
 	return {
 		meta: { title: 'Satuan Pendidikan' },
+		schoolId: school.id,
 		integrated: isIntegratedSchool(school),
 		units: units.rows.map((row) => ({
 			id: Number(row.id),

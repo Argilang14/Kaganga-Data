@@ -173,7 +173,9 @@ export async function auditMuridIdentity(client: Client | Transaction) {
 			);
 			const ownDeletion = deletions.some(
 				(e) =>
-					e.nis === normalizedIdentityText(row.nis) && e.nama === normalizedIdentityText(row.nama)
+					group.rows.some((student) => student.id === e.id) &&
+					e.nis === normalizedIdentityText(row.nis) &&
+					e.nama === normalizedIdentityText(row.nama)
 			);
 			const terminalHistory = ownHistory.some((h) => h.status_snapshot !== 'aktif');
 			if (ownDeletion || terminalHistory || (sharing.length === 1 && ownSnapshot))

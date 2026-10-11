@@ -5,10 +5,15 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import ExcelJS from 'exceljs';
 import puppeteer from 'puppeteer-core';
 import { isIntegratedSchool, suggestedEducationLevel } from '../src/lib/education-unit.ts';
+const { parse: parseActionData } = await import(
+	pathToFileURL(createRequire(import.meta.resolve('@sveltejs/kit')).resolve('devalue')).href
+);
 
 const project = process.cwd();
 const port = Number(process.env.MURID_IDENTITY_QA_PORT || 5157);
@@ -209,6 +214,31 @@ try {
 		})
 	).rows[0];
 	assert.equal(pending.needs_identity_review, 1);
+	const subject = await db.execute({
+		sql: "INSERT INTO mata_pelajaran(kelas_id,nama,jenis,created_at) VALUES(?,'Identitas QA Mapel','wajib',CURRENT_TIMESTAMP)",
+		args: [kelas]
+	});
+	await db.execute({
+		sql: 'INSERT INTO asesmen_sumatif(murid_id,mata_pelajaran_id,nilai_akhir,created_at) VALUES(?,?,87,CURRENT_TIMESTAMP)',
+		args: [students[0].id, Number(subject.lastInsertRowid)]
+	});
+	await db.execute({
+		sql: "INSERT INTO absensi_harian(sekolah_id,semester_id,kelas_id,murid_id,tanggal,status,metode,created_at) VALUES(?,?,?,?,'2026-10-11','hadir','manual',CURRENT_TIMESTAMP)",
+		args: [school, semester, kelas, students[0].id]
+	});
+	async function protectedData() {
+		const result = {};
+		for (const table of ['murid', 'asesmen_sumatif', 'absensi_harian']) {
+			result[table] = (
+				await db.execute({
+					sql: `SELECT * FROM ${table} WHERE ${table === 'murid' ? 'id' : 'murid_id'}=? ORDER BY id`,
+					args: [students[0].id]
+				})
+			).rows;
+		}
+		return result;
+	}
+	const protectedBefore = await protectedData();
 	let result = await post('/murid/arsip?/updateStatus', {
 		lifecycleIds: pending.id,
 		status: 'aktif'
@@ -220,7 +250,61 @@ try {
 		identityReviewed: 'true',
 		alasan: 'Identitas diperiksa pada fixture QA'
 	});
+	assert.equal(result.status, 400, result.body);
+	const reviewPage = await (await get('/murid/arsip?perlu_periksa=1&q=Identitas%20QA')).text();
+	assert.match(reviewPage, /Periksa Identitas/);
+	assert.match(reviewPage, /IDENTITY-QA-3/);
+	result = await post('/murid/arsip?/resolveIdentity', {
+		lifecycleIds: [pending.id, pending.id + 1],
+		status: 'aktif',
+		identityKey: pending.identity_key,
+		identityReviewed: 'true',
+		alasan: 'Tidak boleh memulihkan massal identitas ambigu'
+	});
+	assert.equal(result.status, 400, result.body);
+	result = await post('/murid/arsip?/resolveIdentity', {
+		lifecycleIds: pending.id,
+		status: 'aktif',
+		identityKey: 'uid:wrong',
+		identityReviewed: 'true',
+		alasan: 'Identitas yang dikirim tidak cocok'
+	});
+	assert.equal(result.status, 409, result.body);
+	result = await post('/murid/arsip?/resolveIdentity', {
+		lifecycleIds: pending.id,
+		status: 'aktif',
+		identityKey: pending.identity_key,
+		expectedUpdatedAt: 'outdated',
+		identityReviewed: 'true',
+		alasan: 'Formulir pemeriksaan kedaluwarsa'
+	});
+	assert.equal(result.status, 409, result.body);
+	result = await post('/murid/arsip?/resolveIdentity', {
+		lifecycleIds: pending.id,
+		status: 'aktif',
+		identityKey: pending.identity_key,
+		identityReviewed: 'true',
+		expectedUpdatedAt: pending.updated_at,
+		alasan: 'Identitas diperiksa pada fixture QA'
+	});
 	assert.equal(result.status, 200, result.body);
+	assert.equal(
+		(
+			await db.execute({
+				sql: 'SELECT needs_identity_review FROM murid_lifecycle WHERE id=?',
+				args: [pending.id]
+			})
+		).rows[0].needs_identity_review,
+		0
+	);
+	assert.ok(
+		(
+			await db.execute({
+				sql: "SELECT id FROM audit_log WHERE entity_type='murid_lifecycle' AND action='status_change' AND summary LIKE 'Pemeriksaan identitas%' AND entity_id=?",
+				args: [String(pending.id)]
+			})
+		).rows.length
+	);
 	const edit = {
 		nis: students[1].nis,
 		nisn: '0009876543',
@@ -437,6 +521,43 @@ try {
 		})
 	).rows[0];
 	assert.equal(promoted.identity_uid, links[1].identity_uid);
+	// A corrupt historical link must block the whole operation before any selected status changes.
+	const promotedRow = (
+		await db.execute({
+			sql: 'SELECT id,nama FROM murid WHERE nis=? AND semester_id=?',
+			args: [students[1].nis, nextSemester.id]
+		})
+	).rows[0];
+	await db.execute({
+		sql: 'UPDATE murid SET nama=? WHERE id=?',
+		args: ['Orang Berbeda QA', promotedRow.id]
+	});
+	const firstStatus = (
+		await db.execute({ sql: 'SELECT status FROM murid_lifecycle WHERE id=?', args: [archived.id] })
+	).rows[0].status;
+	result = await post(`/murid/${students[1].id}/delete?/delete`, {});
+	assert.equal(result.status, 409, result.body);
+	result = await post('/murid?/deleteSelected', { muridIds: [students[0].id, students[1].id] });
+	assert.equal(result.status, 409, result.body);
+	assert.equal(
+		(
+			await db.execute({
+				sql: 'SELECT status FROM murid_lifecycle WHERE id=?',
+				args: [archived.id]
+			})
+		).rows[0].status,
+		firstStatus
+	);
+	result = await post('/murid/arsip?/updateStatus', {
+		lifecycleIds: sourceLifecycle.id,
+		status: 'keluar',
+		tanggalStatus: '2026-10-11'
+	});
+	assert.equal(result.status, 409, result.body);
+	await db.execute({
+		sql: 'UPDATE murid SET nama=? WHERE id=?',
+		args: [promotedRow.nama, promotedRow.id]
+	});
 	result = await post('/murid?/deleteSelected', { muridIds: [students[0].id, students[2].id] });
 	assert.equal(result.status, 200, result.body);
 	assert.equal(
@@ -464,6 +585,23 @@ try {
 	result = await post(`/murid/${students[1].id}/delete?/delete`, {});
 	assert.equal(result.status, 403, result.body);
 	await db.execute({ sql: "UPDATE auth_user SET type='admin' WHERE id=?", args: [admin.id] });
+	await db.execute({
+		sql: "UPDATE auth_user SET type='user',permissions='[\"murid_arsip\"]' WHERE id=?",
+		args: [admin.id]
+	});
+	result = await post('/murid/arsip?/resolveIdentity', {
+		lifecycleIds: pending.id,
+		status: 'aktif',
+		identityKey: pending.identity_key,
+		expectedUpdatedAt: pending.updated_at,
+		identityReviewed: 'true',
+		alasan: 'Tidak boleh diperiksa non-admin'
+	});
+	assert.equal(result.status, 403, result.body);
+	await db.execute({
+		sql: "UPDATE auth_user SET type='admin',permissions='[]' WHERE id=?",
+		args: [admin.id]
+	});
 	assert.equal((await db.execute('PRAGMA foreign_key_check')).rows.length, 0);
 	assert.equal(String((await db.execute('PRAGMA quick_check')).rows[0].quick_check), 'ok');
 	const executablePath = [
@@ -479,6 +617,53 @@ try {
 	const page = await browser.newPage();
 	const errors = [];
 	page.on('pageerror', (e) => errors.push(e.message));
+	await db.execute({
+		sql: 'UPDATE murid_lifecycle SET needs_identity_review=1 WHERE id=?',
+		args: [pending.id]
+	});
+	for (const width of [1366, 768, 390, 320]) {
+		await page.setViewport({ width, height: 900 });
+		await page.goto(`${base}/murid/arsip?perlu_periksa=1&q=Identitas%20QA%203`, {
+			waitUntil: 'networkidle0'
+		});
+		await page.waitForSelector('details:has(form[action="?/resolveIdentity"]) summary');
+		await page.click('details:has(form[action="?/resolveIdentity"]) summary');
+		await page.$eval('form[action="?/resolveIdentity"]', (el) =>
+			el.scrollIntoView({ block: 'center' })
+		);
+		assert.ok(
+			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+			`Review overflow ${width}`
+		);
+		assert.equal(
+			await page.$eval('input[aria-label="Pilih Identitas QA 3"]', (el) => el.disabled),
+			true
+		);
+		await page.screenshot({
+			path: path.join(folder, `identity-review-${width}.png`),
+			fullPage: true
+		});
+	}
+	const reviewForm = 'form[action="?/resolveIdentity"]';
+	await page.select(`${reviewForm} select[name="status"]`, 'aktif');
+	await page.type(
+		`${reviewForm} textarea[name="alasan"]`,
+		'Identitas diverifikasi melalui browser QA'
+	);
+	await page.click(`${reviewForm} input[name="identityReviewed"]`);
+	await page.click(`${reviewForm} button[type="submit"]`);
+	await page.waitForFunction(() =>
+		document.querySelector('.alert-success')?.textContent.includes('dipulihkan')
+	);
+	assert.equal(
+		(
+			await db.execute({
+				sql: 'SELECT needs_identity_review FROM murid_lifecycle WHERE id=?',
+				args: [pending.id]
+			})
+		).rows[0].needs_identity_review,
+		0
+	);
 	for (const [width, height] of [
 		[1366, 900],
 		[390, 844]
@@ -580,10 +765,258 @@ try {
 		kelas
 	);
 	assert.equal((await db.execute('PRAGMA foreign_key_check')).rows.length, 0);
+	assert.deepEqual(
+		await protectedData(),
+		protectedBefore,
+		'Nilai, presensi, QR, foto dan data sumber tidak boleh berubah saat arsip/pemulihan'
+	);
+	// Permanent deletion uses the same isolated database; no live student is touched.
+	result = await post('/murid/arsip?/previewPurge', { lifecycleIds: sourceLifecycle.id });
+	assert.equal(result.status, 409, result.body);
+	result = await post('/murid/arsip?/previewPurge', { lifecycleIds: pending.id });
+	assert.equal(result.status, 409, result.body);
+	await db.execute({
+		sql: "UPDATE auth_user SET type='user',permissions='[\"murid_arsip\"]' WHERE id=?",
+		args: [admin.id]
+	});
+	result = await post('/murid/arsip?/previewPurge', { lifecycleIds: pending.id });
+	assert.equal(result.status, 403, result.body);
+	result = await post('/murid/arsip?/purge', { lifecycleIds: pending.id });
+	assert.equal(result.status, 403, result.body);
+	await db.execute({
+		sql: "UPDATE auth_user SET type='admin',permissions='[]' WHERE id=?",
+		args: [admin.id]
+	});
+	result = await post('/murid/arsip?/updateStatus', { lifecycleIds: pending.id, status: 'aktif' });
+	assert.equal(result.status, 200, result.body);
+	result = await post('/murid/arsip?/promote', {
+		lifecycleIds: pending.id,
+		targetClassId: Number(target.lastInsertRowid),
+		confirmed: 'true'
+	});
+	assert.equal(result.status, 200, result.body);
+	const toDeleteIds = (
+		await db.execute({
+			sql: 'SELECT murid_id FROM murid_identity_link WHERE sekolah_id=? AND identity_uid=? ORDER BY murid_id',
+			args: [school, links[2].identity_uid]
+		})
+	).rows.map((row) => Number(row.murid_id));
+	assert.equal(toDeleteIds.length, 2);
+	result = await post('/murid/arsip?/updateStatus', {
+		lifecycleIds: pending.id,
+		status: 'keluar',
+		tanggalStatus: '2026-10-11',
+		alasan: 'Data salah input QA'
+	});
+	assert.equal(result.status, 200, result.body);
+	await db.execute({
+		sql: 'UPDATE murid_lifecycle SET needs_identity_review=1 WHERE id=?',
+		args: [pending.id]
+	});
+	result = await post('/murid/arsip?/previewPurge', { lifecycleIds: pending.id });
+	assert.equal(result.status, 409, result.body);
+	await db.execute({
+		sql: 'UPDATE murid_lifecycle SET needs_identity_review=0 WHERE id=?',
+		args: [pending.id]
+	});
+	await db.execute({
+		sql: 'INSERT INTO asesmen_sumatif(murid_id,mata_pelajaran_id,nilai_akhir,created_at) VALUES(?,?,90,CURRENT_TIMESTAMP)',
+		args: [students[2].id, Number(subject.lastInsertRowid)]
+	});
+	const certificate = await db.execute({
+		sql: "INSERT INTO martikulasi_hasil(sekolah_id,tahun_ajaran_id,kelas_id,murid_id,nomor_sttm,created_at) VALUES(?,?,?,?,'STTM-QA',CURRENT_TIMESTAMP)",
+		args: [school, classRow.tahun_ajaran_id, kelas, students[2].id]
+	});
+	result = await post('/murid/arsip?/previewPurge', { lifecycleIds: pending.id });
+	assert.equal(result.status, 200, result.body);
+	let purgePlan = parseActionData(JSON.parse(result.body).data).purgePreview;
+	assert.ok(purgePlan.blockers.some((item) => item.includes('STTM')));
+	result = await post('/murid/arsip?/purge', {
+		lifecycleIds: pending.id,
+		fingerprint: purgePlan.fingerprint,
+		confirmName: students[2].nama,
+		purgeAck: 'true',
+		alasan: 'QA'
+	});
+	assert.equal(result.status, 409, result.body);
+	await db.execute({
+		sql: 'DELETE FROM martikulasi_hasil WHERE id=?',
+		args: [Number(certificate.lastInsertRowid)]
+	});
+	const attachment = await db.execute({
+		sql: "INSERT INTO document_attachment(sekolah_id,entity_type,entity_id,entity_label_snapshot,category,original_name,stored_path,mime_type,size_bytes,sha256,created_at) VALUES(?,'murid',?,?,'ijazah','QA.pdf','qa/permanent-delete.pdf','application/pdf',1,?,CURRENT_TIMESTAMP)",
+		args: [school, String(students[2].id), students[2].nama, 'a'.repeat(64)]
+	});
+	result = await post('/murid/arsip?/previewPurge', { lifecycleIds: pending.id });
+	purgePlan = parseActionData(JSON.parse(result.body).data).purgePreview;
+	assert.ok(purgePlan.blockers.some((item) => item.includes('lampiran')));
+	await db.execute({
+		sql: 'DELETE FROM document_attachment WHERE id=?',
+		args: [Number(attachment.lastInsertRowid)]
+	});
+	const examSession = await db.execute({
+		sql: "INSERT INTO ujian_session(sekolah_id,tahun_ajaran_id,semester_id,nama,created_at) VALUES(?,?,?,'Snapshot Purge QA',CURRENT_TIMESTAMP)",
+		args: [school, classRow.tahun_ajaran_id, semester]
+	});
+	const examCard = await db.execute({
+		sql: "INSERT INTO ujian_peserta(session_id,murid_id,murid_nama_snapshot,nomor_peserta,created_at) VALUES(?,?,?,'12345001',CURRENT_TIMESTAMP)",
+		args: [Number(examSession.lastInsertRowid), students[2].id, students[2].nama]
+	});
+	result = await post('/murid/arsip?/previewPurge', { lifecycleIds: pending.id });
+	purgePlan = parseActionData(JSON.parse(result.body).data).purgePreview;
+	assert.equal(purgePlan.blockers.length, 0);
+	assert.equal(purgePlan.periods, 2);
+	assert.ok(
+		purgePlan.dependencies.some(
+			(item) => item.table === 'asesmen_sumatif' && item.effect === 'hapus'
+		)
+	);
+	assert.ok(
+		purgePlan.dependencies.some(
+			(item) => item.table === 'ujian_peserta' && item.effect === 'dipertahankan'
+		)
+	);
+	result = await post('/murid/arsip?/purge', {
+		lifecycleIds: pending.id,
+		fingerprint: purgePlan.fingerprint,
+		confirmName: 'Nama salah',
+		purgeAck: 'true',
+		alasan: 'QA'
+	});
+	assert.equal(result.status, 409, result.body);
+	await db.execute({
+		sql: 'UPDATE asesmen_sumatif SET nilai_akhir=91 WHERE murid_id=?',
+		args: [students[2].id]
+	});
+	result = await post('/murid/arsip?/purge', {
+		lifecycleIds: pending.id,
+		fingerprint: purgePlan.fingerprint,
+		confirmName: students[2].nama,
+		purgeAck: 'true',
+		alasan: 'QA'
+	});
+	assert.equal(result.status, 409, result.body);
+	for (const width of [1366, 768, 390, 320]) {
+		await page.setViewport({ width, height: 900 });
+		await page.goto(`${base}/murid/arsip?q=Identitas%20QA%203`, { waitUntil: 'networkidle0' });
+		// The archive row has one permanent-delete command; its preview is a separate modal form.
+		await page.click(`button[data-purge-id="${pending.id}"]`);
+		await page.waitForSelector('dialog[open] form[action="?/previewPurge"]');
+		await page.click('dialog[open] form[action="?/previewPurge"] button[type="submit"]');
+		await page.waitForSelector('dialog[open] form[action="?/purge"]');
+		assert.ok(
+			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+			`Purge overflow ${width}`
+		);
+		assert.equal(
+			await page.$eval(
+				'dialog[open] form[action="?/purge"] button[type="submit"]',
+				(button) => button.disabled
+			),
+			true
+		);
+		await page.evaluate(async () => {
+			await Promise.all(
+				(document.querySelector('dialog[open]')?.getAnimations({ subtree: true }) ?? [])
+					.filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+					.map((animation) => animation.finished.catch(() => {}))
+			);
+		});
+		await page.screenshot({
+			path: path.join(folder, `purge-preview-${width}.png`),
+			fullPage: true
+		});
+		if (width !== 320) await page.click('dialog[open] button[aria-label="Tutup"]');
+	}
+	const deleteForm = 'dialog[open] form[action="?/purge"]';
+	await page.type(`${deleteForm} input[name="confirmName"]`, students[2].nama);
+	await page.type(
+		`${deleteForm} textarea[name="alasan"]`,
+		'Hapus data uji yang salah input setelah backup otomatis'
+	);
+	await page.click(`${deleteForm} input[name="purgeAck"]`);
+	await page.click(`${deleteForm} button[type="submit"]`);
+	await page.waitForFunction(() => !document.querySelector('dialog[open]'));
+	assert.equal(
+		(await db.execute({ sql: 'SELECT id FROM murid WHERE id IN (?,?)', args: toDeleteIds })).rows
+			.length,
+		0
+	);
+	assert.equal(
+		(await db.execute({ sql: 'SELECT id FROM murid_lifecycle WHERE id=?', args: [pending.id] }))
+			.rows.length,
+		0
+	);
+	assert.equal(
+		(
+			await db.execute({
+				sql: 'SELECT id FROM asesmen_sumatif WHERE murid_id=?',
+				args: [students[2].id]
+			})
+		).rows.length,
+		0
+	);
+	const snapshot = (
+		await db.execute({
+			sql: 'SELECT * FROM ujian_peserta WHERE id=?',
+			args: [Number(examCard.lastInsertRowid)]
+		})
+	).rows[0];
+	assert.equal(snapshot.murid_id, null);
+	assert.equal(snapshot.murid_nama_snapshot, students[2].nama);
+	const purgeAudit = (
+		await db.execute({
+			sql: "SELECT after_data FROM audit_log WHERE entity_type='murid_permanent' AND entity_id=? ORDER BY id DESC LIMIT 1",
+			args: [String(pending.id)]
+		})
+	).rows[0];
+	const backupFile = JSON.parse(purgeAudit.after_data).backupFile;
+	const purgeBackup = createClient({ url: `file:${path.join(folder, backupFile)}` });
+	assert.equal(
+		(
+			await purgeBackup.execute({
+				sql: 'SELECT id FROM murid WHERE id IN (?,?)',
+				args: toDeleteIds
+			})
+		).rows.length,
+		2
+	);
+	purgeBackup.close();
+	const legacySnapshot = (
+		await db.execute({
+			sql: "SELECT id,nama_snapshot FROM murid_lifecycle WHERE sekolah_id=? AND identity_key='nisn:00000000'",
+			args: [school]
+		})
+	).rows[0];
+	assert.ok(legacySnapshot);
+	result = await post('/murid/arsip?/previewPurge', { lifecycleIds: legacySnapshot.id });
+	assert.equal(result.status, 200, result.body);
+	const legacyPlan = parseActionData(JSON.parse(result.body).data).purgePreview;
+	assert.equal(legacyPlan.periods, 0);
+	assert.equal(legacyPlan.blockers.length, 0);
+	result = await post('/murid/arsip?/purge', {
+		lifecycleIds: legacySnapshot.id,
+		fingerprint: legacyPlan.fingerprint,
+		confirmName: legacySnapshot.nama_snapshot,
+		purgeAck: 'true',
+		alasan: 'QA pembersihan snapshot lama yang sudah terlepas dari murid aktif'
+	});
+	assert.equal(result.status, 200, result.body);
+	assert.equal(
+		(
+			await db.execute({
+				sql: 'SELECT id FROM murid_lifecycle WHERE id=?',
+				args: [legacySnapshot.id]
+			})
+		).rows.length,
+		0
+	);
+	assert.deepEqual(await protectedData(), protectedBefore);
+	assert.equal((await db.execute('PRAGMA foreign_key_check')).rows.length, 0);
 	assert.deepEqual(errors, []);
 	await writeFile(path.join(folder, 'server.log'), output);
 	console.log(
-		'PASS migration/review, single/bulk archive, restore, transactional import rollback, promotion, stable UID after NISN edit, leading zero export, duplicate rejection, permissions, SQLite and desktop/mobile UI.'
+		'PASS migration/review evidence, single-only admin recovery, stale identity rejection, corrupt shared UID rollback, single/bulk archive, restore, transactional import rollback, promotion, stable UID after NISN edit, leading zero export, duplicate rejection, admin-only permanent purge with verified backup, protected STTM/attachments, retained exam snapshots, SQLite and desktop/mobile UI.'
 	);
 	console.log('QA artifacts:', folder);
 } catch (error) {

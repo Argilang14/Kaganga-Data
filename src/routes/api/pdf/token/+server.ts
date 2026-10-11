@@ -78,8 +78,9 @@ async function resolveNama(docType: string, locals: App.Locals, url: URL): Promi
 		const muridName = (preview?.murid as Record<string, unknown> | undefined)?.nama as
 			string | undefined;
 		if (muridName) nama = muridName;
-	} catch {
-		// fallback
+	} catch (cause) {
+		if (docType === 'jadwal-pelajaran' || docType === 'kalender-pendidikan') throw cause;
+		// Student document names can still fall back when preview data is unavailable.
 	}
 	return nama;
 }

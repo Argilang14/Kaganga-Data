@@ -172,6 +172,7 @@ export async function GET({ locals, url }) {
 	return new Response(new Uint8Array(buffer), {
 		headers: {
 			'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+			'Cache-Control': 'private, no-store',
 			'Content-Disposition': `attachment; filename="Data Murid-${status}.xlsx"`
 		}
 	});

@@ -3,6 +3,7 @@ import { ensureDataGovernanceSchema } from '$lib/server/db/ensure-data-governanc
 import {
 	tableKelas,
 	tableMurid,
+	tableMuridIdentityLink,
 	tableMuridLifecycle,
 	tableMuridRiwayatKelas,
 	tableSemester,
@@ -10,7 +11,11 @@ import {
 } from '$lib/server/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { muridIdentityKey } from '$lib/server/murid-identity';
-import { linkMuridIdentity } from '$lib/server/murid-identity-service';
+import {
+	assertMuridIdentityConsistent,
+	linkMuridIdentity
+} from '$lib/server/murid-identity-service';
+import { MuridIdentityConflictError } from './murid-identity-integrity';
 
 export const muridLifecycleStatuses = ['aktif', 'pindah', 'keluar', 'alumni'] as const;
 export type MuridLifecycleStatus = (typeof muridLifecycleStatuses)[number];
@@ -55,6 +60,33 @@ export async function syncMuridGovernance(
 		.where(and(eq(tableMurid.sekolahId, sekolahId), inArray(tableMurid.id, uniqueIds)));
 
 	const now = new Date().toISOString();
+	if (status) {
+		if (rows.length !== uniqueIds.length)
+			throw new MuridIdentityConflictError('Data sumber murid tidak lengkap; tidak ada perubahan.');
+		for (const row of rows) {
+			const link = await reader.query.tableMuridIdentityLink.findFirst({
+				where: and(
+					eq(tableMuridIdentityLink.muridId, row.id),
+					eq(tableMuridIdentityLink.sekolahId, sekolahId)
+				)
+			});
+			if (!link)
+				throw new MuridIdentityConflictError(
+					'Identitas internal belum tersedia. Jalankan pemeriksaan identitas terlebih dahulu.'
+				);
+			await assertMuridIdentityConsistent(reader, sekolahId, link.identityUid, row.id);
+			const lifecycle = await reader.query.tableMuridLifecycle.findFirst({
+				where: and(
+					eq(tableMuridLifecycle.sekolahId, sekolahId),
+					eq(tableMuridLifecycle.identityKey, muridIdentityKey({ identityUid: link.identityUid }))
+				)
+			});
+			if (lifecycle?.needsIdentityReview)
+				throw new MuridIdentityConflictError(
+					'Murid menunggu pemeriksaan identitas. Gunakan Periksa Identitas di Arsip Murid.'
+				);
+		}
+	}
 	for (const row of rows) {
 		const identityUid = await linkMuridIdentity(reader, sekolahId, row);
 		const identityKey = muridIdentityKey({ identityUid });

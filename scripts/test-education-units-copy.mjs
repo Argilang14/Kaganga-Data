@@ -163,10 +163,15 @@ try {
 	}
 	const unitsRoute = '/sekolah/satuan-pendidikan';
 	assert.equal((await get(unitsRoute)).status, 200);
-	assert.match(
-		await (await get(`/cetak/cover/__data.json?murid_id=${original.id}`)).text(),
-		/belum dipetakan/
-	);
+	// The isolated fixture must test an unmapped class even when the source is already configured.
+	await db.execute({
+		sql: 'DELETE FROM kelas_satuan_pendidikan WHERE kelas_id=?',
+		args: [original.kelas_id]
+	});
+	const unmappedCover = await (
+		await get(`/cetak/cover/__data.json?murid_id=${original.id}`)
+	).text();
+	assert.ok(unmappedCover.includes('belum dipetakan'), 'Unmapped class must require unit mapping');
 	await post(unitsRoute + '?/saveUnit', { jenjang: 'sd', nama: 'SD', npsn: 'INVALID' }, 400);
 	const official = [
 		{ jenjang: 'sd', nama: 'Sekolah Rakyat Dasar Provinsi Bengkulu', npsn: '76550273' },
@@ -853,6 +858,108 @@ try {
 			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
 			`page overflow ${width}`
 		);
+		const npsnValidity = await page.$$eval('input[name="npsn"]', (elements) =>
+			elements.map((element) => {
+				const original = element.value;
+				const cases = [
+					'76550273',
+					'72735090',
+					'70055420',
+					'01234567',
+					'1234567',
+					'123456789',
+					'7655027A'
+				];
+				const valid = cases.map((value) => {
+					element.value = value;
+					return element.checkValidity();
+				});
+				element.value = original;
+				return { pattern: element.pattern, valid };
+			})
+		);
+		assert.deepEqual(
+			npsnValidity,
+			Array.from({ length: 3 }, () => ({
+				pattern: '[0-9]{8}',
+				valid: [true, true, true, true, false, false, false]
+			})),
+			`NPSN browser validation ${width}`
+		);
+		if (width === 1366) {
+			for (const unit of official) {
+				const form = `form[action*="saveUnit"]:has(input[name="jenjang"][value="${unit.jenjang}"])`;
+				const name = `Nama QA Browser ${unit.jenjang.toUpperCase()}`;
+				const pendingForm = 'form[action*="saveUnit"]:has(input[name="jenjang"][value="smp"])';
+				if (unit.jenjang === 'sd') {
+					await page.$eval(`${pendingForm} input[name="nama"]`, (element) => {
+						element.value = 'Draf SMP belum disimpan';
+						element.dispatchEvent(new Event('input', { bubbles: true }));
+					});
+				}
+				await page.$eval(
+					`${form} input[name="nama"]`,
+					(element, value) => {
+						element.value = value;
+						element.dispatchEvent(new Event('input', { bubbles: true }));
+					},
+					name
+				);
+				await page.$eval(
+					`${form} input[name="npsn"]`,
+					(element, value) => {
+						element.value = value;
+						element.dispatchEvent(new Event('input', { bubbles: true }));
+					},
+					unit.npsn
+				);
+				assert.equal(await page.$eval(form, (element) => element.checkValidity()), true);
+				assert.equal(
+					await page.$eval(`${form} input[name="nama"]`, (element) => element.value),
+					name
+				);
+				const response = page.waitForResponse(
+					(result) => result.request().method() === 'POST' && result.url().includes('?/saveUnit')
+				);
+				await page.click(`${form} button[type="submit"], ${form} button:not([type])`);
+				const submitted = await response;
+				const submissionResult = await submitted.json();
+				assert.equal(submissionResult.type, 'success', JSON.stringify(submissionResult));
+				let saved;
+				for (let attempt = 0; attempt < 40; attempt++) {
+					saved = (
+						await db.execute({
+							sql: 'SELECT nama,npsn FROM sekolah_satuan_pendidikan WHERE sekolah_id=? AND jenjang=?',
+							args: [schoolId, unit.jenjang]
+						})
+					).rows[0];
+					if (saved?.nama === name) break;
+					await new Promise((resolve) => setTimeout(resolve, 100));
+				}
+				assert.equal(saved?.nama, name, `Simpan ${unit.jenjang} through browser`);
+				assert.equal(saved?.npsn, unit.npsn);
+				await page.waitForFunction(
+					(selector) => !document.querySelector(`${selector} button`).disabled,
+					{},
+					form
+				);
+				assert.equal(
+					await page.$eval(`${form} input[name="nama"]`, (element) => element.value),
+					name
+				);
+				if (unit.jenjang === 'sd') {
+					assert.equal(
+						await page.$eval(`${pendingForm} input[name="nama"]`, (element) => element.value),
+						'Draf SMP belum disimpan'
+					);
+				}
+				await post(unitsRoute + '?/saveUnit', unit);
+				await page.reload({ waitUntil: 'networkidle0' });
+			}
+			console.log(
+				'PASS: eight-digit NPSN and leading zero accepted, malformed values rejected, all three units saved through browser'
+			);
+		}
 		await page.screenshot({ path: path.join(folder, `satuan-${width}.png`), fullPage: true });
 		await page.$eval('.mapping-section', (element) => element.scrollIntoView({ block: 'start' }));
 		await new Promise((resolve) => setTimeout(resolve, 200));
@@ -879,6 +986,11 @@ try {
 			element.value = '87654321';
 			element.dispatchEvent(new Event('input', { bubbles: true }));
 		});
+		assert.equal(await page.$eval('input[name="npsn"]', (element) => element.pattern), '[0-9]{8}');
+		assert.equal(
+			await page.$eval('input[name="npsn"]', (element) => element.checkValidity()),
+			true
+		);
 		await page.select('select[name="jenjangPendidikan"]', 'srt');
 		await page.select('select[name="jenjangPendidikan"]', 'sd');
 		assert.equal(await page.$eval('input[name="npsn"]', (element) => element.value), '87654321');

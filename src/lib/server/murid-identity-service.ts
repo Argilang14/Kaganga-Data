@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import db from '$lib/server/db';
 import { tableMurid, tableMuridIdentityLink, tableMuridLifecycle } from '$lib/server/db/schema';
 import { and, eq, ne, sql } from 'drizzle-orm';
+import { identityIntegrityProblem, MuridIdentityConflictError } from './murid-identity-integrity';
 import {
 	muridIdentityKey,
 	normalizedIdentityText,
@@ -19,6 +20,42 @@ type StudentInput = {
 	tanggalLahir: string;
 	semesterId: number;
 };
+
+export async function getMuridIdentityMembers(reader: Reader, sekolahId: number, uid: string) {
+	return reader
+		.select({
+			id: tableMurid.id,
+			sekolahId: tableMurid.sekolahId,
+			semesterId: tableMurid.semesterId,
+			linkSchoolId: tableMuridIdentityLink.sekolahId,
+			linkSemesterId: tableMuridIdentityLink.semesterId,
+			nis: tableMurid.nis,
+			nisn: tableMurid.nisn,
+			nama: tableMurid.nama,
+			tanggalLahir: tableMurid.tanggalLahir,
+			kelasId: tableMurid.kelasId
+		})
+		.from(tableMuridIdentityLink)
+		.innerJoin(tableMurid, eq(tableMuridIdentityLink.muridId, tableMurid.id))
+		.where(
+			and(
+				eq(tableMuridIdentityLink.sekolahId, sekolahId),
+				eq(tableMuridIdentityLink.identityUid, uid)
+			)
+		);
+}
+
+export async function assertMuridIdentityConsistent(
+	reader: Reader,
+	sekolahId: number,
+	uid: string,
+	expectedMuridId: number
+) {
+	const members = await getMuridIdentityMembers(reader, sekolahId, uid);
+	const problem = identityIntegrityProblem(members, sekolahId, expectedMuridId);
+	if (problem) throw new MuridIdentityConflictError(problem);
+	return members;
+}
 
 export async function validateMuridIdentityInput(
 	reader: Reader,

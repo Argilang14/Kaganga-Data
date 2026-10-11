@@ -3,6 +3,15 @@ import { resolve } from 'node:path';
 import type { KartuAbsensiPrintData } from '../../../../routes/cetak/kartu-absensi/preview-data';
 
 let fallbackLogoDataUri: string | null = null;
+let portraitBackgroundDataUri: string | null = null;
+
+function getPortraitBackgroundDataUri(): string {
+	if (!portraitBackgroundDataUri) {
+		const buffer = readFileSync(resolve('static/kartu-absensi-portrait.png'));
+		portraitBackgroundDataUri = `data:image/png;base64,${buffer.toString('base64')}`;
+	}
+	return portraitBackgroundDataUri;
+}
 
 function getFallbackLogoDataUri(): string {
 	if (fallbackLogoDataUri) return fallbackLogoDataUri;
@@ -45,15 +54,10 @@ function identityRow(label: string, value: string) {
 }
 
 function frontCardMarkup(data: KartuAbsensiPrintData): string {
+	if (data.layout === 'qr-only') return portraitCardMarkup(data);
 	const studentNumber = data.murid.nisn || data.murid.nis;
 	const isPhotoQr = data.layout === 'photo-qr';
-	const isQrOnly = data.layout === 'qr-only';
-	const mediaMarkup = isQrOnly
-		? `<div class="front-qr-only">
-			<img class="front-qr" src="${data.qrDataUrl}" alt="QR Absensi ${escapeHtml(data.murid.nama)}" />
-			<div>QR ABSENSI</div>
-		</div>`
-		: `<div class="front-media ${isPhotoQr ? 'with-qr' : ''}">
+	const mediaMarkup = `<div class="front-media ${isPhotoQr ? 'with-qr' : ''}">
 			<div class="photo-frame">
 				${data.murid.fotoSrc ? `<img src="${data.murid.fotoSrc}" alt="Foto ${escapeHtml(data.murid.nama)}" />` : '<span>FOTO</span>'}
 			</div>
@@ -73,6 +77,24 @@ function frontCardMarkup(data: KartuAbsensiPrintData): string {
 			</div>
 		</div>
 		<div class="card-footer">${escapeHtml(data.sekolah.nama)}</div>
+	</article>`;
+}
+
+function portraitCardMarkup(data: KartuAbsensiPrintData): string {
+	const logoSrc = data.sekolah.logoSrc || getFallbackLogoDataUri();
+	const level = data.kelas.jenjang?.toLowerCase() ?? '';
+	const levelLabel =
+		({ srd: 'SD', srmp: 'SMP', srma: 'SMA' } as Record<string, string>)[level] ??
+		level.toUpperCase();
+	return `<article class="student-card front layout-qr-only portrait-card">
+		<div class="portrait-background" aria-hidden="true"></div>
+		${logoSrc ? `<img class="portrait-logo" src="${escapeHtml(logoSrc)}" alt="Logo sekolah" />` : ''}
+		<h1 class="portrait-title">KARTU ABSENSI</h1>
+		<div class="portrait-school" style="font-size:${data.sekolah.nama.length > 70 ? '8' : '9'}pt">${escapeHtml(data.sekolah.nama)}</div>
+		<img class="portrait-qr" src="${escapeHtml(data.qrDataUrl)}" alt="QR Absensi ${escapeHtml(data.murid.nama)}" />
+		<div class="portrait-name" style="font-size:${data.murid.nama.length > 38 ? '9' : '11'}pt">${escapeHtml(data.murid.nama)}</div>
+		<div class="portrait-numbers"><div>NIS ${escapeHtml(data.murid.nis || '-')}</div><div>NISN ${escapeHtml(data.murid.nisn || '-')}</div></div>
+		${levelLabel ? `<div class="portrait-level">JENJANG ${escapeHtml(levelLabel)}</div>` : ''}
 	</article>`;
 }
 
@@ -115,10 +137,11 @@ function sheetMarkup(
 function renderCardSheets(cards: KartuAbsensiPrintData[]) {
 	const sheets: string[] = [];
 	const duplex = cards[0]?.layout === 'duplex';
-	for (let index = 0; index < cards.length; index += 8) {
-		const group: Array<KartuAbsensiPrintData | undefined> = cards.slice(index, index + 8);
-		while (group.length < 8) group.push(undefined);
-		const isLastGroup = index + 8 >= cards.length;
+	const perSheet = cards[0]?.layout === 'qr-only' ? 4 : 8;
+	for (let index = 0; index < cards.length; index += perSheet) {
+		const group: Array<KartuAbsensiPrintData | undefined> = cards.slice(index, index + perSheet);
+		while (group.length < perSheet) group.push(undefined);
+		const isLastGroup = index + perSheet >= cards.length;
 		sheets.push(sheetMarkup(group, 'front', !duplex && isLastGroup));
 		if (duplex) {
 			const mirroredBack = [
@@ -137,7 +160,7 @@ function renderCardSheets(cards: KartuAbsensiPrintData[]) {
 	return sheets.join('\n');
 }
 
-function kartuAbsensiStyles(): string {
+function kartuAbsensiStyles(portrait: boolean): string {
 	return `
 		@page {
 			size: A4 portrait;
@@ -163,13 +186,13 @@ function kartuAbsensiStyles(): string {
 			width: 210mm;
 			height: 297mm;
 			display: grid;
-			grid-template-columns: repeat(2, 85.6mm);
-			grid-template-rows: repeat(4, 54mm);
-			column-gap: 5mm;
-			row-gap: 5mm;
+			grid-template-columns: repeat(2, ${portrait ? '94' : '85.6'}mm);
+			grid-template-rows: repeat(${portrait ? '2, 123' : '4, 54'}mm);
+			column-gap: ${portrait ? '6' : '5'}mm;
+			row-gap: ${portrait ? '7' : '5'}mm;
 			align-content: start;
 			justify-content: start;
-			padding: 33mm 16.9mm;
+			padding: ${portrait ? '9mm 8mm' : '33mm 16.9mm'};
 			overflow: hidden;
 			break-after: page;
 			page-break-after: always;
@@ -181,8 +204,8 @@ function kartuAbsensiStyles(): string {
 		}
 
 		.card-slot {
-			width: 85.6mm;
-			height: 54mm;
+			width: ${portrait ? '94' : '85.6'}mm;
+			height: ${portrait ? '123' : '54'}mm;
 			break-inside: avoid;
 			page-break-inside: avoid;
 		}
@@ -193,11 +216,11 @@ function kartuAbsensiStyles(): string {
 
 		.student-card {
 			position: relative;
-			width: 85.6mm;
-			height: 54mm;
+			width: ${portrait ? '94' : '85.6'}mm;
+			height: ${portrait ? '123' : '54'}mm;
 			overflow: hidden;
 			border: 0.25mm solid #1d3542;
-			border-radius: 1.5mm;
+			border-radius: ${portrait ? '0' : '1.5mm'};
 			background: #ffffff;
 		}
 
@@ -454,17 +477,35 @@ function kartuAbsensiStyles(): string {
 }
 
 function documentHtml(cards: KartuAbsensiPrintData[], title: string) {
+	if (cards.some((card) => card.layout !== cards[0]?.layout))
+		throw new Error('Semua kartu dalam satu PDF harus menggunakan model yang sama.');
+	const portrait = cards[0]?.layout === 'qr-only';
 	return `<!doctype html>
 <html lang="id">
 <head>
 	<meta charset="utf-8" />
 	<title>${escapeHtml(title)}</title>
-	<style>${kartuAbsensiStyles()}</style>
+	<style>${kartuAbsensiStyles(portrait)}${portrait ? portraitStyles() : ''}</style>
 </head>
 <body>
 	${renderCardSheets(cards)}
 </body>
 </html>`;
+}
+
+function portraitStyles() {
+	return `
+		.portrait-card { color:#fff; background:#07435b; }
+		.portrait-card::before, .portrait-card::after { display:none; }
+		.portrait-background { position:absolute; inset:0; background:url("${getPortraitBackgroundDataUri()}") center / 100% 100% no-repeat; }
+		.portrait-logo { position:absolute; top:4mm; left:4mm; width:13mm; height:13mm; object-fit:contain; }
+		.portrait-title { position:absolute; top:17.5mm; left:5mm; right:5mm; margin:0; font-size:20pt; font-weight:800; line-height:1.15; text-align:center; }
+		.portrait-school { position:absolute; top:26mm; left:7mm; right:7mm; height:10mm; display:flex; align-items:center; justify-content:center; text-align:center; font-weight:600; line-height:1.2; overflow-wrap:anywhere; }
+		.portrait-qr { position:absolute; top:40mm; left:27mm; width:40mm; height:40mm; object-fit:contain; background:#fff; }
+		.portrait-name { position:absolute; top:97mm; left:8mm; right:8mm; height:9mm; display:flex; align-items:center; justify-content:center; font-weight:700; line-height:1.15; text-align:center; overflow-wrap:anywhere; }
+		.portrait-numbers { position:absolute; top:107mm; left:8mm; right:8mm; font-size:8.5pt; line-height:1.25; text-align:center; }
+		.portrait-level { position:absolute; bottom:3.5mm; right:5mm; font-size:8pt; font-weight:600; }
+	`;
 }
 
 export function renderKartuAbsensiHTML(data: KartuAbsensiPrintData): string {

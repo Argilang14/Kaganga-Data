@@ -3,13 +3,17 @@
 	import { invalidate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import Icon from '$lib/components/icon.svelte';
+	import PurgeMuridModal from '$lib/components/murid/purge-murid-modal.svelte';
+	let purgeModal = $state<PurgeMuridModal | null>(null);
 	let { data, form } = $props();
 	let selectedIds = $state<number[]>([]);
 	let submitting = $state(false);
 	let selectedAction = $state<'status' | 'kelas'>('status');
 	let targetClassId = $state('');
 	const editableRows = $derived(
-		data.rows.filter((row) => row.identityKey.startsWith('uid:') && row.lastMuridId)
+		data.rows.filter(
+			(row) => row.identityKey.startsWith('uid:') && row.lastMuridId && !row.needsIdentityReview
+		)
 	);
 	const selectedRows = $derived(editableRows.filter((row) => selectedIds.includes(row.id)));
 	const selectionIds = $derived(selectedRows.map((row) => row.id));
@@ -324,7 +328,7 @@
 								aria-label="Pilih semua murid di halaman ini"
 							/></th
 						><th>No</th><th>Nama</th><th>NIS/NISN</th><th>Kelas Terakhir</th><th>Status Sekolah</th
-						><th>Tanggal Status & Alasan</th><th>Riwayat</th></tr
+						><th>Tanggal Status & Alasan</th><th>Riwayat</th><th>Aksi</th></tr
 					></thead
 				><tbody
 					>{#each data.rows as row, index (row.id)}<tr
@@ -333,7 +337,9 @@
 									class="checkbox"
 									type="checkbox"
 									checked={selectedIds.includes(row.id)}
-									disabled={!row.identityKey.startsWith('uid:') || !row.lastMuridId}
+									disabled={!row.identityKey.startsWith('uid:') ||
+										!row.lastMuridId ||
+										!!row.needsIdentityReview}
 									onchange={(event) => toggle(row.id, event.currentTarget.checked)}
 									aria-label={`Pilih ${row.nama}`}
 								/></td
@@ -357,8 +363,8 @@
 									class:badge-warning={row.status === 'pindah' || row.status === 'keluar'}
 									class:badge-info={row.status === 'alumni'}
 									class="badge badge-soft whitespace-nowrap">{statusLabel(row.status)}</span
-								>{#if row.needsIdentityReview}<span class="badge badge-warning mt-1"
-										>Perlu Periksa Identitas</span
+								>{#if row.needsIdentityReview}<span
+										class="badge badge-warning mt-1 whitespace-nowrap">Perlu Periksa Identitas</span
 									>{/if}</td
 							><td
 								><div>{row.tanggalStatus || '-'}</div>
@@ -381,9 +387,118 @@
 											</div>{/each}
 									</div>
 								</details></td
-							></tr
+							><td>
+								{#if row.identityEvidence}
+									<details class="min-w-48">
+										<summary class="btn btn-soft btn-warning btn-sm whitespace-nowrap"
+											><Icon name="search" /> Periksa Identitas</summary
+										>
+										<div class="mt-3 w-80 max-w-full space-y-3 whitespace-normal">
+											<p class="font-semibold">{row.nama}</p>
+											{#each row.identityEvidence.sources as source (source.id)}
+												{@const kelas = data.targetClasses.find(
+													(item) => item.id === source.kelasId
+												)}
+												<dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+													<dt>ID sumber</dt>
+													<dd>{source.id}</dd>
+													<dt>Nama</dt>
+													<dd>{source.nama}</dd>
+													<dt>NIS / NISN</dt>
+													<dd>{source.nis} / {source.nisn || '-'}</dd>
+													<dt>Tanggal lahir</dt>
+													<dd>{source.tanggalLahir}</dd>
+													<dt>Kelas / periode</dt>
+													<dd>
+														{kelas?.nama || '-'} · {kelas?.semester || '-'} ({kelas?.tahunAjaran ||
+															'-'})
+													</dd>
+												</dl>
+											{/each}
+											{#each row.identityEvidence.legacy as legacy (legacy.id)}
+												<p class="border-base-200 border-t pt-2 text-xs">
+													Snapshot lama #{legacy.id}: {legacy.nama} · {legacy.nis} / {legacy.nisn ||
+														'-'} · {statusLabel(legacy.status)}<br />{legacy.alasan || '-'}
+												</p>
+											{/each}
+											{#if row.identityEvidence.problem}
+												<p class="text-error text-sm">{row.identityEvidence.problem}</p>
+											{:else}
+												<form
+													method="POST"
+													action="?/resolveIdentity"
+													class="space-y-3"
+													use:enhance={() => {
+														return async ({ update }) => {
+															await update();
+															await invalidate('app:murid');
+															await invalidate('app:murid-arsip');
+														};
+													}}
+												>
+													<input type="hidden" name="lifecycleIds" value={row.id} />
+													<input type="hidden" name="identityKey" value={row.identityKey} />
+													<input type="hidden" name="expectedUpdatedAt" value={row.updatedAt} />
+													<label class="block"
+														><span class="mb-1 block text-sm">Keputusan</span><select
+															class="select w-full"
+															name="status"
+															required
+															><option value="">Pilih keputusan</option><option value="aktif"
+																>Pulihkan ke Aktif</option
+															><option value="keluar">Tetap Keluar Sekolah</option><option
+																value="pindah">Pindah Sekolah</option
+															><option value="alumni">Alumni / Lulus</option></select
+														></label
+													>
+													<label class="block"
+														><span class="mb-1 block text-sm">Tanggal Status</span><input
+															class="input w-full"
+															type="date"
+															name="tanggalStatus"
+															value={row.tanggalStatus || today}
+														/></label
+													>
+													<label class="block"
+														><span class="mb-1 block text-sm">Alasan Pemeriksaan</span><textarea
+															class="textarea w-full"
+															name="alasan"
+															maxlength="500"
+															required></textarea></label
+													>
+													<label class="flex items-start gap-2 text-xs"
+														><input
+															type="checkbox"
+															class="checkbox checkbox-sm"
+															name="identityReviewed"
+															value="true"
+															required
+														/> Identitas dan status murid telah saya cocokkan dengan data sekolah.</label
+													>
+													<button class="btn btn-primary btn-sm" type="submit"
+														><Icon name="save" /> Simpan Pemeriksaan</button
+													>
+												</form>
+											{/if}
+										</div>
+									</details>
+								{:else if row.needsIdentityReview}
+									<span class="text-xs opacity-60">Perlu diperiksa admin</span>
+								{:else if row.status === 'keluar' && data.canReviewIdentity}
+									<button
+										class="btn btn-error btn-soft btn-sm whitespace-nowrap"
+										type="button"
+										data-purge-id={row.id}
+										onclick={() => purgeModal?.open(row)}
+										><Icon name="del" />
+										{row.identityKey.startsWith('uid:')
+											? 'Hapus Permanen'
+											: 'Hapus Snapshot'}</button
+									>
+								{:else}<span class="text-xs opacity-50">-</span>{/if}
+							</td></tr
 						>{:else}<tr
-							><td colspan="8" class="py-12 text-center opacity-60"
+							><td colspan="9" class="py-12 text-center opacity-60"
 								>Belum ada data murid sesuai filter.</td
 							></tr
 						>{/each}</tbody
@@ -402,3 +517,5 @@
 		</div>
 	</div>
 </div>
+
+{#if data.canReviewIdentity}<PurgeMuridModal bind:this={purgeModal} />{/if}

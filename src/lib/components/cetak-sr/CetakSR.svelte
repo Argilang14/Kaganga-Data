@@ -801,11 +801,14 @@
 					kartuLayout: documentType === 'kartu-absensi' ? selectedKartuLayout : undefined
 				})
 			});
-			if (!res.ok) throw new Error('Gagal mendapatkan token');
+			if (!res.ok) throw new Error(await responseErrorMessage(res, 'Gagal mendapatkan token'));
 			const { token, slug } = await res.json();
 
 			const pdfRes = await fetch(`/cetak/pdf/${slug}/${token}`);
-			if (!pdfRes.ok) throw new Error('Gagal memuat PDF');
+			if (!pdfRes.ok) throw new Error(await responseErrorMessage(pdfRes, 'Gagal memuat PDF'));
+			if (!pdfRes.headers.get('content-type')?.includes('application/pdf')) {
+				throw new Error('PDF tidak tersedia. Periksa sesi login dan izin cetak akun Anda.');
+			}
 			const blob = await pdfRes.blob();
 			pdfViewerFilename = responsePdfFilename(pdfRes);
 
@@ -1268,7 +1271,7 @@
 			<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
 				<div>
 					<div class="font-semibold">Model kartu</div>
-					<div class="text-base-content/65 text-xs">Ukuran asli 85,6 × 54 mm, 8 kartu per A4.</div>
+					<div class="text-base-content/65 text-xs">{selectedKartuLayout === 'qr-only' ? '94 × 123 mm · Portrait' : '85,6 × 54 mm · Landscape'}</div>
 				</div>
 				<div class="join" role="group" aria-label="Model kartu pelajar dan absensi">
 					<button
@@ -1292,7 +1295,7 @@
 				</div>
 			</div>
 			<div class="flex flex-wrap items-center gap-3">
-				<span class="badge badge-outline whitespace-nowrap">A4 · 8 kartu · 85,6 × 54 mm</span>
+				<span class="badge badge-outline whitespace-nowrap">A4 · {selectedKartuLayout === 'qr-only' ? '4' : '8'} kartu</span>
 			{#if qrReadinessLoading}
 				<span class="loading loading-spinner loading-sm"></span>
 				<span>Memeriksa kesiapan QR {daftarMurid.length} murid...</span>

@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.2.6 - 2026-10-11
+
+### Perbaikan
+
+- Memperbaiki validasi input NPSN delapan digit pada Form Sekolah dan Satuan Pendidikan, serta mempertahankan isian jenjang lain yang belum disimpan.
+- Memeriksa identitas satuan dan penandatangan jadwal/kalender sebelum membuat token PDF. Pesan kegagalan server ditampilkan pada preview, bukan hanya "Gagal memuat PDF".
+- Mempertahankan nama sekolah induk pada kop jadwal seluruh jenjang dan nama satuan resmi pada cetak per jenjang.
+- Memperkuat pemeriksaan identitas murid, pemisahan snapshot lama dan identitas aktif, serta pengamanan hapus permanen murid berstatus keluar sekolah.
+- Menambahkan desain kartu absensi QR-only portrait 94 x 123 mm, empat kartu per A4, memakai QR murid yang sudah ada. Model foto+QR dan dua sisi tetap tersedia.
+- Merapikan Catat Absensi dan Rekap Absensi dengan filter, tombol, ringkasan berwarna, dan tabel responsif; aturan akses dan catatan absensi tetap dipertahankan.
+
+### Catatan Pembaruan
+
+- Backup database dan foto/lampiran di PC server sebelum memasang pembaruan. Paket installer menggunakan database awal bersih, bukan data sekolah.
+- Identitas/NPSN SD, SMP, dan SMA tetap harus diisi dan disimpan di Satuan Pendidikan. Pembaruan tidak mengarang NPSN atau mengganti snapshot dokumen lama.
+- Hapus permanen hanya untuk admin dengan pemeriksaan riwayat terkait dan konfirmasi. Gunakan hanya untuk data salah input; alumni dan riwayat sah sebaiknya tetap diarsipkan.
+
 ## 2.2.2 - 2026-10-03
 
 ### Fitur dan perbaikan

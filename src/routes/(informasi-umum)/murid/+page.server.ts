@@ -9,6 +9,7 @@ import { activeMuridFilter } from '$lib/server/murid-query';
 import { canManageMurid } from '$lib/murid-permissions';
 import { getKelasContextForUser } from '$lib/server/route-utils';
 import { ensureDataGovernanceSchema } from '$lib/server/db/ensure-data-governance';
+import { MuridIdentityConflictError } from '$lib/server/murid-identity-integrity';
 
 export async function load({ locals, url, depends, parent }) {
 	depends('app:murid');
@@ -133,31 +134,36 @@ export const actions = {
 			if (!(await getKelasContextForUser(locals, url, String(id))).hasAccess)
 				return fail(403, { fail: 'Tidak memiliki akses ke kelas murid terpilih.' });
 		}
-		await db.transaction(async (tx) => {
-			await syncMuridGovernance(
-				sekolahId,
-				deletedMurid.map((murid) => murid.id),
-				'keluar',
-				{
-					tanggalStatus: new Date().toISOString().slice(0, 10),
-					alasan: 'Data murid dihapus dari daftar aktif.'
-				},
-				tx
-			);
+		try {
+			await db.transaction(async (tx) => {
+				await syncMuridGovernance(
+					sekolahId,
+					deletedMurid.map((murid) => murid.id),
+					'keluar',
+					{
+						tanggalStatus: new Date().toISOString().slice(0, 10),
+						alasan: 'Data murid dihapus dari daftar aktif.'
+					},
+					tx
+				);
 
-			await writeAuditLog(
-				{
-					locals,
-					request,
-					action: 'archive',
-					entityType: 'murid',
-					entityId: muridIds.join(','),
-					summary: `${deletedMurid.length} murid diarsipkan; data nilai, foto, dan presensi dipertahankan.`,
-					before: deletedMurid
-				},
-				tx
-			);
-		});
+				await writeAuditLog(
+					{
+						locals,
+						request,
+						action: 'archive',
+						entityType: 'murid',
+						entityId: muridIds.join(','),
+						summary: `${deletedMurid.length} murid diarsipkan; data nilai, foto, dan presensi dipertahankan.`,
+						before: deletedMurid
+					},
+					tx
+				);
+			});
+		} catch (cause) {
+			if (cause instanceof MuridIdentityConflictError) return fail(409, { fail: cause.message });
+			throw cause;
+		}
 
 		return {
 			message: `${deletedMurid.length} murid diarsipkan. Data dapat dipulihkan melalui Arsip Murid & Alumni.`

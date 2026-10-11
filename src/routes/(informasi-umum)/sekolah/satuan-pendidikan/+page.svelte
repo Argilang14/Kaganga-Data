@@ -2,8 +2,33 @@
 	import FormEnhance from '$lib/components/form-enhance.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import { resolve } from '$app/paths';
+	import { untrack } from 'svelte';
 	let { data } = $props();
 	const levels = ['sd', 'smp', 'sma'];
+	function savedInputs(): Record<string, { key: string; nama: string; npsn: string }> {
+		return Object.fromEntries(
+			levels.map((level) => {
+				const unit = data.units.find((row) => row.jenjang === level);
+				return [
+					level,
+					{
+						key: JSON.stringify([data.schoolId, unit?.id, unit?.nama, unit?.npsn]),
+						nama: unit?.nama || '',
+						npsn: unit?.npsn || ''
+					}
+				];
+			})
+		);
+	}
+	let inputs = $state(untrack(savedInputs));
+	$effect(() => {
+		const saved = savedInputs();
+		// Saving one unit must not reset unfinished edits in the other forms.
+		untrack(() => {
+			for (const level of levels)
+				if (inputs[level].key !== saved[level].key) inputs[level] = saved[level];
+		});
+	});
 	const mappedCount = $derived(data.classes.filter((kelas) => kelas.satuanId !== null).length);
 </script>
 
@@ -15,10 +40,9 @@
 	{#if data.integrated}
 		<div class="grid grid-cols-1 gap-4 xl:grid-cols-3">
 			{#each levels as level (level)}
-				{@const unit = data.units.find((row) => row.jenjang === level)}
 				<div class="rounded-lg bg-base-100 p-5 shadow-md">
 					<h2 class="mb-4 text-lg font-bold">{level.toUpperCase()}</h2>
-					<FormEnhance action="?/saveUnit">
+					<FormEnhance action="?/saveUnit" onsuccess={() => (inputs[level] = savedInputs()[level])}>
 						{#snippet children({ submitting })}
 							<input type="hidden" name="jenjang" value={level} />
 							<div class="space-y-4">
@@ -26,7 +50,7 @@
 									><span class="mb-1 block">Nama resmi</span><input
 										class="input w-full"
 										name="nama"
-										value={unit?.nama || ''}
+										bind:value={inputs[level].nama}
 										required
 										maxlength="200"
 									/></label
@@ -35,9 +59,9 @@
 									><span class="mb-1 block">NPSN</span><input
 										class="input w-full"
 										name="npsn"
-										value={unit?.npsn || ''}
+										bind:value={inputs[level].npsn}
 										required
-										pattern="[0-9]{8}"
+										pattern={'[0-9]{8}'}
 										inputmode="numeric"
 										minlength="8"
 										maxlength="8"

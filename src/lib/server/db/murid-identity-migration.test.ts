@@ -60,6 +60,30 @@ async function student(
 	});
 }
 
+test('audit penghapusan harus cocok dengan ID, bukan hanya nama dan NIS yang sama', async () => {
+	const client = await fixture();
+	try {
+		await student(client, 1, '000', 1, 1, 'SAMA', 'Nama Sama');
+		await student(client, 2, '000', 1, 2, 'SAMA', 'Nama Sama');
+		await client.execute("UPDATE murid SET tanggal_lahir='2011-02-02' WHERE id=2");
+		await client.execute(
+			"INSERT INTO murid_lifecycle(sekolah_id,identity_key,nis,nisn,nama_snapshot,status,last_murid_id) VALUES(1,'nisn:000','SAMA','000','Nama Sama','keluar',1)"
+		);
+		await client.execute({
+			sql: "INSERT INTO audit_log VALUES(1,'murid','delete',?)",
+			args: [JSON.stringify({ id: 1, nis: 'SAMA', nisn: '000', nama: 'Nama Sama' })]
+		});
+		const plan = await auditMuridIdentity(client);
+		const deleted = plan.groups.find((group) => group.rows.some((row) => row.id === 1))!;
+		const other = plan.groups.find((group) => group.rows.some((row) => row.id === 2))!;
+		assert.equal(deleted.status, 'keluar');
+		assert.equal(deleted.review, false);
+		assert.equal(other.review, true);
+	} finally {
+		client.close();
+	}
+});
+
 test('189 murid bernomor 000 dipisah, status orang lain tidak ikut diarsipkan', async () => {
 	const client = await fixture();
 	try {

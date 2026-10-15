@@ -17,6 +17,7 @@ import { canAttendance, canAttendActivity, attendanceDateAllowed } from '$lib/at
 import { assertStudentAccess } from '$lib/server/attendance-student-access';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { saveAttendance } from '$lib/server/attendance-mutation';
+import { scanReceipt, type RecordedAttendance } from '$lib/attendance-scan-result';
 import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
 import {
 	tableAbsensiHarian,
@@ -25,10 +26,24 @@ import {
 	tableMurid,
 	tableQrMurid
 } from '$lib/server/db/schema';
+import { tableAuthUser } from '$lib/server/db/schema';
 import { json } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 
 const MAX_OFFLINE_SCAN_AGE_MS = 12 * 60 * 60 * 1000;
+
+async function receipt(record: RecordedAttendance, duplicate: boolean, sekolahId: number) {
+	const petugas = record.petugasUserId
+		? await db.query.tableAuthUser.findFirst({
+				columns: { username: true },
+				where: and(
+					eq(tableAuthUser.id, record.petugasUserId),
+					eq(tableAuthUser.sekolahId, sekolahId)
+				)
+			})
+		: null;
+	return scanReceipt(record, duplicate, petugas?.username ?? null);
+}
 
 function resolveCapturedAt(value: string | null | undefined) {
 	const current = new Date();
@@ -80,7 +95,7 @@ export async function POST({ request, locals }) {
 		status?: string | null;
 		capturedAt?: string | null;
 	} | null;
-	const token = body?.token?.trim();
+	const token = typeof body?.token === 'string' ? body.token.trim() : '';
 	if (!token) {
 		return json(
 			{ ok: false, code: 'invalid_token', message: 'Token QR tidak valid.' },
@@ -222,7 +237,7 @@ export async function POST({ request, locals }) {
 
 		const tanggal = todayLocalDate(scanDate);
 		const existing = await db.query.tableAbsensiKegiatan.findFirst({
-			columns: { id: true, status: true, waktuScan: true },
+			columns: { id: true, status: true, waktuScan: true, petugasUserId: true, metode: true },
 			where: and(
 				eq(tableAbsensiKegiatan.sekolahId, sekolahId),
 				eq(tableAbsensiKegiatan.semesterId, qr.murid.semesterId),
@@ -235,11 +250,7 @@ export async function POST({ request, locals }) {
 
 		if (existing) {
 			return json({
-				ok: true,
-				code: 'already_present',
-				message: `Siswa sudah absen ${kegiatan.nama} hari ini.`,
-				status: existing.status,
-				waktuScan: existing.waktuScan,
+				...(await receipt(existing, true, sekolahId)),
 				kegiatan: { id: kegiatan.id, nama: kegiatan.nama },
 				murid: muridPayload(qr.murid)
 			});
@@ -286,11 +297,7 @@ export async function POST({ request, locals }) {
 		});
 
 		return json({
-			ok: true,
-			code: saved.skipped ? 'already_present' : 'success',
-			message: `Absensi ${kegiatan.nama} berhasil dicatat sebagai ${status}.`,
-			status: saved.records[0]?.status ?? status,
-			waktuScan: saved.records[0]?.waktuScan ?? now,
+			...(await receipt(saved.records[0], saved.skipped > 0, sekolahId)),
 			kegiatan: { id: kegiatan.id, nama: kegiatan.nama },
 			murid: muridPayload(qr.murid)
 		});
@@ -305,7 +312,7 @@ export async function POST({ request, locals }) {
 
 	const tanggal = todayLocalDate(scanDate);
 	const existing = await db.query.tableAbsensiHarian.findFirst({
-		columns: { id: true, status: true, waktuScan: true },
+		columns: { id: true, status: true, waktuScan: true, petugasUserId: true, metode: true },
 		where: and(
 			eq(tableAbsensiHarian.sekolahId, sekolahId),
 			eq(tableAbsensiHarian.semesterId, qr.murid.semesterId),
@@ -317,11 +324,7 @@ export async function POST({ request, locals }) {
 
 	if (existing) {
 		return json({
-			ok: true,
-			code: 'already_present',
-			message: 'Siswa sudah absen hari ini.',
-			status: existing.status,
-			waktuScan: existing.waktuScan,
+			...(await receipt(existing, true, sekolahId)),
 			murid: muridPayload(qr.murid)
 		});
 	}
@@ -360,14 +363,7 @@ export async function POST({ request, locals }) {
 	});
 
 	return json({
-		ok: true,
-		code: saved.skipped ? 'already_present' : 'success',
-		message:
-			status === 'terlambat'
-				? 'Absensi berhasil dicatat sebagai terlambat.'
-				: 'Absensi berhasil dicatat.',
-		status: saved.records[0]?.status ?? status,
-		waktuScan: saved.records[0]?.waktuScan ?? now,
+		...(await receipt(saved.records[0], saved.skipped > 0, sekolahId)),
 		murid: muridPayload(qr.murid)
 	});
 }

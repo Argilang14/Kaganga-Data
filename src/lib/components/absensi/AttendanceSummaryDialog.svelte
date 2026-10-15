@@ -36,6 +36,8 @@
 	let selectedDate = $state('');
 	let selectedActivity = $state('');
 	let selectedClass = $state('');
+	let selectedClasses = $state<number[]>([]);
+	let classLevel = $state('');
 	let scope = $state<SummaryScope>('kelas');
 	let level = $state('sma');
 	let report = $state<AttendanceSummary | null>(null);
@@ -44,13 +46,17 @@
 	let errorMessage = $state('');
 	let controller: AbortController | null = null;
 	let revision = 0;
+	const multiClassOptions = $derived(
+		options?.classes.filter((item) => !classLevel || item.jenjang === classLevel) ?? []
+	);
 	const ready = $derived(
 		Boolean(
 			options &&
 			isSummaryDate(selectedDate) &&
 			selectedDate <= options.today &&
 			selectedActivity &&
-			(scope !== 'kelas' || selectedClass)
+			(scope !== 'kelas' || selectedClass) &&
+			(scope !== 'antar_kelas' || selectedClasses.length)
 		)
 	);
 
@@ -103,6 +109,8 @@
 			);
 			level = result.classes.find((item) => item.id === Number(selectedClass))?.jenjang ?? 'sma';
 			if (level === 'unknown') level = 'sma';
+			selectedClasses = [];
+			classLevel = '';
 		} catch (error) {
 			if (current === revision)
 				errorMessage =
@@ -125,6 +133,8 @@
 			cakupan: scope
 		});
 		if (scope === 'kelas') params.set('kelas_id', selectedClass);
+		if (scope === 'antar_kelas')
+			for (const id of selectedClasses) params.append('kelas_ids', String(id));
 		if (scope === 'jenjang') params.set('jenjang', level);
 		try {
 			const result = await readResponse<AttendanceSummary>(
@@ -231,7 +241,9 @@
 						onchange={resetPreview}
 						><option value="kelas">Per kelas</option>{#if options?.canAllScopes}<option
 								value="jenjang">Per jenjang</option
-							><option value="semua">Seluruh jenjang</option>{/if}</select
+							><option value="semua">Seluruh jenjang</option><option value="antar_kelas"
+								>Antar kelas</option
+							>{/if}</select
 					></label
 				>
 				{#if scope === 'kelas'}
@@ -262,6 +274,61 @@
 					>
 				{/if}
 			</div>
+			{#if scope === 'antar_kelas'}
+				<fieldset class="mt-4 min-w-0 space-y-3" disabled={busy || !options}>
+					<legend class="text-sm font-medium">Kelas yang direkap ({selectedClasses.length})</legend>
+					<div class="flex flex-wrap items-end gap-2">
+						<label class="flex min-w-0 flex-1 flex-col gap-1 text-sm"
+							><span>Jenjang kelas</span>
+							<select
+								class="select w-full"
+								aria-label="Jenjang pilihan antar kelas"
+								bind:value={classLevel}
+								><option value="">Semua jenjang</option><option value="sd">SD</option><option
+									value="smp">SMP</option
+								><option value="sma">SMA</option></select
+							>
+						</label>
+						<button
+							class="btn btn-soft btn-sm"
+							type="button"
+							onclick={() => {
+								selectedClasses = [
+									...new Set([...selectedClasses, ...multiClassOptions.map((item) => item.id)])
+								];
+								resetPreview();
+							}}>Pilih semua</button
+						>
+						<button
+							class="btn btn-ghost btn-sm"
+							type="button"
+							onclick={() => {
+								selectedClasses = [];
+								resetPreview();
+							}}>Kosongkan</button
+						>
+					</div>
+					<div class="grid max-h-60 gap-2 overflow-y-auto sm:grid-cols-2">
+						{#each multiClassOptions as item (item.id)}
+							<label
+								class="flex cursor-pointer items-center gap-3 rounded-md border border-base-300 p-3 text-sm"
+							>
+								<input
+									type="checkbox"
+									class="checkbox checkbox-sm checkbox-primary shrink-0"
+									value={item.id}
+									bind:group={selectedClasses}
+									onchange={resetPreview}
+								/>
+								<span class="min-w-0 break-words">{item.nama}</span><span
+									class="ml-auto text-xs text-base-content/60"
+									>{item.jenjang === 'unknown' ? '-' : item.jenjang.toUpperCase()}</span
+								>
+							</label>
+						{/each}
+					</div>
+				</fieldset>
+			{/if}
 			{#if options?.restrictedStudents}<div class="alert alert-info mt-3 text-sm">
 					<Icon name="info" /><span>Jumlah hanya mencakup anak binaan sesuai penugasan.</span>
 				</div>{/if}

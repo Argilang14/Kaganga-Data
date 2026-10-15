@@ -12,7 +12,8 @@ export type MenuAccessUser =
 export function roleMenuPermissions(type?: string | null): string[] {
 	const shared = ['menu_murid', 'cetak_dokumen', 'surat_sppd', 'surat_dinas_luar'];
 	if (type === 'user')
-		return [...shared, 'menu_intrakurikuler', 'menu_nilai_intrakurikuler', 'menu_jurnal'];
+		return [...shared, 'menu_intrakurikuler', 'menu_nilai_intrakurikuler', 'menu_jurnal', 'class_monitoring_lihat', 'class_monitoring_scan'];
+	if (type === 'wali_kelas') return ['class_monitoring_lihat', 'class_monitoring_scan'];
 	if (type === 'wali_asuh' || type === 'wali_asrama')
 		return [
 			...shared,
@@ -98,6 +99,7 @@ const rules: [string, string[]][] = [
 	['/ruangan', ['ruangan_lihat', 'ruangan_manage']],
 	['/ujian', ['ujian_manage']],
 	['/administrasi/absensi/kegiatan/pengaturan', ['absensi_pengaturan']],
+	['/administrasi/absensi/monitoring-kelas', ['class_monitoring_lihat', 'class_monitoring_scan', 'class_monitoring_manage']],
 	['/administrasi/absensi/kartu-qr', ['absensi_qr_manage']],
 	['/administrasi/absensi/kegiatan', ['absensi_lihat']],
 	['/administrasi/absensi/scan', ['absensi_scan']],
@@ -127,6 +129,7 @@ const rules: [string, string[]][] = [
 	['/api/murid-bulk-photo', ['kelas_manage']],
 	['/api/rapor', ['menu_murid']],
 	['/api/pegawai-photo', ['menu_profil']],
+	['/api/pegawai-document', ['menu_profil']],
 	['/api/keasramaan', ['keasramaan_lihat']],
 	['/api/asesmen-keasramaan', ['keasramaan_input']],
 	['/api/asesmen-sumatif', ['menu_nilai_intrakurikuler']],
@@ -137,6 +140,7 @@ const rules: [string, string[]][] = [
 	['/api/sekolah/sumatif-bobot', ['menu_nilai_intrakurikuler']],
 	['/api/sekolah/rapor-kriteria', ['cetak_akademik', 'cetak_keasramaan']],
 	['/api/administrasi/absensi', ['absensi_lihat']],
+	['/api/administrasi/absensi/monitoring-kelas', ['class_monitoring_lihat', 'class_monitoring_scan', 'class_monitoring_manage']],
 	['/api/dinas-luar', ['surat_dinas_luar']],
 	['/api/administrasi/absensi/rekap', ['menu_absensi_harian']],
 	['/api/absensi/kartu-qr', ['cetak_dokumen', 'absensi_qr_manage']],

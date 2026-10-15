@@ -59,6 +59,7 @@
 	);
 
 	let selectedTanggal = $state(data.tanggal ?? '');
+	let openedMonitoringKey = $state<string | null>(null);
 
 	$effect(() => {
 		selectedTanggal = data.tanggal ?? '';
@@ -136,7 +137,8 @@
 			tujuanPembelajaranManual: string;
 			catatan: string;
 		},
-		initialJadwalIds = ''
+		initialJadwalIds = '',
+		monitoringKey: string | null = null
 	) {
 		let actions: { submit: () => void };
 		showModal({
@@ -150,6 +152,7 @@
 				mataPelajaranList: data.mataPelajaranList,
 				scheduleOptions: data.scheduleOptions,
 				jenisJadwal: data.scheduleContext?.jenis ?? 'ganjil',
+				monitoringKey,
 				initialJadwalIds,
 				tujuanPembelajaranList: data.tujuanPembelajaranList,
 				lingkupMateriList: data.lingkupMateriList,
@@ -171,6 +174,32 @@
 			dismissible: true
 		});
 	}
+
+	$effect(() => {
+		if (!data.monitoringKey || openedMonitoringKey === data.monitoringKey) return;
+		const selected = data.initialJournalId
+			? data.daftarJurnal.find((item) => item.id === data.initialJournalId)
+			: null;
+		openedMonitoringKey = data.monitoringKey;
+		if (selected) {
+			openTambahModal(
+				{
+					id: selected.id,
+					kelasId: selected.kelasId,
+					mataPelajaranId: selected.mataPelajaranId,
+					jadwalMapelId: selected.jadwalMapelId,
+					lingkupMateri: selected.lingkupMateri,
+					tujuanPembelajaranId: selected.tpId,
+					tujuanPembelajaranManual: selected.tujuanPembelajaranManual,
+					catatan: selected.catatan
+				},
+				data.initialJadwalIds,
+				data.monitoringKey
+			);
+		} else if (data.initialJadwalIds) {
+			openTambahModal(undefined, data.initialJadwalIds, data.monitoringKey);
+		}
+	});
 
 	function handleTambahClick() {
 		if (!data.page.kelasId) {

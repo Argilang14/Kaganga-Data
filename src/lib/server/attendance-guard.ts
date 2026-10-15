@@ -6,6 +6,7 @@ import {
 	canAttendActivity,
 	attendanceDateAllowed,
 	hasSchoolWideAttendanceStudentAccess,
+	hasSchoolWideAttendanceSummaryAccess,
 	type AttendanceAction
 } from '$lib/attendance-access';
 import { hasSchoolWideOperationalAccess } from '$lib/access-position';
@@ -37,6 +38,14 @@ const actionPermissions: Record<string, AttendanceAction> = {
 
 export const attendanceGuard: Handle = async ({ event, resolve }) => {
 	const path = event.url.pathname;
+	// Teaching attendance has schedule-based scope, not student assignment scope.
+	if (
+		path === '/administrasi/absensi/monitoring-kelas' ||
+		path.startsWith('/administrasi/absensi/monitoring-kelas/') ||
+		path === '/api/administrasi/absensi/monitoring-kelas' ||
+		path.startsWith('/api/administrasi/absensi/monitoring-kelas/')
+	)
+		return resolve(event);
 	const isAttendance =
 		path.startsWith('/administrasi/absensi') ||
 		path.startsWith('/api/administrasi/absensi/') ||
@@ -49,6 +58,10 @@ export const attendanceGuard: Handle = async ({ event, resolve }) => {
 	if (user.type !== 'admin' && user.sekolahId !== sekolah.id)
 		throw error(403, 'Sekolah di luar penugasan akun.');
 	const mutating = !['GET', 'HEAD'].includes(event.request.method);
+	const schoolSummaryRead =
+		!mutating &&
+		path === '/api/administrasi/absensi/kegiatan/ringkasan' &&
+		hasSchoolWideAttendanceSummaryAccess(user, sekolah.id);
 	const form =
 		mutating &&
 		/multipart\/form-data|application\/x-www-form-urlencoded/.test(
@@ -95,7 +108,7 @@ export const attendanceGuard: Handle = async ({ event, resolve }) => {
 	const allowedClasses = isAttendance ? attendanceClasses : accessibleClassIds;
 	const allowedStudent =
 		isAttendance || expandedPhotoRead ? attendanceStudent : assertStudentAccess;
-	if (classId && !(await allowedClasses(user, sekolah.id)).includes(classId))
+	if (classId && !schoolSummaryRead && !(await allowedClasses(user, sekolah.id)).includes(classId))
 		throw error(403, 'Kelas di luar penugasan akun.');
 	const studentId = Number(
 		form?.get('muridId') ??

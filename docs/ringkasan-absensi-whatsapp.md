@@ -9,7 +9,8 @@ Fitur tersedia melalui:
 ## Penggunaan
 
 1. Pilih satu tanggal dan satu kegiatan sumber, misalnya Apel Berangkat.
-2. Pilih cakupan kelas; akun dengan akses seluruh sekolah dapat memilih jenjang atau seluruh jenjang.
+2. Pilih Per kelas, Per jenjang, Seluruh jenjang, atau Antar kelas. Guru, Wali Kelas, Wali Asuh, dan Wali Asrama dapat membaca ringkasan seluruh sekolahnya pada semester aktif.
+   Pada Antar kelas, centang kelas yang diperlukan, misalnya hanya X.A-X.D tanpa kelas XI. Filter jenjang hanya menyaring daftar pilihan, bukan menghapus kelas yang sudah dicentang.
 3. Periksa pratinjau, daftar nama, jumlah murid dan peringatan.
 4. Salin Ringkasan atau Bagikan ke WhatsApp.
 5. Pilih grup guru sekolah dan konfirmasi pengiriman di WhatsApp.
@@ -32,9 +33,10 @@ Membuka WhatsApp tidak berarti pesan sudah terkirim. Pesan panjang memakai salin
 
 ## Keamanan
 
-Guru dan wali tidak dapat memperluas akses melalui perubahan URL. Rekap wali asuh/asrama
-ditandai sebagai anak binaan, bukan jumlah seluruh murid kelas. NIS/NISN, token QR, alasan
-medis, nomor orang tua, dan password tidak dimasukkan ke pesan.
+Perluasan cakupan berlaku hanya untuk ringkasan baca, bukan hak input/koreksi, pengaturan,
+ekspor Excel, nilai, atau data murid. Kelas harus berasal dari sekolah dan semester aktif;
+ID kelas di luar cakupan ditolak. Akun Tim Dapur tetap mengikuti cakupan sebelumnya.
+NIS/NISN, token QR, alasan medis, nomor orang tua, dan password tidak dimasukkan ke pesan.
 
 API ringkasan hanya membaca data dan tidak menjalankan Auto Alfa. Salin/Bagikan membaca
 ulang data server. Scan offline yang belum tersinkron belum termasuk hasil tersimpan;
@@ -42,3 +44,11 @@ sinkronkan terlebih dahulu. Pesan WhatsApp lama tidak diperbarui otomatis.
 
 Belum mencakup notifikasi kepada orang tua, jaminan penerima grup tertentu, atau pelacakan
 status terkirim/dibaca. Petugas tetap harus memastikan grup yang dipilih benar.
+
+## Scan ulang antarpetugas
+
+- Satu murid hanya dicatat sekali untuk tanggal dan kegiatan yang sama, termasuk ketika dua petugas melakukan scan bersamaan.
+- Scan berikutnya menampilkan Sudah dipindai, petugas pencatat dan waktu yang tersimpan; tidak mengganti status atau membuat audit tambahan.
+- Jika status sebelumnya berasal dari input manual, keterangan menjadi Sudah tercatat. Sakit/izin tidak ditimpa menjadi hadir, dan waktu scan yang tidak tersedia tidak dibuat-buat.
+- Kegiatan berbeda tetap dapat dipindai, misalnya Masuk Sekolah dan Pulang Sekolah.
+- Saat perangkat offline, hasil petugas lain belum dapat diketahui. Ketika sinkronisasi, catatan pertama yang berhasil tersimpan di server dipertahankan.

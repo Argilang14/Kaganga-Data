@@ -1,10 +1,17 @@
 import { error, fail } from '@sveltejs/kit';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, ne } from 'drizzle-orm';
 import db from '$lib/server/db';
-import { tablePegawai } from '$lib/server/db/schema';
+import {
+	tablePegawai,
+	tablePegawaiDokumen,
+	tablePegawaiPendidikan,
+	tablePegawaiSertifikasi
+} from '$lib/server/db/schema';
 import { ensurePegawaiSchema } from '$lib/server/db/ensure-pegawai';
 import { ensureDataGovernanceSchema } from '$lib/server/db/ensure-data-governance';
 import { writeAuditLog } from '$lib/server/audit-log';
+import { editableProfileKeys, validateProfileForm } from '$lib/pegawai-profile';
+import { createPegawaiPersonalActions } from '$lib/server/pegawai-personal-actions';
 import type { Actions, PageServerLoad } from './$types';
 
 async function ownProfile(locals: App.Locals) {
@@ -21,63 +28,84 @@ async function ownProfile(locals: App.Locals) {
 	return profile;
 }
 
-export const load: PageServerLoad = async ({ locals }) => ({
-	meta: { title: 'Profil Pegawai Saya' },
-	profile: await ownProfile(locals)
-});
-
-const editable = [
-	'telepon',
-	'email',
-	'alamat',
-	'tempatLahir',
-	'tanggalLahir',
-	'kontakDaruratNama',
-	'kontakDaruratHubungan',
-	'kontakDaruratTelepon'
-] as const;
+export const load: PageServerLoad = async ({ locals }) => {
+	const profile = await ownProfile(locals);
+	const [pendidikan, sertifikasi, dokumen] = await Promise.all([
+		db.query.tablePegawaiPendidikan.findMany({
+			where: and(
+				eq(tablePegawaiPendidikan.pegawaiId, profile.id),
+				eq(tablePegawaiPendidikan.sekolahId, locals.sekolah!.id)
+			),
+			orderBy: [desc(tablePegawaiPendidikan.isTerakhir), desc(tablePegawaiPendidikan.tahunLulus)]
+		}),
+		db.query.tablePegawaiSertifikasi.findMany({
+			where: and(
+				eq(tablePegawaiSertifikasi.pegawaiId, profile.id),
+				eq(tablePegawaiSertifikasi.sekolahId, locals.sekolah!.id)
+			),
+			orderBy: [desc(tablePegawaiSertifikasi.tanggalSelesai)]
+		}),
+		db.query.tablePegawaiDokumen.findMany({
+			where: and(
+				eq(tablePegawaiDokumen.pegawaiId, profile.id),
+				eq(tablePegawaiDokumen.sekolahId, locals.sekolah!.id)
+			),
+			orderBy: [asc(tablePegawaiDokumen.jenis), asc(tablePegawaiDokumen.nama)]
+		})
+	]);
+	return { meta: { title: 'Profil Pegawai Saya' }, profile, pendidikan, sertifikasi, dokumen };
+};
 export const actions: Actions = {
-	default: async ({ locals, request }) => {
+	saveProfile: async ({ locals, request }) => {
 		const before = await ownProfile(locals);
 		const form = await request.formData();
-		if (
-			[...form.keys()].some(
-				(key) => ![...editable, 'updatedAt'].includes(key as (typeof editable)[number])
-			)
-		)
-			return fail(400, { message: 'Form profil memuat kolom yang tidak diizinkan.' });
-		const values = Object.fromEntries(
-			editable.map((key) => [key, String(form.get(key) ?? '').trim()])
-		) as Record<(typeof editable)[number], string>;
-		if (Object.values(values).some((value) => value.length > 1000))
-			return fail(400, { message: 'Isian terlalu panjang.' });
-		if (values.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email))
-			return fail(400, { message: 'Email tidak valid.' });
-		if (values.tanggalLahir) {
-			const date = new Date(values.tanggalLahir + 'T00:00:00Z');
-			if (
-				!/^\d{4}-\d{2}-\d{2}$/.test(values.tanggalLahir) ||
-				!Number.isFinite(date.getTime()) ||
-				date.toISOString().slice(0, 10) !== values.tanggalLahir ||
-				date > new Date()
-			)
-				return fail(400, { message: 'Tanggal lahir tidak valid.' });
-		}
+		if (String(form.get('updatedAt') ?? '') !== (before.updatedAt ?? ''))
+			return fail(409, { fail: 'Profil telah berubah. Muat ulang sebelum menyimpan.' });
+		const parsed = validateProfileForm(form);
+		if (!parsed.values) return fail(400, { fail: parsed.error });
+		const values = parsed.values;
 		await ensureDataGovernanceSchema();
 		return db.transaction(async (tx) => {
+			for (const key of ['nip', 'nik'] as const) {
+				if (!values[key] || values[key] === '-') continue;
+				const duplicate = await tx
+					.select({ id: tablePegawai.id })
+					.from(tablePegawai)
+					.where(
+						and(
+							eq(tablePegawai.sekolahId, locals.sekolah!.id),
+							ne(tablePegawai.id, before.id),
+							eq(tablePegawai[key], values[key])
+						)
+					)
+					.limit(1);
+				if (duplicate.length)
+					return fail(400, {
+						fail: `${key.toUpperCase()} sudah digunakan pegawai lain. Periksa kembali isian Anda.`
+					});
+			}
 			const rows = await tx
 				.update(tablePegawai)
-				.set({ ...values, updatedAt: new Date().toISOString() })
+				.set({
+					...values,
+					jenisKelamin:
+						values.jenisKelamin === 'laki-laki' || values.jenisKelamin === 'perempuan'
+							? values.jenisKelamin
+							: null,
+					updatedAt: new Date().toISOString()
+				})
 				.where(
 					and(
 						eq(tablePegawai.id, before.id),
 						eq(tablePegawai.sekolahId, locals.sekolah!.id),
-						eq(tablePegawai.updatedAt, String(form.get('updatedAt') ?? ''))
+						before.updatedAt === null
+							? isNull(tablePegawai.updatedAt)
+							: eq(tablePegawai.updatedAt, String(form.get('updatedAt') ?? ''))
 					)
 				)
 				.returning({ id: tablePegawai.id });
 			if (!rows.length)
-				return fail(409, { message: 'Profil telah berubah. Muat ulang sebelum menyimpan.' });
+				return fail(409, { fail: 'Profil telah berubah. Muat ulang sebelum menyimpan.' });
 			await writeAuditLog(
 				{
 					locals,
@@ -86,12 +114,16 @@ export const actions: Actions = {
 					entityType: 'pegawai',
 					entityId: before.id,
 					summary: 'Pegawai memperbarui profil pribadi',
-					before: Object.fromEntries(editable.map((key) => [key, before[key]])),
+					before: Object.fromEntries(editableProfileKeys.map((key) => [key, before[key]])),
 					after: values
 				},
 				tx
 			);
-			return { success: true, message: 'Profil berhasil disimpan.' };
+			return { message: 'Biodata berhasil disimpan.' };
 		});
-	}
+	},
+	...createPegawaiPersonalActions(async ({ locals }) => {
+		const profile = await ownProfile(locals);
+		return { sekolahId: locals.sekolah!.id, pegawaiId: profile.id };
+	})
 };

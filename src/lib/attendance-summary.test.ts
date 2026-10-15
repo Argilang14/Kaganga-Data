@@ -4,8 +4,57 @@ import {
 	buildAttendanceSummary,
 	inferSummaryLevel,
 	isSummaryDate,
+	selectSummaryClasses,
 	type SummaryStatus
 } from './attendance-summary.ts';
+
+test('antar kelas hanya memilih ID eksplisit, menghapus duplikat dan menolak ID tidak sah', () => {
+	const classes = [
+		{ id: 1, nama: 'X.A', jenjang: 'sma' as const },
+		{ id: 2, nama: 'X.B', jenjang: 'sma' as const },
+		{ id: 3, nama: 'XI.A', jenjang: 'sma' as const }
+	];
+	assert.deepEqual(
+		selectSummaryClasses(
+			classes,
+			new URLSearchParams('cakupan=antar_kelas&kelas_ids=1&kelas_ids=2&kelas_ids=1')
+		),
+		classes.slice(0, 2)
+	);
+	for (const query of [
+		'cakupan=antar_kelas',
+		'cakupan=antar_kelas&kelas_ids=99',
+		'cakupan=antar_kelas&kelas_ids=1oops',
+		'cakupan=antar_kelas&kelas_ids=-1',
+		'cakupan=bogus'
+	])
+		assert.throws(() => selectSummaryClasses(classes, new URLSearchParams(query)));
+});
+
+test('antar kelas memuat judul pilihan dan total tanpa murid kelas lain', () => {
+	const classes = [
+		{ id: 1, nama: 'X.A', jenjang: 'sma' as const },
+		{ id: 2, nama: 'X.B', jenjang: 'sma' as const }
+	];
+	const result = buildAttendanceSummary({
+		tanggal: '2026-10-14',
+		kegiatan: 'Apel Berangkat',
+		cakupan: 'antar_kelas',
+		classes,
+		students: [
+			{ id: 1, nama: 'Murid A', kelasId: 1 },
+			{ id: 2, nama: 'Murid B', kelasId: 2 },
+			{ id: 3, nama: 'Murid XI', kelasId: 3 }
+		],
+		attendance: [{ muridId: 1, status: 'hadir' }],
+		permitStudentIds: []
+	});
+	assert.match(result.text, /Rekap kehadiran antar kelas/);
+	assert.match(result.text, /Kelas : X.A, X.B/);
+	assert.equal(result.totals.jumlah, 2);
+	assert.equal(result.totals.hadir, 1);
+	assert.ok(!result.text.includes('Murid XI'));
+});
 
 const base = {
 	tanggal: '2026-10-02',

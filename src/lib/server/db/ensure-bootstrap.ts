@@ -4,6 +4,7 @@ import { resetEnsuredSchemas } from './ensure-helper';
 import { ensureJadwalBellSchema } from './ensure-jadwal-bell';
 import { ensureJadwalKurikulumSchema } from './ensure-jadwal-kurikulum';
 import { ensureJurnalMengajarSchema } from './ensure-jurnal-mengajar';
+import { ensureClassMonitoringSchema } from './ensure-class-monitoring';
 import { ensurePegawaiSchema, resetPegawaiSchemaEnsure } from './ensure-pegawai';
 import { ensurePresensiSettingsSchema } from './ensure-presensi-settings';
 import { ensureSuratMenyuratSchema } from './ensure-surat-menyurat';
@@ -45,6 +46,7 @@ async function applyStartupEnsures() {
 	await ensurePresensiSettingsSchema();
 	await ensureJadwalKurikulumSchema();
 	await ensureJurnalMengajarSchema();
+	await ensureClassMonitoringSchema();
 	await ensureSuratMenyuratSchema();
 	await ensureBukuTamuSchema();
 	await ensurePresensiPegawaiSchema();

@@ -6,6 +6,8 @@ import { tablePegawai } from '$lib/server/db/schema';
 import { error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import { authority } from '../../../pengguna/utils.server';
+import { ensureDataGovernanceSchema } from '$lib/server/db/ensure-data-governance';
+import { writeAuditLog } from '$lib/server/audit-log';
 import {
 	isSupportedPhoto,
 	photoDirectory,
@@ -29,6 +31,11 @@ async function findOwnedPegawai(id: number, sekolahId: number) {
 	});
 }
 
+function requirePhotoAccess(locals: App.Locals, id: number | null) {
+	if (!locals.user) throw error(401, 'Sesi tidak valid.');
+	if (id !== locals.user.pegawaiId) authority('sekolah_manage');
+}
+
 export async function GET({
 	params,
 	locals,
@@ -41,6 +48,7 @@ export async function GET({
 	const id = parseId(params.id);
 	const sekolahId = locals.sekolah?.id;
 	if (!locals.user || !id || !sekolahId) throw error(404, 'Foto pegawai tidak ditemukan.');
+	requirePhotoAccess(locals, id);
 	const pegawai = await findOwnedPegawai(id, sekolahId);
 	const filename = safePhotoFilename(pegawai?.foto ?? null);
 	if (!filename) throw error(404, 'Foto pegawai tidak ditemukan.');
@@ -84,8 +92,8 @@ export async function POST({
 	request: Request;
 	locals: App.Locals;
 }) {
-	authority('sekolah_manage');
 	const id = parseId(params.id);
+	requirePhotoAccess(locals, id);
 	const sekolahId = locals.sekolah?.id;
 	if (!id || !sekolahId) return Response.json({ message: 'Pegawai tidak valid.' }, { status: 400 });
 	const pegawai = await findOwnedPegawai(id, sekolahId);
@@ -115,10 +123,11 @@ export async function POST({
 	const directory = photoDirectory('pegawai');
 	await fs.mkdir(directory, { recursive: true });
 	const extension = file.type === 'image/png' ? '.png' : '.jpg';
-	const filename = `pegawai-${id}-${Date.now()}${extension}`;
+	const filename = `pegawai-${id}-${crypto.randomUUID()}${extension}`;
 	const temporaryPath = path.join(directory, `${filename}.tmp`);
 	const finalPath = path.join(directory, filename);
 
+	let committed = false;
 	try {
 		await fs.writeFile(temporaryPath, buffer, { mode: 0o644, flag: 'wx' });
 		await fs.rename(temporaryPath, finalPath);
@@ -127,16 +136,33 @@ export async function POST({
 				console.warn('[pegawai-photo] Thumbnail tidak dapat disimpan:', thumbnailError)
 			);
 		}
-		await db
-			.update(tablePegawai)
-			.set({ foto: filename, updatedAt: new Date().toISOString() })
-			.where(and(eq(tablePegawai.id, id), eq(tablePegawai.sekolahId, sekolahId)));
+		await ensureDataGovernanceSchema();
+		await db.transaction(async (tx) => {
+			await tx
+				.update(tablePegawai)
+				.set({ foto: filename, updatedAt: new Date().toISOString() })
+				.where(and(eq(tablePegawai.id, id), eq(tablePegawai.sekolahId, sekolahId)));
+			await writeAuditLog(
+				{
+					locals,
+					request,
+					action: 'update',
+					entityType: 'pegawai',
+					entityId: id,
+					summary: 'Foto pegawai diperbarui',
+					before: { foto: pegawai.foto },
+					after: { foto: filename }
+				},
+				tx
+			);
+		});
+		committed = true;
 		const previous = safePhotoFilename(pegawai.foto);
 		if (previous && previous !== filename) await removePhotoFiles('pegawai', previous);
 		return Response.json({ foto: filename, message: 'Foto pegawai berhasil diperbarui.' });
 	} catch (uploadError) {
 		await fs.unlink(temporaryPath).catch(() => undefined);
-		await fs.unlink(finalPath).catch(() => undefined);
+		if (!committed) await removePhotoFiles('pegawai', filename);
 		console.error('[pegawai-photo] Gagal menyimpan foto:', uploadError);
 		return Response.json({ message: 'Foto pegawai gagal disimpan.' }, { status: 500 });
 	}
@@ -144,22 +170,40 @@ export async function POST({
 
 export async function DELETE({
 	params,
-	locals
+	locals,
+	request
 }: {
 	params: Record<string, string>;
 	locals: App.Locals;
+	request: Request;
 }) {
-	authority('sekolah_manage');
 	const id = parseId(params.id);
+	requirePhotoAccess(locals, id);
 	const sekolahId = locals.sekolah?.id;
 	if (!id || !sekolahId) return Response.json({ message: 'Pegawai tidak valid.' }, { status: 400 });
 	const pegawai = await findOwnedPegawai(id, sekolahId);
 	if (!pegawai) return Response.json({ message: 'Pegawai tidak ditemukan.' }, { status: 404 });
 
-	await db
-		.update(tablePegawai)
-		.set({ foto: null, updatedAt: new Date().toISOString() })
-		.where(and(eq(tablePegawai.id, id), eq(tablePegawai.sekolahId, sekolahId)));
+	await ensureDataGovernanceSchema();
+	await db.transaction(async (tx) => {
+		await tx
+			.update(tablePegawai)
+			.set({ foto: null, updatedAt: new Date().toISOString() })
+			.where(and(eq(tablePegawai.id, id), eq(tablePegawai.sekolahId, sekolahId)));
+		await writeAuditLog(
+			{
+				locals,
+				request,
+				action: 'delete',
+				entityType: 'pegawai',
+				entityId: id,
+				summary: 'Foto pegawai dihapus',
+				before: { foto: pegawai.foto },
+				after: { foto: null }
+			},
+			tx
+		);
+	});
 	const filename = safePhotoFilename(pegawai.foto);
 	if (filename) await removePhotoFiles('pegawai', filename);
 	return Response.json({ message: 'Foto pegawai berhasil dihapus.' });

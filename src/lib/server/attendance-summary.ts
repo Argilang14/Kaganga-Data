@@ -3,18 +3,21 @@ import { and, asc, eq, inArray, lte, gt, ne, or, isNull } from 'drizzle-orm';
 import {
 	canAttendance,
 	canAttendActivity,
-	hasSchoolWideAttendanceStudentAccess
+	canViewAttendanceActivity,
+	hasSchoolWideAttendanceStudentAccess,
+	hasSchoolWideAttendanceSummaryAccess
 } from '$lib/attendance-access';
 import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 import {
 	buildAttendanceSummary,
 	inferSummaryLevel,
 	isSummaryDate,
+	selectSummaryClasses,
 	type SummaryScope,
 	type SummaryLevel
 } from '$lib/attendance-summary';
 import db from './db';
-import { tableAbsensiKegiatan, tableIzinPulangMurid, tableMurid } from './db/schema';
+import { tableAbsensiKegiatan, tableIzinPulangMurid, tableMurid, tableKelas } from './db/schema';
 import { loadAbsensiKelasOptions, todayLocalDate } from './absensi-digital';
 import { loadKegiatanAbsensiOptions } from './absensi-kegiatan';
 import { activeMuridFilter } from './murid-query';
@@ -29,21 +32,37 @@ export async function loadSummaryOptions(locals: App.Locals, date = todayLocalDa
 		throw error(403, 'Izin membagikan rekap absensi belum diberikan.');
 	const { academic, kelasList } = await loadAbsensiKelasOptions(sekolah.id, user);
 	if (!academic.activeSemesterId) throw error(400, 'Semester aktif belum tersedia.');
+	const schoolWideSummary = hasSchoolWideAttendanceSummaryAccess(user, sekolah.id);
+	const summaryClasses = schoolWideSummary
+		? await db.query.tableKelas.findMany({
+				columns: { id: true, nama: true, fase: true },
+				where: and(
+					eq(tableKelas.sekolahId, sekolah.id),
+					eq(tableKelas.semesterId, academic.activeSemesterId)
+				),
+				orderBy: asc(tableKelas.nama)
+			})
+		: kelasList;
 	const kegiatanList = (await loadKegiatanAbsensiOptions(sekolah.id, true, user)).filter((item) =>
-		canAttendActivity(user, item.aksesEdit, item.kategori, { kode: item.kode, tanggal: date })
+		schoolWideSummary
+			? canViewAttendanceActivity(user, item.kategori)
+			: canAttendActivity(user, item.aksesEdit, item.kategori, { kode: item.kode, tanggal: date })
 	);
 	const allStudents =
-		hasSchoolWideOperationalAccess(user) || hasSchoolWideAttendanceStudentAccess(user, sekolah.id);
+		schoolWideSummary ||
+		hasSchoolWideOperationalAccess(user) ||
+		hasSchoolWideAttendanceStudentAccess(user, sekolah.id);
 	return {
 		semesterId: academic.activeSemesterId,
 		tahunAjaranId: academic.activeTahunAjaranId,
-		classes: kelasList.map((item) => ({
+		classes: summaryClasses.map((item) => ({
 			id: item.id,
 			nama: item.nama,
 			jenjang: inferSummaryLevel(item, sekolah.jenjangPendidikan)
 		})),
 		activities: kegiatanList.map((item) => ({ id: item.id, nama: item.nama })),
 		canAllScopes: allStudents,
+		schoolWideSummary,
 		restrictedStudents: !allStudents && ['wali_asuh', 'wali_asrama'].includes(user.type),
 		today: todayLocalDate()
 	};
@@ -60,18 +79,19 @@ export async function loadAttendanceSummary(locals: App.Locals, params: URLSearc
 		throw error(400, 'Pilih kegiatan terlebih dahulu.');
 	if (!activity) throw error(403, 'Kegiatan tidak tersedia atau di luar tanggung jawab akun.');
 	const scope = params.get('cakupan') as SummaryScope;
-	if (!['kelas', 'jenjang', 'semua'].includes(scope)) throw error(400, 'Pilih cakupan ringkasan.');
+	if (!['kelas', 'jenjang', 'semua', 'antar_kelas'].includes(scope))
+		throw error(400, 'Pilih cakupan ringkasan.');
 	if (scope !== 'kelas' && !options.canAllScopes)
 		throw error(403, 'Ringkasan lintas kelas hanya untuk akun dengan akses seluruh sekolah.');
 	const level = params.get('jenjang') as SummaryLevel;
 	if (scope === 'jenjang' && !['sd', 'smp', 'sma'].includes(level))
 		throw error(400, 'Pilih jenjang SD, SMP, atau SMA.');
-	const classId = Number(params.get('kelas_id'));
-	if (scope === 'kelas' && !options.classes.some((item) => item.id === classId))
-		throw error(403, 'Kelas di luar penugasan akun atau semester aktif.');
-	const classes = options.classes.filter((item) =>
-		scope === 'kelas' ? item.id === classId : scope === 'jenjang' ? item.jenjang === level : true
-	);
+	let classes;
+	try {
+		classes = selectSummaryClasses(options.classes, params);
+	} catch (cause) {
+		throw error(400, cause instanceof Error ? cause.message : 'Pilihan kelas tidak valid.');
+	}
 	if (!classes.length) throw error(400, 'Tidak ada kelas pada cakupan yang dipilih.');
 	const schoolId = locals.sekolah!.id;
 	const students = await db.query.tableMurid.findMany({
@@ -84,7 +104,9 @@ export async function loadAttendanceSummary(locals: App.Locals, params: URLSearc
 				classes.map((item) => item.id)
 			),
 			activeMuridFilter(),
-			await studentAccessCondition(locals.user, schoolId, options.semesterId)
+			options.schoolWideSummary
+				? undefined
+				: await studentAccessCondition(locals.user, schoolId, options.semesterId)
 		),
 		orderBy: asc(tableMurid.nama)
 	});

@@ -17,9 +17,14 @@ import {
 	splitJurnalScheduleBlocks
 } from '$lib/server/jurnal-mengajar';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
-import { fail, redirect } from '@sveltejs/kit';
+import { error, fail, redirect } from '@sveltejs/kit';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { buildKelasContext } from '$lib/server/route-utils';
+import { resolveClassMonitoringJournalContext } from '$lib/server/class-monitoring';
+import {
+	monitoringJournalSubmissionMatches,
+	normalizeMonitoringJournalContext
+} from '$lib/server/journal-monitoring-integration';
 
 const PER_PAGE = 20;
 
@@ -35,9 +40,50 @@ export async function load({ locals, url, depends, parent }) {
 	await ensureJurnalMengajarSchema();
 
 	const parentData = await parent();
+	const monitoringKeyParam = url.searchParams.get('monitoring_key');
+	const requestedTanggal = url.searchParams.get('tanggal');
+	const requestedJenisParam = url.searchParams.get('jenis_jadwal');
+	if (
+		monitoringKeyParam &&
+		(!requestedTanggal ||
+			!isValidDate(requestedTanggal) ||
+			!requestedJenisParam ||
+			!['persiapan', 'ganjil', 'genap'].includes(requestedJenisParam))
+	) {
+		throw error(400, 'Parameter pertemuan monitoring tidak valid.');
+	}
+	const resolvedMonitoringContext = monitoringKeyParam
+		? await resolveClassMonitoringJournalContext(
+				locals,
+				monitoringKeyParam,
+				requestedTanggal!,
+				requestedJenisParam!
+			)
+		: null;
+	if (monitoringKeyParam && !resolvedMonitoringContext) {
+		throw error(403, 'Pertemuan monitoring tidak tersedia untuk akun ini.');
+	}
+	const monitoringContext = monitoringKeyParam
+		? normalizeMonitoringJournalContext(resolvedMonitoringContext!, monitoringKeyParam)
+		: null;
+	const requestedKelasId = url.searchParams.get('kelas_id');
+	if (
+		monitoringContext &&
+		requestedKelasId !== null &&
+		Number(requestedKelasId) !== monitoringContext.kelasId
+	) {
+		throw error(403, 'Kelas tidak sesuai dengan pertemuan monitoring.');
+	}
+	const daftarKelas = [...((parentData.daftarKelas ?? []) as Array<{ id: number; nama?: string }>)];
+	if (monitoringContext && !daftarKelas.some((kelas) => kelas.id === monitoringContext.kelasId)) {
+		daftarKelas.push({ id: monitoringContext.kelasId, nama: monitoringContext.kelasNama });
+	}
+	const scopedParentData = monitoringContext
+		? { ...parentData, daftarKelas, kelasAktif: { id: monitoringContext.kelasId } }
+		: parentData;
 	const { sekolahId, kelasId, kelasIds, academicContext } = await buildKelasContext(
 		locals,
-		parentData,
+		scopedParentData,
 		url
 	);
 
@@ -48,7 +94,7 @@ export async function load({ locals, url, depends, parent }) {
 		mataPelajaranId?: number | null;
 	} | null;
 
-	const tanggalParam = url.searchParams.get('tanggal');
+	const tanggalParam = requestedTanggal;
 	const today = new Date().toISOString().split('T')[0];
 	const tanggal = tanggalParam && isValidDate(tanggalParam) ? tanggalParam : today;
 
@@ -78,7 +124,10 @@ export async function load({ locals, url, depends, parent }) {
 				totalPages: 1,
 				totalItems: 0,
 				perPage: PER_PAGE
-			}
+			},
+			monitoringKey: null,
+			initialJadwalIds: '',
+			initialJournalId: null
 		};
 	}
 
@@ -121,7 +170,10 @@ export async function load({ locals, url, depends, parent }) {
 		kegiatan: string[];
 	} | null = null;
 
-	if (userType === 'admin' || userType === 'wali_kelas' || userType === 'user') {
+	if (
+		!monitoringContext &&
+		(userType === 'admin' || userType === 'wali_kelas' || userType === 'user')
+	) {
 		let userMpIds: number[] = [];
 		if (isRestrictedTeacher(user) && user?.mataPelajaranId) userMpIds.push(user.mataPelajaranId);
 		if (isRestrictedTeacher(user) && user?.id) {
@@ -243,8 +295,39 @@ export async function load({ locals, url, depends, parent }) {
 			hasAnyMapel = scheduleOptions.length > 0;
 		}
 	}
+	if (monitoringContext) {
+		const monitoredMapel = {
+			id: monitoringContext.jadwalMapelId,
+			jadwalMapelId: monitoringContext.jadwalMapelId,
+			mataPelajaranId: monitoringContext.mataPelajaranId,
+			nama: monitoringContext.mapelNama,
+			kode: monitoringContext.mapelKode
+		};
+		if (!mataPelajaranList.some((item) => item.jadwalMapelId === monitoredMapel.jadwalMapelId)) {
+			mataPelajaranList.push(monitoredMapel);
+			mataPelajaranList.sort((a, b) => a.nama.localeCompare(b.nama));
+		}
+		const monitoredValue = monitoringContext.jadwalIds.join(',');
+		if (!scheduleOptions.some((item) => item.value === monitoredValue)) {
+			scheduleOptions.push({
+				value: monitoredValue,
+				jadwalMapelId: monitoringContext.jadwalMapelId,
+				mataPelajaranId: monitoringContext.mataPelajaranId,
+				nama: monitoringContext.mapelNama,
+				jamPelajaran: monitoringContext.jamPelajaran,
+				pukul: monitoringContext.pukul
+			});
+		}
+		hasAnyMapel = true;
+		if (
+			monitoringContext.mataPelajaranId &&
+			!mapelIds.includes(monitoringContext.mataPelajaranId)
+		) {
+			mapelIds.push(monitoringContext.mataPelajaranId);
+		}
+	}
 
-	if (kelasIdNum && scheduleContext) {
+	if (kelasIdNum && scheduleContext && !monitoringContext) {
 		const dayNames = ['minggu', 'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu'];
 		const hari = dayNames[new Date(`${tanggal}T00:00:00`).getDay()];
 		const entries = scheduleContext.templateIds.length
@@ -278,6 +361,20 @@ export async function load({ locals, url, depends, parent }) {
 			slotPelajaran: entries.filter((entry) => entry.tipe === 'pelajaran').length,
 			slotKegiatan: entries.filter((entry) => entry.tipe !== 'pelajaran').length,
 			kegiatan
+		};
+	}
+	if (monitoringContext) {
+		const hari = new Intl.DateTimeFormat('id-ID', { weekday: 'long', timeZone: 'Asia/Jakarta' })
+			.format(new Date(`${monitoringContext.tanggal}T12:00:00+07:00`))
+			.toLowerCase();
+		scheduleSummary = {
+			hari,
+			hariLabel: hari.charAt(0).toUpperCase() + hari.slice(1),
+			kelasNama: monitoringContext.kelasNama,
+			blokPelajaran: 1,
+			slotPelajaran: monitoringContext.jadwalIds.length,
+			slotKegiatan: 0,
+			kegiatan: []
 		};
 	}
 
@@ -321,9 +418,11 @@ export async function load({ locals, url, depends, parent }) {
 		eq(tableJurnalMengajar.authUserId, user?.id ?? 0),
 		tanggal ? eq(tableJurnalMengajar.tanggal, tanggal) : undefined,
 		scheduleContext ? eq(tableJurnalMengajar.jenisJadwal, scheduleContext.jenis) : undefined,
-		kelasIdNum
-			? eq(tableJurnalMengajar.kelasId, kelasIdNum)
-			: inArray(tableJurnalMengajar.kelasId, kelasIds)
+		monitoringContext
+			? eq(tableJurnalMengajar.jadwalPelajaranIds, JSON.stringify(monitoringContext.jadwalIds))
+			: kelasIdNum
+				? eq(tableJurnalMengajar.kelasId, kelasIdNum)
+				: inArray(tableJurnalMengajar.kelasId, kelasIds)
 	);
 
 	const [{ totalItems }] = await db
@@ -414,6 +513,9 @@ export async function load({ locals, url, depends, parent }) {
 		emptyScheduleMessage,
 		hasAnyMapel,
 		mapelId,
+		monitoringKey: monitoringContext?.monitoringKey ?? null,
+		initialJadwalIds: monitoringContext?.jadwalIds.join(',') ?? '',
+		initialJournalId: monitoringContext?.existingJournalId ?? null,
 		tanggal,
 		scheduleContext,
 		userType,
@@ -467,6 +569,7 @@ export const actions = {
 		const catatan = ((formData.get('catatan') as string | null) ?? '').trim();
 		const tanggal = (formData.get('tanggal') as string | null) ?? '';
 		const jenisJadwal = formData.get('jenisJadwal')?.toString() ?? null;
+		const monitoringKey = formData.get('monitoringKey')?.toString().trim() ?? '';
 		const jadwalIds = (formData.get('jadwalIds')?.toString() ?? '')
 			.split(',')
 			.map(Number)
@@ -477,6 +580,40 @@ export const actions = {
 		const jadwalMapelId = jadwalMapelIdRaw ? Number(jadwalMapelIdRaw) : null;
 		const tujuanPembelajaranId = tujuanPembelajaranIdRaw ? Number(tujuanPembelajaranIdRaw) : null;
 		const id = idRaw ? Number(idRaw) : null;
+		const resolvedMonitoringContext = monitoringKey
+			? await resolveClassMonitoringJournalContext(
+					locals,
+					monitoringKey,
+					tanggal,
+					jenisJadwal ?? ''
+				)
+			: null;
+		if (monitoringKey && !resolvedMonitoringContext) {
+			return fail(403, { fail: 'Pertemuan monitoring tidak tersedia untuk akun ini.' });
+		}
+		const monitoringContext = monitoringKey
+			? normalizeMonitoringJournalContext(resolvedMonitoringContext!, monitoringKey)
+			: null;
+		if (
+			monitoringContext &&
+			!monitoringJournalSubmissionMatches(monitoringContext, {
+				monitoringKey,
+				tanggal,
+				jenisJadwal,
+				kelasId,
+				jadwalMapelId,
+				mataPelajaranId,
+				jadwalIds
+			})
+		) {
+			return fail(403, { fail: 'Pertemuan monitoring tidak sesuai atau sudah berubah.' });
+		}
+		if (monitoringContext?.existingJournalId && id !== monitoringContext.existingJournalId) {
+			return fail(409, { fail: 'Jurnal pertemuan ini sudah tersedia. Muat ulang halaman.' });
+		}
+		if (monitoringContext && id !== monitoringContext.existingJournalId) {
+			return fail(403, { fail: 'Jurnal tidak sesuai dengan pertemuan monitoring.' });
+		}
 		const existing = id
 			? await db.query.tableJurnalMengajar.findFirst({
 					columns: {
@@ -484,11 +621,26 @@ export const actions = {
 						authUserId: true,
 						kelasId: true,
 						mataPelajaranId: true,
-						jadwalMapelId: true
+						jadwalMapelId: true,
+						tanggal: true,
+						jenisJadwal: true,
+						jadwalPelajaranIds: true
 					},
-					where: eq(tableJurnalMengajar.id, id)
+					where: and(eq(tableJurnalMengajar.id, id), eq(tableJurnalMengajar.sekolahId, sekolahId))
 				})
 			: null;
+		if (
+			monitoringContext &&
+			existing &&
+			(existing.kelasId !== monitoringContext.kelasId ||
+				existing.jadwalMapelId !== monitoringContext.jadwalMapelId ||
+				existing.mataPelajaranId !== monitoringContext.mataPelajaranId ||
+				existing.tanggal !== monitoringContext.tanggal ||
+				existing.jenisJadwal !== monitoringContext.jenisJadwal ||
+				existing.jadwalPelajaranIds !== JSON.stringify(monitoringContext.jadwalIds))
+		) {
+			return fail(403, { fail: 'Jurnal tidak sesuai dengan pertemuan monitoring.' });
+		}
 
 		if (!lingkupMateri) {
 			return fail(400, { fail: 'Lingkup materi harus diisi' });
@@ -546,7 +698,7 @@ export const actions = {
 				return fail(400, { fail: 'Data tujuan pembelajaran tidak sesuai dengan kelas' });
 			}
 		}
-		if (!id && isRestrictedTeacher(user)) {
+		if (!id && isRestrictedTeacher(user) && !monitoringContext) {
 			const kelasAssignments = await db.query.tableAuthUserKelas.findMany({
 				columns: { kelasId: true },
 				where: eq(tableAuthUserKelas.authUserId, user.id)
@@ -578,7 +730,9 @@ export const actions = {
 		if (id) {
 			if (
 				!existing ||
-				(existing.authUserId !== user.id && !hasSchoolWideOperationalAccess(user) && user.type !== 'wali_kelas')
+				(existing.authUserId !== user.id &&
+					!hasSchoolWideOperationalAccess(user) &&
+					user.type !== 'wali_kelas')
 			) {
 				return fail(404, { fail: 'Jurnal tidak ditemukan' });
 			}
@@ -595,55 +749,62 @@ export const actions = {
 					catatan: catatan || null,
 					updatedAt: now
 				})
-				.where(eq(tableJurnalMengajar.id, id));
+				.where(and(eq(tableJurnalMengajar.id, id), eq(tableJurnalMengajar.sekolahId, sekolahId)));
 		} else {
 			if (!isValidDate(tanggal)) {
 				return fail(400, { fail: 'Tanggal tidak valid' });
 			}
 			if (!jadwalMapel) return fail(400, { fail: 'Mata pelajaran tidak valid' });
-			const academic = await resolveSekolahAcademicContext(sekolahId);
-			const context = await loadJurnalScheduleContext(sekolahId, academic, tanggal, jenisJadwal);
-			if (!context) return fail(400, { fail: 'Konteks tahun ajaran tidak ditemukan' });
-			const availableEntries = await findJurnalScheduleEntries({
-				sekolahId,
-				kelasId,
-				tanggal,
-				templateIds: context.templateIds,
-				jadwalMapelId: Number(jadwalMapelId),
-				mataPelajaranId: mataPelajaranId ?? undefined,
-				kode: jadwalMapel.kode
-			});
+			const academic = monitoringContext ? null : await resolveSekolahAcademicContext(sekolahId);
+			const context = monitoringContext
+				? null
+				: await loadJurnalScheduleContext(sekolahId, academic!, tanggal, jenisJadwal);
+			if (!monitoringContext && !context)
+				return fail(400, { fail: 'Konteks tahun ajaran tidak ditemukan' });
+			const availableEntries = monitoringContext
+				? []
+				: await findJurnalScheduleEntries({
+						sekolahId,
+						kelasId,
+						tanggal,
+						templateIds: context!.templateIds,
+						jadwalMapelId: Number(jadwalMapelId),
+						mataPelajaranId: mataPelajaranId ?? undefined,
+						kode: jadwalMapel.kode
+					});
 			const jadwalEntries = availableEntries.filter((entry) => jadwalIds.includes(entry.id));
-			if (!jadwalIds.length || jadwalEntries.length !== jadwalIds.length) {
+			if (!monitoringContext && (!jadwalIds.length || jadwalEntries.length !== jadwalIds.length)) {
 				return fail(400, {
 					fail: 'Blok jadwal tidak valid atau sudah berubah. Muat ulang halaman.'
 				});
 			}
-			if (!jadwalEntries.length) {
+			if (!monitoringContext && !jadwalEntries.length) {
 				return fail(400, { fail: 'Tidak ada jadwal untuk mata pelajaran ini hari ini' });
 			}
-			const schedule = await describeJurnalSchedule(jadwalEntries);
-			const duplicate = await db.query.tableJurnalMengajar.findFirst({
-				columns: { id: true },
-				where: and(
-					eq(tableJurnalMengajar.authUserId, user.id),
-					eq(tableJurnalMengajar.kelasId, kelasId),
-					eq(tableJurnalMengajar.tanggal, tanggal),
-					eq(tableJurnalMengajar.jadwalPelajaranIds, schedule.jadwalPelajaranIds)
-				)
-			});
-			if (duplicate) return fail(409, { fail: 'Jurnal untuk blok jadwal ini sudah tersimpan' });
-
-			await db.insert(tableJurnalMengajar).values({
+			const schedule = monitoringContext
+				? {
+						jadwalPelajaranIds: JSON.stringify(monitoringContext.jadwalIds),
+						jamPelajaran: monitoringContext.jamPelajaran,
+						pukul: monitoringContext.pukul
+					}
+				: await describeJurnalSchedule(jadwalEntries);
+			const duplicateWhere = and(
+				eq(tableJurnalMengajar.authUserId, user.id),
+				eq(tableJurnalMengajar.kelasId, kelasId),
+				eq(tableJurnalMengajar.tanggal, tanggal),
+				eq(tableJurnalMengajar.jadwalPelajaranIds, schedule.jadwalPelajaranIds)
+			);
+			const journalValues = {
 				sekolahId,
 				authUserId: user.id,
 				kelasId,
 				mataPelajaranId,
 				jadwalMapelId: Number(jadwalMapelId),
-				tahunAjaranId: context.tahunAjaranId,
-				semesterId: context.semesterId,
-				jenisJadwal: context.jenis,
-				jadwalTemplateId: jadwalEntries[0]?.templateId ?? null,
+				tahunAjaranId: monitoringContext?.tahunAjaranId ?? context!.tahunAjaranId,
+				semesterId: monitoringContext ? monitoringContext.semesterId : context!.semesterId,
+				jenisJadwal: monitoringContext?.jenisJadwal ?? context!.jenis,
+				jadwalTemplateId:
+					monitoringContext?.jadwalTemplateId ?? jadwalEntries[0]?.templateId ?? null,
 				jadwalPelajaranIds: schedule.jadwalPelajaranIds,
 				tanggal,
 				jamPelajaran: schedule.jamPelajaran,
@@ -653,7 +814,27 @@ export const actions = {
 				tujuanPembelajaranManual: tujuanPembelajaranManual || null,
 				catatan: catatan || null,
 				updatedAt: now
+			};
+			if (monitoringContext) {
+				const inserted = await db.transaction(async (tx) => {
+					const duplicate = await tx.query.tableJurnalMengajar.findFirst({
+						columns: { id: true },
+						where: duplicateWhere
+					});
+					if (duplicate) return false;
+					await tx.insert(tableJurnalMengajar).values(journalValues);
+					return true;
+				});
+				if (!inserted) return fail(409, { fail: 'Jurnal untuk blok jadwal ini sudah tersimpan' });
+				return { message: 'Jurnal tersimpan' };
+			}
+			const duplicate = await db.query.tableJurnalMengajar.findFirst({
+				columns: { id: true },
+				where: duplicateWhere
 			});
+			if (duplicate) return fail(409, { fail: 'Jurnal untuk blok jadwal ini sudah tersimpan' });
+
+			await db.insert(tableJurnalMengajar).values(journalValues);
 		}
 
 		return { message: 'Jurnal tersimpan' };
@@ -690,7 +871,9 @@ export const actions = {
 		});
 		if (
 			!existing ||
-			(existing.authUserId !== user.id && !hasSchoolWideOperationalAccess(user) && user.type !== 'wali_kelas')
+			(existing.authUserId !== user.id &&
+				!hasSchoolWideOperationalAccess(user) &&
+				user.type !== 'wali_kelas')
 		) {
 			return fail(404, { fail: 'Jurnal tidak ditemukan' });
 		}

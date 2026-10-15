@@ -5,7 +5,8 @@ import {
 	canAttendance,
 	canAttendActivity,
 	attendanceDateAllowed,
-	hasSchoolWideAttendanceStudentAccess
+	hasSchoolWideAttendanceStudentAccess,
+	hasSchoolWideAttendanceSummaryAccess
 } from './attendance-access.ts';
 import { accessPositionValues, isRestrictedTeacher } from './access-position.ts';
 import {
@@ -13,6 +14,22 @@ import {
 	permissionsForAccessPosition,
 	systemOnlyPermissions
 } from '../routes/pengguna/permissions.ts';
+
+test('ringkasan guru dan wali boleh seluruh sekolah tanpa memperluas izin input', () => {
+	for (const type of ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama']) {
+		const user = { type, sekolahId: 7, permissions: [] };
+		assert.equal(hasSchoolWideAttendanceSummaryAccess(user, 7), true);
+		assert.equal(hasSchoolWideAttendanceSummaryAccess(user, 8), false);
+		assert.equal(canAttendance(user, 'pengaturan'), false);
+	}
+	assert.equal(hasSchoolWideAttendanceSummaryAccess({ type: 'tim_dapur', sekolahId: 7 }, 7), false);
+	assert.equal(
+		hasSchoolWideAttendanceSummaryAccess({ type: 'wali_murid', sekolahId: 7 }, 7),
+		false
+	);
+	assert.equal(hasSchoolWideAttendanceSummaryAccess(null, 7), false);
+	assert.equal(hasSchoolWideAttendanceSummaryAccess({ type: 'admin' }, 7), true);
+});
 
 test('cakupan semua murid absensi hanya untuk Wali Asrama di sekolah sendiri', () => {
 	assert.equal(

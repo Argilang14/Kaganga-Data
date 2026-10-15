@@ -1,7 +1,7 @@
 import { parseTingkat } from './tingkat.ts';
 
 export type SummaryLevel = 'sd' | 'smp' | 'sma' | 'unknown';
-export type SummaryScope = 'kelas' | 'jenjang' | 'semua';
+export type SummaryScope = 'kelas' | 'jenjang' | 'semua' | 'antar_kelas';
 export type SummaryStatus = 'hadir' | 'terlambat' | 'sakit' | 'izin' | 'alfa' | 'pulang';
 export type SummaryClass = { id: number; nama: string; jenjang: SummaryLevel };
 export type SummaryStudent = { id: number; nama: string; kelasId: number };
@@ -43,6 +43,26 @@ export function isSummaryDate(value: string) {
 	);
 }
 
+export function selectSummaryClasses(classes: SummaryClass[], params: URLSearchParams) {
+	const scope = params.get('cakupan');
+	if (!['kelas', 'jenjang', 'semua', 'antar_kelas'].includes(scope ?? ''))
+		throw new Error('Pilih cakupan ringkasan.');
+	if (scope === 'semua') return classes;
+	if (scope === 'jenjang') {
+		const level = params.get('jenjang');
+		if (!['sd', 'smp', 'sma'].includes(level ?? ''))
+			throw new Error('Pilih jenjang SD, SMP, atau SMA.');
+		return classes.filter((item) => item.jenjang === level);
+	}
+	const values = scope === 'kelas' ? [params.get('kelas_id') ?? ''] : params.getAll('kelas_ids');
+	if (!values.length || values.length > 500 || values.some((value) => !/^[1-9]\d*$/.test(value)))
+		throw new Error('Pilih kelas yang valid.');
+	const ids = new Set(values.map(Number));
+	if ([...ids].some((id) => !Number.isSafeInteger(id) || !classes.some((item) => item.id === id)))
+		throw new Error('Kelas di luar cakupan akun atau semester aktif.');
+	return classes.filter((item) => ids.has(item.id));
+}
+
 const clean = (value: string) => value.replace(/\s+/g, ' ').trim();
 const emptyCounts = (): SummaryCounts => ({ jumlah: 0, hadir: 0, tidakHadir: 0, belum: 0 });
 
@@ -72,9 +92,11 @@ export function buildAttendanceSummary(input: {
 	const title =
 		input.cakupan === 'semua'
 			? 'Rekap kehadiran seluruh jenjang'
-			: input.cakupan === 'jenjang'
-				? `Rekap kehadiran jenjang ${summaryLevelLabels[input.jenjang ?? 'unknown']}`
-				: `Rekap kehadiran kelas ${clean(input.classes[0]?.nama ?? '-')}`;
+			: input.cakupan === 'antar_kelas'
+				? 'Rekap kehadiran antar kelas'
+				: input.cakupan === 'jenjang'
+					? `Rekap kehadiran jenjang ${summaryLevelLabels[input.jenjang ?? 'unknown']}`
+					: `Rekap kehadiran kelas ${clean(input.classes[0]?.nama ?? '-')}`;
 	const date = new Date(`${input.tanggal}T00:00:00Z`);
 	const day = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', "Jum'at", 'Sabtu'][date.getUTCDay()];
 	const lines = [
@@ -82,6 +104,8 @@ export function buildAttendanceSummary(input: {
 		`Hari ${day}, ${date.getUTCDate()}/${date.getUTCMonth() + 1}/${date.getUTCFullYear()}`,
 		`Kegiatan : ${clean(input.kegiatan)}`
 	];
+	if (input.cakupan === 'antar_kelas')
+		lines.push(`Kelas : ${input.classes.map((item) => clean(item.nama)).join(', ')}`);
 	if (input.restrictedStudents) lines.push('Cakupan : anak binaan sesuai penugasan');
 	const classes: AttendanceSummary['classes'] = [];
 	const totals = emptyCounts();

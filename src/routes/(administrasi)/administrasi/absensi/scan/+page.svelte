@@ -10,6 +10,8 @@
 		message: string;
 		status?: string;
 		waktuScan?: string | null;
+		petugas?: { id: number; nama: string } | null;
+		metode?: string;
 		mode?: 'sekolah' | 'kegiatan';
 		kegiatan?: { id: number; nama: string };
 		murid?: {
@@ -204,7 +206,7 @@
 		result = {
 			...payload,
 			mode: item.mode,
-			waktuScan: payload.waktuScan ?? item.capturedAt
+			waktuScan: payload.waktuScan
 		};
 		if (result.murid) studentInfo = result;
 		if (result.murid || result.code !== 'invalid_token') {
@@ -368,6 +370,8 @@
 	}
 
 	function resultLabel(item: ScanResult) {
+		if (item.code === 'already_present')
+			return item.metode === 'qr' ? 'Sudah dipindai' : 'Sudah tercatat';
 		if (item.status) return statusLabel(item.status);
 		const labels: Record<string, string> = {
 			success: 'Berhasil',
@@ -380,8 +384,8 @@
 	}
 
 	function formatScanTime(value: string | null | undefined) {
-		if (!value) return new Date().toLocaleTimeString('id-ID');
-		return new Date(value).toLocaleTimeString('id-ID');
+		if (!value) return '-';
+		return new Date(value).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' });
 	}
 
 	onDestroy(stopScanner);
@@ -483,12 +487,6 @@
 					<option value="">Otomatis hadir/terlambat</option>
 					<option value="hadir">Hadir</option>
 					<option value="terlambat">Terlambat</option>
-					<option value="sakit">Sakit</option>
-					<option value="izin">Izin</option>
-					<option value="alfa">Alfa</option>
-					{#if scanMode === 'kegiatan'}
-						<option value="pulang">Pulang</option>
-					{/if}
 				</select>
 			</label>
 		</div>
@@ -629,6 +627,10 @@
 							<dt class="text-base-content/60">Hasil Scan</dt>
 							<dd class="font-medium">{studentInfo.message}</dd>
 						</div>
+						{#if studentInfo.petugas}<div>
+								<dt class="text-base-content/60">Petugas pencatat</dt>
+								<dd class="font-medium">{studentInfo.petugas.nama}</dd>
+							</div>{/if}
 					</dl>
 				{:else}
 					<div class="alert alert-info">
@@ -649,7 +651,7 @@
 					</div>
 				{:else}
 					<div class="space-y-2">
-						{#each scanHistory as item, index (`${item.murid?.id ?? item.code}-${item.waktuScan ?? index}`)}
+						{#each scanHistory as item, index (`${item.murid?.id ?? item.code}-${item.waktuScan ?? ''}-${index}`)}
 							<div class="border-base-200 flex items-center gap-3 rounded-lg border p-2">
 								<div class="avatar placeholder">
 									<div class="bg-base-200 text-base-content/50 h-12 w-12 rounded-lg">

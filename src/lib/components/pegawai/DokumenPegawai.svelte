@@ -1,12 +1,17 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import Icon from '$lib/components/icon.svelte';
 	import { toast } from '$lib/components/toast.svelte';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import type { DokumenPegawai } from './types';
 
-	let { pegawaiId, dokumen = $bindable() }: { pegawaiId: number; dokumen: DokumenPegawai[] } =
-		$props();
+	let {
+		pegawaiId,
+		dokumen = $bindable(),
+		actionBase
+	}: { pegawaiId: number; dokumen: DokumenPegawai[]; actionBase?: string } = $props();
+	const actionPath = $derived(actionBase ?? `/pegawai/${pegawaiId}`);
 	let editing = $state<DokumenPegawai | null>(null);
 
 	const saveEnhance: SubmitFunction =
@@ -61,7 +66,7 @@
 
 <form
 	method="POST"
-	action={`/pegawai/${pegawaiId}?/saveDokumen`}
+	action={`${actionPath}?/saveDokumen`}
 	use:enhance={saveEnhance}
 	enctype="multipart/form-data"
 	class="bg-base-200/45 rounded-md p-3"
@@ -135,7 +140,7 @@
 					><td>{item.nomor || '-'}</td><td>{item.tanggal || '-'}</td><td
 						><a
 							class="link link-primary"
-							href={`/api/pegawai-document/${item.id}`}
+							href={resolve('/api/pegawai-document/[id]', { id: String(item.id) })}
 							target="_blank"
 							rel="noreferrer">Buka ({sizeLabel(item.ukuran)})</a
 						></td
@@ -149,7 +154,7 @@
 							>
 							<form
 								method="POST"
-								action={`/pegawai/${pegawaiId}?/deleteDokumen`}
+								action={`${actionPath}?/deleteDokumen`}
 								use:enhance={deleteEnhance}
 								onsubmit={(event) => {
 									if (!confirm('Hapus dokumen beserta berkasnya?')) event.preventDefault();

@@ -9,15 +9,18 @@
 		pegawaiId,
 		pendidikan = $bindable(),
 		sertifikasi = $bindable(),
-		mode = 'semua'
+		mode = 'semua',
+		actionBase
 	}: {
 		pegawaiId: number;
 		pendidikan: PendidikanPegawai[];
 		sertifikasi: SertifikasiPegawai[];
 		mode?: 'semua' | 'pendidikan' | 'sertifikasi';
+		actionBase?: string;
 	} = $props();
 	let editingPendidikan = $state<PendidikanPegawai | null>(null);
 	let editingSertifikasi = $state<SertifikasiPegawai | null>(null);
+	const actionPath = $derived(actionBase ?? `/pegawai/${pegawaiId}`);
 
 	function saveEnhance(kind: 'pendidikan' | 'sertifikasi'): SubmitFunction {
 		return () =>
@@ -81,7 +84,7 @@
 	<h3 class="font-bold">Pendidikan Formal</h3>
 	<form
 		method="POST"
-		action={`/pegawai/${pegawaiId}?/savePendidikan`}
+		action={`${actionPath}?/savePendidikan`}
 		use:enhance={saveEnhance('pendidikan')}
 		class="bg-base-200/45 mt-3 rounded-md p-3"
 	>
@@ -173,7 +176,7 @@
 								>
 								<form
 									method="POST"
-									action={`/pegawai/${pegawaiId}?/deletePendidikan`}
+									action={`${actionPath}?/deletePendidikan`}
 									use:enhance={deleteEnhance('pendidikan')}
 									onsubmit={(event) => {
 										if (!confirm('Hapus riwayat pendidikan ini?')) event.preventDefault();
@@ -203,7 +206,7 @@
 	<h3 class="font-bold">Sertifikasi dan Pelatihan</h3>
 	<form
 		method="POST"
-		action={`/pegawai/${pegawaiId}?/saveSertifikasi`}
+		action={`${actionPath}?/saveSertifikasi`}
 		use:enhance={saveEnhance('sertifikasi')}
 		class="bg-base-200/45 mt-3 rounded-md p-3"
 	>
@@ -307,7 +310,7 @@
 								>
 								<form
 									method="POST"
-									action={`/pegawai/${pegawaiId}?/deleteSertifikasi`}
+									action={`${actionPath}?/deleteSertifikasi`}
 									use:enhance={deleteEnhance('sertifikasi')}
 									onsubmit={(event) => {
 										if (!confirm('Hapus sertifikasi ini?')) event.preventDefault();

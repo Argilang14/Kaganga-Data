@@ -7,6 +7,7 @@ import { once } from 'node:events';
 import path from 'node:path';
 import puppeteer from 'puppeteer-core';
 import ExcelJS from 'exceljs';
+import QRCode from 'qrcode';
 
 const project = process.cwd(),
 	port = Number(process.env.ACCESS_QA_PORT || 5158);
@@ -332,7 +333,7 @@ try {
 				kelasId: classA
 			})
 		).status,
-		200
+		403
 	);
 	const savedCookie = accounts.guru.cookie;
 	accounts.guru.cookie = savedCookie.replace(
@@ -373,6 +374,12 @@ try {
 		);
 	}
 	check('Izin dasar tidak membuka pengaturan, impor, reset QR, atau sinkron raport');
+	assert.equal((await request('guru', '/administrasi/absensi?/updateManual', form)).status, 403);
+	// Exercise the legacy daily service only after an explicit menu grant in the QA copy.
+	await db.execute({
+		sql: 'UPDATE auth_user SET permissions=? WHERE id=?',
+		args: [JSON.stringify(['menu_absensi_harian']), accounts.guru.id]
+	});
 	assert.equal((await request('guru', '/administrasi/absensi?/updateManual', form)).status, 200);
 	assert.equal(
 		(await request('guru', '/administrasi/absensi?/updateManual', { ...form, status: 'sakit' }))
@@ -439,6 +446,67 @@ try {
 		true
 	);
 	assert.equal(scan2.parsed.code, 'already_present');
+	assert.match(scan2.parsed.message, /Sudah dipindai oleh qa-access-guru/);
+	assert.equal(scan2.parsed.waktuScan, scan1.parsed.waktuScan);
+	assert.equal(scan2.parsed.petugas.id, accounts.guru.id);
+	const concurrent = await Promise.all(
+		Array.from({ length: 8 }, (_, index) =>
+			request(
+				index % 2 ? 'wali_kelas' : 'guru',
+				'/api/administrasi/absensi/scan',
+				{ token: qrTokens[1], mode: 'kegiatan', kegiatanId: kegiatan.sekolah },
+				true
+			)
+		)
+	);
+	assert.ok(
+		concurrent.every((result) => result.status === 200),
+		concurrent.map((result) => result.text).join('\n')
+	);
+	assert.equal(concurrent.filter((result) => result.parsed.code === 'success').length, 1);
+	assert.equal(concurrent.filter((result) => result.parsed.code === 'already_present').length, 7);
+	const winner = concurrent.find((result) => result.parsed.code === 'success').parsed;
+	assert.ok(
+		concurrent.every(
+			(result) =>
+				result.parsed.petugas.id === winner.petugas.id &&
+				result.parsed.waktuScan === winner.waktuScan
+		)
+	);
+	assert.equal(
+		Number(
+			(
+				await row(
+					'SELECT count(*) n FROM absensi_kegiatan WHERE murid_id=? AND kegiatan_id=? AND tanggal=?',
+					[students[1], kegiatan.sekolah, today]
+				)
+			).n
+		),
+		1
+	);
+	assert.equal(
+		Number(
+			(
+				await row(
+					"SELECT count(*) n FROM audit_log WHERE entity_type='absensi_kegiatan' AND entity_id=? AND action='create'",
+					[`${students[1]}:${today}:${kegiatan.sekolah}`]
+				)
+			).n
+		),
+		1
+	);
+	const manualDuplicate = await request(
+		'wali_kelas',
+		'/api/administrasi/absensi/scan',
+		{ token: qrTokens[0] },
+		true
+	);
+	assert.equal(manualDuplicate.parsed.code, 'already_present');
+	assert.equal(manualDuplicate.parsed.status, 'sakit');
+	assert.equal(manualDuplicate.parsed.waktuScan, null);
+	check(
+		'Scan bersamaan guru A/B hanya menyimpan satu catatan/audit; status dan petugas pertama dipertahankan'
+	);
 	assert.equal(
 		Number(
 			(
@@ -536,7 +604,7 @@ try {
 				)
 			).n
 		),
-		4
+		5
 	);
 	const audit = await row(
 		"SELECT before_data,after_data FROM audit_log WHERE username_snapshot='qa-access-guru' AND action='update' AND entity_type='absensi_harian' ORDER BY id DESC LIMIT 1"
@@ -575,7 +643,10 @@ try {
 	check('Scan bersamaan tidak menggandakan dan wali tidak dapat memindai absensi harian sekolah');
 	await db.execute({
 		sql: 'UPDATE auth_user SET permissions=? WHERE id=?',
-		args: [JSON.stringify(['absensi_koreksi_lama', 'absensi_qr_manage']), accounts.guru.id]
+		args: [
+			JSON.stringify(['menu_absensi_harian', 'absensi_koreksi_lama', 'absensi_qr_manage']),
+			accounts.guru.id
+		]
 	});
 	assert.equal(
 		(await request('guru', '/administrasi/absensi?/updateManual', { ...form, tanggal: yesterday }))
@@ -770,16 +841,39 @@ try {
 	assert.ok(!summaryClass.text.includes('nisn'));
 	assert.ok(!summaryClass.text.includes('token'));
 	assert.match(summaryClass.headers.get('cache-control'), /no-store/);
-	assert.equal((await request('guru', `${summaryUrl}?${summaryParams}&cakupan=semua`)).status, 403);
+	assert.equal((await request('guru', `${summaryUrl}?${summaryParams}&cakupan=semua`)).status, 200);
 	assert.equal(
 		(await request('guru', `${summaryUrl}?${summaryParams}&cakupan=jenjang&jenjang=sma`)).status,
-		403
+		200
 	);
 	assert.equal(
 		(await request('guru', `${summaryUrl}?${summaryParams}&cakupan=kelas&kelas_id=${classB}`))
 			.status,
-		403
+		200
 	);
+	for (const role of ['guru', 'wali_kelas', 'wali_asuh', 'wali_asrama']) {
+		const options = await request(role, `${summaryUrl}?options=1`);
+		assert.equal(options.parsed.canAllScopes, true);
+		assert.equal(options.parsed.restrictedStudents, false);
+		assert.ok(options.parsed.classes.some((item) => item.id === classB));
+		const multi = await request(
+			role,
+			`${summaryUrl}?${summaryParams}&cakupan=antar_kelas&kelas_ids=${classA}&kelas_ids=${classB}&kelas_ids=${classA}`
+		);
+		assert.equal(multi.status, 200, multi.text);
+		assert.deepEqual(
+			multi.parsed.classes.map((item) => item.id).sort((a, b) => a - b),
+			[classA, classB].sort((a, b) => a - b)
+		);
+		assert.ok(!multi.parsed.classes.some((item) => item.id === summarySdClass));
+		assert.match(multi.parsed.text, /Rekap kehadiran antar kelas/);
+		for (const query of [
+			'cakupan=antar_kelas',
+			'cakupan=antar_kelas&kelas_ids=999999',
+			'cakupan=antar_kelas&kelas_ids=abc'
+		])
+			assert.equal((await request(role, `${summaryUrl}?${summaryParams}&${query}`)).status, 400);
+	}
 	assert.equal(
 		(
 			await request(
@@ -822,20 +916,20 @@ try {
 		`${summaryUrl}?tanggal=${today}&kegiatan_id=${kegiatan.asrama}&cakupan=kelas&kelas_id=${classA}`
 	);
 	assert.equal(summaryWali.status, 200, summaryWali.text);
-	assert.equal(summaryWali.parsed.totals.jumlah, 1);
-	assert.ok(!summaryWali.text.includes('QA Ringkasan Izin Pulang'));
-	assert.match(summaryWali.parsed.text, /anak binaan sesuai penugasan/);
+	assert.equal(summaryWali.parsed.totals.jumlah, 6);
+	assert.ok(summaryWali.text.includes('QA Ringkasan Izin Pulang'));
+	assert.ok(!summaryWali.parsed.text.includes('anak binaan sesuai penugasan'));
 	assert.equal(
 		(await request('wali_asuh', `${summaryUrl}?${summaryParams}&cakupan=kelas&kelas_id=${classA}`))
 			.status,
-		403
+		200
 	);
 	assert.deepEqual(
 		(await db.execute('SELECT * FROM absensi_kegiatan ORDER BY id')).rows,
 		summaryBefore
 	);
 	check(
-		'Ringkasan kelas/jenjang/semua menghitung sekali per murid, menjaga cakupan guru/wali dan tidak memicu Auto Alfa'
+		'Ringkasan kelas/jenjang/semua/antar kelas tersedia bagi guru/wali, hanya membaca sekolah aktif dan tidak memicu Auto Alfa'
 	);
 	browser = await puppeteer.launch({
 		executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -904,6 +998,69 @@ try {
 	}
 	check(
 		'Dropdown Pilih kegiatan terlihat; kamera terkunci sampai dipilih dan pilihan reset saat reload untuk guru/wali'
+	);
+	await login('wali_kelas');
+	await page.setViewport({ width: 1366, height: 900 });
+	await page.goto(`${base}/administrasi/absensi/scan`, { waitUntil: 'networkidle0' });
+	await page.select('select[aria-label="Kegiatan absensi"]', String(kegiatan.sekolah));
+	const qrImage = await QRCode.toDataURL(qrTokens[1], { width: 480, margin: 4 });
+	await page.evaluate((imageUrl) => {
+		navigator.mediaDevices.getUserMedia = async () => {
+			const canvas = document.createElement('canvas');
+			canvas.width = canvas.height = 480;
+			const image = new Image();
+			image.src = imageUrl;
+			await image.decode();
+			const draw = () => canvas.getContext('2d').drawImage(image, 0, 0);
+			draw();
+			window.setInterval(draw, 100);
+			return canvas.captureStream(10);
+		};
+	}, qrImage);
+	await page.click('button[title="Mulai scan QR"]');
+	await page.waitForFunction(
+		() => {
+			const title = [...document.querySelectorAll('h3')].find(
+				(el) => el.textContent === 'Riwayat Scan'
+			);
+			return Number(title?.parentElement.querySelector('.badge')?.textContent) >= 2;
+		},
+		{ timeout: 25000 }
+	);
+	await page.evaluate(() =>
+		[...document.querySelectorAll('button')]
+			.find((el) => el.textContent.trim() === 'Berhenti')
+			.click()
+	);
+	const duplicateText = await page.evaluate(() => document.body.innerText);
+	assert.match(
+		duplicateText,
+		new RegExp(
+			`Sudah dipindai oleh qa-access-${winner.petugas.id === accounts.guru.id ? 'guru' : 'wali_kelas'}`
+		)
+	);
+	assert.match(duplicateText, /Petugas pencatat/);
+	assert.match(duplicateText, /data pertama tidak diubah/);
+	assert.deepEqual(errors, []);
+	await page.screenshot({ path: path.join(folder, 'scan-duplikat-desktop.png'), fullPage: true });
+	await page.setViewport({ width: 390, height: 844 });
+	await page.$eval('#my-drawer-2', (el) => {
+		el.checked = false;
+		el.dispatchEvent(new Event('change', { bubbles: true }));
+	});
+	await page.waitForFunction(
+		() => getComputedStyle(document.querySelector('.drawer-side')).visibility === 'hidden'
+	);
+	await page.evaluate(() =>
+		[...document.querySelectorAll('h3')]
+			.find((el) => el.textContent === 'Informasi Siswa')
+			.closest('.card')
+			.scrollIntoView({ block: 'start' })
+	);
+	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+	await page.screenshot({ path: path.join(folder, 'scan-duplikat-mobile.png'), fullPage: true });
+	check(
+		'Kamera simulasi QR menampilkan petugas pertama dan scan ulang tanpa error riwayat di desktop/HP'
 	);
 	await login('kepsek');
 	await page.setViewport({ width: 1366, height: 900 });
@@ -1015,7 +1172,7 @@ try {
 		await page.$eval('dialog[open] select[aria-label="Cakupan ringkasan"]', (el) =>
 			[...el.options].map((item) => item.value)
 		),
-		['kelas']
+		['kelas', 'jenjang', 'semua', 'antar_kelas']
 	);
 	await page.evaluate(() =>
 		[...document.querySelectorAll('dialog[open] button')]
@@ -1024,8 +1181,40 @@ try {
 	);
 	await page.waitForSelector('dialog[open] textarea');
 	assert.ok(
-		!(await page.$eval('dialog[open] textarea', (el) => el.value)).includes('QA Ringkasan Belum')
+		(await page.$eval('dialog[open] textarea', (el) => el.value)).includes('QA Ringkasan Belum')
 	);
+	await page.select('dialog[open] select[aria-label="Cakupan ringkasan"]', 'antar_kelas');
+	await page.evaluate(
+		(ids) => {
+			for (const input of document.querySelectorAll('dialog[open] input[type="checkbox"]')) {
+				if (input.checked !== ids.includes(Number(input.value))) input.click();
+			}
+		},
+		[classA, classB]
+	);
+	await page.evaluate(() =>
+		[...document.querySelectorAll('dialog[open] button')]
+			.find((el) => el.textContent.trim() === 'Pratinjau')
+			.click()
+	);
+	await page.waitForSelector('dialog[open] textarea');
+	assert.match(
+		await page.$eval('dialog[open] textarea', (el) => el.value),
+		/Rekap kehadiran antar kelas/
+	);
+	await page.screenshot({
+		path: path.join(folder, 'summary-antar-kelas-mobile.png'),
+		fullPage: true
+	});
+	assert.equal(
+		await page.$eval('dialog[open] .modal-box', (el) => el.scrollWidth > el.clientWidth),
+		false
+	);
+	await page.setViewport({ width: 1366, height: 900 });
+	await page.screenshot({
+		path: path.join(folder, 'summary-antar-kelas-desktop.png'),
+		fullPage: true
+	});
 	await page.evaluate(() =>
 		[...document.querySelectorAll('dialog[open] button')]
 			.find((el) => el.textContent.trim() === 'Tutup')
@@ -1109,8 +1298,12 @@ try {
 					'summary-desktop.png',
 					'summary-tablet.png',
 					'summary-mobile.png',
+					'summary-antar-kelas-desktop.png',
+					'summary-antar-kelas-mobile.png',
 					'scan-guru-pilih-kegiatan.png',
 					'scan-wali_asuh-pilih-kegiatan.png',
+					'scan-duplikat-desktop.png',
+					'scan-duplikat-mobile.png',
 					'kepsek-murid-desktop.png',
 					'kepsek-murid-tablet.png',
 					'wali-asuh-absensi-mobile.png',

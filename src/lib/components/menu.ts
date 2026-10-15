@@ -205,6 +205,11 @@ export const appMenuItems: MenuItem[] = [
 				permission: 'absensi_lihat'
 			},
 			{
+				title: 'Monitoring Kelas',
+				path: '/administrasi/absensi/monitoring-kelas',
+				tags: ['guru', 'jurnal mengajar', 'qr kelas', 'guru pengganti', 'jadwal pelajaran']
+			},
+			{
 				title: 'Monitoring dan Rekap',
 				permission: 'absensi_lihat',
 				subMenu: [

@@ -42,6 +42,7 @@
 		mataPelajaranList: MataPelajaranItem[];
 		scheduleOptions: ScheduleOption[];
 		jenisJadwal: string;
+		monitoringKey?: string | null;
 		initialJadwalIds?: string;
 		tujuanPembelajaranList: TujuanPembelajaranItem[];
 		lingkupMateriList: string[];
@@ -58,6 +59,7 @@
 		mataPelajaranList,
 		scheduleOptions,
 		jenisJadwal,
+		monitoringKey = null,
 		initialJadwalIds = '',
 		tujuanPembelajaranList,
 		onAction,
@@ -78,7 +80,7 @@
 	);
 	let formJadwalIds = $state(
 		editData
-			? ''
+			? initialJadwalIds
 			: initialJadwalIds ||
 					(scheduleOptions.find((item) => item.jadwalMapelId === defaultMapelId)?.value ?? '')
 	);
@@ -146,6 +148,7 @@
 		<input type="hidden" name="kelasId" value={formKelasId} />
 		<input type="hidden" name="tanggal" value={tanggal ?? ''} />
 		<input type="hidden" name="jenisJadwal" value={jenisJadwal} />
+		<input type="hidden" name="monitoringKey" value={monitoringKey ?? ''} />
 		<input type="hidden" name="jadwalIds" value={formJadwalIds} />
 
 		{#if !editData && scheduleOptions.length > 0}

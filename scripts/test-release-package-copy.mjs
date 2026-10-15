@@ -210,6 +210,7 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 				'/notifikasi',
 				'/administrasi/absensi/kegiatan',
 				'/administrasi/absensi/monitoring',
+				'/administrasi/absensi/monitoring-kelas',
 				'/administrasi/absensi/kegiatan/rekap'
 			]) {
 				if (version === '2.2.3' && route === '/administrasi/absensi/monitoring') continue;

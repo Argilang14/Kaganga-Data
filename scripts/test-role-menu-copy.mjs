@@ -633,9 +633,42 @@ try {
 		'Existing leadership access retained; Humas attendance and correspondence permissions work'
 	);
 	const profileBefore = await row('SELECT * FROM pegawai WHERE id=?', [pegawai.guru]);
+	const profileEditable = {
+		nama: profileBefore.nama,
+		jenisKelamin: profileBefore.jenis_kelamin ?? '',
+		tempatLahir: profileBefore.tempat_lahir ?? '',
+		tanggalLahir: profileBefore.tanggal_lahir ?? '',
+		agama: profileBefore.agama ?? '',
+		statusPerkawinan: profileBefore.status_perkawinan ?? '',
+		nik: profileBefore.nik ?? '',
+		nip: profileBefore.nip ?? '',
+		nomorIndukPppk: profileBefore.nomor_induk_pppk ?? '',
+		nuptk: profileBefore.nuptk ?? '',
+		dapodikPtkId: profileBefore.dapodik_ptk_id ?? '',
+		telepon: profileBefore.telepon ?? '',
+		email: profileBefore.email ?? '',
+		alamat: profileBefore.alamat ?? '',
+		desa: profileBefore.desa ?? '',
+		kecamatan: profileBefore.kecamatan ?? '',
+		kabupaten: profileBefore.kabupaten ?? '',
+		provinsi: profileBefore.provinsi ?? '',
+		kodePos: profileBefore.kode_pos ?? '',
+		kontakDaruratNama: profileBefore.kontak_darurat_nama ?? '',
+		kontakDaruratHubungan: profileBefore.kontak_darurat_hubungan ?? '',
+		kontakDaruratTelepon: profileBefore.kontak_darurat_telepon ?? '',
+		statusKepegawaian: profileBefore.status_kepegawaian ?? '',
+		tanggalMulaiKerja: profileBefore.tanggal_mulai_kerja ?? '',
+		unitPenempatan: profileBefore.unit_penempatan ?? '',
+		pangkatGolongan: profileBefore.pangkat_golongan ?? '',
+		nomorSk: profileBefore.nomor_sk ?? '',
+		tanggalSk: profileBefore.tanggal_sk ?? '',
+		catatan: profileBefore.catatan ?? ''
+	};
 	assert.equal(
 		(
-			await request('guru', '/pengaturan/profil', {
+			await request('guru', '/pengaturan/profil?/saveProfile', {
+				...profileEditable,
+				updatedAt: profileBefore.updated_at,
 				id: pegawai.wali_asuh,
 				jenis: 'kepala_sekolah',
 				telepon: '0123'
@@ -645,7 +678,8 @@ try {
 	);
 	assert.equal(
 		(
-			await request('guru', '/pengaturan/profil', {
+			await request('guru', '/pengaturan/profil?/saveProfile', {
+				...profileEditable,
 				updatedAt: profileBefore.updated_at,
 				email: 'guru@example.test',
 				telepon: '081234567890',
@@ -664,7 +698,8 @@ try {
 	);
 	assert.equal(
 		(
-			await request('guru', '/pengaturan/profil', {
+			await request('guru', '/pengaturan/profil?/saveProfile', {
+				...profileEditable,
 				updatedAt: profileBefore.updated_at,
 				telepon: '000'
 			})

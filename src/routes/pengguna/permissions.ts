@@ -132,6 +132,14 @@ export const groupedUserPermissions = {
 		],
 		description: 'Administrasi'
 	},
+	class_monitoring: {
+		values: [
+			['lihat', 'Lihat Monitoring Kelas'],
+			['scan', 'Scan QR Kelas untuk Pertemuan Sendiri atau Penggantian Ditugaskan'],
+			['manage', 'Kelola QR Kelas, Guru Berhalangan, dan Guru Pengganti']
+		],
+		description: 'Monitoring Kelas dan Kehadiran Mengajar'
+	},
 	absensi: {
 		values: [
 			['lihat', 'Lihat Absensi, Rekap, dan Monitoring Sesuai Penugasan'],
@@ -233,7 +241,7 @@ export function permissionsForAccessPosition(position?: AccessPosition | null): 
 	const resolvedPosition = parseAccessPosition(position);
 	if (!resolvedPosition) return [];
 	if (resolvedPosition === 'waka_humas') return userPermissions.filter((permission) =>
-		permission.startsWith('absensi_') || permission.startsWith('surat_') || permission.startsWith('persetujuan_') || permission.startsWith('berkas_') || ['administrasi_absensi', 'administrasi_presensi_pegawai', 'administrasi_buku_tamu', 'menu_absensi_harian'].includes(permission));
+		permission.startsWith('absensi_') || permission.startsWith('class_monitoring_') || permission.startsWith('surat_') || permission.startsWith('persetujuan_') || permission.startsWith('berkas_') || ['administrasi_absensi', 'administrasi_presensi_pegawai', 'administrasi_buku_tamu', 'menu_absensi_harian'].includes(permission));
 	return userPermissions.filter(
 		(permission) =>
 			!systemOnlyPermissions.has(permission) &&

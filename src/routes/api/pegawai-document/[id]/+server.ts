@@ -8,7 +8,6 @@ import { authority } from '../../../pengguna/utils.server';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
-	authority('sekolah_manage');
 	if (!locals.user) throw error(401, 'Sesi tidak valid.');
 	await ensurePegawaiSchema();
 	const id = Number(params.id);
@@ -19,13 +18,14 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	});
 	const filename = safeDocumentFilename(document?.filePath);
 	if (!document || !filename) throw error(404, 'Dokumen tidak ditemukan.');
+	if (document.pegawaiId !== locals.user.pegawaiId) authority('sekolah_manage');
 	try {
 		const file = await readPegawaiDocument(filename);
 		return new Response(file, {
 			headers: {
 				'Content-Type': document.mimeType || 'application/octet-stream',
 				'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(document.nama)}`,
-				'Cache-Control': 'private, max-age=300',
+				'Cache-Control': 'private, no-store',
 				'X-Content-Type-Options': 'nosniff'
 			}
 		});

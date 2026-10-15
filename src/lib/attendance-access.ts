@@ -53,6 +53,17 @@ export function hasSchoolWideAttendanceStudentAccess(user: AttendanceUser, sekol
 	);
 }
 
+// Reporting access does not grant permission to change attendance or student data.
+export function hasSchoolWideAttendanceSummaryAccess(user: AttendanceUser, sekolahId: number) {
+	if (!user || !canAttendance(user, 'export')) return false;
+	if (user.type === 'admin') return true;
+	if (user.sekolahId !== sekolahId) return false;
+	return (
+		hasSchoolWideOperationalAccess(user) ||
+		['user', 'wali_kelas', 'wali_asuh', 'wali_asrama'].includes(user.type ?? '')
+	);
+}
+
 export type AttendanceActivityContext = { kode?: string; tanggal?: string };
 
 export function canAttendActivity(

@@ -105,7 +105,12 @@ export async function saveAttendance(options: {
 		}
 		let affected = 0;
 		let skipped = 0;
-		const records: Array<{ status: string; waktuScan: string | null }> = [];
+		const records: Array<{
+			status: string;
+			waktuScan: string | null;
+			petugasUserId: number | null;
+			metode: string;
+		}> = [];
 		for (const muridId of ids) {
 			const before = byStudent.get(muridId);
 			if (
@@ -115,7 +120,12 @@ export async function saveAttendance(options: {
 					(before.status === options.status && before.catatan === reason))
 			) {
 				skipped++;
-				records.push({ status: before.status, waktuScan: before.waktuScan });
+				records.push({
+					status: before.status,
+					waktuScan: before.waktuScan,
+					petugasUserId: before.petugasUserId,
+					metode: before.metode
+				});
 				continue;
 			}
 			const now = new Date().toISOString();
@@ -145,21 +155,77 @@ export async function saveAttendance(options: {
 						.set({ ...common, status: options.status as AbsensiStatus })
 						.where(eq(tableAbsensiHarian.id, before.id));
 			} else {
-				if (kegiatanId)
-					await tx.insert(tableAbsensiKegiatan).values({
-						...common,
-						kegiatanId,
-						status: options.status,
-						waktuScan: options.waktuScan ?? null,
-						createdAt: now
-					});
-				else
-					await tx.insert(tableAbsensiHarian).values({
-						...common,
-						status: options.status as AbsensiStatus,
-						waktuScan: options.waktuScan ?? null,
-						createdAt: now
-					});
+				if (scan) {
+					// Only the winner of the unique student/date/activity insert creates an audit entry.
+					const inserted = kegiatanId
+						? await tx
+								.insert(tableAbsensiKegiatan)
+								.values({
+									...common,
+									kegiatanId,
+									status: options.status,
+									waktuScan: options.waktuScan ?? null,
+									createdAt: now
+								})
+								.onConflictDoNothing({
+									target: [
+										tableAbsensiKegiatan.muridId,
+										tableAbsensiKegiatan.kegiatanId,
+										tableAbsensiKegiatan.tanggal
+									]
+								})
+								.returning({ id: tableAbsensiKegiatan.id })
+						: await tx
+								.insert(tableAbsensiHarian)
+								.values({
+									...common,
+									status: options.status as AbsensiStatus,
+									waktuScan: options.waktuScan ?? null,
+									createdAt: now
+								})
+								.onConflictDoNothing({
+									target: [tableAbsensiHarian.muridId, tableAbsensiHarian.tanggal]
+								})
+								.returning({ id: tableAbsensiHarian.id });
+					if (!inserted.length) {
+						const current = kegiatanId
+							? await tx.query.tableAbsensiKegiatan.findFirst({
+									where: and(condition, eq(tableAbsensiKegiatan.muridId, muridId))
+								})
+							: await tx.query.tableAbsensiHarian.findFirst({
+									where: and(condition, eq(tableAbsensiHarian.muridId, muridId))
+								});
+						if (!current)
+							throw error(
+								409,
+								'Absensi sudah tercatat pada konteks kelas lain. Perbarui halaman sebelum melanjutkan.'
+							);
+						skipped++;
+						records.push({
+							status: current.status,
+							waktuScan: current.waktuScan,
+							petugasUserId: current.petugasUserId,
+							metode: current.metode
+						});
+						continue;
+					}
+				} else {
+					if (kegiatanId)
+						await tx.insert(tableAbsensiKegiatan).values({
+							...common,
+							kegiatanId,
+							status: options.status,
+							waktuScan: options.waktuScan ?? null,
+							createdAt: now
+						});
+					else
+						await tx.insert(tableAbsensiHarian).values({
+							...common,
+							status: options.status as AbsensiStatus,
+							waktuScan: options.waktuScan ?? null,
+							createdAt: now
+						});
+				}
 			}
 			await writeAuditLog(
 				{
@@ -185,7 +251,9 @@ export async function saveAttendance(options: {
 			if (options.status)
 				records.push({
 					status: options.status,
-					waktuScan: options.waktuScan ?? before?.waktuScan ?? null
+					waktuScan: options.waktuScan ?? before?.waktuScan ?? null,
+					petugasUserId: user.id,
+					metode: common.metode
 				});
 		}
 		return { affected, skipped, records };

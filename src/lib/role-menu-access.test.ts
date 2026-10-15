@@ -8,6 +8,19 @@ import {
 } from '../routes/pengguna/permissions.ts';
 
 const user = (type: string, extra = {}) => ({ type, ...extra });
+test('monitoring kelas has independent menu and API permissions', () => {
+	for (const path of ['/administrasi/absensi/monitoring-kelas', '/api/administrasi/absensi/monitoring-kelas']) {
+		assert.ok(canAccessMenu(user('user'), path));
+		assert.ok(canAccessMenu(user('admin'), path));
+		for (const type of ['wali_asuh', 'wali_asrama', 'tim_dapur', 'wali_murid']) {
+			if (type !== 'wali_murid') assert.equal(canAccessMenu(user(type), path), false, type);
+			assert.ok(canAccessMenu(user(type, { permissions: ['class_monitoring_lihat'] }), path));
+		}
+	}
+	assert.ok(effectivePermissions(user('user')).includes('class_monitoring_scan'));
+	assert.equal(effectivePermissions(user('user')).includes('class_monitoring_manage'), false);
+	assert.ok(permissionsForAccessPosition('waka_humas').includes('class_monitoring_manage'));
+});
 test('guru only requested menus, APIs and documents', () => {
 	for (const path of [
 		'/murid',

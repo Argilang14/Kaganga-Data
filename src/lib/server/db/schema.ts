@@ -2516,6 +2516,77 @@ export const tableJurnalMengajar = sqliteTable(
 	]
 );
 
+export const tableClassMonitoringQr = sqliteTable(
+	'class_monitoring_qr',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		kelasId: int()
+			.references(() => tableKelas.id, { onDelete: 'cascade' })
+			.notNull(),
+		token: text().notNull(),
+		tokenHash: text().notNull(),
+		issuedAt: text().notNull(),
+		issuedByUserId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		...audit
+	},
+	(table) => [
+		unique('class_monitoring_qr_school_class_unique').on(table.sekolahId, table.kelasId),
+		unique('class_monitoring_qr_token_hash_unique').on(table.tokenHash),
+		index('class_monitoring_qr_school_idx').on(table.sekolahId)
+	]
+);
+
+export const tableClassMonitoring = sqliteTable(
+	'class_monitoring',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' })
+			.notNull(),
+		meetingKey: text().notNull(),
+		tanggal: text().notNull(),
+		jenisJadwal: text({ enum: ['persiapan', 'ganjil', 'genap'] }).notNull(),
+		tahunAjaranId: int().references(() => tableTahunAjaran.id, { onDelete: 'set null' }),
+		semesterId: int().references(() => tableSemester.id, { onDelete: 'set null' }),
+		templateIdSnapshot: int().notNull(),
+		kelasIdSnapshot: int().notNull(),
+		kelasNamaSnapshot: text().notNull(),
+		jenjangSnapshot: text(),
+		jadwalPelajaranIdsSnapshot: text().notNull(),
+		mataPelajaranIdSnapshot: int(),
+		jadwalMapelIdSnapshot: int(),
+		mapelNamaSnapshot: text().notNull(),
+		guruPegawaiIdSnapshot: int(),
+		guruNamaSnapshot: text().notNull(),
+		jamPelajaranSnapshot: text().notNull(),
+		pukulMulaiSnapshot: text().notNull(),
+		pukulSelesaiSnapshot: text().notNull(),
+		scannedAt: text(),
+		scannedByUserId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		actualGuruPegawaiId: int(),
+		actualGuruNamaSnapshot: text(),
+		absenceReason: text({ enum: ['sakit', 'izin'] }),
+		absenceNote: text(),
+		substitutePegawaiId: int(),
+		substituteNamaSnapshot: text(),
+		managedByUserId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		...audit
+	},
+	(table) => [
+		unique('class_monitoring_meeting_unique').on(
+			table.sekolahId,
+			table.meetingKey,
+			table.tanggal,
+			table.jenisJadwal
+		),
+		index('class_monitoring_school_date_idx').on(table.sekolahId, table.tanggal),
+		index('class_monitoring_teacher_date_idx').on(table.actualGuruPegawaiId, table.tanggal)
+	]
+);
+
 export const tableJurnalMengajarRelations = relations(tableJurnalMengajar, ({ one }) => ({
 	sekolah: one(tableSekolah, {
 		fields: [tableJurnalMengajar.sekolahId],

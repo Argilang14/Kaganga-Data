@@ -1,7 +1,7 @@
 import type { JadwalPelajaranPrintData } from '../../../../routes/cetak/jadwal-pelajaran/preview-data';
-import { buildJadwalSegments, type JadwalSegment } from '../../../jadwal-segments';
-import { buildJpNumberBySlot, jadwalSlotKey } from '../../../jadwal-slots';
-import { onePageFitScript, onePageFitStyles } from './one-page-fit';
+import { buildJadwalSegments, type JadwalSegment } from '../../../jadwal-segments.ts';
+import { buildJpNumberBySlot, jadwalSlotKey } from '../../../jadwal-slots.ts';
+import { onePageFitScript, onePageFitStyles } from './one-page-fit.ts';
 import { renderSchoolLetterhead, schoolLetterheadStyles } from './school-letterhead.ts';
 
 function escapeHtml(value: string | number | null | undefined): string {
@@ -85,6 +85,9 @@ function renderSignature(data: JadwalPelajaranPrintData) {
 	const kepala = data.sekolah.kepalaSekolah;
 	const waka = data.sekolah.wakaKurikulum;
 	const jabatan = kepala.status === 'plt' ? 'Plt. Kepala Sekolah' : 'Kepala Sekolah';
+	const principalMark = [data.sekolah.stampUrl, data.sekolah.signatureUrl]
+		.filter((src): src is string => Boolean(src?.startsWith('data:image/png;base64,')))
+		.map((src) => '<img class="principal-mark" src="' + escapeHtml(src) + '" alt="" />').join('');
 	return (
 		'<section class="signatures"><table class="signature-table"><colgroup><col><col></colgroup><tbody>' +
 		'<tr><td class="signature-heading">Mengetahui</td><td>' +
@@ -93,7 +96,7 @@ function renderSignature(data: JadwalPelajaranPrintData) {
 		escapeHtml(data.tanggalCetak) +
 		'</td></tr><tr><td>' +
 		escapeHtml(jabatan) +
-		'</td><td>Waka Kurikulum</td></tr><tr><td class="signature-space"></td>' +
+		'</td><td>Waka Kurikulum</td></tr><tr><td class="signature-space">' + principalMark + '</td>' +
 		'<td class="signature-space"></td></tr><tr><td class="signature-name">' +
 		escapeHtml(kepala.nama || '................................') +
 		'</td><td class="signature-name">' +
@@ -273,6 +276,7 @@ function renderStyles(
 	const legendWidth = orientation === 'landscape' ? '52mm' : '40mm';
 	return (
 		schoolLetterheadStyles() +
+		'.signature-space{position:relative}.principal-mark{position:absolute;inset:0;margin:auto;max-width:38mm;max-height:17mm;object-fit:contain}' +
 		'@page{size:A4 ' +
 		orientation +
 		';margin:' +

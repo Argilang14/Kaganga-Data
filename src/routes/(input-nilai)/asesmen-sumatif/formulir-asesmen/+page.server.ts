@@ -1,4 +1,5 @@
 import db from '$lib/server/db';
+import { calculateSumatifRts } from '$lib/sumatif-rts';
 import { ensureAsesmenSumatifSchema } from '$lib/server/db/ensure-asesmen-sumatif';
 import {
 	tableAsesmenSumatif,
@@ -538,23 +539,10 @@ export const actions = {
 		}
 
 		// Compute nilaiAkhirRTS using RTS bobot (lingkup + STS only, no SAS)
-		const rtsBobotLingkup = Number(locals.sekolah?.sumatifBobotRtsLingkup ?? 70);
-		const rtsBobotSts = Number(locals.sekolah?.sumatifBobotRtsSts ?? 30);
-
-		let nilaiAkhirRts: number | null = null;
-		let weightedRts = 0;
-		let totalWeightRts = 0;
-		if (naLingkup != null) {
-			weightedRts += naLingkup * rtsBobotLingkup;
-			totalWeightRts += rtsBobotLingkup;
-		}
-		if (sts != null) {
-			weightedRts += sts * rtsBobotSts;
-			totalWeightRts += rtsBobotSts;
-		}
-		if (totalWeightRts > 0) {
-			nilaiAkhirRts = Math.round((weightedRts / totalWeightRts) * 100) / 100;
-		}
+		const nilaiAkhirRts = calculateSumatifRts(naLingkup, sts, {
+			lingkup: locals.sekolah?.sumatifBobotRtsLingkup,
+			sts: locals.sekolah?.sumatifBobotRtsSts
+		});
 
 		// Compute final nilaiAkhir using sekolah-level weights (fallback to 60/20/20)
 		// Base sekolah weights

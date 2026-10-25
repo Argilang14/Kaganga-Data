@@ -99,62 +99,64 @@
 	}
 </script>
 
-<div class="space-y-5">
-	<div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+<div class="mapel-page bg-base-100 space-y-4 rounded-lg p-4 shadow-md">
+	<header class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
 		<div>
-			<h1 class="text-2xl font-bold">Data Mata Pelajaran</h1>
-			<p class="text-base-content/70 mt-1 max-w-3xl text-sm">
-				Master mapel umum lintas kelas. Kelas dan jadwal mengambil data dari sini agar mapel tidak
-				dobel per kelas.
-			</p>
+			<h1 class="text-xl font-bold">Data Mata Pelajaran</h1>
+			<p class="text-base-content/70 text-sm">{data.mapelList.length} mata pelajaran</p>
 		</div>
 		<div class="flex flex-wrap gap-2">
-			<button class="btn btn-primary shadow-none" type="button" onclick={openCreateModal}>
-				<Icon name="plus" />
-				Tambah Mata Pelajaran
-			</button>
-			<div class="dropdown dropdown-end">
-				<button type="button" tabindex="0" class="btn btn-soft shadow-none">
-					<Icon name="down" /> Data Excel
-				</button>
+			<details class="dropdown dropdown-start lg:dropdown-end">
+				<summary class="btn btn-soft shadow-none" aria-label="Data Excel mata pelajaran">
+					<Icon name="download" /> Excel <Icon name="down" />
+				</summary>
 				<ul
-					tabindex="-1"
-					class="dropdown-content menu bg-base-100 rounded-box border-base-300 z-10 mt-2 w-60 border p-2 shadow-lg"
+					class="dropdown-content menu bg-base-100 border-base-300 z-20 mt-1 w-48 rounded-md border p-1 shadow-lg"
 				>
 					<li>
 						<a href="/api/jadwal/mapel/template"><Icon name="download" /> Template Import</a>
 					</li>
 					<li>
-						<button type="button" onclick={() => importDialog?.showModal()}>
+						<button
+							type="button"
+							onclick={(event) => {
+								event.currentTarget.closest('details')?.removeAttribute('open');
+								importDialog?.showModal();
+							}}
+						>
 							<Icon name="import" /> Import Data
 						</button>
 					</li>
 					<li><a href="/api/jadwal/mapel/export"><Icon name="export" /> Export Data</a></li>
 				</ul>
-			</div>
+			</details>
+			<button class="btn btn-soft shadow-none" type="button" onclick={openCreateModal}>
+				<Icon name="plus" />
+				Tambah Mapel
+			</button>
 			<a class="btn btn-soft shadow-none" href={resolve('/rapor/jadwal-pelajaran')}>
 				<Icon name="calendar" /> Jadwal Pelajaran
 			</a>
 		</div>
-	</div>
+	</header>
 
 	{#if failMessage}
-		<div class="alert alert-error alert-soft">
+		<div class="alert alert-error alert-soft" role="alert">
 			<Icon name="warning" /> <span>{failMessage}</span>
 		</div>
 	{/if}
 	{#if successMessage}
-		<div class="alert alert-success alert-soft">
+		<div class="alert alert-success alert-soft" role="status">
 			<Icon name="check" /> <span>{successMessage}</span>
 		</div>
 	{/if}
 
 	<form
 		method="GET"
-		class="bg-base-100 border-base-200 rounded-box grid gap-3 border p-4 lg:grid-cols-[1fr_180px_200px_auto]"
+		class="border-base-200 grid items-end gap-3 border-y py-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_160px_180px_auto]"
 	>
-		<label class="form-control gap-1">
-			<span class="label-text font-medium">Cari mapel</span>
+		<label class="grid min-w-0 gap-2">
+			<span class="text-sm font-medium">Cari mapel</span>
 			<input
 				class="input input-bordered w-full"
 				name="q"
@@ -162,8 +164,8 @@
 				placeholder="Kode atau nama mapel"
 			/>
 		</label>
-		<label class="form-control gap-1">
-			<span class="label-text font-medium">Jenjang</span>
+		<label class="grid min-w-0 gap-2">
+			<span class="text-sm font-medium">Jenjang</span>
 			<select class="select select-bordered w-full" name="jenjang">
 				{#each data.options.jenjang as jenjang (jenjang)}
 					<option value={jenjang} selected={data.filter.jenjang === jenjang}
@@ -172,8 +174,8 @@
 				{/each}
 			</select>
 		</label>
-		<label class="form-control gap-1">
-			<span class="label-text font-medium">Kategori</span>
+		<label class="grid min-w-0 gap-2">
+			<span class="text-sm font-medium">Kategori</span>
 			<select class="select select-bordered w-full" name="kategori">
 				{#each data.options.kategori as kategori (kategori)}
 					<option value={kategori} selected={data.filter.kategori === kategori}
@@ -183,20 +185,22 @@
 			</select>
 		</label>
 		<div class="flex items-end gap-2">
-			<button class="btn btn-primary flex-1" type="submit"><Icon name="search" /> Filter</button>
-			<a href="/data-mata-pelajaran" class="btn btn-soft" title="Reset filter"
-				><Icon name="repeat" /></a
+			<button class="btn btn-soft flex-1 shadow-none" type="submit"
+				><Icon name="search" /> Filter</button
+			>
+			<a
+				href="/data-mata-pelajaran"
+				class="btn btn-soft btn-square shadow-none"
+				title="Reset filter"
+				aria-label="Reset filter"><Icon name="repeat" /></a
 			>
 		</div>
 	</form>
 
-	<div class="bg-base-100 border-base-200 rounded-box overflow-hidden border shadow-sm">
-		<div
-			class="border-base-200 flex flex-col gap-3 border-b p-4 md:flex-row md:items-center md:justify-between"
-		>
+	<section aria-labelledby="mapel-table-title" class="space-y-3">
+		<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 			<div>
-				<h2 class="font-semibold">Daftar Data Mata Pelajaran</h2>
-				<p class="text-base-content/60 text-sm">{data.mapelList.length} mapel ditampilkan.</p>
+				<h2 id="mapel-table-title" class="text-sm font-semibold">Daftar Mata Pelajaran</h2>
 			</div>
 			<form
 				method="POST"
@@ -217,29 +221,43 @@
 				</button>
 			</form>
 		</div>
-		<div class="overflow-x-auto">
-			<table class="table-zebra table">
+		<div class="border-base-200 overflow-x-auto rounded-md border shadow-sm">
+			<table class="table min-w-[1040px] table-fixed" aria-label="Daftar mata pelajaran">
+				<colgroup>
+					<col style="width:56px" />
+					<col style="width:96px" />
+					<col />
+					<col style="width:120px" />
+					<col style="width:132px" />
+					<col style="width:104px" />
+					<col style="width:160px" />
+					<col style="width:104px" />
+					<col style="width:112px" />
+				</colgroup>
 				<thead>
-					<tr>
-						<th class="w-10"
+					<tr class="bg-base-200 text-left font-bold">
+						<th scope="col"
 							><input
-								class="checkbox checkbox-sm"
+								class="checkbox size-6 shrink-0 rounded-md"
 								type="checkbox"
 								checked={allRowsSelected}
 								onchange={toggleAllSelection}
 								aria-label="Pilih semua mapel"
 							/></th
-						><th>Kode</th><th>Nama</th><th>Jenjang/Fase</th><th>Kategori</th><th>JP/Minggu</th><th
-							>Guru</th
-						><th>Status</th><th class="text-right">Aksi</th>
+						><th scope="col">Kode</th><th scope="col">Nama</th><th scope="col">Jenjang/Fase</th><th
+							scope="col">Kategori</th
+						><th scope="col">JP/Minggu</th><th scope="col">Guru</th><th scope="col">Status</th><th
+							scope="col"
+							class="text-right">Aksi</th
+						>
 					</tr>
 				</thead>
 				<tbody>
 					{#each data.mapelList as mapel (mapel.id)}
-						<tr>
+						<tr class="hover:bg-base-200/40">
 							<td
 								><input
-									class="checkbox checkbox-sm"
+									class="checkbox size-6 shrink-0 rounded-md"
 									type="checkbox"
 									checked={selectedIds.has(mapel.id)}
 									onchange={() => toggleSelection(mapel.id)}
@@ -247,19 +265,29 @@
 								/>
 							</td>
 							<td
-								><span class="badge font-bold" style={`background:${mapel.warna ?? '#dbeafe'}`}
-									>{mapel.kode}</span
+								><span class="flex items-start gap-2 font-mono text-sm font-semibold"
+									><span
+										class="mt-1.5 size-2 shrink-0 rounded-full"
+										style={`background:${mapel.warna ?? '#dbeafe'}`}
+										aria-hidden="true"
+									></span><span class="min-w-0 break-words">{mapel.kode}</span></span
 								></td
 							>
 							<td
-								><div class="font-semibold">{mapel.nama}</div>
+								><div class="break-words font-semibold">{mapel.nama}</div>
 								<div class="text-base-content/60 text-xs">Dipakai {mapel.totalSlot} slot</div></td
 							>
-							<td>{jenjangLabels[mapel.jenjang]}{mapel.fase ? ` / ${mapel.fase}` : ''}</td>
-							<td><span class="badge badge-soft">{kategoriLabels[mapel.kategori]}</span></td>
+							<td class="break-words"
+								>{jenjangLabels[mapel.jenjang]}{mapel.fase ? ` / ${mapel.fase}` : ''}</td
+							>
+							<td
+								><span class="badge badge-soft h-auto min-h-6 whitespace-normal py-1"
+									>{kategoriLabels[mapel.kategori]}</span
+								></td
+							>
 
 							<td><span class="badge badge-outline">{mapel.jpPerMinggu} JP</span></td>
-							<td>{mapel.guru?.nama ?? '-'}</td>
+							<td class="break-words">{mapel.guru?.nama ?? '-'}</td>
 							<td
 								><span
 									class:badge-success={mapel.aktif}
@@ -268,11 +296,12 @@
 								></td
 							>
 							<td>
-								<div class="flex justify-end gap-1">
+								<div class="flex justify-end">
 									<button
-										class="btn btn-ghost btn-square btn-xs"
+										class="btn btn-soft btn-sm rounded-r-none shadow-none"
 										type="button"
 										title="Edit"
+										aria-label={`Edit ${mapel.kode}`}
 										onclick={() => openEditModal(mapel)}><Icon name="edit" /></button
 									>
 									<form
@@ -284,39 +313,39 @@
 									>
 										<input type="hidden" name="id" value={mapel.id} />
 										<button
-											class="btn btn-error btn-soft btn-square btn-xs"
+											class="btn btn-error btn-soft btn-sm rounded-l-none shadow-none"
 											type="submit"
+											aria-label={`Hapus ${mapel.kode}`}
 											title="Hapus"><Icon name="del" /></button
 										>
 									</form>
 								</div>
 							</td>
 						</tr>
-					{:else}
-						<tr
-							><td colspan="9" class="text-base-content/60 py-8 text-center"
-								>Belum ada Data Mata Pelajaran.</td
-							></tr
-						>
 					{/each}
 				</tbody>
 			</table>
 		</div>
-	</div>
+		{#if !data.mapelList.length}
+			<p class="text-base-content/60 px-3 py-6 text-center text-sm" role="status">
+				{data.filter.q || data.filter.jenjang !== 'semua' || data.filter.kategori !== 'semua'
+					? 'Tidak ada mata pelajaran yang sesuai dengan filter.'
+					: 'Belum ada data mata pelajaran.'}
+			</p>
+		{/if}
+	</section>
 </div>
 
-<dialog class="modal" bind:this={formDialog}>
-	<div class="modal-box max-w-4xl">
-		<h3 class="text-lg font-bold">{isEdit ? 'Edit Mata Pelajaran' : 'Tambah Mata Pelajaran'}</h3>
-		<p class="text-base-content/60 mt-1 text-sm">
-			Data ini dipakai ulang oleh jadwal dan Mapel Kelas. Kode mapel menjadi kunci saat import
-			Excel.
-		</p>
+<dialog class="modal" bind:this={formDialog} aria-labelledby="mapel-form-title">
+	<div class="modal-box max-w-2xl">
+		<h3 id="mapel-form-title" class="text-lg font-bold">
+			{isEdit ? 'Edit Mata Pelajaran' : 'Tambah Mata Pelajaran'}
+		</h3>
 		<form method="POST" action="?/save" class="mt-5 space-y-4">
 			<input type="hidden" name="id" value={selectedMapel?.id ?? ''} />
 			<div class="grid gap-4 md:grid-cols-2">
-				<label class="form-control gap-2">
-					<span class="label-text font-medium">Kode Mapel</span>
+				<label class="grid min-w-0 content-start gap-2">
+					<span class="text-sm font-semibold">Kode Mapel</span>
 					<input
 						class="input input-bordered w-full uppercase"
 						name="kode"
@@ -325,8 +354,8 @@
 						required
 					/>
 				</label>
-				<label class="form-control gap-2">
-					<span class="label-text font-medium">Jenjang</span>
+				<label class="grid min-w-0 content-start gap-2">
+					<span class="text-sm font-semibold">Jenjang</span>
 					<select class="select select-bordered w-full" name="jenjang">
 						{#each data.options.jenjang as jenjang (jenjang)}
 							<option value={jenjang} selected={(selectedMapel?.jenjang ?? 'semua') === jenjang}
@@ -335,8 +364,8 @@
 						{/each}
 					</select>
 				</label>
-				<label class="form-control gap-2">
-					<span class="label-text font-medium">Fase</span>
+				<label class="grid min-w-0 content-start gap-2">
+					<span class="text-sm font-semibold">Fase</span>
 					<input
 						class="input input-bordered w-full"
 						name="fase"
@@ -344,8 +373,8 @@
 						placeholder="Contoh: Fase E"
 					/>
 				</label>
-				<label class="form-control gap-2">
-					<span class="label-text font-medium">Kategori</span>
+				<label class="grid min-w-0 content-start gap-2">
+					<span class="text-sm font-semibold">Kategori</span>
 					<select class="select select-bordered w-full" name="kategori">
 						{#each data.options.kategori.filter((item) => item !== 'semua') as kategori (kategori)}
 							<option
@@ -356,8 +385,8 @@
 						{/each}
 					</select>
 				</label>
-				<label class="form-control gap-2 md:col-span-2">
-					<span class="label-text font-medium">Nama Mata Pelajaran</span>
+				<label class="grid min-w-0 content-start gap-2 md:col-span-2">
+					<span class="text-sm font-semibold">Nama Mata Pelajaran</span>
 					<input
 						class="input input-bordered w-full"
 						name="nama"
@@ -366,8 +395,8 @@
 						required
 					/>
 				</label>
-				<label class="form-control gap-2">
-					<span class="label-text font-medium">JP per Kelas/Minggu (Default)</span>
+				<label class="grid min-w-0 content-start gap-2">
+					<span class="text-sm font-semibold">JP per Kelas/Minggu (Default)</span>
 					<input
 						class="input input-bordered w-full"
 						name="jpPerMinggu"
@@ -377,8 +406,8 @@
 						placeholder="Contoh: 4"
 					/>
 				</label>
-				<label class="form-control gap-2 md:col-span-2">
-					<span class="label-text font-medium">Guru Pemangku Default</span>
+				<label class="grid min-w-0 content-start gap-2">
+					<span class="text-sm font-semibold">Guru Pemangku Default</span>
 					<select class="select select-bordered w-full" name="guruPegawaiId">
 						<option value="">Belum ditentukan</option>
 						{#each data.guruList as guru (guru.id)}
@@ -388,26 +417,26 @@
 						{/each}
 					</select>
 				</label>
-				<label class="form-control gap-2">
-					<span class="label-text font-medium">Warna</span>
+				<label class="grid min-w-0 content-start gap-2">
+					<span class="text-sm font-semibold">Warna</span>
 					<input
-						class="input input-bordered h-12 w-full"
+						class="input input-bordered h-10 w-full"
 						name="warna"
 						type="color"
 						value={selectedMapel?.warna ?? '#dbeafe'}
 					/>
 				</label>
-				<label class="label mt-8 cursor-pointer justify-start gap-3">
+				<label class="flex min-h-10 cursor-pointer items-center gap-3 self-end">
 					<input
 						class="toggle toggle-success"
 						type="checkbox"
 						name="aktif"
 						checked={selectedMapel?.aktif ?? true}
 					/>
-					<span class="label-text">Aktif</span>
+					<span class="text-sm font-medium">Aktif</span>
 				</label>
-				<label class="form-control gap-2 md:col-span-2">
-					<span class="label-text font-medium">Catatan</span>
+				<label class="grid min-w-0 content-start gap-2 md:col-span-2">
+					<span class="text-sm font-semibold">Catatan</span>
 					<textarea
 						class="textarea textarea-bordered min-h-24 w-full"
 						name="catatan"
@@ -415,36 +444,56 @@
 					>
 				</label>
 			</div>
-			<div class="modal-action">
-				<button class="btn btn-primary" type="submit"><Icon name="save" /> Simpan</button>
-				<button class="btn" type="button" onclick={() => formDialog?.close()}>Batal</button>
+			<div class="modal-action flex-wrap gap-2">
+				<button class="btn btn-soft shadow-none" type="button" onclick={() => formDialog?.close()}
+					><Icon name="close" /> Batal</button
+				>
+				<button class="btn btn-primary shadow-none" type="submit"
+					><Icon name="save" /> Simpan</button
+				>
 			</div>
 		</form>
 	</div>
-	<form method="dialog" class="modal-backdrop"><button>close</button></form>
+	<form method="dialog" class="modal-backdrop">
+		<button aria-label="Tutup formulir mata pelajaran">Tutup</button>
+	</form>
 </dialog>
 
-<dialog class="modal" bind:this={importDialog}>
-	<div class="modal-box max-w-lg">
-		<h3 class="text-lg font-bold">Import Data Mata Pelajaran</h3>
-		<p class="text-base-content/70 mt-1 text-sm">
+<dialog
+	class="modal"
+	bind:this={importDialog}
+	aria-labelledby="mapel-import-title"
+	aria-describedby="mapel-import-description"
+>
+	<div class="modal-box max-w-2xl">
+		<h3 id="mapel-import-title" class="text-lg font-bold">Import Data Mata Pelajaran</h3>
+		<p id="mapel-import-description" class="text-base-content/70 mt-2 text-sm">
 			Gunakan template Excel agar kolom terbaca rapi. Kode mapel yang sama akan memperbarui data
 			lama. ID guru dapat disalin dari lembar Referensi Guru; warna dapat ditulis sebagai kode hex
 			atau diberikan sebagai warna isi sel.
 		</p>
 		<form method="POST" action="?/importExcel" enctype="multipart/form-data" class="mt-4 space-y-4">
-			<input
-				class="file-input file-input-bordered w-full"
-				type="file"
-				name="file"
-				accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-				required
-			/>
-			<div class="modal-action">
-				<button class="btn btn-primary" type="submit"><Icon name="import" /> Import</button>
-				<button class="btn" type="button" onclick={() => importDialog?.close()}>Batal</button>
+			<label class="grid min-w-0 gap-2">
+				<span class="text-sm font-semibold">File Excel</span>
+				<input
+					class="file-input file-input-bordered w-full"
+					type="file"
+					name="file"
+					accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+					required
+				/>
+			</label>
+			<div class="modal-action flex-wrap gap-2">
+				<button class="btn btn-soft shadow-none" type="button" onclick={() => importDialog?.close()}
+					><Icon name="close" /> Batal</button
+				>
+				<button class="btn btn-primary shadow-none" type="submit"
+					><Icon name="import" /> Import</button
+				>
 			</div>
 		</form>
 	</div>
-	<form method="dialog" class="modal-backdrop"><button>close</button></form>
+	<form method="dialog" class="modal-backdrop">
+		<button aria-label="Tutup import mata pelajaran">Tutup</button>
+	</form>
 </dialog>

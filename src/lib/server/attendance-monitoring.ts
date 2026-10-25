@@ -171,6 +171,7 @@ export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSear
 	const permits =
 		ids.length && academic.activeTahunAjaranId
 			? await db.query.tableIzinPulangMurid.findMany({
+					with: { perjalanan: true },
 					columns: {
 						muridId: true,
 						tanggalKeluar: true,

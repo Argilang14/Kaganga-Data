@@ -36,3 +36,11 @@ test('Guru dan jabatan lain tetap memakai format sebelumnya', () => {
 	assert.equal(userRoleLabel({ type: 'user', jabatanAkses: 'waka_kurikulum' }), 'Guru Mapel');
 	assert.equal(displayedUserRole({ type: 'wali_asrama', jabatanAkses: 'operator' }), 'wali_asrama');
 });
+
+test('Tim Keamanan is creatable without leadership position escalation', () => {
+	assert.ok(creatableUserRoles.includes('tim_keamanan'));
+	assert.deepEqual(resolveUserRole('tim_keamanan'), { type: 'tim_keamanan', jabatanAkses: null });
+	assert.equal(userRoleLabel({ type: 'tim_keamanan' }), 'Tim Keamanan');
+	assert.equal(resolveUserRole('tim_keamanan', 'operator'), null);
+	assert.equal(resolveUserRole('tim_keamanan', 'kepala_sekolah'), null);
+});

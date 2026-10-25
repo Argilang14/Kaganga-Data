@@ -17,6 +17,7 @@ import {
 import db from '$lib/server/db';
 import { studentAccessCondition } from '$lib/server/attendance-student-access';
 import { canAttendance } from '$lib/attendance-access';
+import { projectPermitAttendance } from '$lib/server/attendance-permits';
 import { tableAbsensiKegiatan, tableMurid } from '$lib/server/db/schema';
 import { json } from '@sveltejs/kit';
 import { and, asc, between, eq, inArray } from 'drizzle-orm';
@@ -101,7 +102,7 @@ export async function GET({ locals, url }) {
 		}
 	}
 
-	const absensiRows = muridIds.length
+	const recordedRows = muridIds.length
 		? await db.query.tableAbsensiKegiatan.findMany({
 				where: and(
 					eq(tableAbsensiKegiatan.sekolahId, sekolahId),
@@ -120,6 +121,9 @@ export async function GET({ locals, url }) {
 			})
 		: [];
 
+	const absensiRows = await projectPermitAttendance({ schoolId: sekolahId, semesterId: academic.activeSemesterId,
+		studentIds: muridIds, dates: listLocalDatesInRange(tanggalAwal, tanggalAkhir),
+		activities: kegiatanList.filter((item) => !kegiatanId || item.id === kegiatanId), rows: recordedRows });
 	const summary = emptySummary();
 	const byMurid = new Map<number, Record<StatusKey, number>>();
 	const kegiatanNameById = new Map(kegiatanList.map((kegiatan) => [kegiatan.id, kegiatan.nama]));

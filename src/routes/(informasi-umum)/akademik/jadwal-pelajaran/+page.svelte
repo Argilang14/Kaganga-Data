@@ -828,9 +828,8 @@
 		return hariLabel[hari] ?? hari.charAt(0).toUpperCase() + hari.slice(1);
 	}
 
-	let nextEventMessage = $state('');
-	$effect(() => {
-		nextEventMessage = computeNextEventMessage({
+	const nextEventMessage = $derived.by(() => {
+		return computeNextEventMessage({
 			now: serverTime.now,
 			bellActive,
 			isHoliday,

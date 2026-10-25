@@ -1,11 +1,16 @@
 <script lang="ts" module>
+	import { tick } from 'svelte';
+
 	let modal = $state<HTMLDialogElement | null>(null);
+	let opener: HTMLElement | null = null;
 	type ModalState = ModalProps<Record<string, unknown>>;
 	let modalProps = $state<ModalState>({ body: '' } as ModalState);
 	let modalShown = $state(false);
 	let isLoading = $state(false);
 
 	function clearModal() {
+		const returnFocusTo = opener;
+		opener = null;
 		const handler = modalProps?.onClose;
 		modalProps = { body: '' } as ModalState;
 		modalShown = false;
@@ -16,11 +21,19 @@
 		modal?.style.removeProperty('opacity');
 		const backdrop = modal?.querySelector('.modal-backdrop');
 		if (backdrop instanceof HTMLElement) backdrop.style.removeProperty('pointer-events');
+		if (returnFocusTo) {
+			void tick().then(() => {
+				if (!modalShown && returnFocusTo.isConnected) returnFocusTo.focus({ preventScroll: true });
+			});
+		}
 	}
 
 	export function showModal<BodyProps extends Record<string, unknown>>(
 		props: ModalProps<BodyProps>
 	) {
+		if (!modalShown && document.activeElement instanceof HTMLElement) {
+			opener = document.activeElement;
+		}
 		modalProps = props as ModalState;
 		modalShown = true;
 		isLoading = false;
@@ -77,13 +90,21 @@
 </script>
 
 {#if modalShown}
-	<dialog bind:this={modal} class="modal" oncancel={clearModal} onclose={clearModal}>
-		<div class="modal-box flex max-h-[85vh] flex-col sm:w-full sm:max-w-2xl">
+	<dialog
+		bind:this={modal}
+		class="app-modal modal"
+		aria-labelledby={modalProps.title ? 'app-modal-title' : undefined}
+		aria-label={modalProps.title ? undefined : 'Dialog Kaganga'}
+		aria-busy={isLoading}
+		oncancel={clearModal}
+		onclose={clearModal}
+	>
+		<div class="app-modal-box modal-box">
 			{#if modalProps.title}
-				<h3 class="shrink-0 text-lg font-bold">{modalProps.title}</h3>
+				<h3 id="app-modal-title" class="app-modal-title">{modalProps.title}</h3>
 			{/if}
 
-			<div class="min-h-0 w-full max-w-none flex-1 overflow-y-auto px-1 py-4">
+			<div class="app-modal-body w-full max-w-none flex-1">
 				{#if typeof modalProps.body === 'function'}
 					<modalProps.body {...modalProps.bodyProps ?? {}} />
 				{:else if typeof modalProps.body === 'string'}
@@ -92,7 +113,7 @@
 			</div>
 
 			{#if modalProps.onPositive || modalProps.onNeutral || modalProps.onNegative}
-				<div class="modal-action shrink-0">
+				<div class="app-modal-actions modal-action">
 					{#if modalProps.onNegative}
 						<button
 							class="btn {modalProps.onNegative.class ?? 'btn-soft'} gap-2 shadow-none"
@@ -169,7 +190,7 @@
 		</div>
 		{#if modalProps.dismissible}
 			<form method="dialog" class="modal-backdrop">
-				<button>close</button>
+				<button aria-label="Tutup dialog">Tutup</button>
 			</form>
 		{/if}
 	</dialog>

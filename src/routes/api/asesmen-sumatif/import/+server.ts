@@ -1,14 +1,18 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import db from '$lib/server/db';
+import { calculateSumatifRts } from '$lib/sumatif-rts';
+import { canAccessExportClass } from '$lib/server/class-export-access';
+import { isRestrictedTeacher } from '$lib/access-position';
 import {
 	tableAsesmenSumatif,
 	tableAsesmenSumatifTujuan,
 	tableTujuanPembelajaran,
 	tableMataPelajaran,
 	tableMurid,
-	tableSekolah
+	tableSekolah,
+	tableAuthUserMataPelajaran
 } from '$lib/server/db/schema';
-import { eq, and, asc } from 'drizzle-orm';
+import { eq, and, asc, inArray } from 'drizzle-orm';
 
 const AGAMA_BASE_SUBJECT = 'Pendidikan Agama dan Budi Pekerti';
 const PKS_BASE_SUBJECT = 'Pendalaman Kitab Suci';
@@ -147,7 +151,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		});
 	}
 
-	if (!Number.isInteger(kelasId)) {
+	if (!Number.isSafeInteger(kelasId) || kelasId <= 0) {
 		return new Response(JSON.stringify({ error: 'kelas_id tidak valid.' }), { status: 400 });
 	}
 
@@ -155,6 +159,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!sekolahId) {
 		return new Response(JSON.stringify({ error: 'Sekolah aktif tidak ditemukan.' }), {
 			status: 401
+		});
+	}
+	if (!(await canAccessExportClass(locals.user, sekolahId, kelasId))) {
+		return new Response(JSON.stringify({ error: 'Kelas di luar penugasan akun.' }), {
+			status: 403
 		});
 	}
 
@@ -268,6 +277,49 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		where: and(eq(tableMataPelajaran.kelasId, kelasId)),
 		orderBy: [asc(tableMataPelajaran.nama)]
 	});
+	const selectedMapelId = Number(mapelIdRaw);
+	if (
+		Number.isInteger(selectedMapelId) &&
+		selectedMapelId > 0 &&
+		!kelasMapels.some((mapel) => mapel.id === selectedMapelId)
+	) {
+		return new Response(
+			JSON.stringify({ error: 'Mata pelajaran tidak termasuk kelas yang dipilih.' }),
+			{ status: 400 }
+		);
+	}
+	let allowedMapelIds: Set<number> | null = null;
+	if (isRestrictedTeacher(locals.user) && locals.user) {
+		const assignments = await db.query.tableAuthUserMataPelajaran.findMany({
+			columns: { mataPelajaranId: true },
+			where: eq(tableAuthUserMataPelajaran.authUserId, locals.user.id)
+		});
+		const assignedIds = [
+			...new Set([
+				...assignments.map((row) => row.mataPelajaranId),
+				...(locals.user.mataPelajaranId ? [locals.user.mataPelajaranId] : [])
+			])
+		];
+		const assignedSubjects = assignedIds.length
+			? await db.query.tableMataPelajaran.findMany({
+					columns: { nama: true },
+					where: inArray(tableMataPelajaran.id, assignedIds)
+				})
+			: [];
+		const names = new Set(assignedSubjects.map((subject) => normalizeText(subject.nama)));
+		allowedMapelIds = new Set(
+			kelasMapels
+				.filter(
+					(subject) => assignedIds.includes(subject.id) || names.has(normalizeText(subject.nama))
+				)
+				.map((subject) => subject.id)
+		);
+		if (Number.isInteger(selectedMapelId) && !allowedMapelIds.has(selectedMapelId)) {
+			return new Response(JSON.stringify({ error: 'Mata pelajaran di luar penugasan akun.' }), {
+				status: 403
+			});
+		}
+	}
 
 	// Find agama base and variants in kelas
 	const agamaBase =
@@ -280,6 +332,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		skipped: 0,
 		errors: []
 	};
+	const classStudents = await db.query.tableMurid.findMany({
+		columns: { id: true, nama: true, agama: true },
+		where: and(eq(tableMurid.kelasId, kelasId), eq(tableMurid.sekolahId, sekolahId))
+	});
 
 	// Cache tujuan lists per mapel for mapping TP columns to tujuan IDs
 	const tujuanCache = new Map<
@@ -291,21 +347,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const now = new Date().toISOString();
 	await db.transaction(async (tx) => {
 		for (const s of students) {
-			// find murid by kelasId and name case-insensitive
-			const mur = await tx.query.tableMurid.findFirst({
-				columns: { id: true, nama: true, agama: true },
-				where: and(eq(tableMurid.kelasId, kelasId), eq(tableMurid.nama, s.name))
-			});
-			let muridRecord = mur;
-			if (!muridRecord) {
-				// Try case-insensitive search
-				const allInKelas = await tx.query.tableMurid.findMany({
-					columns: { id: true, nama: true, agama: true },
-					where: eq(tableMurid.kelasId, kelasId)
-				});
-				const found = allInKelas.find((m) => normalizeText(m.nama) === normalizeText(s.name));
-				if (found) muridRecord = found;
+			const matches = classStudents.filter(
+				(murid) => normalizeText(murid.nama) === normalizeText(s.name)
+			);
+			if (matches.length > 1) {
+				results.skipped += 1;
+				results.errors.push(
+					`Nama murid ganda pada baris ${s.rowIndex}: "${s.name}". Periksa identitas sebelum mengimpor.`
+				);
+				continue;
 			}
+			const muridRecord = matches[0];
 
 			if (!muridRecord) {
 				results.skipped += 1;
@@ -345,6 +397,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			if (!targetMapelId) {
 				results.skipped += 1;
 				results.errors.push(`Tidak dapat menentukan mata pelajaran untuk murid ${s.name}`);
+				continue;
+			}
+			if (allowedMapelIds && !allowedMapelIds.has(targetMapelId)) {
+				results.skipped += 1;
+				results.errors.push(`Mata pelajaran di luar penugasan untuk baris ${s.rowIndex}.`);
 				continue;
 			}
 
@@ -500,7 +557,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 			// Compute final nilaiAkhir using sekolah-level weights (after naLingkup)
 			const sekolah = await tx.query.tableSekolah.findFirst({
-				columns: { sumatifBobotLingkup: true, sumatifBobotSts: true, sumatifBobotSas: true },
+				columns: {
+					sumatifBobotLingkup: true,
+					sumatifBobotSts: true,
+					sumatifBobotSas: true,
+					sumatifBobotRtsLingkup: true,
+					sumatifBobotRtsSts: true
+				},
 				where: eq(tableSekolah.id, sekolahId)
 			});
 			const baseWeights = {
@@ -526,6 +589,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			}
 			const nilaiAkhir =
 				usedWeightFinal > 0 ? Math.round((weightedSumFinal / usedWeightFinal) * 100) / 100 : null;
+			const nilaiAkhirRts = calculateSumatifRts(naLingkup, sts, {
+				lingkup: sekolah?.sumatifBobotRtsLingkup,
+				sts: sekolah?.sumatifBobotRtsSts
+			});
 
 			// Upsert into asesmen_sumatif
 			await tx
@@ -541,6 +608,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					sasNonTes,
 					sas,
 					nilaiAkhir,
+					nilaiAkhirRts,
 					updatedAt: now
 				})
 				.onConflictDoUpdate({
@@ -554,6 +622,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 						sasNonTes,
 						sas,
 						nilaiAkhir,
+						nilaiAkhirRts,
 						updatedAt: now
 					}
 				});

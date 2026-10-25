@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdir, mkdtemp, access } from 'node:fs/promises';
+import { mkdir, mkdtemp, access, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
@@ -129,9 +129,9 @@ assert.ok(hari, `Hari Jakarta tidak dikenali: ${today.weekday}`);
 const accounts = {};
 const fixture = { classes: [], scheduleIds: [] };
 
-async function makeRequest(accountName, method, payload, query = '') {
+async function makeRequest(accountName, method, payload, query = '', endpoint = apiPath) {
 	const account = accounts[accountName];
-	const response = await fetch(base + apiPath + query, {
+	const response = await fetch(base + endpoint + query, {
 		method,
 		headers: {
 			accept: 'application/json',
@@ -150,6 +150,8 @@ async function makeRequest(accountName, method, payload, query = '') {
 	}
 	return { status: response.status, body, text, headers: response.headers };
 }
+const scanClassRequest = (role, method = 'GET', payload) =>
+	makeRequest(role, method, payload, '', '/api/administrasi/absensi/scan/kelas');
 const expectStatus = (result, expected, label) =>
 	assert.ok(
 		(Array.isArray(expected) ? expected : [expected]).includes(result.status),
@@ -804,6 +806,17 @@ try {
 		tanggal: today.date,
 		jenis: 'ganjil'
 	};
+	const classScanOptions = await scanClassRequest('teacherP1');
+	expectStatus(classScanOptions, 200, 'unified class scan options');
+	assert.equal(classScanOptions.body.tanggal, today.date);
+	assert.ok(classScanOptions.body.meetings.some((item) => item.key === p1Meeting.key));
+	assert.ok(!classScanOptions.body.meetings.some((item) => item.key === p2Meeting.key));
+	for (const role of ['dapur', 'waliasrama'])
+		expectStatus(await scanClassRequest(role), 403, 'non teacher class options denied');
+	expectStatus(await scanClassRequest('teacherP2', 'POST', scanPayload), 403, 'unified wrong teacher denied');
+	expectStatus(await scanClassRequest('teacherP1', 'POST', { ...scanPayload, qr: 'rapkumer-absensi:student' }), 403, 'student QR cannot record teacher');
+	expectStatus(await scanClassRequest('teacherP1', 'POST', { ...scanPayload, tanggal: shiftDate(today.date, -1) }), 409, 'unified old date denied');
+	pass('unified scanner returns own schedule only and rejects forged teacher, date and student QR');
 	expectStatus(
 		await makeRequest('teacherP2', 'POST', { action: 'scan', ...scanPayload }),
 		403,
@@ -846,7 +859,9 @@ try {
 		'missing schedule scan'
 	);
 	const concurrentScans = await Promise.all(
-		Array.from({ length: 6 }, () => makeRequest('teacherP1', 'POST', scanPayload))
+		Array.from({ length: 6 }, (_, index) => index % 2
+			? makeRequest('teacherP1', 'POST', scanPayload)
+			: scanClassRequest('teacherP1', 'POST', scanPayload))
 	);
 	assert.equal(
 		concurrentScans.filter((result) => result.status === 200).length,
@@ -857,6 +872,7 @@ try {
 		.filter((result) => result.status !== 200)
 		.forEach((result) => expectStatus(result, 409, 'duplicate scan conflict'));
 	expectStatus(await makeRequest('teacherP1', 'POST', scanPayload), 409, 'repeat scan conflict');
+	expectStatus(await scanClassRequest('teacherP1', 'POST', scanPayload), 409, 'unified repeat scan conflict');
 	assert.equal(
 		await count('class_monitoring', 'sekolah_id=? AND meeting_key=? AND tanggal=?', [
 			school,
@@ -920,11 +936,11 @@ try {
 		tanggal: today.date,
 		jenis: 'ganjil'
 	};
-	expectStatus(
-		await makeRequest('substituteP3', 'POST', { action: 'scan', ...substituteScan }),
-		200,
-		'substitute scan'
-	);
+	const substituteReceipt = await scanClassRequest('substituteP3', 'POST', substituteScan);
+	expectStatus(substituteReceipt, 200, 'unified substitute scan');
+	assert.equal(substituteReceipt.body.meeting.key, p2Meeting.key);
+	assert.equal(substituteReceipt.body.status, 'hadir');
+	assert.ok(substituteReceipt.body.meeting.journalUrl.includes('monitoring_key='));
 	pass('absence update and substitute scan');
 
 	const afterScan = await makeRequest(
@@ -1196,6 +1212,7 @@ try {
 		args: ['--no-sandbox']
 	});
 	const page = await browser.newPage();
+	await page.setCacheEnabled(false);
 	const browserErrors = [];
 	page.on('pageerror', (error) => browserErrors.push(error.message));
 	const settle = async () =>
@@ -1263,7 +1280,12 @@ try {
 					const cards = [...mobile.querySelectorAll('[data-testid="meeting-card"]')];
 					return (
 						cards.length === 6 &&
-						cards.every((card) => card.getBoundingClientRect().width >= window.innerWidth - 60)
+						cards.every((card) => {
+							const column = card.parentElement;
+							const style = getComputedStyle(column);
+							const available = column.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+							return Math.abs(card.getBoundingClientRect().width - available) <= 2;
+						})
 					);
 				}),
 				true,
@@ -1333,27 +1355,19 @@ try {
 		await page.keyboard.press('Escape');
 		await page.waitForSelector('dialog[open]', { hidden: true });
 		await settle();
-		await page.evaluate(() =>
-			[...document.querySelectorAll('button')]
-				.find((element) => element.textContent.trim() === 'Kelola QR')
-				.click()
-		);
-		await page.waitForSelector('#class-monitoring-qr[open]');
+		assert.equal(await page.$('#class-monitoring-qr'), null);
+		assert.equal(await page.evaluate(() => [...document.querySelectorAll('button')].some((button) => button.textContent.trim() === 'Kelola QR')), false);
+		const printResponse = await page.goto(`${base}/cetak?dokumen=qr-kelas`, { waitUntil: 'networkidle0' });
+		assert.equal(printResponse.status(), 200);
+		await page.waitForSelector('section[aria-label="Cetak QR kelas"]');
 		await settle();
-		assert.equal(
-			await page.$eval(
-				'dialog[open] .modal-box',
-				(element) =>
-					element.scrollWidth <= element.clientWidth + 1 &&
-					element.getBoundingClientRect().height <= innerHeight
-			),
-			true,
-			`${label} QR dialog bounds`
-		);
-		await page.screenshot({ path: path.join(folder, `class-monitoring-${label}-qr.png`) });
-		await page.keyboard.press('Escape');
-		await page.waitForSelector('dialog[open]', { hidden: true });
+		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, `${label} QR print overflow`);
+		assert.equal(await page.$$eval('section[aria-label="Cetak QR kelas"] input[type="checkbox"]', (inputs) => inputs.length), 4);
+		await page.click('section[aria-label="Cetak QR kelas"] .dropdown > summary');
 		await settle();
+		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, `${label} QR dropdown overflow`);
+		await page.screenshot({ path: path.join(folder, `class-qr-print-${label}.png`), fullPage: true });
+		await page.goto(`${base}${pagePath}?tanggal=${today.date}&jenis=ganjil`, { waitUntil: 'networkidle0' });
 	}
 	pass('responsive seeded-only screenshots and HTML escaping');
 	const clickButton = async (targetPage, text, scope = 'button') =>
@@ -1411,38 +1425,65 @@ try {
 		waitUntil: 'networkidle0'
 	});
 	pass('monitoring filters, readable status layout, dark theme and absence dialog');
-	await clickButton(page, 'Kelola QR');
-	await page.waitForSelector('dialog[open]');
-	await clickButton(page, 'Tampilkan QR', 'dialog[open] button');
-	await page.waitForFunction(() =>
-		[...document.querySelectorAll('dialog[open] button')].some(
-			(button) => button.textContent.trim() === 'Cetak' && !button.disabled
-		)
-	);
-	await page.evaluate(() => {
-		const open = window.open.bind(window);
-		window.open = (...args) => {
-			const popup = open(...args);
-			if (popup) popup.print = () => {};
-			return popup;
-		};
-	});
-	const popupReady = new Promise((resolve) => page.once('popup', resolve));
-	await clickButton(page, 'Cetak', 'dialog[open] button');
-	const printPage = await Promise.race([
-		popupReady,
-		new Promise((_, reject) => setTimeout(() => reject(new Error('QR print popup missing')), 10000))
-	]);
-	await printPage.waitForFunction(
-		() =>
-			document.querySelectorAll('article img').length === 3 &&
-			[...document.images].every((image) => image.complete && image.naturalWidth > 0)
-	);
-	assert.equal(await printPage.evaluate(() => window.opener === null), true);
-	assert.equal(await printPage.evaluate(() => window.QA_INJECTED === 1), false);
-	await printPage.screenshot({ path: path.join(folder, 'class-qr-print.png'), fullPage: true });
-	await printPage.close();
-	pass('QR printing opens an isolated popup with rendered cards');
+	await page.goto(`${base}/cetak?dokumen=qr-kelas`, { waitUntil: 'networkidle0' });
+	await page.waitForSelector('section[aria-label="Cetak QR kelas"]');
+	const beforeReprint = await makeRequest('admin', 'POST', { action: 'qr', kelasIds: fixture.classes });
+	const pdfResponsePromise = page.waitForResponse((response) => response.url().endsWith('/api/pdf/qr-kelas') && response.request().method() === 'POST');
+	await clickButton(page, 'Cetak');
+	const pdfResponse = await pdfResponsePromise;
+	assert.equal(pdfResponse.status(), 200);
+	assert.equal(pdfResponse.headers()['content-type'], 'application/pdf');
+	assert.match(pdfResponse.headers()['cache-control'], /no-store/);
+	await page.waitForSelector('object[title="Preview PDF QR Kelas"]');
+	const pdfBytes = Buffer.from(await page.$eval('object[title="Preview PDF QR Kelas"]', async (object) => Array.from(new Uint8Array(await (await fetch(object.data)).arrayBuffer()))));
+	assert.equal(pdfBytes.subarray(0, 5).toString(), '%PDF-');
+	await writeFile(path.join(folder, 'class-qr-preview.pdf'), pdfBytes);
+	await page.waitForSelector('object[title="Preview PDF QR Kelas"]');
+	assert.equal(await page.$eval('section[aria-label="Cetak QR kelas"] .dropdown > summary', (element) => element.classList.contains('btn-success')), true);
+	await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 1500)));
+	for (const [label, width, height] of [['desktop',1440,1000],['tablet',768,1024],['mobile',390,844],['small-mobile',320,740]]) {
+		await page.setViewport({width,height});
+		await settle();
+		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, label + ' PDF overflow');
+		await page.screenshot({path:path.join(folder, 'qr-pdf-preview-' + label + '.png'),fullPage:true});
+	}
+	const afterReprint = await makeRequest('admin', 'POST', { action: 'qr', kelasIds: fixture.classes });
+	assert.deepEqual(cardArray(afterReprint.body), cardArray(beforeReprint.body), 'Preview must not rotate QR tokens');
+	await page.$$eval('section[aria-label="Cetak QR kelas"] .dropdown input[type="checkbox"]', (inputs) => inputs.slice(2).forEach((input) => input.click()));
+	assert.equal(await page.$$eval('section[aria-label="Cetak QR kelas"] .dropdown input:checked', (inputs) => inputs.length), 1);
+	assert.equal(await page.$('object[title="Preview PDF QR Kelas"]'), null);
+	assert.equal(await page.$eval('section[aria-label="Cetak QR kelas"] .dropdown > summary', (element) => element.classList.contains('btn-success')), false);
+	await clickButton(page, 'Cetak');
+	await page.waitForSelector('object[title="Preview PDF QR Kelas"]');
+	await page.setRequestInterception(true);
+	const failPdf = (request) => request.url().endsWith('/api/pdf/qr-kelas')
+		? request.respond({status:500,contentType:'application/json',body:JSON.stringify({message:'QA PDF gagal'})})
+		: request.continue();
+	page.on('request', failPdf);
+	await clickButton(page, 'Cetak');
+	await page.waitForFunction(() => document.querySelector('section[aria-label="Cetak QR kelas"] [role="alert"]')?.textContent.includes('QA PDF gagal'));
+	assert.equal(await page.$('object[title="Preview PDF QR Kelas"]'), null);
+	assert.equal(await page.$eval('section[aria-label="Cetak QR kelas"] .dropdown > summary', (element) => element.classList.contains('btn-success')), false);
+	page.off('request',failPdf);
+	const emptyPdf = (request) => request.url().endsWith('/api/pdf/qr-kelas')
+		? request.respond({status:200,contentType:'application/pdf',body:''}) : request.continue();
+	page.on('request',emptyPdf);
+	await clickButton(page, 'Cetak');
+	await page.waitForFunction(() => document.querySelector('section[aria-label="Cetak QR kelas"] [role="alert"]')?.textContent.includes('PDF kosong'));
+	assert.equal(await page.$('object[title="Preview PDF QR Kelas"]'), null);
+	page.off('request',emptyPdf);
+	await page.setRequestInterception(false);
+	await page.click('section[aria-label="Cetak QR kelas"] .dropdown > summary');
+	await page.keyboard.press('Escape');
+	assert.equal(await page.$eval('section[aria-label="Cetak QR kelas"] .dropdown', (element) => element.open), false);
+	for (const [role, ids, expected] of [['teacherP1',fixture.classes,403],['admin',[foreignClass],403],['admin',[],400],['admin',['bad'],400]]) {
+		const response = await fetch(base + '/api/pdf/qr-kelas', {
+			method:'POST',headers:{cookie:accounts[role].cookie,origin:base,'content-type':'application/json'},
+			body:JSON.stringify({kelasIds:ids})
+		});
+		assert.equal(response.status,expected,role + ' PDF protection');
+	}
+	pass('QR PDF preview, green readiness, dropdown, errors, stable tokens and permissions');
 	const teacherPage = await browser.newPage();
 	await teacherPage.setCookie(
 		{
@@ -1463,6 +1504,9 @@ try {
 		path: path.join(folder, 'substitute-journal.png'),
 		fullPage: true
 	});
+	await teacherPage.goto(`${base}/cetak?dokumen=qr-kelas`, { waitUntil: 'networkidle0' });
+	assert.equal(await teacherPage.$('section[aria-label="Cetak QR kelas"]'), null);
+	assert.equal(await teacherPage.$('option[value="qr-kelas"]'), null, 'Teachers must not see QR printing');
 	pass('journal modal prefilled for designated substitute');
 	await db.execute({
 		sql: 'DELETE FROM class_monitoring WHERE sekolah_id=? AND meeting_key=?',
@@ -1527,7 +1571,8 @@ try {
 	});
 	const decoded = await qrPage.evaluate(async () =>
 		(
-			await new ZXingBrowser.BrowserQRCodeReader().decodeFromImageElement(
+			// PURE_BARCODE (1): this fixture is an unrotated generated image, not a camera frame.
+			await new ZXingBrowser.BrowserQRCodeReader(new Map([[1, true]])).decodeFromImageElement(
 				document.querySelector('#qr')
 			)
 		).getText()
@@ -1535,6 +1580,61 @@ try {
 	assert.equal(decoded, newCard.payload);
 	await qrPage.screenshot({ path: path.join(folder, 'physical-qr-decoded.png'), fullPage: true });
 	pass('physical QR rendered by qrcode and decoded by ZXing');
+	const unifiedPage = await browser.newPage();
+	unifiedPage.on('pageerror', (error) => browserErrors.push(error.message));
+	await unifiedPage.setCookie(
+		{ name: 'rapkumer-session', value: accounts.teacherP1.token, url: base },
+		{ name: 'active-sekolah-id', value: String(school), url: base }
+	);
+	await unifiedPage.evaluateOnNewDocument((imageUrl) => {
+		window.QA_SCAN_TRACKS = [];
+		navigator.mediaDevices.getUserMedia = async () => {
+			const image = new Image();
+			image.src = imageUrl;
+			await image.decode();
+			const canvas = document.createElement('canvas');
+			canvas.width = canvas.height = 720;
+			const context = canvas.getContext('2d');
+			const stream = canvas.captureStream(15);
+			window.QA_SCAN_TRACKS.push(...stream.getTracks());
+			const draw = () => {
+				context.fillStyle = '#fff';
+				context.fillRect(0, 0, 720, 720);
+				context.drawImage(image, 80, 80, 560, 560);
+				if (stream.getTracks().some((track) => track.readyState === 'live')) requestAnimationFrame(draw);
+			};
+			draw();
+			return stream;
+		};
+	}, qrDataUrl);
+	for (const width of [1440, 1280, 768, 390, 320]) {
+		await unifiedPage.setViewport({ width, height: 900 });
+		await unifiedPage.goto(base + '/administrasi/absensi/scan', { waitUntil: 'networkidle0' });
+		assert.equal(await unifiedPage.$eval('select[aria-label="Mode scan"]', (el) => el.value), '');
+		assert.equal(await unifiedPage.$eval('select[aria-label="Kegiatan absensi"]', (el) => el.disabled), true);
+		await unifiedPage.select('select[aria-label="Mode scan"]', 'pegawai');
+		await unifiedPage.select('select[aria-label="Kegiatan absensi"]', 'absen_kelas');
+		await unifiedPage.waitForFunction((key) => [...document.querySelector('select[aria-label="Pertemuan mengajar"]').options].some((option) => option.value === key), {}, class3Meeting.key);
+		await unifiedPage.select('select[aria-label="Pertemuan mengajar"]', class3Meeting.key);
+		assert.equal(await unifiedPage.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'scan overflow ' + width);
+		await unifiedPage.screenshot({ path: path.join(folder, `unified-scan-${width}.png`), fullPage: true });
+	}
+	await unifiedPage.setViewport({ width: 390, height: 844 });
+	await unifiedPage.evaluate(() => window.dispatchEvent(new Event('offline')));
+	assert.equal(await unifiedPage.$$eval('button', (buttons) => buttons.find((button) => button.textContent.includes('Mulai Scan')).disabled), true);
+	await unifiedPage.evaluate(() => window.dispatchEvent(new Event('online')));
+	const journalsBeforeCamera = await count('jurnal_mengajar', 'sekolah_id=?', [school]);
+	await clickButton(unifiedPage, 'Mulai Scan');
+	await unifiedPage.waitForSelector('a[href*="monitoring_key="]', { timeout: 30000 });
+	assert.equal(await unifiedPage.$eval('a[href*="monitoring_key="]', (el) => new URL(el.href).searchParams.get('monitoring_key')), class3Meeting.key);
+	await unifiedPage.waitForFunction(() => window.QA_SCAN_TRACKS.length >= 2 && window.QA_SCAN_TRACKS.every((track) => track.readyState === 'ended'));
+	assert.equal(await count('jurnal_mengajar', 'sekolah_id=?', [school]), journalsBeforeCamera);
+	assert.equal(await unifiedPage.evaluate(() => Object.keys(localStorage).some((key) => key.startsWith('kaganga-absensi-offline-v1:') && JSON.parse(localStorage[key]).length)), false);
+	await unifiedPage.screenshot({ path: path.join(folder, 'unified-scan-success-mobile.png'), fullPage: true });
+	await unifiedPage.select('select[aria-label="Mode scan"]', 'sekolah');
+	assert.equal(await unifiedPage.$eval('select[aria-label="Kegiatan absensi"]', (el) => el.value), '');
+	assert.equal(await unifiedPage.$('a[href*="monitoring_key="]'), null);
+	pass('unified scanner responsive 320-1440, required selections, online-only class QR decoded by camera, journal handoff and reset');
 	assert.deepEqual(browserErrors, [], 'Monitoring page must not have browser errors');
 
 	assert.equal((await db.execute('PRAGMA foreign_key_check')).rows.length, 0);

@@ -1,4 +1,5 @@
 import { parseAccessPosition } from './access-position.ts';
+import { classMonitoringCapabilities } from './class-monitoring.ts';
 
 export type MenuAccessUser =
 	| {
@@ -42,6 +43,7 @@ export function hasMenuPermission(user: MenuAccessUser, permission: string) {
 
 export function canPrintDocument(user: MenuAccessUser, document: string) {
 	if (!user) return false;
+	if (document === 'qr-kelas') return classMonitoringCapabilities(user).canManage;
 	if (unrestricted(user)) return true;
 	if (
 		parseAccessPosition(user.jabatanAkses) !== 'waka_humas' &&
@@ -67,6 +69,7 @@ export function canPrintDocument(user: MenuAccessUser, document: string) {
 
 // Longest prefix wins: an allowed parent never opens a protected child.
 const rules: [string, string[]][] = [
+	['/api/pdf/qr-kelas', ['class_monitoring_manage']],
 	['/murid/arsip', ['murid_arsip']],
 	['/murid', ['menu_murid']],
 	['/sekolah', ['sekolah_lihat', 'sekolah_manage']],
@@ -103,6 +106,7 @@ const rules: [string, string[]][] = [
 	['/administrasi/absensi/kartu-qr', ['absensi_qr_manage']],
 	['/administrasi/absensi/kegiatan', ['absensi_lihat']],
 	['/administrasi/absensi/scan', ['absensi_scan']],
+	['/administrasi/absensi/konfirmasi-pulang', ['absensi_perjalanan']],
 	['/administrasi/absensi/monitoring', ['absensi_lihat']],
 	['/administrasi/absensi', ['menu_absensi_harian']],
 	['/presensi-pegawai', ['administrasi_presensi_pegawai']],
@@ -140,6 +144,7 @@ const rules: [string, string[]][] = [
 	['/api/sekolah/sumatif-bobot', ['menu_nilai_intrakurikuler']],
 	['/api/sekolah/rapor-kriteria', ['cetak_akademik', 'cetak_keasramaan']],
 	['/api/administrasi/absensi', ['absensi_lihat']],
+	['/api/administrasi/absensi/scan', ['absensi_scan']],
 	['/api/administrasi/absensi/monitoring-kelas', ['class_monitoring_lihat', 'class_monitoring_scan', 'class_monitoring_manage']],
 	['/api/dinas-luar', ['surat_dinas_luar']],
 	['/api/administrasi/absensi/rekap', ['menu_absensi_harian']],

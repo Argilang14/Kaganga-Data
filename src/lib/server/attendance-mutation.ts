@@ -1,11 +1,15 @@
 import { error } from '@sveltejs/kit';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, ne, lte, gte, or, isNull } from 'drizzle-orm';
+import { permitCoversMonitoring } from '$lib/attendance-monitoring';
+import { travelLocalTime } from '$lib/attendance-travel';
+import { ensureAbsenceMonitoringSchema } from './db/ensure-absence-monitoring';
 import { canAttendance, canAttendActivity, attendanceDateAllowed } from '$lib/attendance-access';
 import {
 	tableAbsensiHarian,
 	tableAbsensiKegiatan,
 	tableKegiatanAbsensi,
-	tableMurid
+	tableMurid,
+	tableIzinPulangMurid
 } from './db/schema';
 import db from './db';
 import { studentAccessCondition } from './attendance-student-access';
@@ -76,7 +80,24 @@ export async function saveAttendance(options: {
 	const reason = options.catatan?.trim() || null;
 	if (reason && reason.length > 500) throw error(400, 'Catatan maksimal 500 karakter.');
 	await ensureDataGovernanceSchema();
+	await ensureAbsenceMonitoringSchema();
 	return db.transaction(async (tx) => {
+		const permits =
+			options.status && ['hadir', 'terlambat'].includes(options.status)
+				? await tx.query.tableIzinPulangMurid.findMany({
+						with: { perjalanan: true },
+						where: and(
+							eq(tableIzinPulangMurid.sekolahId, sekolahId),
+							inArray(tableIzinPulangMurid.muridId, ids),
+							ne(tableIzinPulangMurid.status, 'dibatalkan'),
+							lte(tableIzinPulangMurid.tanggalKeluar, tanggal),
+							or(
+								isNull(tableIzinPulangMurid.tanggalKembali),
+								gte(tableIzinPulangMurid.tanggalKembali, tanggal)
+							)
+						)
+					})
+				: [];
 		const table = kegiatanId ? tableAbsensiKegiatan : tableAbsensiHarian;
 		const condition = and(
 			eq(table.sekolahId, sekolahId),
@@ -113,6 +134,24 @@ export async function saveAttendance(options: {
 		}> = [];
 		for (const muridId of ids) {
 			const before = byStudent.get(muridId);
+			const point = scan
+				? travelLocalTime(new Date(options.waktuScan ?? Date.now())).time
+				: (kegiatan?.jamMulai ?? null);
+			if (
+				(!before || before.metode === 'auto') &&
+				permits.some(
+					(permit) => permit.muridId === muridId && permitCoversMonitoring(tanggal, point, permit)
+				)
+			) {
+				skipped++;
+				records.push({
+					status: 'pulang',
+					waktuScan: null,
+					petugasUserId: null,
+					metode: 'izin_pulang'
+				});
+				continue;
+			}
 			if (
 				before &&
 				(scan ||
@@ -155,7 +194,7 @@ export async function saveAttendance(options: {
 						.set({ ...common, status: options.status as AbsensiStatus })
 						.where(eq(tableAbsensiHarian.id, before.id));
 			} else {
-				if (scan) {
+				if (scan || options.onlyEmpty) {
 					// Only the winner of the unique student/date/activity insert creates an audit entry.
 					const inserted = kegiatanId
 						? await tx

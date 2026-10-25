@@ -27,6 +27,7 @@
 	function filterMenuByPermission(items: MenuItem[]): MenuItem[] {
 		return items
 			.map((item) => {
+				if (item.condition && item.condition !== activeSemesterTipe) return null;
 				if (item.path && !canAccessMenu(user, item.path)) return null;
 				const area = item.path ? getProtectedArea(item.path) : null;
 				if (area && !canAccessArea(user, area)) return null;
@@ -147,7 +148,12 @@
 			</details>
 		{:else}
 			<!-- `class:menu-active` is shorthand for `class="{active ? 'menu-active': ''}"` -->
-			<a class:menu-active={active} href={menuHref(item.path)} onclick={closeMobileDrawer}>
+			<a
+				class:menu-active={active}
+				aria-current={active ? 'page' : undefined}
+				href={menuHref(item.path)}
+				onclick={closeMobileDrawer}
+			>
 				{@render menu_item_label(item)}
 			</a>
 		{/if}
@@ -156,7 +162,7 @@
 
 {#snippet menu_item_label(item: MenuItem)}
 	{#if item.icon}
-		<Icon name={item.icon} />
+		<Icon name={item.icon} class="size-4 shrink-0" />
 	{/if}
 	<span>{@html searchQueryMarker(search, item.title)}</span>
 	{#if search && item.tags?.length}
@@ -164,30 +170,36 @@
 	{/if}
 {/snippet}
 
-<div class="flex-1">
+<div class="app-sidebar-navigation flex min-h-0 flex-1 flex-col">
 	<div class="mb-3 flex min-w-0 gap-1">
-		<label class="input bg-base-200 dark:bg-base-300 min-w-0 flex-1 rounded-box dark:border-none">
+		<label class="input bg-base-200 min-w-0 flex-1 rounded-lg">
 			<Icon name="search" />
-			<input type="search" class="grow" bind:value={search} placeholder="Cari menu" />
+			<input
+				type="search"
+				class="min-w-0 grow"
+				bind:value={search}
+				placeholder="Cari menu"
+				aria-label="Cari menu"
+			/>
 		</label>
 		<label
-			class="btn swap btn-square rounded-box shadow-none"
+			class="btn swap btn-square rounded-lg shadow-none"
 			title={expanded.value ? 'Sempitkan menu' : 'Luaskan menu'}
 		>
-			<input type="checkbox" bind:checked={expanded.value} />
+			<input type="checkbox" bind:checked={expanded.value} aria-label="Luaskan semua menu" />
 			<span class="swap-on"><Icon name="expand-all" /></span>
 			<span class="swap-off"><Icon name="collapse-all" /></span>
 		</label>
 	</div>
-	<div
-		class="lg:bg-base-200 lg:rounded-box lg:max-h-[calc(100dvh-13.5rem)] lg:overflow-y-auto lg:shadow-inner"
+	<ul
+		class="app-sidebar-menu menu bg-base-200 min-h-0 w-full flex-1 flex-nowrap overflow-y-auto rounded-lg p-1 shadow-inner"
 	>
 		{#each menuItems as menu (menu)}
 			{@render menu_item(menu)}
 		{:else}
 			<li>
-				<span class="italic opacity-50 text-sm"> Tidak ada hasil pencarian </span>
+				<span role="status" class="text-sm text-base-content/65">Tidak ada menu yang cocok.</span>
 			</li>
 		{/each}
-	</div>
+	</ul>
 </div>

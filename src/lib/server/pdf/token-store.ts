@@ -14,6 +14,7 @@ type PdfParams = {
 	parentSignature?: 'ayah' | 'ibu' | 'wali';
 	orientation?: 'landscape' | 'portrait';
 	layoutMode?: 'padat' | 'multi';
+	includeSchoolMarks?: boolean;
 	jenjang?: string;
 	periodeMode?: string;
 	tahunAjaranId?: number;

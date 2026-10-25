@@ -37,6 +37,7 @@ export const GET = (async ({ locals, params }) => {
 	if (stored.parentSignature) url.searchParams.set('ttd_wali', stored.parentSignature);
 	if (stored.orientation) url.searchParams.set('orientation', stored.orientation);
 	if (stored.layoutMode) url.searchParams.set('layout_mode', stored.layoutMode);
+	if (stored.includeSchoolMarks) url.searchParams.set('school_marks', '1');
 	if (stored.jenjang) url.searchParams.set('jenjang', stored.jenjang);
 	if (stored.periodeMode) url.searchParams.set('periode_mode', stored.periodeMode);
 	if (stored.tahunAjaranId) url.searchParams.set('tahun_ajaran_id', String(stored.tahunAjaranId));

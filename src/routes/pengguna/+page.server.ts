@@ -95,7 +95,7 @@ export async function load({ url, locals }) {
 					? and(eq(u.type, 'user'), sql`coalesce(${u.jabatanAkses}, '') != ${'operator'}`)
 					: eq(
 							u.type,
-							role as 'wali_kelas' | 'wali_asuh' | 'wali_asrama' | 'wali_murid' | 'tim_dapur'
+							role as 'wali_kelas' | 'wali_asuh' | 'wali_asrama' | 'wali_murid' | 'tim_dapur' | 'tim_keamanan'
 						)
 			: undefined,
 		parsedJabatan ? eq(u.jabatanAkses, parsedJabatan) : undefined,
@@ -368,7 +368,8 @@ export const actions = {
 			user: ['guru', 'kepala_sekolah'],
 			wali_asuh: ['wali_asuh'],
 			wali_asrama: ['wali_asrama'],
-			tim_dapur: ['tim_dapur', 'lainnya']
+			tim_dapur: ['tim_dapur', 'lainnya'],
+			tim_keamanan: ['keamanan']
 		};
 		const pegawai = await db.query.tablePegawai.findFirst({
 			columns: { id: true, nama: true, jenis: true, status: true },
@@ -594,7 +595,8 @@ export const actions = {
 				user: ['guru', 'kepala_sekolah'],
 				wali_asuh: ['wali_asuh'],
 				wali_asrama: ['wali_asrama'],
-				tim_dapur: ['tim_dapur', 'lainnya']
+				tim_dapur: ['tim_dapur', 'lainnya'],
+				tim_keamanan: ['keamanan']
 			};
 			if (!jabatanAkses && !allowedJenis[roleValue].includes(pegawai.jenis)) {
 				return fail(400, { message: 'Role tidak sesuai dengan jenis Data Pegawai' });

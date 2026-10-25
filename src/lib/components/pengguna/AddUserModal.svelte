@@ -85,6 +85,7 @@
 		wali_asuh: ['wali_asuh'],
 		wali_asrama: ['wali_asrama'],
 		tim_dapur: ['tim_dapur', 'lainnya'],
+		tim_keamanan: ['keamanan'],
 		operator: [],
 		wali_kelas: ['guru', 'kepala_sekolah'],
 		admin: []
@@ -331,7 +332,7 @@
 					</fieldset>
 				</div>
 
-				{#if type === 'user' || type === 'operator' || isEditMode}
+				{#if type === 'user' || type === 'operator' || (isEditMode && type !== 'tim_keamanan')}
 					<fieldset class="fieldset">
 						<legend class="fieldset-legend">Jabatan Akses</legend>
 						<select

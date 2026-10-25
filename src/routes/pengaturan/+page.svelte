@@ -8,6 +8,7 @@
 	import FirstLoginPasswordModal from '$lib/components/settings/first-login-password-modal.svelte';
 	import ProfileCard from '$lib/components/settings/profile-card.svelte';
 	import StorageCard from '$lib/components/settings/storage-card.svelte';
+	import PrintAssets from '$lib/components/settings/print-assets.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import { isAuthorizedUser } from '../pengguna/permissions';
 	import type { PageData } from './$types';
@@ -41,6 +42,7 @@
 	<AccountCards />
 
 	{#if isAdmin}
+		<PrintAssets scopes={data.printAssetScopes} />
 		<div class="grid gap-5 xl:grid-cols-2">
 			{#if data.guestBook}<GuestBookCard
 					publicUrl={data.guestBook.publicUrl}

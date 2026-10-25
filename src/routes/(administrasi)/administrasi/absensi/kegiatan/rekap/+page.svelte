@@ -315,6 +315,16 @@
 		</div>
 	{/if}
 
+	<div class="recap-monitoring border-base-200 border-t">
+		<AttendanceMonitoringPanel
+			alerts={data.monitoring.alerts}
+			permits={data.monitoring.izinPulang}
+			students={data.rows.map((row) => ({ id: row.id, nama: row.nama, nis: row.nis }))}
+			kelasId={data.kelasId}
+			today={data.monitoringToday}
+		/>
+	</div>
+
 	<section
 		class="recap-summary border-base-200 border-t p-4 sm:p-5"
 		aria-labelledby="recap-summary-title"
@@ -459,15 +469,6 @@
 			</div>
 		{/if}
 	</section>
-	<div class="recap-monitoring border-base-200 border-t">
-		<AttendanceMonitoringPanel
-			alerts={data.monitoring.alerts}
-			permits={data.monitoring.izinPulang}
-			students={data.rows.map((row) => ({ id: row.id, nama: row.nama, nis: row.nis }))}
-			kelasId={data.kelasId}
-			today={data.monitoringToday}
-		/>
-	</div>
 </div>
 
 <dialog class="modal" bind:this={importDialog}>
@@ -647,19 +648,6 @@
 	.recap-mobile-label {
 		display: none;
 	}
-	.recap-monitoring :global(section.card) {
-		border: 0;
-		border-radius: 0;
-		background: transparent;
-		box-shadow: none;
-		padding: 1.25rem;
-	}
-	.recap-monitoring :global(section.card > .mt-4 > div) {
-		min-width: 0;
-		border: 0;
-		border-radius: 0;
-		padding: 0;
-	}
 	.recap-monitoring :global(.form-control) {
 		display: flex;
 		flex-direction: column;
@@ -754,9 +742,6 @@
 		}
 		.recap-count[data-positive='true'] .recap-count-number {
 			background: transparent;
-		}
-		.recap-monitoring :global(section.card) {
-			padding: 1rem;
 		}
 	}
 	@media (min-width: 480px) and (max-width: 767px) {

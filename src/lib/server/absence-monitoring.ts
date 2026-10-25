@@ -137,7 +137,7 @@ export function effectiveIzinPulangStatus(
 ): IzinPulangStatus {
 	if (record.status === 'dibatalkan') return 'dibatalkan';
 	if (record.tanggalKembali) {
-		return record.tanggalKembali > record.rencanaKembali
+		return record.status === 'terlambat_kembali' || record.tanggalKembali > record.rencanaKembali
 			? 'terlambat_kembali'
 			: 'sudah_kembali';
 	}

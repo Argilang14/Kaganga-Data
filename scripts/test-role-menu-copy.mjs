@@ -373,9 +373,9 @@ try {
 			kegiatanId: prayers.sholat_zuhur,
 			muridId: students[1]
 		});
-		assert.equal(outside.status, 403, outside.text);
+		assert.equal(outside.status, role === 'wali_asrama' ? 200 : 403, outside.text);
 	}
-	check('Guardians: all five prayers on weekdays and weekends; unassigned children still denied');
+	check('Guardians: all five prayers; Wali Asuh assigned children, Wali Asrama school-wide');
 	for (const [role, tanggal, expected] of [
 		['guru', '2026-08-03', ['sholat_zuhur', 'sholat_asar']],
 		['guru', '2026-08-08', []],
@@ -390,7 +390,7 @@ try {
 		for (const kode of prayerCodes)
 			assert.equal(
 				options.parsed.activities.some((item) => item.id === prayers[kode]),
-				expected.includes(kode),
+				true,
 				role + tanggal + kode
 			);
 		const monitoring = await request(
@@ -437,7 +437,30 @@ try {
 		);
 		assert.equal(result.status, 200, result.text);
 	}
-	check('QR and summary options enforce the same prayer/date policy');
+	check('QR enforces prayer/date input policy; summary options retain read-only prayer access');
+	const attendanceCounts = await row('SELECT (SELECT count(*) FROM absensi_kegiatan) activities, (SELECT count(*) FROM absensi_harian) daily');
+	for (const [role, scanGroup, activityId, expected] of [
+		['admin', 'makan', kegiatan.sekolah, 403],
+		['admin', 'pegawai', kegiatan.sekolah, 400],
+		['guru', 'asrama', kegiatan.sekolah, 403],
+		['tim_dapur', 'sekolah', kegiatan.makan, 403]
+	]) {
+		const mismatch = await request(role, '/api/administrasi/absensi/scan', { token: qrTokens[0], mode: 'kegiatan', scanGroup, kegiatanId: activityId }, true);
+		assert.equal(mismatch.status, expected, role + scanGroup + mismatch.text);
+	}
+	assert.deepEqual(await row('SELECT (SELECT count(*) FROM absensi_kegiatan) activities, (SELECT count(*) FROM absensi_harian) daily'), attendanceCounts);
+	check('Forged scan group/activity combinations cannot change attendance');
+	const sharedPrayerReceipts = [];
+	for (const scanGroup of ['sekolah', 'asrama']) {
+		const scanned = await request('admin', '/api/administrasi/absensi/scan', { token: qrTokens[1], mode: 'kegiatan', scanGroup, kegiatanId: prayers.sholat_zuhur }, true);
+		assert.equal(scanned.status, 200, scanned.text);
+		sharedPrayerReceipts.push(scanned.parsed);
+	}
+	assert.equal(sharedPrayerReceipts[0].code, 'success');
+	assert.equal(sharedPrayerReceipts[1].code, 'already_present');
+	assert.equal(sharedPrayerReceipts[0].waktuScan, sharedPrayerReceipts[1].waktuScan);
+	assert.equal(Number((await row('SELECT count(*) n FROM absensi_kegiatan WHERE murid_id=? AND kegiatan_id=? AND tanggal=?', [students[1], prayers.sholat_zuhur, today])).n), 1);
+	check('Shared Zuhur source across School and Dorm modes records one attendance only');
 	await db.execute({
 		sql: 'UPDATE auth_user SET permissions=? WHERE id=?',
 		args: ['["absensi_koreksi_lama","absensi_impor"]', accounts.guru.id]
@@ -762,6 +785,10 @@ try {
 		assert.ok(hrefs.includes('/surat-menyurat/sppd'));
 		assert.ok(!hrefs.includes('/sekolah'));
 		assert.ok(!hrefs.includes('/pegawai'));
+		const mode = role === 'guru' ? 'sekolah' : role === 'tim_dapur' ? 'makan' : 'asrama';
+		assert.equal(await page.$eval('select[aria-label="Kegiatan absensi"]', (el) => el.disabled), true);
+		await page.select('select[aria-label="Mode scan"]', mode);
+		await page.waitForFunction(() => !document.querySelector('select[aria-label="Kegiatan absensi"]').disabled);
 		if (role === 'tim_dapur') {
 			const labels = await page.$eval('select[aria-label="Kegiatan absensi"]', (el) =>
 				[...el.options].map((o) => o.textContent)
@@ -770,12 +797,12 @@ try {
 			assert.ok(!labels.includes('QA sekolah'));
 		}
 		if (['guru', 'wali_asuh', 'wali_asrama'].includes(role)) {
-			const ids = await page.$eval('select[aria-label="Kegiatan absensi"]', (el) =>
-				[...el.options].map((o) => Number(o.value))
+			const keys = await page.$eval('select[aria-label="Kegiatan absensi"]', (el) =>
+				[...el.options].map((o) => o.value)
 			);
 			for (const kode of prayerCodes)
 				assert.equal(
-					ids.includes(prayers[kode]),
+					keys.includes(kode),
 					role !== 'guru' || (isWeekday && ['sholat_zuhur', 'sholat_asar'].includes(kode)),
 					role + kode
 				);
@@ -792,6 +819,53 @@ try {
 			fullPage: true
 		});
 	}
+	const offlinePage = await browser.newPage();
+	offlinePage.on('pageerror', (error) => errors.push(error.message));
+	await offlinePage.setCookie(
+		{ name: 'rapkumer-session', value: accounts.guru.token, url: base },
+		{ name: 'active-sekolah-id', value: String(school), url: base },
+		{ name: 'active-kelas-id', value: String(classA), url: base }
+	);
+	const studentQrImage = await (await import('qrcode')).default.toDataURL(qrTokens[0], { margin: 4, scale: 10 });
+	const queueKey = `kaganga-absensi-offline-v1:${school}:${accounts.guru.id}`;
+	await offlinePage.evaluateOnNewDocument((src) => {
+		localStorage.setItem('kaganga-absensi-offline-v1', '[{"id":"legacy-owner-unknown"}]');
+		localStorage.setItem('kaganga-absensi-offline-v1:other-school:other-user', '[{"id":"other-account"}]');
+		window.QA_SHOW_QR = false;
+		navigator.mediaDevices.getUserMedia = async () => {
+			const image = new Image(); image.src = src; await image.decode();
+			const canvas = document.createElement('canvas'); canvas.width = canvas.height = 720;
+			const ctx = canvas.getContext('2d'), stream = canvas.captureStream(15);
+			const draw = () => {
+				ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 720, 720);
+				if (window.QA_SHOW_QR) ctx.drawImage(image, 80, 80, 560, 560);
+				if (stream.getTracks().some((track) => track.readyState === 'live')) requestAnimationFrame(draw);
+			};
+			draw(); return stream;
+		};
+	}, studentQrImage);
+	await offlinePage.setViewport({ width: 390, height: 844 });
+	await offlinePage.goto(base + '/administrasi/absensi/scan', { waitUntil: 'networkidle0' });
+	await offlinePage.select('select[aria-label="Mode scan"]', 'sekolah');
+	await offlinePage.select('select[aria-label="Kegiatan absensi"]', 'qa_access_sekolah');
+	const startButton = await offlinePage.$$('button');
+	for (const button of startButton) if ((await button.evaluate((el) => el.textContent)).includes('Mulai Scan')) await button.click();
+	await offlinePage.waitForFunction(() => [...document.querySelectorAll('button')].some((button) => button.textContent.includes('Berhenti') && !button.disabled));
+	await offlinePage.setOfflineMode(true);
+	await offlinePage.evaluate(() => { window.QA_SHOW_QR = true; });
+	await offlinePage.waitForFunction((key) => JSON.parse(localStorage.getItem(key) ?? '[]').length === 1, { timeout: 30000 }, queueKey);
+	const pending = await offlinePage.evaluate((key) => JSON.parse(localStorage[key])[0], queueKey);
+	assert.equal(pending.scanGroup, 'sekolah');
+	assert.equal(Number(pending.kegiatanId), kegiatan.sekolah);
+	assert.equal(pending.mode, 'kegiatan');
+	for (const button of await offlinePage.$$('button')) if ((await button.evaluate((el) => el.textContent)).includes('Berhenti')) await button.click();
+	await offlinePage.screenshot({ path: path.join(folder, 'student-scan-offline-mobile.png'), fullPage: true });
+	await offlinePage.setOfflineMode(false);
+	await offlinePage.waitForFunction((key) => JSON.parse(localStorage.getItem(key) ?? '[]').length === 0, { timeout: 30000 }, queueKey);
+	assert.deepEqual(await offlinePage.evaluate(() => [JSON.parse(localStorage['kaganga-absensi-offline-v1']).length, JSON.parse(localStorage['kaganga-absensi-offline-v1:other-school:other-user']).length]), [1, 1]);
+	assert.equal(Number((await row('SELECT count(*) n FROM absensi_kegiatan WHERE murid_id=? AND kegiatan_id=? AND tanggal=?', [students[0], kegiatan.sekolah, today])).n), 1);
+	await offlinePage.screenshot({ path: path.join(folder, 'student-scan-synced-mobile.png'), fullPage: true });
+	check('Student camera scan queues offline with scoped activity, replays once, and never touches legacy/other-account queues');
 	assert.deepEqual(errors, []);
 	check('Desktop role navigation, kitchen dropdown and mobile profile verified');
 	assert.equal(

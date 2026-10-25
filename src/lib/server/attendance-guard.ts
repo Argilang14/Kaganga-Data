@@ -31,6 +31,7 @@ const actionPermissions: Record<string, AttendanceAction> = {
 	previewOne: 'lihat',
 	previewClass: 'lihat',
 	saveIzinPulang: 'izin_pulang',
+	updatePenjemput: 'izin_pulang',
 	markIzinReturned: 'izin_pulang',
 	cancelIzinPulang: 'izin_pulang',
 	saveFollowUp: 'koreksi'
@@ -88,15 +89,17 @@ export const attendanceGuard: Handle = async ({ event, resolve }) => {
 	if (isAttendance) {
 		const permission: AttendanceAction = path.endsWith('/pengaturan')
 			? 'pengaturan'
-			: path.endsWith('/scan')
-				? 'scan'
-				: path.endsWith('/export') || path === '/api/pdf/absensi-kegiatan'
-					? 'export'
-					: path.endsWith('/download-template')
-						? 'impor'
-						: form
-							? (actionPermissions[action] ?? 'pengaturan')
-							: 'lihat';
+			: path === '/api/administrasi/absensi/scan/perjalanan' || path === '/administrasi/absensi/konfirmasi-pulang'
+				? 'perjalanan'
+				: path.endsWith('/scan')
+					? 'scan'
+					: path.endsWith('/export') || path === '/api/pdf/absensi-kegiatan'
+						? 'export'
+						: path.endsWith('/download-template')
+							? 'impor'
+							: form
+								? (actionPermissions[action] ?? 'pengaturan')
+								: 'lihat';
 		if (!canAttendance(user, permission))
 			throw error(403, 'Izin tindakan absensi belum diberikan oleh admin.');
 	}
@@ -158,7 +161,7 @@ export const attendanceGuard: Handle = async ({ event, resolve }) => {
 		) {
 			throw error(403, 'Absensi harian sekolah hanya untuk petugas sekolah.');
 		}
-		if (['markIzinReturned', 'cancelIzinPulang'].includes(action)) {
+		if (['markIzinReturned', 'cancelIzinPulang', 'updatePenjemput'].includes(action)) {
 			const permit = await db.query.tableIzinPulangMurid.findFirst({
 				where: and(
 					eq(tableIzinPulangMurid.id, Number(form.get('id'))),

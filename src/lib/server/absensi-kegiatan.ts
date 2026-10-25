@@ -1,4 +1,7 @@
 import db from '$lib/server/db';
+import { loadAttendancePermits } from './attendance-permits';
+import { permitCoversMonitoring } from '$lib/attendance-monitoring';
+import { canonicalAttendanceActivityCode } from '$lib/attendance-activity';
 import {
 	canAttendance,
 	canAttendActivity,
@@ -315,10 +318,12 @@ export async function applyAutoAlfaKegiatan(params: {
 		)
 	});
 	const existingKeys = new Set(existingRows.map((row) => `${row.muridId}:${row.kegiatanId}`));
+	const permits = await loadAttendancePermits(params.sekolahId, muridIds, params.tanggal);
 	const now = (params.now ?? new Date()).toISOString();
 	const values = endedKegiatanRows.flatMap((kegiatan) =>
 		muridRows
-			.filter((murid) => !existingKeys.has(`${murid.id}:${kegiatan.id}`))
+			.filter((murid) => !existingKeys.has(`${murid.id}:${kegiatan.id}`) &&
+				!permits.some((permit) => permit.muridId === murid.id && permitCoversMonitoring(params.tanggal, kegiatan.jamMulai, permit, params.now)))
 			.map((murid) => ({
 				sekolahId: params.sekolahId,
 				semesterId: params.semesterId,
@@ -441,10 +446,10 @@ export async function ensureDefaultAbsensiKegiatan(sekolahId: number, codes?: re
 			columns: { kode: true },
 			where: eq(tableKegiatanAbsensi.sekolahId, sekolahId)
 		});
-		const existingCodes = new Set(existingRows.map((row) => row.kode));
+		const existingCodes = new Set(existingRows.map((row) => canonicalAttendanceActivityCode(row.kode)));
 		const now = new Date().toISOString();
 		const values = DEFAULT_ABSENSI_KEGIATAN.filter(
-			(item) => (!codes || codes.includes(item.kode)) && !existingCodes.has(item.kode)
+			(item) => (!codes || codes.includes(item.kode)) && !existingCodes.has(canonicalAttendanceActivityCode(item.kode))
 		).map((item) => ({
 			sekolahId,
 			kode: item.kode,

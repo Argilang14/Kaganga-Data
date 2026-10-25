@@ -1,4 +1,6 @@
 import { jakartaToday } from './dashboard-summary.ts';
+import { travelLocalTime } from './attendance-travel.ts';
+import { canonicalAttendanceActivityCode, selectAttendanceActivitySources } from './attendance-activity.ts';
 
 export const monitoringTabs = [
 	{ key: 'sekolah', label: 'Sekolah', icon: 'school' },
@@ -105,6 +107,7 @@ export type MonitoringPermit = {
 	waktuKeluar: string | null;
 	tanggalKembali: string | null;
 	waktuKembali: string | null;
+	perjalanan?: { keluarPada: string | null; kembaliPada: string | null } | null;
 };
 export type MonitoringCell = {
 	status: MonitoringStatus;
@@ -131,8 +134,8 @@ export function resolveMonitoringColumns(
 		.filter((slot) => slot.tab === normalizeMonitoringTab(tab))
 		.map((slot) => {
 			const raw = params.get(`sumber_${slot.key}`);
-			const defaultActivity = activities.find(
-				(item) => item.kode === slot.code && item.kategori === slot.category
+			const defaultActivity = selectAttendanceActivitySources(activities).find(
+				(item) => canonicalAttendanceActivityCode(item.kode) === slot.code && item.kategori === slot.category
 			);
 			const source =
 				raw ??
@@ -174,14 +177,20 @@ function fullTime(value: string | null, fallback: string) {
 export function permitCoversMonitoring(
 	date: string,
 	time: string | null,
-	permit: MonitoringPermit
+	permit: MonitoringPermit,
+	now = new Date()
 ) {
-	const start = `${permit.tanggalKeluar}T${fullTime(permit.waktuKeluar, '23:59:59')}`;
+	const actualDeparture = permit.perjalanan?.keluarPada
+		? travelLocalTime(new Date(permit.perjalanan.keluarPada)) : null;
+	const start = actualDeparture ? `${actualDeparture.date}T${actualDeparture.time}`
+		: `${permit.tanggalKeluar}T${fullTime(permit.waktuKeluar, '23:59:59')}`;
 	const end = permit.tanggalKembali
 		? `${permit.tanggalKembali}T${fullTime(permit.waktuKembali, '00:00:00')}`
 		: null;
-	const pointStart = `${date}T${fullTime(time, '00:00:00')}`;
-	const pointEnd = validTime(time) ? pointStart : `${date}T23:59:59`;
+	const localNow = travelLocalTime(now);
+	const currentUnscheduled = !validTime(time) && date === localNow.date;
+	const pointStart = `${date}T${currentUnscheduled ? localNow.time : fullTime(time, '00:00:00')}`;
+	const pointEnd = validTime(time) || currentUnscheduled ? pointStart : `${date}T23:59:59`;
 	return start <= pointStart && (end === null || end > pointEnd);
 }
 
@@ -220,6 +229,7 @@ export function buildMonitoringRows(input: {
 				const record = records.get(`${student.id}:${column.activityId ?? 'harian'}`);
 				if (
 					record &&
+					!(record.metode === 'auto' && permits.get(student.id)?.some((permit) => permitCoversMonitoring(input.date, column.time, permit))) &&
 					['hadir', 'terlambat', 'sakit', 'izin', 'alfa', 'pulang'].includes(record.status)
 				)
 					return {

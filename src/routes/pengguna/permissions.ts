@@ -149,6 +149,7 @@ export const groupedUserPermissions = {
 			['koreksi_lama', 'Input dan Koreksi Tanggal Lama'],
 			['export', 'Ekspor Rekap Sesuai Penugasan'],
 			['izin_pulang', 'Kelola Izin Pulang dan Kepulangan'],
+			['perjalanan', 'Scan Keberangkatan dan Kedatangan Berdasarkan Izin Pulang'],
 			['impor', 'Impor Absensi Massal'],
 			['pengaturan', 'Kelola Pengaturan Kegiatan'],
 			['qr_manage', 'Terbitkan Ulang atau Reset QR'],
@@ -250,6 +251,7 @@ export function permissionsForAccessPosition(position?: AccessPosition | null): 
 }
 
 export function basicAttendancePermissionsForType(type?: string | null): UserPermission[] {
+	if (type === 'tim_keamanan') return ['absensi_scan', 'absensi_perjalanan'];
 	return ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'tim_dapur'].includes(type ?? '')
 		? ['absensi_lihat', 'absensi_scan', 'absensi_input', 'absensi_koreksi', 'absensi_export']
 		: [];

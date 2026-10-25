@@ -1,4 +1,5 @@
 import { hasSchoolWideOperationalAccess } from './access-position.ts';
+import { canonicalAttendanceActivityCode } from './attendance-activity.ts';
 
 export const attendanceActions = [
 	'lihat',
@@ -8,6 +9,7 @@ export const attendanceActions = [
 	'koreksi_lama',
 	'export',
 	'izin_pulang',
+	'perjalanan',
 	'impor',
 	'pengaturan',
 	'qr_manage',
@@ -35,6 +37,7 @@ export const basicAttendanceActions = new Set<AttendanceAction>([
 export function canAttendance(user: AttendanceUser, action: AttendanceAction) {
 	if (!user) return false;
 	if (hasSchoolWideOperationalAccess(user)) return true;
+	if (user.type === 'tim_keamanan') return action === 'scan' || action === 'perjalanan';
 	if (user.permissions?.includes(`absensi_${action}`)) return true;
 	return (
 		basicAttendanceActions.has(action) &&
@@ -44,6 +47,7 @@ export function canAttendance(user: AttendanceUser, action: AttendanceAction) {
 }
 
 export function canViewAttendanceActivity(user: AttendanceUser, category?: string) {
+	if (user?.type === 'tim_keamanan' && !hasSchoolWideOperationalAccess(user)) return false;
 	return user?.type !== 'tim_dapur' || hasSchoolWideOperationalAccess(user) || category === 'makan';
 }
 
@@ -74,13 +78,16 @@ export function canAttendActivity(
 ) {
 	if (!canAttendance(user, 'input')) return false;
 	if (hasSchoolWideOperationalAccess(user)) return true;
+	if (category === 'makan') return user?.type === 'tim_dapur';
 	if (user?.type === 'tim_dapur') return category === 'makan';
+	if (category === 'sekolah' && !['user', 'wali_kelas'].includes(user?.type ?? '')) return false;
+	if (category === 'asrama' && !['wali_asuh', 'wali_asrama'].includes(user?.type ?? '')) return false;
 	if (category === 'sholat') {
 		if (['wali_asuh', 'wali_asrama'].includes(user?.type ?? '')) return true;
 		if (['user', 'wali_kelas'].includes(user?.type ?? '')) {
 			if (
-				!['sholat_zuhur', 'sholat_dzuhur', 'sholat_asar', 'sholat_ashar'].includes(
-					context?.kode ?? ''
+				!['sholat_zuhur', 'sholat_asar'].includes(
+					canonicalAttendanceActivityCode(context?.kode ?? '')
 				)
 			)
 				return false;

@@ -8,6 +8,7 @@
 		| 'piagam'
 		| 'keasramaan'
 		| 'kartu-absensi'
+		| 'qr-kelas'
 		| 'kartu-ujian'
 		| 'kartu-ujian-meja'
 		| 'jadwal-pelajaran'

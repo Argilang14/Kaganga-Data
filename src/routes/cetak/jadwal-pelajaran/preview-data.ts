@@ -2,6 +2,7 @@ import { normalizeJadwalKegiatanKode, normalizeJadwalKode } from '$lib/jadwal-sl
 import { error, redirect } from '@sveltejs/kit';
 import db from '$lib/server/db';
 import { getDocumentEducationIdentity } from '$lib/server/education-units';
+import { getSchoolPrintAssets, type PrintAssetScope } from '$lib/server/print-assets';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { ensureJadwalKegiatanTerintegrasi } from '$lib/server/db/reconcile-jadwal-kegiatan';
 import {
@@ -240,12 +241,20 @@ export async function getJadwalPelajaranPreviewPayload({
 		getLogoDinasSrc(sekolahId),
 		resolveWakaKurikulumSignature(sekolahId, wakaKurikulumPegawaiId)
 	]);
+	const identity = await getDocumentEducationIdentity(sekolahAktif, { jenjang: selectedJenjang });
+	const assetScope: PrintAssetScope = identity.satuanId ? identity.jenjang as PrintAssetScope : 'induk';
+	const printAssets = await getSchoolPrintAssets(sekolahId, assetScope, orientation);
+	if (url.searchParams.get('school_marks') !== '1') {
+		printAssets.signatureUrl = null;
+		printAssets.stampUrl = null;
+	}
 
 	return {
 		meta: { title: 'Jadwal Pelajaran - ' + jenjangLabel },
 		jadwalPelajaranData: {
 			sekolah: {
-				nama: (await getDocumentEducationIdentity(sekolahAktif, { jenjang: selectedJenjang })).nama,
+				nama: identity.nama,
+				...printAssets,
 				naungan: sekolahAktif.naungan,
 				alamat: composeAlamat(sekolahAktif),
 				email: sekolahAktif.email,

@@ -1,6 +1,7 @@
 <script lang="ts">
 	/* eslint-disable svelte/no-navigation-without-resolve */
 	import { page } from '$app/state';
+	import { onNavigate } from '$app/navigation';
 	import DarkMode from '$lib/components/dark-mode.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import Task from '$lib/components/tasks.svelte';
@@ -20,7 +21,15 @@
 		pegawaiName?: string;
 		username?: string;
 		permissions?: string[];
-		type?: 'admin' | 'user' | 'wali_kelas' | 'wali_asuh' | 'wali_asrama' | 'wali_murid' | 'tim_dapur';
+		type?:
+			| 'admin'
+			| 'user'
+			| 'wali_kelas'
+			| 'wali_asuh'
+			| 'wali_asrama'
+			| 'wali_murid'
+			| 'tim_dapur'
+			| 'tim_keamanan';
 	};
 
 	let {
@@ -120,6 +129,15 @@
 	function toggleTasksPopup() {
 		showTasksPopup = !showTasksPopup;
 	}
+	function closeTasksPopup(restoreFocus = false) {
+		showTasksPopup = false;
+		if (restoreFocus) taskButtonRef?.focus();
+	}
+	onNavigate(() => closeTasksPopup());
+	function toggleMobileDrawer() {
+		const drawer = document.getElementById('my-drawer-2') as HTMLInputElement | null;
+		if (drawer) drawer.checked = !drawer.checked;
+	}
 
 	async function refreshNotificationCount() {
 		if (!canViewNotifications) {
@@ -137,6 +155,11 @@
 	}
 
 	onMount(() => {
+		const handleEscape = (event: KeyboardEvent) => {
+			if (event.key === 'Escape' && showTasksPopup) {
+				closeTasksPopup(true);
+			}
+		};
 		const handlePointerDown = (event: PointerEvent) => {
 			if (!showTasksPopup) return;
 			const target = event.target as Node | null;
@@ -146,10 +169,12 @@
 		};
 
 		document.addEventListener('pointerdown', handlePointerDown, true);
+		document.addEventListener('keydown', handleEscape);
 		void refreshNotificationCount();
 		const refreshTimer = window.setInterval(() => void refreshNotificationCount(), 60_000);
 		return () => {
 			document.removeEventListener('pointerdown', handlePointerDown, true);
+			document.removeEventListener('keydown', handleEscape);
 			window.clearInterval(refreshTimer);
 		};
 	});
@@ -174,14 +199,23 @@
 
 <div class="app-navbar navbar bg-base-100 border-base-200 sticky top-0 z-50 min-w-0">
 	<div class="flex-none lg:hidden">
-		<label for="my-drawer-2" class="btn btn-square btn-ghost drawer-button">
+		<button
+			type="button"
+			aria-label="Buka menu"
+			title="Buka menu"
+			class="btn btn-square btn-ghost drawer-button"
+			onclick={toggleMobileDrawer}
+		>
 			<span class="text-lg">
 				<Icon name="menu-drawer" />
 			</span>
-		</label>
+		</button>
 	</div>
 
-	<span class="app-navbar-title mx-1 min-w-0 flex-1 truncate px-2 text-base font-bold sm:mx-2 sm:text-lg">{page.data.meta?.title || ''}</span>
+	<span
+		class="app-navbar-title mx-1 min-w-0 flex-1 truncate px-2 text-base font-bold sm:mx-2 sm:text-lg"
+		>{page.data.meta?.title || ''}</span
+	>
 	<div class="ml-auto min-w-0 flex-none">
 		<ul class="app-navbar-actions flex items-center px-1">
 			{#if canViewNotifications}
@@ -219,6 +253,7 @@
 					class:btn-active={showTasksPopup}
 					aria-label="Daftar Tugas"
 					aria-expanded={showTasksPopup}
+					aria-controls={showTasksPopup ? 'app-task-popup' : undefined}
 					title="Daftar Tugas"
 					onclick={toggleTasksPopup}
 				>
@@ -229,8 +264,9 @@
 
 				{#if showTasksPopup}
 					<div
+						id="app-task-popup"
 						bind:this={taskPopupRef}
-						class="bg-base-100 border-base-300 absolute top-full right-0 z-20 mt-3 w-[min(92vw,24rem)] rounded-xl border p-0 shadow-xl"
+						class="app-task-popup bg-base-100 border-base-300 border p-0 shadow-xl"
 					>
 						<Task variant="popup" />
 					</div>
@@ -258,18 +294,19 @@
 			<!-- Dropdown ganti kelas -->
 			<li class="ml-1 sm:ml-2">
 				<div class="dropdown dropdown-end">
-					<div
-						tabindex="0"
-						role="button"
+					<button
+						type="button"
+						aria-label={`Ganti kelas: ${kelasAktifLabel}`}
 						title="Ganti kelas"
+						onclick={(event) => event.currentTarget.focus()}
 						class="btn btn-soft app-class-switcher rounded-full shadow-none"
 					>
 						<span class="hidden sm:block">{excerpt(kelasAktifLabel, 16)}</span>
 						<Icon name="users" class="sm:hidden" />
 						<Icon name="select" class="hidden sm:block" />
-					</div>
+					</button>
 					<ul
-						class="border-base-300 menu dropdown-content bg-base-100 ring-opacity-5 z-1 mt-5 mr-1 w-72 max-w-[calc(100vw-1rem)] origin-top-right rounded-xl border p-4 shadow-xl focus:outline-none"
+						class="app-class-menu border-base-300 menu dropdown-content bg-base-100 ring-opacity-5 z-1 mt-2 mr-1 w-72 max-w-[calc(100vw-1rem)] origin-top-right rounded-lg border p-4 shadow-xl"
 					>
 						<!-- alert akun admin -->
 						{#if user?.type === 'admin'}
@@ -306,10 +343,17 @@
 								<Icon name="info" />
 								<span><strong>{displayUserName}</strong> - Tim Dapur</span>
 							</div>
+						{:else if user?.type === 'tim_keamanan'}
+							<div role="alert" class="alert alert-info mb-4">
+								<Icon name="info" />
+								<span><strong>{displayUserName}</strong> - Tim Keamanan</span>
+							</div>
 						{/if}
 
 						{#if page.data.assignmentSummary}
-							<p class="text-base-content/65 mb-4 text-sm break-words">{page.data.assignmentSummary}</p>
+							<p class="text-base-content/65 mb-4 text-sm break-words">
+								{page.data.assignmentSummary}
+							</p>
 						{/if}
 
 						<div class="flex items-center gap-4">

@@ -8,7 +8,7 @@ import {
 } from './bulk-user.ts';
 
 test('bulk role accepts teacher, guardians, kitchen team and operator', () => {
-	for (const role of ['user', 'wali_asuh', 'wali_asrama', 'tim_dapur', 'operator'])
+	for (const role of ['user', 'wali_asuh', 'wali_asrama', 'tim_dapur', 'tim_keamanan', 'operator'])
 		assert.equal(parseBulkUserRole(role), role);
 	for (const role of ['admin', 'kepala_sekolah', 'wali_kelas', '', undefined])
 		assert.equal(parseBulkUserRole(role), null);
@@ -19,6 +19,7 @@ test('bulk username collisions and diacritics remain deterministic', () => {
 	assert.equal(proposeBulkUsername('user', '\u00C1ri', 8, used), 'guru.ari');
 	assert.equal(proposeBulkUsername('wali_asuh', '___', 9, used), 'asuh.pegawai9');
 	assert.equal(proposeBulkUsername('tim_dapur', 'Siti', 10, used), 'dapur.siti');
+	assert.equal(proposeBulkUsername('tim_keamanan', 'Siti', 10, used), 'keamanan.siti');
 	assert.equal(proposeBulkUsername('operator', 'Siti', 11, used), 'operator.siti');
 	assert.equal(proposeBulkUsername('wali_asrama', 'A'.repeat(200), 99, used).length, 47);
 });

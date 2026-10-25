@@ -683,7 +683,7 @@ export async function scanClassMeeting(
 		if (isUniqueConflict(cause)) throw error(409, 'Pertemuan ini sudah pernah dipindai.');
 		throw cause;
 	}
-	return { ok: true, key: input.key, scannedAt: now };
+	return { ok: true, key: input.key, scannedAt: now, guruNama: actor.nama };
 }
 
 export async function manageClassAbsence(
@@ -785,6 +785,22 @@ export async function manageClassAbsence(
 		throw cause;
 	}
 	return { ok: true, key: input.key };
+}
+
+export async function loadClassQrPrintContext(locals: App.Locals) {
+	const { user, sekolahId } = requiredContext(locals);
+	if (!classMonitoringCapabilities(user).canManage)
+		throw error(403, 'QR kelas hanya dapat dikelola manajer.');
+	const academic = await resolveSekolahAcademicContext(sekolahId);
+	const tahun = academic.tahunAjaranList.find((item) => item.id === academic.activeTahunAjaranId);
+	const semester = tahun?.semester.find((item) => item.id === academic.activeSemesterId);
+	return {
+		sekolahNama: locals.sekolah?.nama ?? '',
+		contextLabel: [tahun?.nama, semester?.nama].filter(Boolean).join(' - '),
+		kelasList: academic.activeTahunAjaranId
+			? (await loadClasses(sekolahId, academic.activeTahunAjaranId)).map(({ id, nama }) => ({ id, nama }))
+			: []
+	};
 }
 
 async function qrCards(locals: App.Locals, kelasIds: number[], reset: boolean, request?: Request) {

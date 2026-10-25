@@ -1,7 +1,9 @@
 import { error } from '@sveltejs/kit';
-import { and, asc, eq, inArray, lte, gt, ne, or, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, lte, gte, ne, or, isNull } from 'drizzle-orm';
+import { permitCoversMonitoring } from '$lib/attendance-monitoring';
 import {
 	canAttendance,
+	attendanceDateAllowed,
 	canAttendActivity,
 	canViewAttendanceActivity,
 	hasSchoolWideAttendanceStudentAccess,
@@ -14,10 +16,19 @@ import {
 	isSummaryDate,
 	selectSummaryClasses,
 	type SummaryScope,
+	type SummaryStatus,
 	type SummaryLevel
 } from '$lib/attendance-summary';
 import db from './db';
-import { tableAbsensiKegiatan, tableIzinPulangMurid, tableMurid, tableKelas } from './db/schema';
+import {
+	tableAbsensiKegiatan,
+	tableIzinPulangMurid,
+	tableMurid,
+	tableKelas,
+	tableKegiatanAbsensi
+} from './db/schema';
+import { buildMonitoringRows, resolveMonitoringColumns } from '$lib/attendance-monitoring';
+import { connectSchoolDormRows } from '$lib/attendance-school-dorm';
 import { loadAbsensiKelasOptions, todayLocalDate } from './absensi-digital';
 import { loadKegiatanAbsensiOptions } from './absensi-kegiatan';
 import { activeMuridFilter } from './murid-query';
@@ -60,7 +71,14 @@ export async function loadSummaryOptions(locals: App.Locals, date = todayLocalDa
 			nama: item.nama,
 			jenjang: inferSummaryLevel(item, sekolah.jenjangPendidikan)
 		})),
-		activities: kegiatanList.map((item) => ({ id: item.id, nama: item.nama })),
+		activities: kegiatanList.map((item) => ({
+			id: item.id,
+			nama: item.nama,
+			jamMulai: item.jamMulai,
+			kode: item.kode,
+			kategori: item.kategori,
+			aksesEdit: item.aksesEdit
+		})),
 		canAllScopes: allStudents,
 		schoolWideSummary,
 		restrictedStudents: !allStudents && ['wali_asuh', 'wali_asrama'].includes(user.type),
@@ -113,7 +131,7 @@ export async function loadAttendanceSummary(locals: App.Locals, params: URLSearc
 	const studentIds = students.map((item) => item.id);
 	const attendance = studentIds.length
 		? await db.query.tableAbsensiKegiatan.findMany({
-				columns: { muridId: true, status: true },
+				columns: { muridId: true, status: true, metode: true },
 				where: and(
 					eq(tableAbsensiKegiatan.sekolahId, schoolId),
 					eq(tableAbsensiKegiatan.semesterId, options.semesterId),
@@ -130,7 +148,14 @@ export async function loadAttendanceSummary(locals: App.Locals, params: URLSearc
 	// An actual permit is required for (p); a normal departure is not an absence.
 	const permits = studentIds.length
 		? await db.query.tableIzinPulangMurid.findMany({
-				columns: { muridId: true },
+				columns: {
+					muridId: true,
+					tanggalKeluar: true,
+					waktuKeluar: true,
+					tanggalKembali: true,
+					waktuKembali: true
+				},
+				with: { perjalanan: true },
 				where: and(
 					eq(tableIzinPulangMurid.sekolahId, schoolId),
 					eq(tableIzinPulangMurid.tahunAjaranId, options.tahunAjaranId ?? -1),
@@ -139,11 +164,66 @@ export async function loadAttendanceSummary(locals: App.Locals, params: URLSearc
 					lte(tableIzinPulangMurid.tanggalKeluar, tanggal),
 					or(
 						isNull(tableIzinPulangMurid.tanggalKembali),
-						gt(tableIzinPulangMurid.tanggalKembali, tanggal)
+						gte(tableIzinPulangMurid.tanggalKembali, tanggal)
 					)
 				)
 			})
 		: [];
+	const covered = new Set(
+		permits.flatMap((item) =>
+			item.muridId && permitCoversMonitoring(tanggal, activity.jamMulai, item) ? [item.muridId] : []
+		)
+	);
+	const effectiveAttendance: Array<{ muridId: number; status: SummaryStatus }> = attendance.filter(
+		(row) => row.metode !== 'auto' || !covered.has(row.muridId)
+	);
+	// Reuse monitoring's paired school/dorm projection; never persist a synthetic copy.
+	const linked = await db.query.tableKegiatanAbsensi.findMany({
+		where: and(
+			eq(tableKegiatanAbsensi.sekolahId, schoolId),
+			eq(tableKegiatanAbsensi.aktif, true),
+			inArray(tableKegiatanAbsensi.kode, [
+				'apel_berangkat',
+				'apel_pulang',
+				'asrama_berangkat',
+				'asrama_tiba'
+			])
+		)
+	});
+	const columns = [
+		...resolveMonitoringColumns('sekolah', linked, new URLSearchParams()),
+		...resolveMonitoringColumns('asrama', linked, new URLSearchParams())
+	];
+	const index = columns.findIndex((column) => column.activityId === activityId);
+	if (index >= 0 && studentIds.length) {
+		const records = await db.query.tableAbsensiKegiatan.findMany({
+			where: and(
+				eq(tableAbsensiKegiatan.sekolahId, schoolId),
+				eq(tableAbsensiKegiatan.semesterId, options.semesterId),
+				eq(tableAbsensiKegiatan.tanggal, tanggal),
+				inArray(tableAbsensiKegiatan.muridId, studentIds),
+				inArray(
+					tableAbsensiKegiatan.kegiatanId,
+					linked.map((item) => item.id)
+				)
+			)
+		});
+		const rows = connectSchoolDormRows(
+			buildMonitoringRows({
+				date: tanggal,
+				columns,
+				records,
+				permits,
+				students: students.map((item) => ({ ...item, kelas: '' }))
+			}),
+			columns
+		);
+		for (const row of rows) {
+			const cell = row.cells[index];
+			if (cell.source === 'terhubung' && (cell.status === 'sakit' || cell.status === 'izin'))
+				effectiveAttendance.push({ muridId: row.id, status: cell.status });
+		}
+	}
 	const report = buildAttendanceSummary({
 		tanggal,
 		kegiatan: activity.nama,
@@ -151,10 +231,38 @@ export async function loadAttendanceSummary(locals: App.Locals, params: URLSearc
 		jenjang: level,
 		classes,
 		students,
-		attendance,
-		permitStudentIds: permits.flatMap((item) => (item.muridId ? [item.muridId] : [])),
+		attendance: effectiveAttendance,
+		permitStudentIds: [...covered],
 		restrictedStudents: options.restrictedStudents
 	});
+	const editable =
+		canAttendance(locals.user, 'input') &&
+		attendanceDateAllowed(locals.user, tanggal, options.today) &&
+		canAttendActivity(locals.user, activity.aksesEdit, activity.kategori, {
+			kode: activity.kode,
+			tanggal
+		});
+	const inputStudents =
+		editable && studentIds.length
+			? await db.query.tableMurid.findMany({
+					columns: { id: true },
+					where: and(
+						await studentAccessCondition(locals.user, schoolId, options.semesterId),
+						activeMuridFilter(),
+						inArray(tableMurid.id, studentIds)
+					)
+				})
+			: [];
+	const allowed = new Set(inputStudents.map((item) => item.id));
+	const recorded = new Set(attendance.map((item) => item.muridId));
+	for (const student of report.missingStudents) {
+		student.canEdit = allowed.has(student.id) && !recorded.has(student.id);
+		student.reason = recorded.has(student.id)
+			? 'Status pulang sebelumnya perlu diperiksa di Catat Absensi.'
+			: student.canEdit
+				? ''
+				: 'Input di luar penugasan, kegiatan, atau tanggal yang diizinkan.';
+	}
 	if (scope === 'jenjang') {
 		for (const kelas of options.classes.filter((item) => item.jenjang === 'unknown'))
 			report.warnings.push(

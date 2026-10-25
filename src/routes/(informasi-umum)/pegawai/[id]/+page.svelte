@@ -66,6 +66,7 @@
 		wali_asuh: 'Wali Asuh',
 		wali_asrama: 'Wali Asrama',
 		tim_dapur: 'Tim Dapur',
+		tim_keamanan: 'Tim Keamanan',
 		user: 'Guru/User'
 	};
 

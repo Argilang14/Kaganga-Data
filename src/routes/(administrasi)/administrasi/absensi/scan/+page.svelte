@@ -2,7 +2,16 @@
 	import { resolve } from '$app/paths';
 	import Icon from '$lib/components/icon.svelte';
 	import AttendanceSummaryDialog from '$lib/components/absensi/AttendanceSummaryDialog.svelte';
-	import { onDestroy, onMount } from 'svelte';
+	import TravelScanConfirmation from '$lib/components/absensi/TravelScanConfirmation.svelte';
+	import DuplicateScanNotice from '$lib/components/absensi/DuplicateScanNotice.svelte';
+	import { showModal, hideModalIf } from '$lib/components/global-modal.svelte';
+	import type { TravelVerification } from '$lib/attendance-travel';
+	import type {
+		AttendanceScanGroup,
+		AttendanceScanMode,
+		ClassScanOptions
+	} from '$lib/attendance-scan';
+	import { onDestroy, onMount, tick, untrack } from 'svelte';
 
 	type ScanResult = {
 		ok: boolean;
@@ -13,6 +22,7 @@
 		petugas?: { id: number; nama: string } | null;
 		metode?: string;
 		mode?: 'sekolah' | 'kegiatan';
+		meeting?: ClassScanOptions['meetings'][number];
 		kegiatan?: { id: number; nama: string };
 		murid?: {
 			id: number;
@@ -30,8 +40,12 @@
 		aksesEdit: 'sekolah' | 'asrama' | 'semua';
 	};
 	type PageData = {
-		canScanSekolah: boolean;
 		kegiatanList: Kegiatan[];
+		scanGroups: AttendanceScanGroup[];
+		offlineScope: string;
+		canSummary: boolean;
+		canRecordActivities: boolean;
+		travelEntry?: { operation: string; permitId: number | null } | null;
 	};
 	type PendingScan = {
 		id: string;
@@ -40,6 +54,7 @@
 		kegiatanId: string | null;
 		status: string | null;
 		capturedAt: string;
+		scanGroup?: AttendanceScanMode;
 	};
 
 	const OFFLINE_QUEUE_KEY = 'kaganga-absensi-offline-v1';
@@ -53,7 +68,34 @@
 	let scannerStarting = $state(false);
 	let loading = $state(false);
 	let result = $state<ScanResult | null>(null);
+	let resultElement = $state<HTMLDivElement>();
+	let duplicateVisible = $state(false);
+	$effect(() => {
+		if (result?.code === 'already_present') {
+			const duplicate = result;
+			duplicateVisible = true;
+			untrack(() =>
+				showModal({
+					title: duplicate.metode === 'qr' ? 'Sudah Dipindai' : 'Sudah Tercatat',
+					body: DuplicateScanNotice,
+					bodyProps: {
+						record: duplicate,
+						activity: activityLabel(duplicate),
+						status: statusLabel(duplicate.status)
+					},
+					dismissible: true,
+					onNeutral: { label: 'Lanjutkan Scan', icon: 'play' },
+					onClose: () => {
+						duplicateVisible = false;
+					}
+				})
+			);
+			void tick().then(() => resultElement?.scrollIntoView({ block: 'nearest' }));
+		}
+	});
 	let studentInfo = $state<ScanResult | null>(null);
+	let travelVerification = $state<TravelVerification | null>(null);
+	let travelToken = '';
 	let scanHistory = $state<ScanResult[]>([]);
 	let errorMessage = $state('');
 	let lastToken = '';
@@ -61,22 +103,79 @@
 	let controls: { stop: () => void } | null = null;
 	let cameraDevices = $state<MediaDeviceInfo[]>([]);
 	let cameraDeviceId = $state('');
-	let scanMode = $state<'sekolah' | 'kegiatan'>('kegiatan');
+	let scanMode = $state<AttendanceScanMode | ''>('');
 	let kegiatanId = $state('');
+	let classOptions = $state<ClassScanOptions | null>(null);
+	let meetingKey = $state('');
+	let loadingMeetings = $state(false);
+	let meetingError = $state('');
+	let legacyPendingCount = $state(0);
+	let scannerGeneration = 0;
+	let meetingGeneration = 0;
 	let statusOverride = $state('');
 	let isOnline = $state(true);
 	let pendingCount = $state(0);
 	let syncing = $state(false);
 
-	const kegiatanAktif = $derived.by(() => {
-		const id = Number(kegiatanId);
-		return data.kegiatanList.find((item) => item.id === id) ?? null;
-	});
+	const selectedGroup = $derived(data.scanGroups.find((group) => group.mode === scanMode));
+	const selectedActivity = $derived(
+		selectedGroup?.activities.find((item) => item.key === kegiatanId)
+	);
+	const activityId = $derived(
+		selectedActivity?.activityId ? String(selectedActivity.activityId) : ''
+	);
+	const kegiatanAktif = $derived(data.kegiatanList.find((item) => item.id === Number(activityId)));
+	const selectedMeeting = $derived(classOptions?.meetings.find((item) => item.key === meetingKey));
+	const locked = $derived(
+		scannerActive || scannerStarting || loading || syncing || !!travelVerification || duplicateVisible
+	);
+	const selectionReady = $derived(
+		selectedGroup?.status === 'available' &&
+			!!selectedActivity &&
+			(!selectedGroup.onlineRequired || isOnline) &&
+			(scanMode !== 'pegawai' || (!!selectedMeeting?.canScan && isOnline && !loadingMeetings))
+	);
+	const offlineQueueKey = $derived(`${OFFLINE_QUEUE_KEY}:${data.offlineScope}`);
 	const canStartScan = $derived.by(() => {
-		if (!canUseCamera || scannerActive || scannerStarting) return false;
-		if (scanMode === 'sekolah') return data.canScanSekolah;
-		return !!kegiatanAktif;
+		return canUseCamera && !locked && selectionReady;
 	});
+
+	function resetSelection() {
+		stopScanner();
+		kegiatanId = '';
+		meetingKey = '';
+		statusOverride = '';
+		result = null;
+		studentInfo = null;
+		clearTravel();
+		errorMessage = '';
+		meetingError = '';
+		classOptions = null;
+		meetingGeneration++;
+		if (scanMode === 'pegawai') void loadMeetings();
+	}
+
+	async function loadMeetings() {
+		const generation = ++meetingGeneration;
+		loadingMeetings = true;
+		meetingError = '';
+		try {
+			if (!navigator.onLine)
+				throw new Error('Koneksi terputus. Hubungkan jaringan untuk memuat jadwal.');
+			const response = await fetch('/api/administrasi/absensi/scan/kelas', { cache: 'no-store' });
+			const payload = await response.json();
+			if (!response.ok) throw new Error(payload.message ?? 'Jadwal gagal dimuat. Coba muat ulang.');
+			if (generation !== meetingGeneration) return;
+			classOptions = payload;
+			if (!classOptions?.meetings.some((item) => item.key === meetingKey)) meetingKey = '';
+		} catch (error) {
+			if (generation !== meetingGeneration) return;
+			classOptions = null;
+			meetingError = error instanceof Error ? error.message : 'Jadwal gagal dimuat. Coba lagi.';
+		} finally {
+			if (generation === meetingGeneration) loadingMeetings = false;
+		}
+	}
 
 	const canUseCamera = $derived.by(() => {
 		if (typeof window === 'undefined') return true;
@@ -141,13 +240,14 @@
 	function readPendingScans() {
 		if (typeof localStorage === 'undefined') return [] as PendingScan[];
 		try {
-			const parsed = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) ?? '[]');
+			const parsed = JSON.parse(localStorage.getItem(offlineQueueKey) ?? '[]');
 			if (!Array.isArray(parsed)) return [];
 			const cutoff = Date.now() - MAX_QUEUE_AGE_MS;
 			return parsed.filter(
 				(item): item is PendingScan =>
 					typeof item?.id === 'string' &&
 					typeof item?.token === 'string' &&
+					['sekolah', 'kegiatan'].includes(item?.mode) &&
 					Date.parse(item?.capturedAt) >= cutoff
 			);
 		} catch {
@@ -156,7 +256,7 @@
 	}
 
 	function writePendingScans(items: PendingScan[]) {
-		localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(items.slice(-MAX_QUEUE_ITEMS)));
+		localStorage.setItem(offlineQueueKey, JSON.stringify(items.slice(-MAX_QUEUE_ITEMS)));
 		pendingCount = Math.min(items.length, MAX_QUEUE_ITEMS);
 	}
 
@@ -191,7 +291,8 @@
 				mode: item.mode,
 				kegiatanId: item.kegiatanId,
 				status: item.status,
-				capturedAt: item.capturedAt
+				capturedAt: item.capturedAt,
+				scanGroup: item.scanGroup
 			})
 		});
 		const payload = (await response.json().catch(() => ({
@@ -244,9 +345,9 @@
 	}
 
 	async function submitToken(token: string) {
-		if (loading) return;
-		if (scanMode === 'kegiatan' && !kegiatanAktif) {
-			errorMessage = 'Pilih kegiatan terlebih dahulu sebelum mulai scan.';
+		if (loading || duplicateVisible) return;
+		if (!selectionReady) {
+			errorMessage = 'Pilih mode, kegiatan, dan pertemuan yang tersedia sebelum scan.';
 			return;
 		}
 		const now = Date.now();
@@ -255,11 +356,79 @@
 		lastScanAt = now;
 		loading = true;
 		errorMessage = '';
+		if (scanMode === 'pulang') {
+			try {
+				stopScanner();
+				if (!navigator.onLine) throw new Error('Koneksi terputus. Scan perjalanan wajib daring.');
+				const response = await fetch('/api/administrasi/absensi/scan/perjalanan', {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ token, operation: kegiatanId })
+				});
+				const payload = await response.json();
+				if (payload.code === 'already_present') {
+					result = payload; studentInfo = payload;
+					scanHistory = [payload, ...scanHistory].slice(0, 8);
+					return;
+				}
+				if (!response.ok)
+					throw new Error(payload.message ?? 'Izin tidak dapat diverifikasi. Pindai ulang.');
+				if (data.travelEntry?.permitId && payload.verification?.id !== data.travelEntry.permitId)
+					throw new Error('QR tidak sesuai dengan izin yang dipilih. Periksa anak dan pindai kartu yang sesuai.');
+				travelToken = token;
+				travelVerification = payload.verification;
+			} catch (error) {
+				errorMessage =
+					error instanceof Error
+						? error.message
+						: 'Verifikasi gagal. Periksa koneksi lalu pindai ulang.';
+			} finally {
+				loading = false;
+			}
+			return;
+		}
+		if (scanMode === 'pegawai') {
+			try {
+				if (!navigator.onLine)
+					throw new Error(
+						'Scan kelas wajib terhubung ke server. Hubungkan jaringan lalu scan ulang.'
+					);
+				const response = await fetch('/api/administrasi/absensi/scan/kelas', {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({
+						key: meetingKey,
+						qr: token,
+						tanggal: classOptions?.tanggal,
+						jenis: classOptions?.jenis
+					})
+				});
+				const payload = await response.json();
+				result = {
+					...payload,
+					ok: response.ok && payload.ok === true,
+					code: response.status === 409 ? 'class_conflict' : (payload.code ?? 'class_scan_error')
+				};
+				if (result?.meeting) studentInfo = result;
+				if (result) scanHistory = [result, ...scanHistory].slice(0, 8);
+				if (response.ok || response.status === 409) {
+					stopScanner();
+					await loadMeetings();
+				}
+			} catch {
+				errorMessage =
+					'Hasil scan kelas belum terkonfirmasi. Periksa koneksi lalu pindai ulang; scan kelas tidak masuk antrean offline.';
+			} finally {
+				loading = false;
+			}
+			return;
+		}
 		const pending: PendingScan = {
 			id: crypto.randomUUID(),
 			token,
-			mode: scanMode,
-			kegiatanId: scanMode === 'kegiatan' ? kegiatanId : null,
+			mode: 'kegiatan',
+			kegiatanId: activityId,
+			scanGroup: scanMode || undefined,
 			status: statusOverride || null,
 			capturedAt: new Date().toISOString()
 		};
@@ -268,7 +437,8 @@
 				queueScan(pending);
 				return;
 			}
-			const { payload } = await sendScan(pending);
+			const { response, payload } = await sendScan(pending);
+			if (response.status >= 500) throw new Error(payload.message);
 			showScanResult(payload, pending);
 		} catch (error) {
 			console.error('[scan qr] failed', error);
@@ -289,33 +459,38 @@
 					'Kamera browser memerlukan HTTPS atau localhost. Untuk HP, buka aplikasi dari alamat HTTPS/tunnel atau jalankan di perangkat yang sama.';
 				return;
 			}
-			if (scanMode === 'kegiatan' && !kegiatanAktif) {
-				errorMessage = 'Pilih kegiatan terlebih dahulu sebelum mulai scan.';
+			if (!selectionReady) {
+				errorMessage = 'Pilih kegiatan dan pertemuan yang tersedia sebelum mulai scan.';
 				return;
 			}
-			if (scanMode === 'sekolah' && !data.canScanSekolah) {
-				errorMessage = 'Akun ini tidak memiliki akses scan Absensi Sekolah.';
-				return;
-			}
+			const generation = ++scannerGeneration;
 			await requestCameraPermission();
+			if (generation !== scannerGeneration) return;
 			lastToken = '';
 			lastScanAt = 0;
 			const { BrowserQRCodeReader } = await import('@zxing/browser');
+			if (generation !== scannerGeneration) return;
 			const reader = new BrowserQRCodeReader(undefined, {
 				delayBetweenScanAttempts: 80,
 				delayBetweenScanSuccess: 1200,
 				tryPlayVideoTimeout: 5000
 			});
-			controls = await reader.decodeFromConstraints(
+			const startedControls = await reader.decodeFromConstraints(
 				buildVideoConstraints(),
 				videoEl,
 				(scanResult, error) => {
-					if (scanResult) void submitToken(scanResult.getText());
+					if (scanResult && generation === scannerGeneration)
+						void submitToken(scanResult.getText());
 					if (error && error.name !== 'NotFoundException') {
 						console.debug('[scan qr] camera decode event', error);
 					}
 				}
 			);
+			if (generation !== scannerGeneration) {
+				startedControls.stop();
+				return;
+			}
+			controls = startedControls;
 			scannerActive = true;
 		} catch (error) {
 			console.error('[scan qr] start failed', error);
@@ -329,15 +504,65 @@
 		}
 	}
 
+	function clearTravel() {
+		travelVerification = null;
+		travelToken = '';
+		lastToken = '';
+	}
+
+	async function confirmTravel(pickupVerified: boolean) {
+		if (!travelVerification || loading || !navigator.onLine) return;
+		loading = true;
+		errorMessage = '';
+		try {
+			const response = await fetch('/api/administrasi/absensi/scan/perjalanan', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					token: travelToken,
+					operation: travelVerification.operation,
+					confirm: true,
+					permitId: travelVerification.id,
+					revision: travelVerification.revision,
+					pickupVerified
+				})
+			});
+			const payload = await response.json();
+			if (payload.code === 'already_present') {
+				result = payload; studentInfo = payload;
+				scanHistory = [payload, ...scanHistory].slice(0, 8);
+				return;
+			}
+			if (!response.ok)
+				throw new Error(
+					payload.message ?? 'Konfirmasi gagal. Pindai ulang untuk memeriksa status.'
+				);
+			result = payload;
+			studentInfo = payload;
+			scanHistory = [payload, ...scanHistory].slice(0, 8);
+		} catch (error) {
+			errorMessage =
+				error instanceof Error
+					? error.message
+					: 'Hasil belum terkonfirmasi. Periksa koneksi lalu pindai ulang untuk memastikan status.';
+		} finally {
+			clearTravel();
+			loading = false;
+		}
+	}
+
 	function stopScanner() {
+		scannerGeneration++;
 		controls?.stop();
 		controls = null;
 		scannerActive = false;
 	}
 
 	function resultClass(code: string) {
+		if (code === 'on_home_leave') return 'alert-warning';
 		if (code === 'success') return 'alert-success';
-		if (code === 'already_present' || code === 'queued_offline') return 'alert-warning';
+		if (code === 'class_conflict') return 'alert-warning';
+		if (code === 'queued_offline') return 'alert-warning';
 		return 'alert-error';
 	}
 
@@ -348,6 +573,7 @@
 		if (status === 'izin') return 'badge-primary';
 		if (status === 'alfa') return 'badge-error';
 		if (status === 'pulang') return 'badge-secondary';
+		if (status === 'kembali') return 'badge-success';
 		return 'badge-ghost';
 	}
 
@@ -358,18 +584,24 @@
 			sakit: 'Sakit',
 			izin: 'Izin',
 			alfa: 'Alfa',
-			pulang: 'Pulang'
+			pulang: 'Pulang',
+			kembali: 'Kembali ke sekolah'
 		};
 		return status ? (labels[status] ?? status) : 'Tidak tercatat';
 	}
 
 	function activityLabel(item: ScanResult) {
+		if (item.status === 'pulang') return 'Pulang ke Rumah';
+		if (item.status === 'kembali') return 'Kembali ke Sekolah';
 		return (
-			item.kegiatan?.nama ?? (item.mode === 'sekolah' ? 'Absensi Sekolah' : 'Absensi Kegiatan')
+			item.meeting?.mapel ??
+			item.kegiatan?.nama ??
+			(item.mode === 'sekolah' ? 'Absensi Sekolah' : 'Absensi Kegiatan')
 		);
 	}
 
 	function resultLabel(item: ScanResult) {
+		if (item.code === 'class_conflict') return 'Periksa jadwal';
 		if (item.code === 'already_present')
 			return item.metode === 'qr' ? 'Sudah dipindai' : 'Sudah tercatat';
 		if (item.status) return statusLabel(item.status);
@@ -388,8 +620,14 @@
 		return new Date(value).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' });
 	}
 
-	onDestroy(stopScanner);
+	onDestroy(() => {
+		stopScanner();
+		hideModalIf(DuplicateScanNotice);
+	});
 	onMount(() => {
+		if (data.travelEntry && data.scanGroups.some((group) => group.mode === 'pulang')) {
+			scanMode = 'pulang'; kegiatanId = data.travelEntry.operation;
+		}
 		isOnline = navigator.onLine;
 		writePendingScans(readPendingScans());
 		const handleOnline = () => {
@@ -400,6 +638,12 @@
 		window.addEventListener('online', handleOnline);
 		window.addEventListener('offline', handleOffline);
 		void loadCameras();
+		try {
+			const legacy = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) ?? '[]');
+			legacyPendingCount = Array.isArray(legacy) ? legacy.length : 0;
+		} catch {
+			legacyPendingCount = 0;
+		}
 		if (isOnline) void syncPendingScans();
 		return () => {
 			window.removeEventListener('online', handleOnline);
@@ -408,28 +652,31 @@
 	});
 </script>
 
-<div class="w-full min-w-0 space-y-4">
+<div class="w-full min-w-0 space-y-4" data-ui-revision="scan-groups-13-18">
 	<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 		<div>
 			<h2 class="text-2xl font-bold">Scan QR Absensi</h2>
-			<p class="text-base-content/70 text-sm">Arahkan kamera ke kartu absensi siswa.</p>
 		</div>
-		<a class="btn btn-soft btn-sm shadow-none" href={resolve('/administrasi/absensi/kegiatan')}>
-			<Icon name="left" />
-			Kembali
-		</a>
+		{#if data.canRecordActivities}
+			<a class="btn btn-soft btn-sm shadow-none" href={resolve('/administrasi/absensi/kegiatan')}>
+				<Icon name="left" />
+				Kembali
+			</a>
+		{/if}
 	</div>
 
 	<div class={`alert ${isOnline ? 'alert-success' : 'alert-warning'} py-3`}>
 		<Icon name={isOnline ? 'success' : 'warning'} />
 		<div class="min-w-0 flex-1">
-			<div class="font-semibold">{isOnline ? 'Terhubung ke server' : 'Mode offline aktif'}</div>
+			<div class="font-semibold">{isOnline ? 'Jaringan tersedia' : 'Koneksi terputus'}</div>
 			<div class="text-sm">
 				{pendingCount
 					? `${pendingCount} scan menunggu sinkronisasi.`
 					: isOnline
 						? 'Hasil scan langsung disimpan ke server.'
-						: 'Scan akan disimpan sementara di perangkat ini.'}
+						: selectedGroup?.onlineRequired
+							? 'Scan ini wajib daring dan tidak disimpan dalam antrean offline.'
+							: 'Scan akan disimpan sementara di perangkat ini.'}
 			</div>
 		</div>
 		{#if pendingCount}
@@ -444,53 +691,141 @@
 			</button>
 		{/if}
 	</div>
+	{#if legacyPendingCount}
+		<div class="alert alert-warning alert-soft text-sm" role="status">
+			<Icon name="warning" />
+			<span
+				>{legacyPendingCount} scan dari antrean lama masih tersimpan di perangkat. Minta operator memeriksa
+				sebelum mencatat ulang; antrean ini belum memiliki identitas akun.</span
+			>
+		</div>
+	{/if}
 
 	<div class="card bg-base-100 border-base-200 rounded-lg border p-4 shadow-sm">
 		<div class="grid gap-3 xl:grid-cols-3">
-			<label class="form-control min-w-0">
+			<label class="grid min-w-0 gap-1 text-sm">
 				<span class="label-text mb-1">Mode Scan</span>
 				<select
 					class="select select-bordered w-full"
-					bind:value={scanMode}
-					disabled={scannerActive || scannerStarting}
+					value={scanMode}
+					onchange={(event) => {
+						scanMode = event.currentTarget.value as AttendanceScanMode | '';
+						resetSelection();
+					}}
+					disabled={locked}
 					aria-label="Mode scan"
 				>
-					<option value="kegiatan">Absensi Kegiatan</option>
+					<option value="" disabled>Pilih mode scan</option>
+					{#each data.scanGroups as group (group.mode)}
+						<option value={group.mode}
+							>{group.label}{group.status === 'prepared' ? ' (Segera tersedia)' : ''}</option
+						>
+					{/each}
 				</select>
 			</label>
-			<label class="form-control min-w-0">
+			<label class="grid min-w-0 gap-1 text-sm">
 				<span class="label-text mb-1">Kegiatan</span>
 				<select
 					class="select select-bordered w-full"
 					bind:value={kegiatanId}
-					disabled={scannerActive ||
-						scannerStarting ||
-						scanMode !== 'kegiatan' ||
-						!data.kegiatanList.length}
+					onchange={() => {
+						meetingKey = '';
+						result = null;
+						studentInfo = null;
+						lastToken = '';
+					}}
+					disabled={locked || !selectedGroup || selectedGroup.status !== 'available'}
 					aria-label="Kegiatan absensi"
 					required
 				>
 					<option value="" disabled>Pilih kegiatan</option>
-					{#each data.kegiatanList as kegiatan (kegiatan.id)}
-						<option value={String(kegiatan.id)}>{kegiatan.nama}</option>
+					{#each selectedGroup?.activities ?? [] as activity (activity.key)}
+						<option value={activity.key}>{activity.label}</option>
 					{/each}
 				</select>
 			</label>
-			<label class="form-control min-w-0">
+			<label class="grid min-w-0 gap-1 text-sm">
 				<span class="label-text mb-1">Status Scan</span>
 				<select
 					class="select select-bordered w-full"
 					bind:value={statusOverride}
-					disabled={scannerActive || scannerStarting}
+					disabled={locked || !selectedActivity || scanMode === 'pegawai' || scanMode === 'pulang'}
 					aria-label="Status scan"
 				>
-					<option value="">Otomatis hadir/terlambat</option>
+					<option value=""
+						>{scanMode === 'pegawai'
+							? 'Kehadiran mengajar'
+							: scanMode === 'pulang'
+								? 'Sesuai perjalanan murid'
+								: 'Otomatis hadir/terlambat'}</option
+					>
 					<option value="hadir">Hadir</option>
 					<option value="terlambat">Terlambat</option>
 				</select>
 			</label>
 		</div>
-		{#if scanMode === 'kegiatan' && kegiatanAktif}
+		{#if scanMode === 'pegawai'}
+			<div class="border-base-200 mt-4 border-t pt-4">
+				<div class="flex items-end gap-2">
+					<label class="grid min-w-0 flex-1 gap-1 text-sm">
+						<span>Pertemuan hari ini</span>
+						<select
+							class="select w-full"
+							bind:value={meetingKey}
+							aria-label="Pertemuan mengajar"
+							disabled={locked || loadingMeetings || !selectedActivity}
+						>
+							<option value="" disabled
+								>{loadingMeetings ? 'Memuat jadwal...' : 'Pilih pertemuan'}</option
+							>
+							{#each classOptions?.meetings ?? [] as meeting (meeting.key)}
+								<option value={meeting.key} disabled={!meeting.canScan}
+									>{meeting.kelas} · {meeting.mapel} · {meeting.mulai.slice(
+										0,
+										5
+									)}–{meeting.selesai.slice(0, 5)}{meeting.scannedAt
+										? ' (Sudah dipindai)'
+										: !meeting.canScan
+											? ' (Di luar waktu scan)'
+											: ''}</option
+								>
+							{/each}
+						</select>
+					</label>
+					<button
+						type="button"
+						class="btn btn-square shrink-0"
+						onclick={loadMeetings}
+						disabled={locked || loadingMeetings || !isOnline}
+						aria-label="Muat ulang pertemuan"
+						title="Muat ulang pertemuan"
+					>
+						{#if loadingMeetings}<span class="loading loading-spinner loading-sm"
+							></span>{:else}<Icon name="repeat" />{/if}
+					</button>
+				</div>
+				{#if meetingError}<p class="text-error mt-2 text-sm" role="alert">{meetingError}</p>
+				{:else if classOptions && !classOptions.meetings.length}<p
+						class="text-base-content/70 mt-2 text-sm"
+					>
+						Tidak ada pertemuan mengajar hari ini untuk akun ini.
+					</p>{/if}
+			</div>
+		{/if}
+		{#if selectedGroup}
+			<div class="border-base-200 mt-3 flex flex-wrap items-center gap-2 border-t pt-3 text-sm">
+				<span class="badge badge-soft badge-info"
+					>QR {selectedGroup.qrKind === 'kelas' ? 'Kelas' : 'Murid'}</span
+				>
+				{#if selectedGroup.onlineRequired}<span class="badge badge-soft badge-warning"
+						>Wajib daring</span
+					>{/if}
+				{#if selectedGroup.status === 'prepared'}<span class="text-base-content/70"
+						>Scan pulang dan kembali belum tersedia.</span
+					>{/if}
+			</div>
+		{/if}
+		{#if kegiatanAktif}
 			<div class="text-base-content/70 mt-3 text-sm">
 				Kegiatan aktif: <span class="font-semibold">{kegiatanAktif.nama}</span>
 				{#if kegiatanAktif.batasTerlambat}
@@ -500,14 +835,40 @@
 		{/if}
 	</div>
 
+	{#if travelVerification}
+		<TravelScanConfirmation
+			verification={travelVerification}
+			busy={loading}
+			online={isOnline}
+			onconfirm={confirmTravel}
+			oncancel={clearTravel}
+		/>
+	{/if}
+
+	{#if result}
+		<div bind:this={resultElement} class={`alert ${resultClass(result.code)} sticky top-16 z-20 shadow-sm`} aria-live="assertive" data-testid="scan-result">
+			<Icon name={result.code === 'success' ? 'success' : 'warning'} />
+			<div class="min-w-0 wrap-anywhere">
+				<div class="font-semibold">{result.message}</div>
+				{#if result.murid}
+					<div class="text-sm">
+						{result.murid.nama} · {result.murid.kelas}
+						{result.kegiatan ? ` · ${result.kegiatan.nama}` : ''}
+						{result.status ? ` · ${statusLabel(result.status)}` : ''}
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
+
 	<div class="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
 		<div class="card bg-base-100 border-base-200 overflow-hidden rounded-lg border shadow-sm">
-			<div class="bg-base-200 relative mx-auto aspect-video max-h-[46vh] w-full">
+			<div class="bg-base-200 relative mx-auto aspect-video max-h-[46vh] w-full overflow-hidden">
 				<video bind:this={videoEl} class="h-full w-full object-cover" muted playsinline autoplay
 				></video>
 				<div class="pointer-events-none absolute inset-0 grid place-items-center">
 					<div
-						class="border-primary/80 h-40 w-40 rounded-xl border-2 shadow-[0_0_0_9999px_rgba(0,0,0,0.18)]"
+						class="border-primary/80 h-32 w-32 rounded-lg border-2 shadow-[0_0_0_9999px_rgba(0,0,0,0.18)] sm:h-40 sm:w-40"
 					></div>
 				</div>
 			</div>
@@ -548,16 +909,25 @@
 					{/if}
 				</div>
 				<div class="flex w-full flex-wrap gap-2 sm:w-auto">
-					<AttendanceSummaryDialog {kegiatanId} label="Selesai & Ringkasan" onopen={stopScanner} />
+					{#if data.canSummary && scanMode !== 'pegawai' && scanMode !== 'pulang'}
+						<AttendanceSummaryDialog
+							kegiatanId={activityId}
+							label="Selesai & Ringkasan"
+							onopen={stopScanner}
+							finishMode
+							pendingCount={pendingCount + legacyPendingCount}
+							processing={loading || syncing || scannerStarting}
+							online={isOnline}
+							onresume={startScanner}
+						/>
+					{/if}
 					<button
 						class="btn btn-primary btn-sm flex-1 shadow-none sm:flex-none"
 						type="button"
 						onclick={startScanner}
 						disabled={!canStartScan}
 						aria-disabled={!canStartScan}
-						title={scanMode === 'kegiatan' && !kegiatanAktif
-							? 'Pilih kegiatan terlebih dahulu'
-							: 'Mulai scan QR'}
+						title={!selectionReady ? 'Pilih kegiatan terlebih dahulu' : 'Mulai scan QR'}
 					>
 						<Icon name="activity" />
 						Mulai Scan
@@ -580,14 +950,42 @@
 				aria-live="polite"
 			>
 				<div class="mb-3 flex items-center justify-between gap-2">
-					<h3 class="font-semibold">Informasi Siswa</h3>
+					<h3 class="font-semibold">
+						{scanMode === 'pegawai' ? 'Kehadiran Mengajar' : 'Informasi Murid'}
+					</h3>
 					{#if studentInfo?.status}
 						<span class={`badge ${statusBadge(studentInfo.status)} badge-sm`}>
 							{statusLabel(studentInfo.status)}
 						</span>
 					{/if}
 				</div>
-				{#if studentInfo?.murid}
+				{#if scanMode === 'pegawai' && studentInfo?.meeting}
+					<div class="text-lg font-bold wrap-break-word">{studentInfo.meeting.guru}</div>
+					<dl class="mt-3 grid gap-3 text-sm">
+						<div>
+							<dt class="text-base-content/60">Kelas / Mata Pelajaran</dt>
+							<dd class="font-medium wrap-break-word">
+								{studentInfo.meeting.kelas} · {studentInfo.meeting.mapel}
+							</dd>
+						</div>
+						<div>
+							<dt class="text-base-content/60">Jam Mengajar</dt>
+							<dd>
+								{studentInfo.meeting.mulai.slice(0, 5)}–{studentInfo.meeting.selesai.slice(0, 5)}
+							</dd>
+						</div>
+						<div>
+							<dt class="text-base-content/60">Waktu Scan</dt>
+							<dd>{formatScanTime(studentInfo.waktuScan)}</dd>
+						</div>
+					</dl>
+					<a
+						class="btn btn-soft mt-4 w-full"
+						href={resolve(
+							`/jurnal-mengajar?${new URL(studentInfo.meeting.journalUrl, 'http://localhost').searchParams.toString()}`
+						)}><Icon name="edit" />Isi Jurnal Mengajar</a
+					>
+				{:else if studentInfo?.murid}
 					<div class="flex items-start gap-3">
 						<div class="avatar placeholder shrink-0">
 							<div class="bg-base-200 text-base-content/50 h-16 w-16 rounded-lg">
@@ -609,10 +1007,10 @@
 						</div>
 					</div>
 					<dl class="border-base-200 mt-4 grid gap-3 border-t pt-3 text-sm">
-						<div>
-							<dt class="text-base-content/60">Wali Asuh</dt>
-							<dd class="font-medium">{studentInfo.murid.waliAsuh || 'Belum ditetapkan'}</dd>
-						</div>
+						{#if scanMode !== 'pulang'}<div>
+								<dt class="text-base-content/60">Wali Asuh</dt>
+								<dd class="font-medium">{studentInfo.murid.waliAsuh || 'Belum ditetapkan'}</dd>
+							</div>{/if}
 						<div>
 							<dt class="text-base-content/60">Keterangan Absensi</dt>
 							<dd class="font-medium">
@@ -635,7 +1033,11 @@
 				{:else}
 					<div class="alert alert-info">
 						<Icon name="info" />
-						<span>Informasi siswa akan tampil setelah QR berhasil dipindai.</span>
+						<span
+							>{scanMode === 'pegawai'
+								? 'Belum ada scan kelas pada sesi ini.'
+								: 'Belum ada scan murid pada sesi ini.'}</span
+						>
 					</div>
 				{/if}
 			</div>
@@ -647,7 +1049,7 @@
 				{#if !scanHistory.length}
 					<div class="alert alert-info">
 						<Icon name="info" />
-						<span>Belum ada siswa yang terbaca pada sesi ini.</span>
+						<span>Belum ada hasil scan pada sesi ini.</span>
 					</div>
 				{:else}
 					<div class="space-y-2">
@@ -668,13 +1070,15 @@
 									</div>
 								</div>
 								<div class="min-w-0 flex-1">
-									<div class="truncate font-semibold">{item.murid?.nama ?? item.message}</div>
+									<div class="font-semibold wrap-break-word">
+										{item.murid?.nama ?? item.meeting?.guru ?? item.message}
+									</div>
 									<div class="text-base-content/60 truncate text-xs">
-										{item.murid?.kelas ?? '-'} · {activityLabel(item)} ·
+										{item.murid?.kelas ?? item.meeting?.kelas ?? '-'} · {activityLabel(item)} ·
 										{formatScanTime(item.waktuScan)}
 									</div>
 								</div>
-								<div class={`badge ${statusBadge(item.status)} badge-sm`}>
+								<div class={`badge ${item.code === 'already_present' ? 'badge-error' : statusBadge(item.status)} badge-sm h-auto shrink-0 py-1 whitespace-normal`}>
 									{resultLabel(item)}
 								</div>
 							</div>
@@ -699,19 +1103,4 @@
 		</div>
 	{/if}
 
-	{#if result}
-		<div class={`alert ${resultClass(result.code)}`} aria-live="polite">
-			<Icon name={result.ok ? 'success' : 'error'} />
-			<div>
-				<div class="font-semibold">{result.message}</div>
-				{#if result.murid}
-					<div class="text-sm">
-						{result.murid.nama} · {result.murid.kelas}
-						{result.kegiatan ? ` · ${result.kegiatan.nama}` : ''}
-						{result.status ? ` · ${statusLabel(result.status)}` : ''}
-					</div>
-				{/if}
-			</div>
-		</div>
-	{/if}
 </div>

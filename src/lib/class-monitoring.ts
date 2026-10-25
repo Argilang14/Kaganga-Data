@@ -128,3 +128,9 @@ export function splitClassMonitoringMeetings<T extends ScheduleMeetingEntry>(ent
 	}
 	return result;
 }
+
+export type ClassQrPrintContext = {
+	sekolahNama: string;
+	contextLabel: string;
+	kelasList: Array<{ id: number; nama: string }>;
+};

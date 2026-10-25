@@ -8,6 +8,7 @@ import {
 import db from '$lib/server/db';
 import { studentAccessCondition } from './attendance-student-access';
 import { ensureAbsenceMonitoringSchema } from '$lib/server/db/ensure-absence-monitoring';
+import { permitCoversMonitoring } from '$lib/attendance-monitoring';
 import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
 import {
 	tableAbsensiKegiatan,
@@ -62,6 +63,9 @@ export type IzinPulangMonitoringRow = {
 	tanggalKembali: string | null;
 	alasan: string;
 	penjemputNama: string | null;
+	penjemputHubungan: string | null;
+	updatedAt: string | null;
+	keberangkatanTerkonfirmasi: boolean;
 	status: IzinPulangStatus;
 	duration: number;
 };
@@ -143,7 +147,8 @@ export async function loadAttendanceMonitoring(params: {
 				)
 				.orderBy(asc(tableMurid.nama)),
 			db.query.tableAbsensiKegiatan.findMany({
-				columns: { muridId: true, tanggal: true, status: true },
+				columns: { muridId: true, tanggal: true, status: true, metode: true },
+				with: { kegiatan: { columns: { jamMulai: true } } },
 				where: and(
 					eq(tableAbsensiKegiatan.sekolahId, params.sekolahId),
 					eq(tableAbsensiKegiatan.semesterId, params.semesterId),
@@ -170,6 +175,7 @@ export async function loadAttendanceMonitoring(params: {
 				)
 			}),
 			db.query.tableIzinPulangMurid.findMany({
+				with: { perjalanan: true },
 				where: and(
 					eq(tableIzinPulangMurid.sekolahId, params.sekolahId),
 					inArray(tableIzinPulangMurid.kelasId, params.kelasIds),
@@ -196,7 +202,9 @@ export async function loadAttendanceMonitoring(params: {
 		holidayDates
 	});
 	const schoolDayIndex = new Map(schoolDays.map((date, index) => [date, index]));
-	const dailyRows = collapseActivityAttendanceByDay(attendanceRows);
+	const dailyRows = collapseActivityAttendanceByDay(attendanceRows.filter((row) => row.metode !== 'auto' ||
+		!izinRows.some((permit) => permit.status !== 'dibatalkan' && permit.muridId === row.muridId &&
+			permitCoversMonitoring(row.tanggal, row.kegiatan?.jamMulai ?? null, permit))));
 	const dailyByStudent = new Map<number, Map<string, (typeof dailyRows)[number]['status']>>();
 	for (const row of dailyRows) {
 		const entries = dailyByStudent.get(row.muridId) ?? new Map();
@@ -316,6 +324,9 @@ export async function loadAttendanceMonitoring(params: {
 			tanggalKembali: row.tanggalKembali,
 			alasan: row.alasan,
 			penjemputNama: row.penjemputNama,
+			penjemputHubungan: row.penjemputHubungan,
+			updatedAt: row.updatedAt,
+			keberangkatanTerkonfirmasi: !!row.perjalanan?.keluarPada,
 			status,
 			duration
 		};

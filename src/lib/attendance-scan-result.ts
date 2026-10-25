@@ -10,6 +10,17 @@ export function scanReceipt(
 	duplicate: boolean,
 	petugasNama: string | null
 ) {
+	if (record.metode === 'izin_pulang')
+		return {
+			ok: true,
+			code: 'on_home_leave',
+			message:
+				'Murid sedang izin pulang. Catat Kembali ke Sekolah melalui Tim Keamanan sebelum mengabsen kegiatan.',
+			status: 'pulang',
+			waktuScan: null,
+			metode: 'izin_pulang',
+			petugas: null
+		};
 	const labels: Record<string, string> = {
 		hadir: 'hadir',
 		terlambat: 'terlambat',

@@ -4,6 +4,7 @@ import {
 	ABSENSI_KEGIATAN_STATUSES,
 	assertAbsensiKegiatanAccess,
 	loadKegiatanAbsensiOptions,
+	listLocalDatesInRange,
 	type AbsensiKegiatanStatus
 } from '$lib/server/absensi-kegiatan';
 import {
@@ -14,6 +15,7 @@ import {
 } from '$lib/server/absensi-digital';
 import { loadAttendanceMonitoring } from '$lib/server/attendance-monitoring.server';
 import db from '$lib/server/db';
+import { projectPermitAttendance } from '$lib/server/attendance-permits';
 import { getClassEducationIdentity } from '$lib/server/education-units';
 import { studentAccessCondition } from '$lib/server/attendance-student-access';
 import {
@@ -72,7 +74,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		: null;
 	if (kegiatanId && !selectedKegiatan) throw error(404, 'Kegiatan absensi tidak ditemukan.');
 
-	const [students, attendanceRows, kelas, sekolah, logoUrl, logoDinasUrl, monitoring] =
+	const [students, recordedRows, kelas, sekolah, logoUrl, logoDinasUrl, monitoring] =
 		await Promise.all([
 			db.query.tableMurid.findMany({
 				columns: { id: true, nis: true, nama: true },
@@ -115,6 +117,9 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			})
 		]);
 	if (!kelas || !sekolah) throw error(404, 'Data kelas atau sekolah tidak ditemukan.');
+	const attendanceRows = await projectPermitAttendance({ schoolId: sekolahId, semesterId: academic.activeSemesterId,
+		studentIds: students.map((item) => item.id), dates: listLocalDatesInRange(tanggalAwal, tanggalAkhir),
+		activities: kegiatanList.filter((item) => !kegiatanId || item.id === kegiatanId), rows: recordedRows });
 
 	const kepala = sekolah.kepalaSekolahId
 		? await db.query.tablePegawai.findFirst({

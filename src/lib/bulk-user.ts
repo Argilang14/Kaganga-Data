@@ -7,6 +7,7 @@ export const bulkUserRoleLabels: Record<BulkUserRole, string> = {
 	wali_asuh: 'Wali Asuh',
 	wali_asrama: 'Wali Asrama',
 	tim_dapur: 'Tim Dapur',
+	tim_keamanan: 'Tim Keamanan',
 	operator: 'Operator'
 };
 export const BULK_USER_LIMIT = 100;
@@ -71,6 +72,7 @@ export function proposeBulkUsername(
 		wali_asuh: 'asuh',
 		wali_asrama: 'asrama',
 		tim_dapur: 'dapur',
+		tim_keamanan: 'keamanan',
 		operator: 'operator'
 	}[role];
 	const base = `${prefix}.${slug || `pegawai${id}`}`;

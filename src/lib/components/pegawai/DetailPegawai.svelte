@@ -132,6 +132,7 @@
 		wali_asuh: 'Wali Asuh',
 		wali_asrama: 'Wali Asrama',
 		tim_dapur: 'Tim Dapur',
+		tim_keamanan: 'Tim Keamanan',
 		user: 'Guru/User'
 	};
 
@@ -254,21 +255,21 @@
 
 <div class="flex items-start justify-between gap-4">
 	<div class="min-w-0">
-		<h2 class="truncate text-xl font-bold">Detail Data Pegawai</h2>
-		<p class="text-base-content/65 mt-1 truncate text-sm">{data.pegawai.nama}</p>
+		<h2 id="pegawai-detail-title" class="text-xl font-bold">Detail Data Pegawai</h2>
+		<p class="text-base-content/65 mt-1 break-words text-sm">{data.pegawai.nama}</p>
 	</div>
 	<span class:badge-success={data.pegawai.status === 'aktif'} class="badge badge-soft shrink-0">
 		{data.pegawai.status === 'aktif' ? 'Aktif' : 'Nonaktif'}
 	</span>
 </div>
 
-<div class="mt-5 max-h-[72vh] overflow-y-auto">
+<div class="pegawai-detail-body mt-4 overflow-y-auto">
 	<div class="tabs tabs-box w-full">
 		<input type="radio" name="tab-detail-pegawai-v2" class="tab" aria-label="Data Pegawai" value="data" bind:group={activeTab} />
 		<div class="tab-content bg-base-100 p-4">
 			{#if activeTab === 'data'}
-			<div class="grid gap-5 md:grid-cols-[180px_1fr]">
-				<div>
+			<div class="grid gap-4 sm:grid-cols-[144px_minmax(0,1fr)]">
+				<div class="mx-auto w-36 sm:mx-0 sm:w-auto">
 					<div
 						class="bg-base-200 flex aspect-3/4 items-center justify-center overflow-hidden rounded-md"
 					>
@@ -287,17 +288,21 @@
 							</div>
 						{/if}
 					</div>
-					<div class="mt-2 grid grid-cols-2 gap-2">
+					<div class="mt-2 flex justify-center gap-2">
 						<button
 							class="btn btn-soft btn-sm"
 							type="button"
-							onclick={() => (isPhotoUploadOpen = true)}><Icon name="edit" /> Ubah</button
+							aria-label="Ubah foto pegawai"
+							title="Ubah foto pegawai"
+							onclick={() => (isPhotoUploadOpen = true)}><Icon name="edit" /></button
 						>
 						<button
 							class="btn btn-error btn-soft btn-sm"
 							type="button"
+							aria-label="Hapus foto pegawai"
+							title="Hapus foto pegawai"
 							disabled={!photoSrc || deletingPhoto}
-							onclick={deletePhoto}><Icon name="del" /> Hapus</button
+							onclick={deletePhoto}><Icon name="del" /></button
 						>
 					</div>
 					<p class="text-base-content/50 mt-2 text-center text-xs">JPG/PNG, maksimal 500 KB</p>
@@ -370,13 +375,13 @@
 				class="border-base-200 rounded-md border p-4"
 			>
 				<input type="hidden" name="id" value={editingAssignment?.id ?? ''} />
-				<div class="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+				<div class="grid gap-3 sm:grid-cols-2">
 					<label class="form-control gap-1"
 						><span class="label-text">Jenis Penugasan</span><select
 							class="select select-bordered w-full"
 							name="jenis"
 							required
-							>{#each data.options.jenisPenugasan as jenis}<option
+							>{#each data.options.jenisPenugasan as jenis (jenis)}<option
 									value={jenis}
 									selected={editingAssignment?.jenis === jenis}
 									>{assignmentLabels[jenis] ?? jenis}</option
@@ -396,7 +401,7 @@
 							class="select select-bordered w-full"
 							name="tahunAjaranId"
 							><option value="">Tidak ditentukan</option
-							>{#each data.options.tahunAjaran as tahun}<option
+							>{#each data.options.tahunAjaran as tahun (tahun.id)}<option
 									value={tahun.id}
 									selected={editingAssignment?.tahunAjaranId === tahun.id}
 									>{tahun.nama}{tahun.isAktif ? ' - Aktif' : ''}</option
@@ -419,7 +424,7 @@
 							class="select select-bordered w-full"
 							name="jenjang"
 							><option value="">Semua/Tidak ditentukan</option
-							>{#each ['srd', 'srmp', 'srma'] as jenjang}<option
+							>{#each ['srd', 'srmp', 'srma'] as jenjang (jenjang)}<option
 									value={jenjang}
 									selected={editingAssignment?.jenjang === jenjang}>{jenjang.toUpperCase()}</option
 								>{/each}</select
@@ -437,7 +442,7 @@
 						><span class="label-text">Kelas</span><select
 							class="select select-bordered w-full"
 							name="kelasId"
-							><option value="">Tanpa kelas</option>{#each data.options.kelas as kelas}<option
+							><option value="">Tanpa kelas</option>{#each data.options.kelas as kelas (kelas.id)}<option
 									value={kelas.id}
 									selected={editingAssignment?.kelasId === kelas.id}>{kelas.nama}</option
 								>{/each}</select
@@ -448,7 +453,7 @@
 							class="select select-bordered w-full"
 							name="mataPelajaranId"
 							><option value="">Tanpa mata pelajaran</option
-							>{#each data.options.mataPelajaran as mapel}<option
+							>{#each data.options.mataPelajaran as mapel (mapel.id)}<option
 									value={mapel.id}
 									selected={editingAssignment?.mataPelajaranId === mapel.id}
 									>{mapel.kode ? `${mapel.kode} - ` : ''}{mapel.nama} ({mapel.kelas})</option
@@ -625,7 +630,7 @@
 	onSuccess={handlePhotoUploaded}
 />
 
-<div class="mt-5 flex justify-end gap-2">
+<div class="border-base-200 mt-4 flex flex-wrap justify-end gap-2 border-t pt-3">
 	<button class="btn btn-soft" type="button" onclick={() => (onClose ? onClose() : history.back())}
 		><Icon name="close" /> Tutup</button
 	>
@@ -633,3 +638,14 @@
 			><Icon name="edit" /> Edit Biodata</button
 		>{/if}
 </div>
+
+<style>
+	.pegawai-detail-body {
+		max-height: min(65dvh, 40rem);
+		overscroll-behavior-y: contain;
+	}
+
+	.pegawai-detail-body :global(.tab) {
+		font-size: 0.875rem;
+	}
+</style>

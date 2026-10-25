@@ -55,4 +55,16 @@ export async function ensureAbsenceMonitoringSchema() {
 		`CREATE INDEX IF NOT EXISTS "tindak_lanjut_absensi_sekolah_status_idx" ON "tindak_lanjut_absensi" ("sekolah_id", "status")`,
 		`CREATE INDEX IF NOT EXISTS "tindak_lanjut_absensi_murid_jenis_idx" ON "tindak_lanjut_absensi" ("murid_id", "jenis")`
 	]);
+	await ensureSchema('attendance-travel-v1', [
+		`CREATE TABLE IF NOT EXISTS perjalanan_murid (
+			id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+			izin_id integer NOT NULL UNIQUE REFERENCES izin_pulang_murid(id) ON DELETE CASCADE,
+			keluar_pada text,
+			keluar_oleh integer REFERENCES auth_user(id) ON DELETE SET NULL,
+			kembali_pada text,
+			kembali_oleh integer REFERENCES auth_user(id) ON DELETE SET NULL,
+			created_at text NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at text
+		)`
+	]);
 }

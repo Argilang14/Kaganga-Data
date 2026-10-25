@@ -23,6 +23,7 @@ export type DocumentType =
 	| 'piagam'
 	| 'keasramaan'
 	| 'kartu-absensi'
+	| 'qr-kelas'
 	| 'kartu-ujian'
 	| 'kartu-ujian-meja'
 	| 'jadwal-pelajaran'
@@ -57,7 +58,7 @@ export type SinglePreviewRequest = {
 	signal?: AbortSignal;
 };
 
-const DOCUMENT_PATHS: Record<DocumentType, string> = {
+const DOCUMENT_PATHS: Record<Exclude<DocumentType, 'qr-kelas'>, string> = {
 	cover: '/cetak/cover',
 	biodata: '/cetak/biodata',
 	rapor: '/cetak/rapor',
@@ -77,6 +78,7 @@ const DOCUMENT_PATHS: Record<DocumentType, string> = {
 };
 
 const DOCUMENT_LABELS: Record<DocumentType, string> = {
+	'qr-kelas': 'QR Kelas',
 	cover: 'Cover',
 	biodata: 'Biodata',
 	rapor: 'Rapor',
@@ -98,6 +100,7 @@ const DOCUMENT_LABELS: Record<DocumentType, string> = {
 export async function loadSinglePreview(
 	request: SinglePreviewRequest
 ): Promise<{ data: PreviewPayload; title: string }> {
+	if (request.documentType === 'qr-kelas') throw new Error('QR kelas dicetak melalui panel QR Kelas.');
 	const path = DOCUMENT_PATHS[request.documentType];
 	const label = DOCUMENT_LABELS[request.documentType];
 

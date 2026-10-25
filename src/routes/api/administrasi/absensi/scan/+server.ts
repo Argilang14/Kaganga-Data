@@ -18,6 +18,7 @@ import { assertStudentAccess } from '$lib/server/attendance-student-access';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { saveAttendance } from '$lib/server/attendance-mutation';
 import { scanReceipt, type RecordedAttendance } from '$lib/attendance-scan-result';
+import { canScanModeActivity, parseAttendanceScanMode } from '$lib/attendance-scan';
 import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
 import {
 	tableAbsensiHarian,
@@ -26,23 +27,14 @@ import {
 	tableMurid,
 	tableQrMurid
 } from '$lib/server/db/schema';
-import { tableAuthUser } from '$lib/server/db/schema';
+import { attendanceStaffName } from '$lib/server/attendance-staff';
 import { json } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 
 const MAX_OFFLINE_SCAN_AGE_MS = 12 * 60 * 60 * 1000;
 
 async function receipt(record: RecordedAttendance, duplicate: boolean, sekolahId: number) {
-	const petugas = record.petugasUserId
-		? await db.query.tableAuthUser.findFirst({
-				columns: { username: true },
-				where: and(
-					eq(tableAuthUser.id, record.petugasUserId),
-					eq(tableAuthUser.sekolahId, sekolahId)
-				)
-			})
-		: null;
-	return scanReceipt(record, duplicate, petugas?.username ?? null);
+	return scanReceipt(record, duplicate, await attendanceStaffName(record.petugasUserId, sekolahId));
 }
 
 function resolveCapturedAt(value: string | null | undefined) {
@@ -87,6 +79,15 @@ export async function POST({ request, locals }) {
 	await ensureAbsensiDigitalSchema();
 	if (!canAttendance(locals.user, 'scan'))
 		return json({ ok: false, message: 'Izin scan belum diberikan.' }, { status: 403 });
+	if (locals.user.type === 'tim_keamanan')
+		return json(
+			{
+				ok: false,
+				message:
+					'Gunakan mode Absensi Pulang. Tim Keamanan tidak dapat mencatat absensi kegiatan.'
+			},
+			{ status: 403 }
+		);
 
 	const body = (await request.json().catch(() => null)) as {
 		token?: string;
@@ -94,7 +95,22 @@ export async function POST({ request, locals }) {
 		kegiatanId?: number | string | null;
 		status?: string | null;
 		capturedAt?: string | null;
+		scanGroup?: unknown;
 	} | null;
+	const scanGroup = parseAttendanceScanMode(body?.scanGroup);
+	if (
+		body?.scanGroup !== undefined &&
+		(!scanGroup || !['sekolah', 'makan', 'asrama'].includes(scanGroup) || body.mode !== 'kegiatan')
+	)
+		return json(
+			{ ok: false, message: 'Kelompok scan tidak valid. Pilih mode kegiatan murid.' },
+			{ status: 400 }
+		);
+	if (body?.mode !== undefined && !['sekolah', 'kegiatan'].includes(body.mode))
+		return json(
+			{ ok: false, message: 'Mode scan belum didukung. Pilih mode yang tersedia.' },
+			{ status: 400 }
+		);
 	const token = typeof body?.token === 'string' ? body.token.trim() : '';
 	if (!token) {
 		return json(
@@ -220,6 +236,8 @@ export async function POST({ request, locals }) {
 			);
 		}
 		if (
+			(scanGroup &&
+				!canScanModeActivity(locals.user, scanGroup, kegiatan, todayLocalDate(scanDate))) ||
 			!canEditAbsensiKegiatan(locals.user, kegiatan.aksesEdit, kegiatan.kategori, {
 				kode: kegiatan.kode,
 				tanggal: todayLocalDate(scanDate)

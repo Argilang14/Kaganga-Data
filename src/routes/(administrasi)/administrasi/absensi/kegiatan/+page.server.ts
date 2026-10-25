@@ -19,6 +19,7 @@ import db from '$lib/server/db';
 import { studentAccessCondition } from '$lib/server/attendance-student-access';
 import { saveAttendance } from '$lib/server/attendance-mutation';
 import { canAttendance, attendanceDateAllowed } from '$lib/attendance-access';
+import { projectPermitAttendance } from '$lib/server/attendance-permits';
 import {
 	tableAbsensiKegiatan,
 	tableKegiatanAbsensi,
@@ -108,7 +109,7 @@ export async function load({ locals, url }) {
 				kegiatanIds: [kegiatanId]
 			})
 		: { inserted: 0 };
-	const absensiRows = muridIds.length
+	const recordedRows = muridIds.length
 		? await db.query.tableAbsensiKegiatan.findMany({
 				where: and(
 					eq(tableAbsensiKegiatan.sekolahId, sekolahId),
@@ -121,6 +122,8 @@ export async function load({ locals, url }) {
 			})
 		: [];
 
+	const absensiRows = await projectPermitAttendance({ schoolId: sekolahId, semesterId: academic.activeSemesterId,
+		studentIds: muridIds, dates: [tanggal], activities: selectedKegiatan ? [selectedKegiatan] : [], rows: recordedRows });
 	const absensiByMurid = new Map<number, AbsensiKegiatanRow>();
 	for (const row of absensiRows) absensiByMurid.set(row.muridId, row);
 

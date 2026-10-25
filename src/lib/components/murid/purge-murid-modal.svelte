@@ -65,12 +65,12 @@
 	{#if target}
 		{@const selected = target}
 		<div
-			class="modal-box max-h-[90dvh] w-full max-w-2xl space-y-4 overflow-y-auto rounded-lg bg-base-100"
+			class="modal-box max-h-[85dvh] w-full max-w-2xl space-y-4 overflow-y-auto rounded-lg bg-base-100 p-4"
 		>
 			<header class="flex items-start justify-between gap-3">
-				<div>
-					<h2 id="purge-murid-title" class="text-lg font-bold">Hapus Permanen</h2>
-					<p class="text-sm">{target.nama}</p>
+				<div class="min-w-0">
+					<h2 id="purge-murid-title" class="text-xl font-bold">Hapus Permanen</h2>
+					<p class="text-base-content/65 mt-1 break-words text-sm">{target.nama}</p>
 				</div>
 				<button
 					class="btn btn-ghost btn-sm btn-square"
@@ -87,7 +87,7 @@
 				<form method="POST" action="?/previewPurge" use:enhance={previewSubmit}>
 					<input type="hidden" name="lifecycleIds" value={selected.id} />
 					<div class="flex justify-end">
-						<button type="submit" class="btn btn-soft" disabled={busy}
+						<button type="submit" class="btn btn-soft h-auto min-h-10 whitespace-normal max-sm:w-full" disabled={busy}
 							><Icon name="eye" /> Periksa Dampak Penghapusan</button
 						>
 					</div>
@@ -165,7 +165,7 @@
 									/> Saya menyetujui penghapusan permanen seluruh data yang tercantum. Backup database
 									otomatis harus berhasil sebelum penghapusan.</label
 								>
-								<div class="flex flex-wrap justify-end gap-2">
+								<div class="border-base-200 flex flex-wrap justify-end gap-2 border-t pt-3">
 									<button class="btn btn-ghost" type="button" onclick={close} disabled={submitting}
 										>Batal</button
 									><button

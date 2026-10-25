@@ -15,7 +15,7 @@
 	let { data } = $props();
 	type UserItem = (typeof data.users)[number];
 	type EditableUser = UserItem & {
-		type: 'user' | 'wali_kelas' | 'wali_asuh' | 'wali_asrama' | 'tim_dapur';
+		type: 'user' | 'wali_kelas' | 'wali_asuh' | 'wali_asrama' | 'tim_dapur' | 'tim_keamanan';
 	};
 	type ActionBody = { message?: string; deleted?: number[] };
 

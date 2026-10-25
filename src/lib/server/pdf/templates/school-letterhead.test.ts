@@ -28,3 +28,18 @@ test('kop mengabaikan baris kontak jika data belum tersedia', () => {
 	const html = renderSchoolLetterhead({ naungan: 'kemsos', nama: 'Sekolah Uji' });
 	assert.doesNotMatch(html, /school-letterhead__contact/);
 });
+
+test('kop gambar hanya menerima data PNG internal dan tetap menamai dokumen', () => {
+	const custom = renderSchoolLetterhead({
+		nama: 'Sekolah SD',
+		customLetterheadUrl: 'data:image/png;base64,AAAA'
+	});
+	assert.match(custom, /school-letterhead--custom/);
+	assert.match(custom, /alt="Sekolah SD"/);
+	const fallback = renderSchoolLetterhead({
+		nama: 'Sekolah SMP',
+		customLetterheadUrl: 'https://example.invalid/kop.png'
+	});
+	assert.match(fallback, /school-letterhead__school">Sekolah SMP/);
+	assert.doesNotMatch(fallback, /https:/);
+});

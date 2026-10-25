@@ -5,6 +5,7 @@ export const creatableUserRoles = [
 	'wali_asuh',
 	'wali_asrama',
 	'tim_dapur',
+	'tim_keamanan',
 	'operator'
 ] as const;
 export type CreatableUserRole = (typeof creatableUserRoles)[number];
@@ -13,6 +14,7 @@ export const userRoleLabels: Record<CreatableUserRole, string> = {
 	wali_asuh: 'Wali Asuh',
 	wali_asrama: 'Wali Asrama',
 	tim_dapur: 'Tim Dapur',
+	tim_keamanan: 'Tim Keamanan',
 	operator: 'Operator'
 };
 
@@ -33,6 +35,7 @@ export function resolveUserRole(
 	const parsedRole = parseCreatableUserRole(role);
 	const jabatanAkses = parseAccessPosition(position);
 	if (!parsedRole || (position && !jabatanAkses)) return null;
+	if (parsedRole === 'tim_keamanan' && jabatanAkses) return null;
 	if (parsedRole === 'operator') {
 		if (jabatanAkses && jabatanAkses !== 'operator') return null;
 		return { type: 'user', jabatanAkses: 'operator' };

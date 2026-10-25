@@ -31,7 +31,7 @@ export const tableAuthUser = sqliteTable(
 		}).$type<import('$lib/access-position').AccessPosition | null>(),
 		// tipe user: admin (penuh), wali_kelas (terbatas ke kelas_id), wali_asuh (terbatas ke keasramaan), atau user (default/other)
 		type: text({
-			enum: ['admin', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'wali_murid', 'user', 'tim_dapur']
+			enum: ['admin', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'wali_murid', 'user', 'tim_dapur', 'tim_keamanan']
 		})
 			.notNull()
 			.default('admin'),
@@ -1053,6 +1053,20 @@ export const tableIzinPulangMurid = sqliteTable(
 	]
 );
 
+export const tablePerjalananMurid = sqliteTable('perjalanan_murid', {
+	id: int().primaryKey({ autoIncrement: true }),
+	izinId: int().references(() => tableIzinPulangMurid.id, { onDelete: 'cascade' }).notNull().unique(),
+	keluarPada: text(),
+	keluarOleh: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+	kembaliPada: text(),
+	kembaliOleh: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+	...audit
+});
+
+export const tablePerjalananMuridRelations = relations(tablePerjalananMurid, ({ one }) => ({
+	izin: one(tableIzinPulangMurid, { fields: [tablePerjalananMurid.izinId], references: [tableIzinPulangMurid.id] })
+}));
+
 export const tableTindakLanjutAbsensi = sqliteTable(
 	'tindak_lanjut_absensi',
 	{
@@ -1167,6 +1181,7 @@ export const tableAbsensiKegiatanRelations = relations(tableAbsensiKegiatan, ({ 
 }));
 
 export const tableIzinPulangMuridRelations = relations(tableIzinPulangMurid, ({ one }) => ({
+	perjalanan: one(tablePerjalananMurid),
 	sekolah: one(tableSekolah, {
 		fields: [tableIzinPulangMurid.sekolahId],
 		references: [tableSekolah.id]

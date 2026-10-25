@@ -17,6 +17,7 @@ import { fail, redirect, error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import { guardianStudentCondition } from '$lib/server/assignment-summary';
 import { canAccessExportClass } from '$lib/server/class-export-access';
+import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 
 type NilaiMap = Record<number, EkstrakurikulerNilaiKategori>;
 
@@ -83,7 +84,7 @@ export async function load({ parent, url, depends, locals }) {
 
 	// Wali_asuh: only allow assessing their own students
 	const userWithType = locals.user as { type?: string; pegawaiId?: number } | null;
-	if (userWithType?.type === 'wali_asuh' && userWithType.pegawaiId) {
+	if (!hasSchoolWideOperationalAccess(locals.user) && userWithType?.type === 'wali_asuh' && userWithType.pegawaiId) {
 		const peg = await db.query.tablePegawai.findFirst({
 			columns: { nama: true },
 			where: eq(tablePegawai.id, userWithType.pegawaiId)
@@ -201,7 +202,7 @@ export const actions = {
 
 		// Wali_asuh: only allow assessing their own students
 		const userWithType = locals.user as { type?: string; pegawaiId?: number } | null;
-		if (userWithType?.type === 'wali_asuh' && userWithType.pegawaiId) {
+		if (!hasSchoolWideOperationalAccess(locals.user) && userWithType?.type === 'wali_asuh' && userWithType.pegawaiId) {
 			const peg = await db.query.tablePegawai.findFirst({
 				columns: { nama: true },
 				where: eq(tablePegawai.id, userWithType.pegawaiId)

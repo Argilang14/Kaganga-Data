@@ -28,6 +28,7 @@ import {
 import { getOrCreateBukuTamuSettings, setBukuTamuPasskey } from '$lib/server/buku-tamu-pass';
 import { getStorageInfo, saveStorageRoot } from '$lib/server/storage-settings';
 import { writeAuditLog } from '$lib/server/audit-log';
+import { isIntegratedSchool } from '$lib/education-unit';
 
 type AddressEntry = { name: string; address: string; raw: string };
 
@@ -86,6 +87,10 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 
 	return {
 		meta: { title: 'Pengaturan', description: 'Pengaturan Kaganga' } satisfies PageMeta,
+		printAssetScopes: isAdmin && sekolahId ? [
+			{ value: 'induk', label: 'Induk sekolah' },
+			...(isIntegratedSchool(locals.sekolah ?? {}) ? ['sd', 'smp', 'sma'].map(value => ({ value, label: value.toUpperCase() })) : [])
+		] : [],
 		appAddresses: addresses,
 		protocol,
 		appVersion: getAppVersion(),

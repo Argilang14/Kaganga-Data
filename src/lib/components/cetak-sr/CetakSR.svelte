@@ -4,6 +4,8 @@
 	import { page } from '$app/state';
 	import Icon from '$lib/components/icon.svelte';
 	import GuestPdf from '$lib/components/cetak/GuestPdf.svelte';
+	import ClassQrPrint from '$lib/components/cetak/ClassQrPrint.svelte';
+	import type { ClassQrPrintContext } from '$lib/class-monitoring';
 	import { responsePdfFilename } from '$lib/pdf-filename';
 	import PreviewHeader from '$lib/components/cetak-sr/PreviewHeader.svelte';
 	import DocumentMuridSelector from '$lib/components/cetak-sr/DocumentMuridSelector.svelte';
@@ -26,6 +28,7 @@
 	} from '$lib/rapor-params';
 	type Props = {
 		data: {
+			classQrPrintContext?: ClassQrPrintContext | null;
 			jurnalAccess?: {
 				canPrint: boolean;
 				requiresClass: boolean;
@@ -109,6 +112,7 @@
 		{ value: 'piagam', label: 'Piagam' },
 		{ value: 'keasramaan', label: 'Rapor Keasramaan' },
 		{ value: 'kartu-absensi', label: 'Kartu Absensi Murid' },
+		{ value: 'qr-kelas', label: 'QR Kelas' },
 		{ value: 'kartu-ujian', label: 'Kartu Ujian' },
 		{ value: 'jadwal-pelajaran', label: 'Jadwal Pelajaran' },
 		{ value: 'kalender-pendidikan', label: 'Kalender Pendidikan' },
@@ -121,13 +125,14 @@
 	];
 	const currentUserType = $derived((page.data.user as { type?: string } | null | undefined)?.type);
 	const visibleDocumentOptions = $derived.by(() => {
-		const general = ['kartu-absensi', 'kartu-ujian', 'kartu-ujian-meja', 'jadwal-pelajaran', 'kalender-pendidikan', 'jurnal-mengajar', 'rekap-absensi-kegiatan', 'buku-tamu'];
-		if (documentGroup === 'dokumen') return documentOptions.filter((option) => general.includes(option.value) && (option.value !== 'jurnal-mengajar' || data.jurnalAccess?.canPrint !== false) && (option.value !== 'rekap-absensi-kegiatan' || data.absensiAccess === true) && (option.value !== 'buku-tamu' || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('administrasi_buku_tamu')) && (!['kartu-ujian', 'kartu-ujian-meja'].includes(option.value) || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('ujian_cetak') || page.data.user?.permissions?.includes('ujian_manage')));
-		if (documentGroup === 'raport') return documentOptions.filter((option) => !general.includes(option.value) && canPrintDocument(page.data.user, option.value));
+		const general = ['kartu-absensi', 'qr-kelas', 'kartu-ujian', 'kartu-ujian-meja', 'jadwal-pelajaran', 'kalender-pendidikan', 'jurnal-mengajar', 'rekap-absensi-kegiatan', 'buku-tamu'];
+		const availableOptions = documentOptions.filter((option) => option.value !== 'qr-kelas' || data.classQrPrintContext);
+		if (documentGroup === 'dokumen') return availableOptions.filter((option) => general.includes(option.value) && (option.value !== 'jurnal-mengajar' || data.jurnalAccess?.canPrint !== false) && (option.value !== 'rekap-absensi-kegiatan' || data.absensiAccess === true) && (option.value !== 'buku-tamu' || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('administrasi_buku_tamu')) && (!['kartu-ujian', 'kartu-ujian-meja'].includes(option.value) || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('ujian_cetak') || page.data.user?.permissions?.includes('ujian_manage')));
+		if (documentGroup === 'raport') return availableOptions.filter((option) => !general.includes(option.value) && canPrintDocument(page.data.user, option.value));
 		if (currentUserType === 'wali_asrama' || currentUserType === 'wali_asuh') {
-			return documentOptions.filter((option) => !general.includes(option.value) && canPrintDocument(page.data.user, option.value));
+			return availableOptions.filter((option) => !general.includes(option.value) && canPrintDocument(page.data.user, option.value));
 		}
-		return documentOptions.filter(
+		return availableOptions.filter(
 			(option) =>
 				canPrintDocument(page.data.user, option.value) &&
 				(!option.value.startsWith('martikulasi-') || isSRVariant) &&
@@ -188,6 +193,7 @@
 	let showUjianAttendanceQr = $state(false);
 	let showUjianLmsAccount = $state(false);
 	let showUjianDeskPrincipalSignature = $state(true);
+	let includeSchoolMarks = $state(false);
 	let selectedJadwalJenjang = $state<'semua' | 'srd' | 'srmp' | 'srma'>('semua');
 	let selectedKalenderPeriode = $state<
 		'tahun_kalender' | 'tahun_ajaran' | 'semester_ganjil' | 'semester_genap'
@@ -416,6 +422,7 @@
 	const documentNeedsMurid = $derived.by(
 		() =>
 			selectedDocument !== 'jadwal-pelajaran' &&
+			selectedDocument !== 'qr-kelas' &&
 			selectedDocument !== 'kalender-pendidikan' &&
 			selectedDocument !== 'jurnal-mengajar' &&
 			selectedDocument !== 'rekap-absensi-kegiatan' &&
@@ -782,6 +789,7 @@
 							? selectedJadwalOrientation
 							: undefined,
 					layoutMode: documentType === 'jadwal-pelajaran' ? selectedJadwalLayout : undefined,
+					includeSchoolMarks: documentType === 'jadwal-pelajaran' ? includeSchoolMarks : false,
 					jenjang:
 						documentType === 'jadwal-pelajaran' || documentType === 'kalender-pendidikan'
 							? selectedJadwalJenjang
@@ -1121,7 +1129,20 @@
 	}
 </script>
 
-{#if selectedDocument === 'buku-tamu'}
+{#if selectedDocument === 'qr-kelas' && data.classQrPrintContext}
+	<div class="card bg-base-100 rounded-lg border-none p-4 shadow-md">
+		<h2 class="mb-4 text-xl font-bold">Cetak - QR Kelas</h2>
+		<label class="mb-4 block min-w-0">
+			<span class="mb-1 block text-sm font-medium">Pilih Dokumen</span>
+			<select class="select select-bordered bg-base-100 w-full" bind:value={selectedDocument}>
+				{#each visibleDocumentOptions as option (option.value)}
+					<option value={option.value}>{option.label}</option>
+				{/each}
+			</select>
+		</label>
+		<ClassQrPrint context={data.classQrPrintContext} />
+	</div>
+{:else if selectedDocument === 'buku-tamu'}
 	<div class="card bg-base-100 rounded-lg border border-none p-4 shadow-md">
 		<h2 class="mb-1 text-2xl font-bold">Cetak - PDF Buku Tamu Digital</h2>
 		<p class="text-base-content/65 mb-5 text-sm">
@@ -1498,6 +1519,13 @@
 				</a>
 			</div>
 		</div>
+	{/if}
+
+	{#if selectedDocument === 'jadwal-pelajaran'}
+		<label class="mt-3 inline-flex items-center gap-3 text-sm">
+			<input type="checkbox" class="toggle toggle-success" bind:checked={includeSchoolMarks} />
+			Tanda tangan dan stempel kepala sekolah
+		</label>
 	{/if}
 
 	{#if selectedDocument === 'jurnal-mengajar'}

@@ -59,18 +59,6 @@ export const appMenuItems: MenuItem[] = [
 				path: '/jadwal/pengaturan'
 			},
 			{
-				title: 'Rekomendasi Jadwal',
-				path: '/jadwal/rekomendasi',
-				permission: 'penjadwalan_rekomendasi',
-				tags: ['semiotomatis', 'bentrok guru', 'target jp', 'preferensi']
-			},
-			{
-				title: 'Manajemen Ruangan',
-				path: '/ruangan',
-				permission: 'ruangan_lihat',
-				tags: ['ruang kelas', 'laboratorium', 'bentrok ruang']
-			},
-			{
 				title: 'Kalender Pendidikan',
 				path: '/jadwal/kalender'
 			},
@@ -179,6 +167,7 @@ export const appMenuItems: MenuItem[] = [
 			{
 				title: 'Status Akhir',
 				path: '/status-akhir',
+				condition: 'genap',
 				tags: ['kenaikan', 'kelulusan', 'rapor', 'semester genap']
 			}
 		]
@@ -203,6 +192,12 @@ export const appMenuItems: MenuItem[] = [
 				title: 'Catat Absensi',
 				path: '/administrasi/absensi/kegiatan',
 				permission: 'absensi_lihat'
+			},
+			{
+				title: 'Konfirmasi Pulang',
+				path: '/administrasi/absensi/konfirmasi-pulang',
+				permission: 'absensi_perjalanan',
+				tags: ['keamanan', 'penjemput', 'izin pulang', 'kembali ke sekolah']
 			},
 			{
 				title: 'Monitoring Kelas',

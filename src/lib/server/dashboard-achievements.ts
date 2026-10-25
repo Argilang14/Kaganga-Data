@@ -187,6 +187,7 @@ export async function loadDashboardAchievements(
 						)
 					});
 		const permits = await db.query.tableIzinPulangMurid.findMany({
+			with: { perjalanan: true },
 			columns: {
 				muridId: true,
 				tanggalKeluar: true,

@@ -12,6 +12,7 @@ export type AttendanceSummary = {
 	warnings: string[];
 	totals: SummaryCounts;
 	classes: Array<SummaryClass & SummaryCounts>;
+	missingStudents: Array<SummaryStudent & { kelas: string; canEdit?: boolean; reason?: string }>;
 };
 
 export const summaryLevelLabels: Record<SummaryLevel, string> = {
@@ -109,6 +110,7 @@ export function buildAttendanceSummary(input: {
 	if (input.restrictedStudents) lines.push('Cakupan : anak binaan sesuai penugasan');
 	const classes: AttendanceSummary['classes'] = [];
 	const totals = emptyCounts();
+	const missingStudents: AttendanceSummary['missingStudents'] = [];
 	let previousLevel: SummaryLevel | null = null;
 	let unconfirmedPulang = 0;
 	const sorted = [...input.classes].sort(
@@ -144,6 +146,7 @@ export function buildAttendanceSummary(input: {
 				absent.push(`- ${clean(student.nama)} (i)`);
 			} else {
 				counts.belum++;
+				missingStudents.push({ ...student, kelas: kelas.nama });
 				if (status === 'pulang') unconfirmedPulang++;
 				missing.push(
 					`- ${clean(student.nama)}${status === 'pulang' ? ' (status pulang perlu konfirmasi)' : ''}`
@@ -185,5 +188,5 @@ export function buildAttendanceSummary(input: {
 		'Keterangan : s = sakit, i = izin, a = alfa, p = izin pulang',
 		`Diperbarui : ${new Date(generatedAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
 	);
-	return { text: lines.join('\n'), generatedAt, warnings, totals, classes };
+	return { text: lines.join('\n'), generatedAt, warnings, totals, classes, missingStudents };
 }

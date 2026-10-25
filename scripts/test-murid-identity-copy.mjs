@@ -626,8 +626,13 @@ try {
 		await page.goto(`${base}/murid/arsip?perlu_periksa=1&q=Identitas%20QA%203`, {
 			waitUntil: 'networkidle0'
 		});
-		await page.waitForSelector('details:has(form[action="?/resolveIdentity"]) summary');
-		await page.click('details:has(form[action="?/resolveIdentity"]) summary');
+		await page.waitForSelector('button[data-review-id]');
+		const tableWidth = await page.$eval('.archive-table', (el) => el.getBoundingClientRect().width);
+		await page.click('button[data-review-id]');
+		await page.waitForSelector('dialog[open] form[action="?/resolveIdentity"]');
+		assert.equal(await page.$eval('.archive-table', (el) => el.getBoundingClientRect().width), tableWidth);
+		assert.ok(await page.$eval('dialog[open]', (el) => el.matches(':modal')));
+		assert.ok(await page.$eval('dialog[open] .modal-box', (el) => el.scrollWidth <= el.clientWidth + 1));
 		await page.$eval('form[action="?/resolveIdentity"]', (el) =>
 			el.scrollIntoView({ block: 'center' })
 		);
@@ -678,6 +683,13 @@ try {
 	await page.setViewport({ width: 1366, height: 900 });
 	await page.goto(`${base}/murid/arsip?q=Identitas%20QA`, { waitUntil: 'networkidle0' });
 	await page.screenshot({ path: path.join(folder, 'arsip.png'), fullPage: true });
+	await page.click('button[data-history-id]');
+	await page.waitForSelector('dialog[open] h2');
+	assert.equal(await page.$eval('dialog[open] h2', (el) => el.textContent), 'Riwayat Kelas');
+	assert.ok(await page.$eval('dialog[open]', (el) => el.matches(':modal')));
+	await page.keyboard.press('Escape');
+	await page.waitForSelector('dialog[open]', { hidden: true });
+	assert.ok(await page.$eval('button[data-history-id]', (el) => document.activeElement === el));
 	result = await post('/murid/arsip?/updateStatus', {
 		lifecycleIds: pending.id,
 		status: 'aktif'

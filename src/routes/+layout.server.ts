@@ -242,7 +242,7 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 		const userType = (user as { type?: string }).type;
 		const canManageMapel =
 			hasSchoolWideOperationalAccess(user) ||
-			(userType !== 'wali_asuh' && userType !== 'wali_asrama');
+			(userType !== 'wali_asuh' && userType !== 'wali_asrama' && userType !== 'tim_keamanan');
 		const canEditUrutan =
 			hasSchoolWideOperationalAccess(user) ||
 			userType === 'kepala_sekolah' ||

@@ -49,8 +49,7 @@
 		qrClassId?: number;
 	};
 	type PageData = { monitoring: Monitoring };
-	type QrCard = { kelasId: number; nama: string; token: string; payload: string };
-	type ApiPayload = { ok?: boolean; message?: string; error?: string; cards?: QrCard[] };
+	type ApiPayload = { ok?: boolean; message?: string; error?: string };
 
 	let { data }: { data: PageData } = $props();
 	let tanggal = $state(untrack(() => data.monitoring.tanggal));
@@ -63,14 +62,12 @@
 
 	let scanDialog = $state<HTMLDialogElement>();
 	let absenceDialog = $state<HTMLDialogElement>();
-	let qrDialog = $state<HTMLDialogElement>();
 	let videoEl = $state<HTMLVideoElement>();
 	let selectedMeeting = $state<Meeting | null>(null);
 	let scannerStarting = $state(false);
 	let scannerActive = $state(false);
 	let scanOpen = $state(false);
 	let absenceOpen = $state(false);
-	let qrOpen = $state(false);
 	let scanToken = $state('');
 	let scanError = $state('');
 	let submittingScan = $state(false);
@@ -83,11 +80,6 @@
 	let absenceNote = $state('');
 	let submittingAbsence = $state(false);
 
-	let qrSelection = $state<number[]>([]);
-	let qrCards = $state<QrCard[]>([]);
-	let qrBusy = $state(false);
-	let qrError = $state('');
-	let resetTarget = $state<Option | null>(null);
 
 	const monitoring = $derived(data.monitoring);
 	const maxMeetings = $derived(Math.max(0, ...monitoring.rows.map((row) => row.meetings.length)));
@@ -99,7 +91,7 @@
 		jenjang ? monitoring.kelasList.filter((item) => item.jenjang === jenjang) : monitoring.kelasList
 	);
 	const isDialogBusy = $derived(
-		scanOpen || absenceOpen || qrOpen || submittingScan || submittingAbsence || qrBusy
+		scanOpen || absenceOpen || submittingScan || submittingAbsence
 	);
 	const computedSummary = $derived.by(() => {
 		const meetings = monitoring.rows.flatMap((row) => row.meetings);
@@ -425,122 +417,6 @@
 		}
 	}
 
-	function openQrManager() {
-		qrSelection = monitoring.qrClassId
-			? [monitoring.qrClassId]
-			: monitoring.kelasList.map((item) => item.id);
-		qrCards = [];
-		qrError = '';
-		resetTarget = null;
-		qrOpen = true;
-		qrDialog?.showModal();
-	}
-
-	function toggleQrClass(id: number) {
-		qrSelection = qrSelection.includes(id)
-			? qrSelection.filter((item) => item !== id)
-			: [...qrSelection, id];
-	}
-
-	async function loadQrCards() {
-		if (!qrSelection.length || qrBusy) return;
-		qrBusy = true;
-		qrError = '';
-		try {
-			const response = await fetch('/api/administrasi/absensi/monitoring-kelas', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ action: 'qr', kelasIds: qrSelection })
-			});
-			const payload = await readResponse(response);
-			qrCards = payload.cards ?? [];
-		} catch (error) {
-			qrError = friendlyError(error, 'QR kelas gagal dimuat.');
-		} finally {
-			qrBusy = false;
-		}
-	}
-
-	async function resetQr() {
-		if (!resetTarget || qrBusy) return;
-		const targetId = resetTarget.id;
-		qrBusy = true;
-		qrError = '';
-		try {
-			const response = await fetch('/api/administrasi/absensi/monitoring-kelas', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ action: 'resetQr', kelasId: resetTarget.id })
-			});
-			const payload = await readResponse(response);
-			if (payload.cards?.length) {
-				qrCards = [...qrCards.filter((card) => card.kelasId !== targetId), ...payload.cards];
-			} else {
-				qrCards = qrCards.filter((card) => card.kelasId !== targetId);
-			}
-			resetTarget = null;
-		} catch (error) {
-			qrError = friendlyError(error, 'QR kelas gagal dibuat ulang.');
-		} finally {
-			qrBusy = false;
-		}
-	}
-
-	function escapeHtml(value: unknown) {
-		return String(value)
-			.replaceAll('&', '&amp;')
-			.replaceAll('<', '&lt;')
-			.replaceAll('>', '&gt;')
-			.replaceAll('"', '&quot;')
-			.replaceAll("'", '&#039;');
-	}
-
-	async function printQrCards() {
-		if (!qrCards.length || qrBusy) return;
-		const popup = window.open('', '_blank');
-		if (!popup) {
-			qrError = 'Jendela cetak diblokir browser. Izinkan pop-up lalu coba lagi.';
-			return;
-		}
-		popup.opener = null;
-		popup.document.write('<title>Menyiapkan QR kelas...</title>');
-		try {
-			qrBusy = true;
-			const QRCode = await import('qrcode');
-			const rendered = await Promise.all(
-				qrCards.map(async (card) => ({
-					...card,
-					image: await QRCode.toDataURL(card.payload, {
-						scale: 12,
-						margin: 4,
-						errorCorrectionLevel: 'M'
-					})
-				}))
-			);
-			const labels = rendered
-				.map(
-					(card) =>
-						`<article><p>${escapeHtml(monitoring.sekolahNama)}</p><h1>${escapeHtml(card.nama)}</h1><img src="${escapeHtml(card.image)}" alt="QR ${escapeHtml(card.nama)}"><p>${escapeHtml(monitoring.contextLabel)}</p></article>`
-				)
-				.join('');
-			popup.document.open();
-			popup.document.write(
-				`<!doctype html><html><head><title>QR Kelas</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;display:grid;grid-template-columns:repeat(2,1fr);gap:8mm}article{break-inside:avoid;border:1px dashed #777;min-height:125mm;padding:10mm;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}h1{font-size:22px;margin:0 0 6mm}img{width:72mm;height:72mm;image-rendering:auto}p{font-size:12px;margin:5mm 0 0;color:#444}@media print{body{gap:8mm}}</style></head><body>${labels}</body></html>`
-			);
-			popup.document.close();
-			await Promise.all(Array.from(popup.document.images).map((image) => image.decode()));
-			if (!popup.closed) {
-				popup.focus();
-				popup.print();
-			}
-		} catch (error) {
-			popup.close();
-			qrError = friendlyError(error, 'Dokumen cetak gagal dibuat.');
-		} finally {
-			qrBusy = false;
-		}
-	}
-
 	onMount(() => {
 		const timer = window.setInterval(() => {
 			if (document.visibilityState === 'visible' && !isDialogBusy) void refresh();
@@ -641,11 +517,6 @@
 			</div>
 		</div>
 		<div class="monitoring-actions flex gap-2">
-			{#if monitoring.capabilities.canManage}
-				<button class="btn btn-sm min-h-10" type="button" onclick={openQrManager}>
-					<Icon name="grid" class="h-4 w-4" /> Kelola QR
-				</button>
-			{/if}
 			<button
 				class="btn btn-square btn-sm size-10"
 				type="button"
@@ -1098,122 +969,6 @@
 	</form>
 </dialog>
 
-<dialog
-	class="modal"
-	id="class-monitoring-qr"
-	aria-labelledby="class-monitoring-qr-title"
-	bind:this={qrDialog}
-	onclose={() => (qrOpen = false)}
-	oncancel={(event) => {
-		if (qrBusy) event.preventDefault();
-	}}
->
-	<div
-		class="modal-box flex max-h-[90dvh] w-[calc(100%_-_1.5rem)] max-w-3xl flex-col rounded-lg p-0"
-	>
-		<div
-			class="flex shrink-0 items-center justify-between gap-3 border-b border-base-200 bg-base-200/35 p-4 sm:p-5"
-		>
-			<h2 id="class-monitoring-qr-title" class="text-lg font-bold">QR Kelas</h2>
-			<button
-				class="btn btn-ghost btn-sm btn-square size-10 shrink-0"
-				type="button"
-				title="Tutup"
-				aria-label="Tutup QR kelas"
-				disabled={qrBusy}
-				aria-disabled={qrBusy}
-				onclick={() => {
-					qrOpen = false;
-					qrDialog?.close();
-				}}><Icon name="close" /></button
-			>
-		</div>
-		<div class="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 sm:p-5">
-			<fieldset disabled={qrBusy} class="min-w-0">
-				<legend class="mb-3 text-sm font-semibold">Kelas peserta</legend>
-				<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-					{#each monitoring.kelasList as kelas (kelas.id)}<label
-							class="flex min-h-11 min-w-0 cursor-pointer items-center gap-3 rounded-md border border-base-300 p-3 text-sm"
-							><input
-								class="checkbox checkbox-sm shrink-0"
-								type="checkbox"
-								checked={qrSelection.includes(kelas.id)}
-								onchange={() => toggleQrClass(kelas.id)}
-							/><span class="break-words">{kelas.nama}</span></label
-						>{/each}
-				</div>
-			</fieldset>
-			<div class="flex flex-wrap gap-2">
-				<button
-					class="btn btn-info btn-soft btn-sm min-h-10"
-					type="button"
-					onclick={loadQrCards}
-					disabled={!qrSelection.length || qrBusy}
-					>{#if qrBusy}<span class="loading loading-spinner loading-xs"></span>{:else}<Icon
-							name="grid"
-						/>{/if} Tampilkan QR</button
-				><button
-					class="btn btn-sm min-h-10"
-					type="button"
-					onclick={printQrCards}
-					disabled={!qrCards.length || qrBusy}><Icon name="print" /> Cetak</button
-				>
-			</div>
-			{#if qrError}<div class="alert alert-error py-2" role="alert">
-					<Icon name="error" /><span>{qrError}</span>
-				</div>{/if}
-			{#if qrCards.length}<div class="divide-base-300 divide-y rounded-lg border border-base-300">
-					{#each qrCards as card (card.kelasId)}<div
-							class="flex min-w-0 items-center justify-between gap-3 p-3"
-						>
-							<div class="min-w-0">
-								<div class="font-semibold">{card.nama}</div>
-								<div class="text-base-content/55 truncate font-mono text-xs">{card.token}</div>
-							</div>
-							<button
-								class="btn btn-error btn-soft btn-sm btn-square size-10 shrink-0"
-								type="button"
-								title={`Buat ulang QR ${card.nama}`}
-								aria-label={`Buat ulang QR ${card.nama}`}
-								disabled={qrBusy}
-								aria-disabled={qrBusy}
-								onclick={() =>
-									(resetTarget = monitoring.kelasList.find((item) => item.id === card.kelasId) ?? {
-										id: card.kelasId,
-										nama: card.nama
-									})}><Icon name="repeat" /></button
-							>
-						</div>{/each}
-				</div>{/if}
-			{#if resetTarget}<div class="alert alert-warning items-start">
-					<Icon name="warning" />
-					<div class="flex-1">
-						<div class="font-semibold">Buat ulang QR {resetTarget.nama}?</div>
-						<p class="mt-1 text-sm">QR lama tidak berlaku lagi setelah diganti.</p>
-						<div class="mt-2 flex gap-2">
-							<button class="btn btn-error btn-sm" type="button" onclick={resetQr} disabled={qrBusy}
-								>Konfirmasi</button
-							><button
-								class="btn btn-sm"
-								type="button"
-								onclick={() => (resetTarget = null)}
-								disabled={qrBusy}>Batal</button
-							>
-						</div>
-					</div>
-				</div>{/if}
-		</div>
-	</div>
-	<form
-		method="dialog"
-		class="modal-backdrop"
-		onsubmit={(event) => {
-			if (qrBusy) event.preventDefault();
-		}}
-	>
-		<button aria-label="Tutup" disabled={qrBusy}>close</button>
-	</form>
-</dialog>
 
 <style>
 	.class-monitoring {

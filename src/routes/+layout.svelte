@@ -1,6 +1,7 @@
 <script lang="ts">
 	/* eslint-disable svelte/no-navigation-without-resolve -- layout contains many intentional href links for navigation */
 	import { page } from '$app/state';
+	import { onNavigate } from '$app/navigation';
 	import GlobalModal from '$lib/components/global-modal.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import Menu from '$lib/components/menu.svelte';
@@ -18,6 +19,10 @@
 	const appName = 'Kaganga';
 	let stoppingServer = $state(false);
 	let loggingOut = $state(false);
+	onNavigate(() => {
+		const drawer = document.getElementById('my-drawer-2') as HTMLInputElement | null;
+		if (drawer) drawer.checked = false;
+	});
 	const isLoginPage = $derived(page.url.pathname === '/login');
 	const isPublicGuestPage = $derived(page.url.pathname.startsWith('/tamu/'));
 
@@ -157,15 +162,20 @@
 		{@render children()}
 	</div>
 {:else}
+	<a href="#app-content" class="app-skip-link btn">Langsung ke konten</a>
 	<main class="app-shell drawer lg:drawer-open">
 		<input id="my-drawer-2" type="checkbox" class="drawer-toggle" />
-		<div class="drawer-content min-w-0 flex min-h-screen flex-col overflow-x-hidden">
+		<div class="app-workspace drawer-content flex min-w-0 flex-col overflow-x-hidden">
 			<Navbar {stopServer} {stoppingServer} {logout} {loggingOut} />
 
 			<div
-				class="app-page-surface bg-base-300 dark:bg-base-200 dark:border-base-200 border-base-300 flex min-w-0 flex-1 flex-col border lg:mr-2 lg:mb-2 lg:rounded-xl"
+				class="app-page-surface bg-base-300 dark:bg-base-200 dark:border-base-200 border-base-300 flex min-h-0 min-w-0 flex-1 flex-col border lg:mr-2 lg:mb-2 lg:rounded-xl"
 			>
-				<div class="app-page-viewport max-w-none overflow-y-auto">
+				<div
+					id="app-content"
+					tabindex="-1"
+					class="app-page-viewport min-h-0 flex-1 overflow-y-auto"
+				>
 					<div class="app-page-padding flex min-w-0 flex-row">
 						<div class="app-page-container mx-auto w-full min-w-0 flex-1">
 							<ScrollToTop />
@@ -177,31 +187,61 @@
 				</div>
 			</div>
 		</div>
-		<div class="drawer-side z-40">
-			<label for="my-drawer-2" aria-label="close sidebar" class="drawer-overlay"></label>
-			<ul
-				class="menu bg-base-100 text-base-content min-h-full w-72 max-w-[85vw] overflow-x-hidden p-4"
+		<div class="drawer-side z-60 lg:z-40">
+			<label for="my-drawer-2" aria-label="Tutup menu" class="drawer-overlay"></label>
+			<aside
+				class="app-sidebar bg-base-100 text-base-content flex flex-col"
+				aria-label="Menu utama"
 			>
-				<div class="mt-16 flex items-center gap-2 pb-4 lg:mt-1">
+				<div class="app-sidebar-brand flex shrink-0 items-center gap-2">
 					{#if data.meta?.logoUrl}
 						<img class="h-8 rounded" src={data.meta.logoUrl} alt="Brand logo" />
 					{/if}
-					<a href="/"><h2 class="mb-2 text-xl font-bold">Dashboard</h2></a>
+					<a
+						href="/"
+						class="min-w-0 flex-1 text-xl font-bold"
+						aria-current={page.url.pathname === '/' ? 'page' : undefined}>Dashboard</a
+					>
+					<button
+						type="button"
+						class="btn btn-ghost btn-square btn-sm lg:hidden"
+						aria-label="Tutup menu"
+						title="Tutup menu"
+						onclick={() => {
+							const drawer = document.getElementById('my-drawer-2') as HTMLInputElement | null;
+							if (drawer) drawer.checked = false;
+						}}><Icon name="close" /></button
+					>
 				</div>
 
 				<Menu />
 
-				<div class="mt-4 flex flex-col gap-3">
-					<a href="/pengaturan" class="flex items-center gap-2">
-						<Icon name="gear" />
-						<h2 class="font-bold">Pengaturan</h2>
-					</a>
-					<a href="/tentang" class="flex items-center gap-2">
-						<Icon name="info" />
-						<h2 class="font-bold">Tentang Aplikasi</h2>
-					</a>
-				</div>
-			</ul>
+				<nav
+					class="app-sidebar-footer mt-3 shrink-0 border-t border-base-300 pt-2"
+					aria-label="Pengaturan aplikasi"
+				>
+					<ul class="menu w-full p-0">
+						<li>
+							<a
+								href="/pengaturan"
+								aria-current={page.url.pathname.startsWith('/pengaturan') ? 'page' : undefined}
+							>
+								<Icon name="gear" />
+								<span>Pengaturan</span>
+							</a>
+						</li>
+						<li>
+							<a
+								href="/tentang"
+								aria-current={page.url.pathname === '/tentang' ? 'page' : undefined}
+							>
+								<Icon name="info" />
+								<span>Tentang Aplikasi</span>
+							</a>
+						</li>
+					</ul>
+				</nav>
+			</aside>
 		</div>
 	</main>
 {/if}

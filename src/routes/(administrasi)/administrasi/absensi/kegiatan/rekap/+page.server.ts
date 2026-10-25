@@ -35,7 +35,9 @@ import {
 	tableTindakLanjutAbsensi
 } from '$lib/server/db/schema';
 import { fail, redirect } from '@sveltejs/kit';
-import { and, asc, between, eq, inArray } from 'drizzle-orm';
+import { and, asc, between, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { pickupProblem, travelLocalTime } from '$lib/attendance-travel';
+import { projectPermitAttendance } from '$lib/server/attendance-permits';
 import ExcelJS from 'exceljs';
 
 type StatusKey = (typeof ABSENSI_KEGIATAN_STATUSES)[number];
@@ -196,7 +198,7 @@ export async function load({ locals, url }) {
 			}
 		}
 	}
-	const absensiRows = muridIds.length
+	const recordedRows = muridIds.length
 		? await db.query.tableAbsensiKegiatan.findMany({
 				where: and(
 					eq(tableAbsensiKegiatan.sekolahId, sekolahId),
@@ -215,6 +217,9 @@ export async function load({ locals, url }) {
 			})
 		: [];
 
+	const absensiRows = await projectPermitAttendance({ schoolId: sekolahId, semesterId: academic.activeSemesterId,
+		studentIds: muridIds, dates: listLocalDatesInRange(tanggalAwal, tanggalAkhir),
+		activities: kegiatanList.filter((item) => !kegiatanId || item.id === kegiatanId), rows: recordedRows });
 	const summary = emptySummary();
 	const byMurid = new Map<number, Record<StatusKey, number>>();
 	const kegiatanNameById = new Map(kegiatanList.map((kegiatan) => [kegiatan.id, kegiatan.nama]));
@@ -307,6 +312,8 @@ export const actions = {
 		if (!muridId || !kelasId || !tanggalKeluar || !rencanaKembali || !alasan) {
 			return fail(400, { fail: 'Murid, tanggal keluar, rencana kembali, dan alasan wajib diisi.' });
 		}
+		const pickupError = pickupProblem(penjemputNama, penjemputHubungan);
+		if (pickupError) return fail(400, { fail: pickupError });
 		if (rencanaKembali < tanggalKeluar) {
 			return fail(400, { fail: 'Rencana kembali tidak boleh sebelum tanggal keluar.' });
 		}
@@ -339,7 +346,8 @@ export const actions = {
 			where: and(
 				eq(tableIzinPulangMurid.sekolahId, sekolahId),
 				eq(tableIzinPulangMurid.muridId, muridId),
-				inArray(tableIzinPulangMurid.status, ['sedang_izin', 'terlambat_kembali'])
+				inArray(tableIzinPulangMurid.status, ['sedang_izin', 'terlambat_kembali']),
+				isNull(tableIzinPulangMurid.tanggalKembali)
 			)
 		});
 		if (activePermit) return fail(409, { fail: 'Murid masih memiliki izin pulang yang aktif.' });
@@ -383,6 +391,34 @@ export const actions = {
 		});
 		return { message: `Izin pulang ${murid.nama} berhasil dicatat.` };
 	},
+	updatePenjemput: async ({ request, locals }) => {
+		const school = locals.sekolah?.id;
+		if (!school || !locals.user) return fail(401, { fail: 'Sesi tidak valid.' });
+		if (!canAttendance(locals.user, 'izin_pulang')) return fail(403, { fail: 'Hanya pemberi izin yang berwenang dapat memperbaiki penjemput.' });
+		await ensureAbsenceMonitoringSchema();
+		const form = await request.formData();
+		const id = parsePositiveInteger(form.get('id'));
+		const nama = form.get('penjemputNama')?.toString().trim();
+		const hubungan = form.get('penjemputHubungan')?.toString().trim();
+		const pickupError = pickupProblem(nama, hubungan);
+		if (pickupError) return fail(400, { fail: pickupError });
+		return db.transaction(async (tx) => {
+			const permit = id ? await tx.query.tableIzinPulangMurid.findFirst({ where: and(eq(tableIzinPulangMurid.id, id), eq(tableIzinPulangMurid.sekolahId, school)), with: { perjalanan: true } }) : null;
+			if (!permit || !permit.muridId) return fail(404, { fail: 'Izin tidak ditemukan.' });
+			const student = await tx.query.tableMurid.findFirst({ columns: { id: true }, where: and(eq(tableMurid.id, permit.muridId), await studentAccessCondition(locals.user, school)) });
+			if (!student) return fail(403, { fail: 'Murid di luar penugasan akun.' });
+			if (permit.tanggalKembali || permit.status === 'dibatalkan' || permit.perjalanan?.keluarPada)
+				return fail(409, { fail: 'Penjemput tidak dapat diubah setelah keberangkatan terkonfirmasi atau izin ditutup.' });
+			if (form.get('revision') !== (permit.updatedAt ?? '')) return fail(409, { fail: 'Izin berubah. Muat ulang sebelum memperbaiki penjemput.' });
+			const timestamp = new Date().toISOString();
+			await tx.update(tableIzinPulangMurid).set({ penjemputNama: nama!, penjemputHubungan: hubungan!, updatedAt: timestamp }).where(eq(tableIzinPulangMurid.id, permit.id));
+			await writeAuditLog({ locals, request, action: 'update', entityType: 'izin_pulang_murid', entityId: permit.id,
+				summary: `Memperbaiki penjemput ${permit.namaSnapshot}`,
+				before: { penjemputNama: permit.penjemputNama, penjemputHubungan: permit.penjemputHubungan },
+				after: { penjemputNama: nama, penjemputHubungan: hubungan } }, tx);
+			return { message: 'Data penjemput diperbarui. Keamanan perlu memindai ulang QR.' };
+		});
+	},
 	markIzinReturned: async ({ request, locals }) => {
 		requireAbsensiKegiatanAccess(locals.user);
 		const sekolahId = locals.sekolah?.id;
@@ -393,12 +429,14 @@ export const actions = {
 			formData.get('tanggalKembali')?.toString(),
 			todayLocalDate()
 		);
-		const waktuKembali = parseTime(formData.get('waktuKembali'));
+		const localNow = travelLocalTime();
+		const waktuKembali = parseTime(formData.get('waktuKembali')) ?? (tanggalKembali === localNow.date ? localNow.time : null);
 		if (!id) return fail(400, { fail: 'Catatan izin tidak valid.' });
 		const { kelasList } = await loadAbsensiKelasOptions(sekolahId, locals.user);
 		const accessibleIds = kelasList.map((kelas) => kelas.id);
 		if (!accessibleIds.length) return fail(403, { fail: 'Tidak ada kelas yang dapat diakses.' });
 		const existing = await db.query.tableIzinPulangMurid.findFirst({
+			with: { perjalanan: true },
 			where: and(
 				eq(tableIzinPulangMurid.id, id),
 				eq(tableIzinPulangMurid.sekolahId, sekolahId),
@@ -406,15 +444,17 @@ export const actions = {
 			)
 		});
 		if (!existing) return fail(404, { fail: 'Catatan izin tidak ditemukan.' });
-		if (!['sedang_izin', 'terlambat_kembali'].includes(existing.status)) {
+		if (existing.tanggalKembali || !['sedang_izin', 'terlambat_kembali'].includes(existing.status)) {
 			return fail(409, { fail: 'Izin ini sudah ditutup atau dibatalkan.' });
 		}
-		if (tanggalKembali < existing.tanggalKeluar) {
+		const departure = existing.perjalanan?.keluarPada ? travelLocalTime(new Date(existing.perjalanan.keluarPada)) : null;
+		if (tanggalKembali < existing.tanggalKeluar ||
+			(departure && `${tanggalKembali}T${waktuKembali ?? '00:00'}` < `${departure.date}T${departure.time}`)) {
 			return fail(400, { fail: 'Tanggal kembali tidak boleh sebelum tanggal keluar.' });
 		}
 		const status = tanggalKembali > existing.rencanaKembali ? 'terlambat_kembali' : 'sudah_kembali';
 		const now = new Date().toISOString();
-		await db
+		const changed = await db
 			.update(tableIzinPulangMurid)
 			.set({
 				tanggalKembali,
@@ -423,7 +463,9 @@ export const actions = {
 				petugasKembaliUserId: locals.user.id,
 				updatedAt: now
 			})
-			.where(eq(tableIzinPulangMurid.id, id));
+			.where(and(eq(tableIzinPulangMurid.id, id), isNull(tableIzinPulangMurid.tanggalKembali), ne(tableIzinPulangMurid.status, 'dibatalkan'), existing.updatedAt ? eq(tableIzinPulangMurid.updatedAt, existing.updatedAt) : isNull(tableIzinPulangMurid.updatedAt)))
+			.returning({ id: tableIzinPulangMurid.id });
+		if (!changed.length) return fail(409, { fail: 'Izin sudah diubah petugas lain. Muat ulang data.' });
 		await writeAuditLog({
 			locals,
 			request,
@@ -447,6 +489,7 @@ export const actions = {
 		const accessibleIds = kelasList.map((kelas) => kelas.id);
 		const existing = accessibleIds.length
 			? await db.query.tableIzinPulangMurid.findFirst({
+					with: { perjalanan: true },
 					where: and(
 						eq(tableIzinPulangMurid.id, id),
 						eq(tableIzinPulangMurid.sekolahId, sekolahId),
@@ -455,13 +498,15 @@ export const actions = {
 				})
 			: null;
 		if (!existing) return fail(404, { fail: 'Catatan izin tidak ditemukan.' });
-		if (!['sedang_izin', 'terlambat_kembali'].includes(existing.status)) {
-			return fail(409, { fail: 'Izin ini sudah ditutup atau dibatalkan.' });
+		if (existing.tanggalKembali || existing.perjalanan?.keluarPada || !['sedang_izin', 'terlambat_kembali'].includes(existing.status)) {
+			return fail(409, { fail: 'Izin sudah dipakai berangkat atau ditutup. Catat kedatangan murid untuk menutup perjalanan.' });
 		}
-		await db
+		const cancelled = await db
 			.update(tableIzinPulangMurid)
 			.set({ status: 'dibatalkan', updatedAt: new Date().toISOString() })
-			.where(eq(tableIzinPulangMurid.id, id));
+			.where(and(eq(tableIzinPulangMurid.id, id), isNull(tableIzinPulangMurid.tanggalKembali), existing.updatedAt ? eq(tableIzinPulangMurid.updatedAt, existing.updatedAt) : isNull(tableIzinPulangMurid.updatedAt)))
+			.returning({ id: tableIzinPulangMurid.id });
+		if (!cancelled.length) return fail(409, { fail: 'Izin sudah diubah petugas lain. Muat ulang data.' });
 		await writeAuditLog({
 			locals,
 			request,

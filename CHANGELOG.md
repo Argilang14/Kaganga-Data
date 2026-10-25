@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.2.8 - 2026-10-25
+
+### Fitur dan perbaikan
+
+- Mengelompokkan Scan QR menjadi Pegawai, Sekolah, Makan, Asrama, dan Pulang sesuai izin akun. Scan kelas terhubung dengan monitoring kelas dan jurnal mengajar.
+- Menambahkan role Tim Keamanan serta konfirmasi keluar/kembali berdasarkan izin pulang, identitas penjemput, dan hubungan dengan murid.
+- Menampilkan pemberitahuan scan ganda lintas perangkat beserta petugas pencatat, tanpa menimpa catatan sebelumnya.
+- Melengkapi murid belum tercatat langsung dari dialog ringkasan scan dengan status eksplisit sesuai izin; tidak otomatis dianggap alfa.
+- Memindahkan cetak QR kelas ke Cetak Dokumen, dengan pemilih kelas dan pratinjau PDF.
+- Merapikan Data Pegawai, Arsip Murid & Alumni, Riwayat Pertumbuhan, Data Mata Pelajaran, jadwal, pengaturan jadwal, serta pengaturan dan asesmen martikulasi.
+- Memisahkan tindak lanjut sakit, izin pulang, dan alfa pada Rekap Absensi.
+- Menyamakan perhitungan RTS impor dan input manual serta menambahkan aset kop/pengesahan untuk cetak jadwal dengan cakupan induk dan jenjang.
+- Menampilkan menu Status Akhir hanya ketika semester genap aktif, termasuk pada pencarian menu. Data dan izin akses tidak berubah.
+
+### Catatan pembaruan
+
+- Cadangkan database dan folder foto/lampiran di PC server sebelum memperbarui. Installer tidak memuat database operasional sekolah.
+- AppId, port 1206, dan direktori data Kaganga-data tetap dipertahankan. Perubahan skema absensi diterapkan secara aditif.
+- Scan kelas dan konfirmasi perjalanan membutuhkan koneksi server. Kamera pada perangkat client memerlukan HTTPS.
+- Integrasi SIAP SR masih berupa audit/rencana; rilis ini tidak menyinkronkan data dengan layanan eksternal tersebut.
+
 ## 2.2.6 - 2026-10-11
 
 ### Perbaikan

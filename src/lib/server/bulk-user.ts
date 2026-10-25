@@ -46,7 +46,7 @@ export async function buildBulkUserPreview(
 ): Promise<BulkUserPreview> {
 	const resolvedRole = resolveUserRole(role);
 	if (!resolvedRole) throw error(400, 'Role pengguna tidak valid.');
-	const requiresAcademicAssignment = !['tim_dapur', 'operator'].includes(role);
+	const requiresAcademicAssignment = !['tim_dapur', 'tim_keamanan', 'operator'].includes(role);
 	const academic = await resolveSekolahAcademicContext(sekolahId, source);
 	const employees = await source.query.tablePegawai.findMany({
 		columns: { id: true, nama: true, jenis: true, status: true },
@@ -100,7 +100,9 @@ export async function buildBulkUserPreview(
 	}
 	const candidates: BulkUserCandidate[] = [];
 	for (const employee of employees.filter(
-		(row) => row.status === 'aktif' && row.jenis === (role === 'user' ? 'guru' : role)
+		(row) =>
+			row.status === 'aktif' &&
+			row.jenis === (role === 'user' ? 'guru' : role === 'tim_keamanan' ? 'keamanan' : role)
 	)) {
 		const name = normalizedEmployeeName(employee.nama);
 		const ownSubjects = subjects.filter((row) => row.pengampuId === employee.id);

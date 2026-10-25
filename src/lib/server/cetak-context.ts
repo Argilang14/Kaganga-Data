@@ -1,4 +1,6 @@
 import db from '$lib/server/db';
+import { classMonitoringCapabilities } from '$lib/class-monitoring';
+import { loadClassQrPrintContext } from '$lib/server/class-monitoring';
 import { hasSchoolWideOperationalAccess, isRestrictedTeacher } from '$lib/access-position';
 import {
 	tableJadwalMapel,
@@ -47,6 +49,9 @@ export async function loadCetakContext({ locals, url, depends, parent }: Pick<Re
 		}))
 	}));
 	const printContext = {
+		classQrPrintContext: sekolahId && classMonitoringCapabilities(user).canManage
+			? await loadClassQrPrintContext(locals)
+			: null,
 		tahunAjaranList,
 		activeTahunAjaranId: academicContext?.activeTahunAjaranId ?? null,
 		activeSemesterId: academicContext?.activeSemesterId ?? null,

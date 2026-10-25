@@ -7,6 +7,7 @@ export interface SchoolLetterheadData {
 	email?: string | null;
 	logoUrl?: string | null;
 	logoDinasUrl?: string | null;
+	customLetterheadUrl?: string | null;
 }
 
 const UNIT = 'Pusat Pendidikan, Pelatihan dan Pengembangan Profesi';
@@ -22,6 +23,9 @@ const logo = (src: string | null | undefined, alt: string) =>
 	`<div class="school-letterhead__logo">${src ? `<img src="${esc(src)}" alt="${esc(alt)}" />` : ''}</div>`;
 
 export function renderSchoolLetterhead(data: SchoolLetterheadData, compact = false): string {
+	if (data.customLetterheadUrl?.startsWith('data:image/png;base64,')) {
+		return `<header class="school-letterhead school-letterhead--custom"><img src="${esc(data.customLetterheadUrl)}" alt="${esc(data.nama)}" /></header>`;
+	}
 	const contact = [data.alamat?.trim(), data.email?.trim() ? `Email: ${data.email.trim()}` : null]
 		.filter(Boolean)
 		.join(' | ');
@@ -48,5 +52,7 @@ export function schoolLetterheadStyles(): string {
 .school-letterhead--compact .school-letterhead__authority{font-size:11pt}
 .school-letterhead--compact .school-letterhead__unit,.school-letterhead--compact .school-letterhead__school{font-size:9pt}
 .school-letterhead--compact .school-letterhead__contact{margin-top:.6mm;font-size:6.3pt}
+.school-letterhead--custom{display:block;padding-bottom:0;border-bottom:0}
+.school-letterhead--custom img{display:block;width:100%;height:auto;max-height:38mm;object-fit:contain}
 `;
 }

@@ -8,6 +8,15 @@ import {
 } from '../routes/pengguna/permissions.ts';
 
 const user = (type: string, extra = {}) => ({ type, ...extra });
+test('QR kelas printing remains restricted to class monitoring managers', () => {
+	assert.ok(canPrintDocument(user('admin'), 'qr-kelas'));
+	assert.ok(canPrintDocument(user('user', { jabatanAkses: 'kepala_sekolah' }), 'qr-kelas'));
+	assert.ok(canPrintDocument(user('user', { permissions: ['class_monitoring_manage'] }), 'qr-kelas'));
+	assert.ok(canAccessMenu(user('user', { permissions: ['class_monitoring_manage'] }), '/api/pdf/qr-kelas'));
+	assert.equal(canAccessMenu(user('user'), '/api/pdf/qr-kelas'), false);
+	for (const type of ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'tim_dapur', 'wali_murid'])
+		assert.equal(canPrintDocument(user(type), 'qr-kelas'), false, type);
+});
 test('monitoring kelas has independent menu and API permissions', () => {
 	for (const path of ['/administrasi/absensi/monitoring-kelas', '/api/administrasi/absensi/monitoring-kelas']) {
 		assert.ok(canAccessMenu(user('user'), path));

@@ -76,12 +76,12 @@ try {
 	);
 	const auth = await session(adminId, school);
 	const employees = {};
-	for (const key of ['operator', 'tim_dapur', 'operator_bulk', 'tim_dapur_bulk']) {
+	for (const key of ['operator', 'tim_dapur', 'tim_keamanan', 'operator_bulk', 'tim_dapur_bulk', 'tim_keamanan_bulk']) {
 		employees[key] = await insert(
 			'pegawai',
 			clone(employee, {
 				nama: `QA Role ${key}`,
-				jenis: key.startsWith('operator') ? 'operator' : 'tim_dapur',
+				jenis: key.startsWith('operator') ? 'operator' : key.startsWith('tim_keamanan') ? 'keamanan' : 'tim_dapur',
 				status: 'aktif',
 				nip: `QA-ROLE-${key}`,
 				kode_pegawai: `QA-ROLE-${key}`,
@@ -143,15 +143,22 @@ try {
 		mataPelajaranIds: '[]',
 		kelasIds: '[]'
 	});
-	for (const role of ['operator', 'tim_dapur']) {
+	for (const role of ['operator', 'tim_dapur', 'tim_keamanan']) {
 		assert.equal((await action('create_user', accountValues(role))).status, 200);
 		const user = await row('SELECT * FROM auth_user WHERE pegawai_id=?', [employees[role]]);
-		assert.equal(user.type, role === 'operator' ? 'user' : 'tim_dapur');
+		assert.equal(user.type, role === 'operator' ? 'user' : role);
 		assert.equal(user.jabatan_akses, role === 'operator' ? 'operator' : null);
 		assert.equal(user.must_change_password, 1);
 		assert.equal(user.mata_pelajaran_id, null);
 	}
-	check('Akun satuan Operator dan Tim Dapur tersimpan tanpa mapel, wajib ganti sandi');
+	check('Akun Operator, Tim Dapur dan Tim Keamanan tersimpan tanpa mapel, wajib ganti sandi');
+	assert.equal((await action('create_user', {
+		...accountValues('tim_keamanan_bulk'), type: 'tim_keamanan', jabatanAkses: 'kepala_sekolah'
+	})).status, 400);
+	assert.equal((await action('create_user', {
+		...accountValues('tim_dapur_bulk'), type: 'tim_keamanan'
+	})).status, 400);
+	check('Tim Keamanan tidak bisa menyisipkan jabatan pimpinan atau memakai pegawai dapur');
 	const invalid = accountValues('operator_bulk');
 	assert.equal(
 		(await action('create_user', { ...invalid, type: 'operator', jabatanAkses: 'kepala_sekolah' }))
@@ -207,7 +214,7 @@ try {
 		if (denied.status === 303) assert.match(denied.headers.get('location'), /^\/forbidden\?/);
 	}
 	check('Operator bisa operasional sekolah tetapi tidak mengelola pengguna');
-	for (const role of ['operator', 'tim_dapur']) {
+	for (const role of ['operator', 'tim_dapur', 'tim_keamanan']) {
 		const response = await fetch(`${base}/api/pengguna/akun-massal?role=${role}`, {
 			headers: { cookie: auth.cookie }
 		});
@@ -232,7 +239,7 @@ try {
 		const results = await created.json();
 		assert.equal(results.created[0].role, role);
 		const user = await row('SELECT * FROM auth_user WHERE pegawai_id=?', [candidate.pegawaiId]);
-		assert.equal(user.type, role === 'operator' ? 'user' : 'tim_dapur');
+		assert.equal(user.type, role === 'operator' ? 'user' : role);
 		assert.equal(user.jabatan_akses, role === 'operator' ? 'operator' : null);
 		assert.equal(user.must_change_password, 1);
 		const audit = JSON.stringify(
@@ -246,8 +253,70 @@ try {
 		assert.ok(!audit.includes(results.created[0].password));
 	}
 	check(
-		'Akun massal Operator/Tim Dapur berhasil, tidak memerlukan binaan dan sandi tidak masuk audit'
+		'Akun massal Operator/Tim Dapur/Tim Keamanan berhasil tanpa binaan; sandi tidak masuk audit'
 	);
+	const security = await row('SELECT * FROM auth_user WHERE pegawai_id=?', [employees.tim_keamanan]);
+	await db.execute({ sql: 'UPDATE auth_user SET must_change_password=0 WHERE id=?', args: [security.id] });
+	const securityAuth = await session(security.id, school);
+	for (const route of ['/administrasi/absensi/scan', '/pengaturan/profil']) {
+		assert.equal((await fetch(base + route, { headers: { cookie: securityAuth.cookie }, redirect: 'manual' })).status, 200, route);
+	}
+	const scannerData = await fetch(base + '/administrasi/absensi/scan/__data.json', { headers: { cookie: securityAuth.cookie } });
+	assert.equal(scannerData.status, 200);
+	const scannerText = await scannerData.text();
+	assert.ok(scannerText.includes('pulang_ke_rumah'));
+	assert.ok(scannerText.includes('kembali_ke_sekolah'));
+	assert.ok(scannerText.includes('available'));
+	assert.ok(!scannerText.includes('makan_pagi'));
+	for (const route of ['/murid', '/pengguna', '/cetak', '/administrasi/absensi/kegiatan', '/administrasi/absensi/monitoring', '/administrasi/absensi/monitoring-kelas', '/api/murid-photo/1', '/api/administrasi/absensi/kegiatan/rekap/export']) {
+		const denied = await fetch(base + route, { headers: { cookie: securityAuth.cookie }, redirect: 'manual' });
+		assert.ok([303, 403].includes(denied.status), `${route}: ${denied.status}`);
+		if (denied.status === 303) assert.match(denied.headers.get('location'), /^\/forbidden\?/);
+	}
+	const originalCounts = await row('SELECT (SELECT count(*) FROM absensi_kegiatan) activities, (SELECT count(*) FROM absensi_harian) daily, (SELECT count(*) FROM izin_pulang_murid) permits');
+	for (const mode of ['sekolah', 'kegiatan', 'pulang']) {
+		const denied = await fetch(base + '/api/administrasi/absensi/scan', {
+			method: 'POST', headers: { cookie: securityAuth.cookie, origin: base, 'content-type': 'application/json' },
+			body: JSON.stringify({ mode, token: 'qa-forged-token', kegiatanId: 1 })
+		});
+		assert.equal(denied.status, 403, mode);
+	}
+	const forbiddenPermit = new FormData();
+	forbiddenPermit.set('muridId', '1');
+	const deniedPermit = await fetch(base + '/administrasi/absensi/kegiatan/rekap?/saveIzinPulang', {
+		method: 'POST', headers: { cookie: securityAuth.cookie, origin: base }, body: forbiddenPermit, redirect: 'manual'
+	});
+	assert.ok([303, 403].includes(deniedPermit.status));
+	assert.deepEqual(await row('SELECT (SELECT count(*) FROM absensi_kegiatan) activities, (SELECT count(*) FROM absensi_harian) daily, (SELECT count(*) FROM izin_pulang_murid) permits'), originalCounts);
+	check('Akun keamanan hanya mendapat persiapan perjalanan dan profil sendiri; API kegiatan dan pengelolaan izin ditolak tanpa perubahan data');
+	for (const mode of ['pegawai', 'makan', 'asrama', 'pulang', 'unknown']) {
+		const denied = await fetch(base + '/api/administrasi/absensi/scan', {
+			method: 'POST', headers: { cookie: auth.cookie, origin: base, 'content-type': 'application/json' },
+			body: JSON.stringify({ mode, token: 'qa-forged-token' })
+		});
+		assert.equal(denied.status, 400, mode);
+	}
+	check('Endpoint lama menolak mode baru yang belum aktif, tanpa mengalihkannya ke absensi harian');
+	assert.equal((await action('update_user', {
+		id: security.id, username: security.username, type: 'tim_keamanan', password: '',
+		jabatanAkses: '', kelasIds: '[]', mataPelajaranIds: '[]', updatedAt: security.updated_at
+	})).status, 200);
+	check('Role keamanan dapat diedit tanpa penugasan akademik');
+	const adminScanner = await fetch(base + '/administrasi/absensi/scan', { headers: { cookie: auth.cookie } });
+	assert.equal(adminScanner.status, 200);
+	const canonicalPrayer = await row("SELECT * FROM kegiatan_absensi WHERE sekolah_id=? AND kode='sholat_zuhur'", [school]);
+	const aliasPrayer = await row("SELECT * FROM kegiatan_absensi WHERE sekolah_id=? AND kode='sholat_dzuhur'", [school]);
+	assert.ok(canonicalPrayer || aliasPrayer);
+	if (canonicalPrayer && !aliasPrayer) {
+		await db.execute({ sql: "UPDATE kegiatan_absensi SET kode='sholat_dzuhur' WHERE id=?", args: [canonicalPrayer.id] });
+		const qrBefore = await row('SELECT count(*) n FROM qr_murid');
+		assert.equal((await fetch(base + '/administrasi/absensi/scan', { headers: { cookie: auth.cookie } })).status, 200);
+		assert.equal((await row("SELECT count(*) n FROM kegiatan_absensi WHERE sekolah_id=? AND kode IN ('sholat_zuhur','sholat_dzuhur')", [school])).n, 1);
+		assert.equal((await row("SELECT id FROM kegiatan_absensi WHERE sekolah_id=? AND kode='sholat_dzuhur'", [school])).id, canonicalPrayer.id);
+		assert.deepEqual(await row('SELECT count(*) n FROM qr_murid'), qrBefore);
+		await db.execute({ sql: "UPDATE kegiatan_absensi SET kode='sholat_zuhur' WHERE id=?", args: [canonicalPrayer.id] });
+		check('Seeder mengenali alias Zuhur tanpa ID kegiatan baru atau perubahan QR');
+	}
 	browser = await puppeteer.launch({
 		executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
 		headless: true
@@ -284,6 +353,35 @@ try {
 	});
 	assert.ok((await page.$eval('table', (table) => table.innerText)).includes('Tim Dapur'));
 	check('Filter dan edit menampilkan role benar; pergantian role dan desktop/HP berfungsi');
+	await page.goto(base + '/pengguna?role=tim_keamanan&q=qa-role-tim_keamanan', { waitUntil: 'networkidle0' });
+	assert.ok((await page.$eval('table', (table) => table.innerText)).includes('Tim Keamanan'));
+	assert.ok(!(await page.$eval('table', (table) => table.innerText)).includes('qa-role-tim_dapur'));
+	await page.click('button[title="Edit pengguna"]');
+	await page.waitForFunction(() => document.querySelector('#edit-user-modal select')?.value === 'tim_keamanan');
+	assert.equal(await page.$('#user-jabatan-akses'), null);
+	assert.equal(await page.$('#user-kelas-options'), null);
+	assert.equal(await page.$('#user-mapel-options'), null);
+	for (const width of [1440, 768, 390, 320]) {
+		await page.setViewport({ width, height: 900 });
+		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+	}
+	await page.screenshot({ path: path.join(folder, 'keamanan-mobile.png'), fullPage: true });
+	await page.setViewport({ width: 1440, height: 900 });
+	await page.screenshot({ path: path.join(folder, 'keamanan-desktop.png'), fullPage: true });
+	check('Filter dan modal role Tim Keamanan benar di desktop, tablet dan HP tanpa kolom mapel/kelas/jabatan');
+	const securityUiAuth = await session(security.id, school);
+	await page.setCookie({ name: 'rapkumer-session', value: securityUiAuth.token, url: base });
+	await page.goto(base + '/administrasi/absensi/scan', { waitUntil: 'networkidle0' });
+	assert.deepEqual(await page.$eval('select[aria-label="Mode scan"]', (el) => [...el.options].filter((option) => option.value).map((option) => option.value)), ['pulang']);
+	await page.select('select[aria-label="Mode scan"]', 'pulang');
+	assert.equal(await page.$eval('select[aria-label="Kegiatan absensi"]', (el) => el.disabled), false);
+	assert.equal(await page.$$eval('button', (buttons) => buttons.find((button) => button.textContent.includes('Mulai Scan')).disabled), true);
+	assert.equal(await page.$eval('body', (el) => el.textContent.includes('Scan pulang dan kembali belum tersedia.')), false);
+	assert.equal(await page.$('a[href="/administrasi/absensi/kegiatan"]'), null);
+	assert.equal((await fetch(base + '/api/administrasi/absensi/scan/kelas', { headers: { cookie: securityUiAuth.cookie } })).status, 403);
+	await page.setViewport({ width: 390, height: 844 });
+	await page.screenshot({ path: path.join(folder, 'keamanan-scan-available.png'), fullPage: true });
+	check('Tim Keamanan hanya melihat mode Pulang dan tidak mendapat akses scan kelas');
 	assert.deepEqual(errors, []);
 	assert.equal((await db.execute('PRAGMA foreign_key_check')).rows.length, 0);
 	assert.equal((await db.execute('PRAGMA quick_check')).rows[0].quick_check, 'ok');

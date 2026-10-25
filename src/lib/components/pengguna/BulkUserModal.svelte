@@ -146,6 +146,7 @@
 	function scope(row: BulkUserCandidate) {
 		if (row.role === 'operator') return 'Operasional sekolah';
 		if (row.role === 'tim_dapur') return 'Absensi makan dan surat dinas';
+		if (row.role === 'tim_keamanan') return 'Scan perjalanan berdasarkan izin pulang';
 		return row.role === 'user'
 			? `${row.classes.join(', ') || '-'}; ${row.subjects.join(', ') || 'Belum ada mapel'}`
 			: `${row.studentIds.length} murid; ${row.classes.join(', ') || '-'}`;

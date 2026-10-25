@@ -182,6 +182,7 @@
 	let panelCollapsed = $state(false);
 	let panelSide = $state<'left' | 'right'>('right');
 	let panelWidth = $state(240);
+	let mobilePanelOpen = $state(false);
 
 	const kodeMeta = $derived.by(() => {
 		const map = new Map<string, PaletteItem>();
@@ -706,7 +707,7 @@
 		const item = kode ? kodeMeta.get(kode) : null;
 		if (!item) return '';
 		const color = normalizeColor(item.warna, item.source === 'mapel' ? '#dbeafe' : '#dcfce7');
-		return `background:${color};border-color:${color};`;
+		return `--slot-color:${color};`;
 	}
 
 	function textFor(kode: string | undefined) {
@@ -990,18 +991,25 @@
 	<title>Jadwal Pelajaran</title>
 </svelte:head>
 
-<div class="grid grid-cols-1 gap-4">
-	<section class="bg-base-100 rounded-lg p-4 shadow-md">
-		<div class="flex flex-wrap items-center gap-2">
-			<div class="min-w-0 flex-1">
-				<h1 class="text-xl font-bold">Jadwal Pelajaran</h1>
-				<p class="text-base-content/70 text-sm">Kelola jadwal kelas dan kode kegiatan.</p>
+<div class="schedule-page grid min-w-0 grid-cols-1 gap-4">
+	<section
+		class="schedule-header bg-base-100 rounded-lg p-4 shadow-md"
+		aria-labelledby="schedule-title"
+	>
+		<div class="schedule-heading">
+			<div class="min-w-0">
+				<h1 id="schedule-title" class="text-xl font-bold">Jadwal Pelajaran</h1>
+				<p class="text-base-content/70 mt-1 text-sm">
+					{activeTahunAjaranName} · {activeJenisLabel}
+				</p>
 			</div>
-			<form method="GET" class="flex flex-wrap items-center gap-2">
-				<label class="flex items-center gap-2 text-sm font-semibold">
+		</div>
+		<div class="schedule-toolbar">
+			<form method="GET" class="schedule-context">
+				<label class="schedule-field">
 					<span>Tahun Ajaran</span>
 					<select
-						class="select select-sm bg-base-200 w-36"
+						class="select w-full"
 						name="tahunAjaranId"
 						value={data.selectedContext?.tahunAjaranId ?? ''}
 						onchange={(event) => (event.currentTarget as HTMLSelectElement).form?.requestSubmit()}
@@ -1011,10 +1019,10 @@
 						{/each}
 					</select>
 				</label>
-				<label class="flex items-center gap-2 text-sm font-semibold">
-					<span>Jadwal</span>
+				<label class="schedule-field">
+					<span>Jenis Jadwal</span>
 					<select
-						class="select select-sm bg-base-200 w-44"
+						class="select w-full"
 						name="jenis"
 						value={data.selectedContext?.jenis ?? 'ganjil'}
 						onchange={(event) => (event.currentTarget as HTMLSelectElement).form?.requestSubmit()}
@@ -1025,83 +1033,103 @@
 					</select>
 				</label>
 			</form>
-			<div class="dropdown dropdown-end">
-				<button type="button" tabindex="0" class="btn btn-soft shadow-none">
-					<Icon name="down" /> Data Excel
-				</button>
-				<ul
-					tabindex="-1"
-					class="dropdown-content menu bg-base-100 border-base-300 z-30 mt-2 w-56 rounded-md border p-2 shadow-xl"
+			<div class="schedule-actions">
+				<details class="dropdown dropdown-start">
+					<summary class="btn btn-soft shadow-none">
+						<Icon name="export" /> Data Excel <Icon name="down" />
+					</summary>
+					<ul
+						class="dropdown-content menu bg-base-100 border-base-300 z-30 mt-2 w-48 rounded-md border p-1 shadow-lg"
+					>
+						<li><a href={excelHref('template')}><Icon name="download" /> Download Template</a></li>
+						<li>
+							<button
+								type="button"
+								onclick={(event) => {
+									(
+										event.currentTarget.closest('details') as HTMLDetailsElement | null
+									)?.removeAttribute('open');
+									openImportDialog();
+								}}><Icon name="import" /> Import dan Pratinjau</button
+							>
+						</li>
+						<li><a href={excelHref('export')}><Icon name="export" /> Export Jadwal</a></li>
+					</ul>
+				</details>
+				<button
+					class="btn btn-soft schedule-mobile-trigger"
+					type="button"
+					aria-expanded={mobilePanelOpen}
+					aria-controls="schedule-item-panel"
+					onclick={() => (mobilePanelOpen = !mobilePanelOpen)}
 				>
-					<li><a href={excelHref('template')}><Icon name="download" /> Download Template</a></li>
-					<li>
-						<button type="button" onclick={openImportDialog}
-							><Icon name="import" /> Import dan Pratinjau</button
-						>
-					</li>
-					<li><a href={excelHref('export')}><Icon name="export" /> Export Jadwal</a></li>
-				</ul>
+					<Icon name="menu-drawer" /> Item Jadwal <Icon name={mobilePanelOpen ? 'up' : 'down'} />
+				</button>
+				<button
+					class="btn btn-soft shadow-none"
+					type="button"
+					onclick={openJpTargetDialog}
+					disabled={!canManage || !daftarKelas.length}
+				>
+					<Icon name="edit" /> Target JP
+				</button>
+				<button
+					class="btn btn-primary shadow-none"
+					type="button"
+					onclick={saveJadwal}
+					disabled={!canManage || saving}
+				>
+					{#if saving}
+						<span class="loading loading-spinner loading-sm"></span>
+						Menyimpan
+					{:else}
+						<Icon name="save" />
+						Simpan Jadwal
+					{/if}
+				</button>
 			</div>
-			<button
-				class="btn btn-soft shadow-none"
-				type="button"
-				onclick={openJpTargetDialog}
-				disabled={!canManage || !daftarKelas.length}
-			>
-				<Icon name="edit" /> Target JP
-			</button>
-			<button
-				class="btn btn-primary shadow-none"
-				type="button"
-				onclick={saveJadwal}
-				disabled={!canManage || saving}
-			>
-				{#if saving}
-					<span class="loading loading-spinner loading-sm"></span>
-					Menyimpan
-				{:else}
-					<Icon name="save" />
-					Simpan Jadwal
-				{/if}
-			</button>
 		</div>
 	</section>
 
 	<section
 		class="schedule-workspace grid grid-cols-1 gap-3"
 		class:panel-left={panelSide === 'left'}
+		class:panel-collapsed={panelCollapsed}
+		class:mobile-panel-open={mobilePanelOpen}
 		style={panelStyle()}
 	>
-		<div class="schedule-main bg-base-100 flex min-h-0 flex-col rounded-lg p-4 shadow-md">
-			<div class="mb-3 flex flex-wrap items-end gap-2">
-				<label class="flex items-center gap-2">
-					<span class="label-text text-sm font-semibold">Jenjang</span>
-					<select class="select select-sm bg-base-200 w-36" bind:value={activeJenjang}>
+		<div class="schedule-main bg-base-100 flex min-h-0 min-w-0 flex-col rounded-lg p-4 shadow-md">
+			<div class="schedule-view-toolbar">
+				<label class="schedule-field schedule-jenjang">
+					<span>Jenjang</span>
+					<select class="select w-full" bind:value={activeJenjang}>
 						<option value="semua">Semua Jenjang</option>
 						<option value="srd">SRD</option>
 						<option value="srmp">SRMP</option>
 						<option value="srma">SRMA</option>
 					</select>
 				</label>
-				<div class="form-control">
-					<span class="label-text text-xs">Tampilan</span>
-					<div class="join">
+				<div class="schedule-field">
+					<span id="schedule-density-label">Tampilan</span>
+					<div class="join" role="group" aria-labelledby="schedule-density-label">
 						<button
 							class="btn btn-sm join-item"
 							class:btn-primary={tableDensity === 'normal'}
+							aria-pressed={tableDensity === 'normal'}
 							type="button"
 							onclick={() => (tableDensity = 'normal')}>Normal</button
 						>
 						<button
 							class="btn btn-sm join-item"
 							class:btn-primary={tableDensity === 'padat'}
+							aria-pressed={tableDensity === 'padat'}
 							type="button"
 							onclick={() => (tableDensity = 'padat')}>Padat</button
 						>
 					</div>
 				</div>
 				<button
-					class="btn btn-sm btn-soft shadow-none"
+					class="btn btn-sm btn-ghost text-error schedule-clear shadow-none"
 					type="button"
 					onclick={clearAll}
 					disabled={!canManage}
@@ -1111,43 +1139,52 @@
 				</button>
 			</div>
 
-			<div
-				class="alert mb-3 items-start gap-3"
-				class:alert-success={scheduleChecks.jpIssues.length === 0 &&
-					scheduleChecks.unknownCodes.length === 0 &&
-					scheduleChecks.teacherConflicts.length === 0}
-				class:alert-warning={scheduleChecks.jpIssues.length > 0 ||
-					scheduleChecks.unknownCodes.length > 0 ||
-					scheduleChecks.teacherConflicts.length > 0}
-			>
-				<Icon
-					name={scheduleChecks.jpIssues.length === 0 &&
-					scheduleChecks.unknownCodes.length === 0 &&
-					scheduleChecks.teacherConflicts.length === 0
-						? 'check'
-						: 'warning'}
-				/>
-				<div class="min-w-0 flex-1 text-sm">
-					<div class="font-semibold">
-						Pemeriksaan {activeJenjangName}: {scheduleChecks.filledSlots}/{scheduleChecks.visibleSlotTotal}
-						slot terisi.
+			<details class="schedule-checks border-base-300 mb-3 rounded-md border">
+				<summary class="schedule-check-summary">
+					<div class="flex min-w-0 items-start gap-2">
+						<Icon
+							name={scheduleChecks.jpIssues.length === 0 &&
+							scheduleChecks.unknownCodes.length === 0 &&
+							scheduleChecks.teacherConflicts.length === 0
+								? 'check'
+								: 'warning'}
+						/>
+						<div class="min-w-0 flex-1">
+							<div class="font-semibold">Pemeriksaan {activeJenjangName}</div>
+							<div class="text-base-content/65 mt-0.5 text-xs">
+								{scheduleChecks.filledSlots}/{scheduleChecks.visibleSlotTotal} slot terisi
+							</div>
+						</div>
+						<Icon name="down" />
 					</div>
-					<div class="mt-2 flex flex-wrap gap-2" aria-label="Ringkasan target JP mingguan">
-						<span class="badge badge-warning badge-sm">
-							Kurang {scheduleChecks.jpSummary.kurang}
+					<div class="schedule-check-badges" aria-label="Ringkasan target JP mingguan">
+						<span class="badge badge-soft badge-warning badge-sm">
+							Kurang JP <strong>{scheduleChecks.jpSummary.kurang}</strong>
 						</span>
-						<span class="badge badge-success badge-sm">
-							Tepat {scheduleChecks.jpSummary.tepat}
+						<span class="badge badge-soft badge-success badge-sm">
+							Sesuai <strong>{scheduleChecks.jpSummary.tepat}</strong>
 						</span>
-						<span class="badge badge-error badge-sm">
-							Lebih {scheduleChecks.jpSummary.lebih}
+						<span class="badge badge-soft badge-warning badge-sm">
+							Lebih JP <strong>{scheduleChecks.jpSummary.lebih}</strong>
 						</span>
+						<span
+							class="badge badge-soft badge-sm"
+							class:badge-error={scheduleChecks.teacherConflicts.length > 0}
+						>
+							Bentrok <strong>{scheduleChecks.teacherConflicts.length}</strong>
+						</span>
+						{#if scheduleChecks.unknownCodes.length}<span
+								class="badge badge-soft badge-error badge-sm"
+								>Kode tidak dikenal {scheduleChecks.unknownCodes.length}</span
+							>{/if}
 					</div>
+				</summary>
+				<div class="schedule-check-details border-base-200 border-t text-sm">
 					{#if scheduleChecks.unknownCodes.length}
 						<div class="mt-1">Kode belum dikenal: {scheduleChecks.unknownCodes.join(', ')}</div>
 					{/if}
 					{#if scheduleChecks.teacherConflicts.length}
-						{#each scheduleChecks.teacherConflicts.slice(0, 6) as conflict}
+						{#each scheduleChecks.teacherConflicts as conflict}
 							<div class="mt-1 font-semibold text-error">
 								Bentrok guru {conflict.guru}: {hariLabel[conflict.hari]} jam ke-{conflict.jamKe} di {conflict.kelas.join(
 									', '
@@ -1157,7 +1194,7 @@
 					{/if}
 					{#if scheduleChecks.jpIssues.length}
 						<div class="mt-1 grid gap-1 md:grid-cols-2">
-							{#each scheduleChecks.jpIssues.slice(0, 6) as issue (`${issue.kelas}-${issue.kode}`)}
+							{#each scheduleChecks.jpIssues as issue (`${issue.kelas}-${issue.kode}`)}
 								<div class="flex items-center gap-2">
 									<span
 										class="badge badge-xs"
@@ -1174,22 +1211,23 @@
 								</div>
 							{/each}
 						</div>
-						{#if scheduleChecks.jpIssues.length > 6}
-							<div class="mt-1">+{scheduleChecks.jpIssues.length - 6} catatan lain.</div>
-						{/if}
 					{:else if scheduleChecks.unknownCodes.length === 0}
 						<div class="mt-1">Target JP/minggu sudah sesuai untuk mapel yang memiliki jatah.</div>
 					{/if}
 				</div>
-			</div>
+			</details>
 
 			{#if daftarKelas.length === 0}
 				<div class="alert alert-warning">Belum ada kelas pada semester aktif.</div>
 			{:else if visibleKelas.length === 0}
 				<div class="alert alert-info">Tidak ada kelas pada filter jenjang ini.</div>
 			{:else}
+				<!-- svelte-ignore a11y_no_noninteractive_tabindex (Allow keyboard scrolling of the wide timetable.) -->
 				<div
-					class="border-base-300 min-h-[32rem] flex-1 overflow-auto rounded-md border lg:min-h-[calc(100vh-22rem)]"
+					class="schedule-table-scroll border-base-300 overflow-auto rounded-md border"
+					tabindex="0"
+					role="region"
+					aria-label="Tabel jadwal pelajaran"
 				>
 					<table
 						class="table-sm schedule-table table"
@@ -1197,13 +1235,13 @@
 					>
 						<thead class="sticky top-0 z-10">
 							<tr>
-								<th class="schedule-head sticky-col sticky-col-day w-24">Hari</th>
+								<th scope="col" class="schedule-head sticky-col sticky-col-day">Hari</th>
 								{#each visibleGroups as group (group.jenjang)}
-									<th class="schedule-head group-jam-head min-w-20 text-center">
+									<th scope="col" class="schedule-head group-jam-head min-w-20 text-center">
 										{activeJenjang === 'semua' ? `Jam ${jenjangLabel[group.jenjang]}` : 'Jam'}
 									</th>
 									{#each group.kelas as kelas (kelas.id)}
-										<th class="schedule-head min-w-24 text-center">{kelas.nama}</th>
+										<th scope="col" class="schedule-head min-w-24 text-center">{kelas.nama}</th>
 									{/each}
 								{/each}
 							</tr>
@@ -1211,7 +1249,7 @@
 						<tbody>
 							{#each hariList as hari (hari)}
 								{#each Array.from({ length: jumlahJamFor(hari) }, (_, index) => index + 1) as jamKe (jamKe)}
-									<tr>
+									<tr class:day-start={jamKe === 1}>
 										{#if jamKe === 1}
 											<td
 												class="sticky-col sticky-col-day bg-base-100 align-top font-semibold"
@@ -1258,6 +1296,7 @@
 															ondragover={allowDrop}
 															ondrop={(event) => dropToCell(event, hari, jamKe, kelas.id, segment)}
 															onclick={() => openCell(hari, jamKe, kelas.id, kode ?? '', segment)}
+															aria-label={`${hariLabel[hari]}, ${kelas.nama}, jam ${jamKe}: ${activeSlot ? (kode ? `${kode} - ${textFor(kode)}` : slotDefault || 'Kosong') : 'Tidak aktif'}`}
 															disabled={!canManage || !activeSlot}
 															title={activeSlot
 																? kode
@@ -1302,33 +1341,48 @@
 			{/if}
 		</div>
 
-		<aside class="schedule-panel space-y-3 xl:sticky xl:top-4 xl:self-start">
+		<aside
+			id="schedule-item-panel"
+			class="schedule-panel min-w-0 space-y-3 xl:sticky xl:top-4 xl:self-start"
+			aria-label="Item Jadwal"
+		>
 			<div class="bg-base-100 rounded-lg p-3 shadow-md">
-				<div class="flex items-center gap-1">
+				<div class="schedule-panel-heading flex items-center gap-1">
 					<h2 class="min-w-0 flex-1 truncate font-bold">
-						{panelCollapsed ? 'Item' : 'Item Jadwal'}
+						<span class="schedule-panel-title">Item Jadwal</span><span
+							class="schedule-panel-short-title">Item</span
+						>
 					</h2>
-					{#if !panelCollapsed}<span class="badge badge-soft">{visiblePaletteItems.length}</span
-						>{/if}
+					<span class="badge badge-soft schedule-panel-count">{visiblePaletteItems.length}</span>
 					<button
-						class="btn btn-ghost btn-xs"
+						class="btn btn-ghost btn-sm btn-square schedule-panel-desktop-control"
 						type="button"
 						onclick={movePanel}
 						title="Pindahkan panel"
+						aria-label="Pindahkan panel"
 					>
 						<Icon name={panelSide === 'right' ? 'left' : 'right'} />
 					</button>
 					<button
-						class="btn btn-ghost btn-xs"
+						class="btn btn-ghost btn-sm btn-square schedule-panel-desktop-control"
 						type="button"
 						onclick={togglePanel}
 						title={panelCollapsed ? 'Buka panel' : 'Ciutkan panel'}
+						aria-label={panelCollapsed ? 'Buka panel' : 'Ciutkan panel'}
+						aria-expanded={!panelCollapsed}
 					>
 						<Icon name={panelCollapsed ? 'right' : 'left'} />
 					</button>
+					<button
+						class="btn btn-ghost btn-sm btn-square schedule-mobile-trigger"
+						type="button"
+						title="Tutup panel item"
+						aria-label="Tutup panel item"
+						onclick={() => (mobilePanelOpen = false)}><Icon name="close" /></button
+					>
 				</div>
-				{#if !panelCollapsed}
-					<label class="mt-2 mb-2 flex items-center gap-2 text-xs">
+				<div class="schedule-panel-body">
+					<label class="schedule-panel-desktop-control mt-3 mb-3 flex items-center gap-2 text-xs">
 						<span>Lebar</span>
 						<input
 							class="range range-xs flex-1"
@@ -1345,21 +1399,28 @@
 						<button
 							class="btn btn-sm join-item"
 							class:btn-primary={activePalette === 'mapel'}
+							aria-pressed={activePalette === 'mapel'}
 							type="button"
 							onclick={() => (activePalette = 'mapel')}>Mata Pelajaran</button
 						>
 						<button
 							class="btn btn-sm join-item"
 							class:btn-primary={activePalette === 'kegiatan'}
+							aria-pressed={activePalette === 'kegiatan'}
 							type="button"
 							onclick={() => (activePalette = 'kegiatan')}>Kegiatan</button
 						>
 					</div>
 					<label class="input input-sm bg-base-200 mb-2 flex items-center gap-2">
 						<Icon name="search" />
-						<input class="grow" placeholder="Cari kode" bind:value={paletteSearch} />
+						<input
+							class="min-w-0 grow"
+							aria-label="Cari item jadwal"
+							placeholder="Cari kode atau nama"
+							bind:value={paletteSearch}
+						/>
 					</label>
-					<div class="max-h-[calc(100vh-19rem)] space-y-1 overflow-y-auto pr-1">
+					<div class="schedule-palette-list space-y-1 overflow-y-auto pr-1">
 						{#each visiblePaletteItems as item (`${item.source}-${item.id}`)}
 							{@const jpState = item.source === 'mapel' ? paletteJpStatus.get(item.kode) : null}
 							<button
@@ -1367,6 +1428,7 @@
 								type="button"
 								draggable={canManage}
 								ondragstart={(event) => startDrag(event, item)}
+								title={`${item.kode} - ${item.nama}${item.detail ? ` · ${item.detail}` : ''}`}
 								disabled={!canManage}
 							>
 								<span
@@ -1405,21 +1467,25 @@
 							</button>
 						{:else}
 							<div class="border-base-200 text-base-content/60 rounded-lg border p-3 text-sm">
-								Data belum tersedia.
+								{paletteSearch.trim() ? 'Tidak ada item yang cocok.' : 'Data belum tersedia.'}
 							</div>
 						{/each}
 					</div>
-				{/if}
+				</div>
 			</div>
 		</aside>
 	</section>
 </div>
 
-<dialog class="modal" bind:this={jpTargetDialog}>
-	<div class="modal-box w-11/12 max-w-7xl rounded-lg">
+<dialog
+	class="modal app-modal schedule-modal schedule-target-modal"
+	bind:this={jpTargetDialog}
+	aria-labelledby="jp-target-title"
+>
+	<div class="modal-box app-modal-box">
 		<div class="flex items-start justify-between gap-3">
 			<div>
-				<h3 class="text-lg font-bold">Target JP per Kelas</h3>
+				<h3 id="jp-target-title" class="app-modal-title">Target JP per Kelas</h3>
 				<p class="text-base-content/70 mt-1 text-sm">
 					Target ini hanya berlaku untuk {activeJenisLabel} pada tahun ajaran {activeTahunAjaranName}.
 				</p>
@@ -1428,59 +1494,70 @@
 				class="btn btn-ghost btn-square btn-sm"
 				type="button"
 				title="Tutup"
+				aria-label="Tutup Target JP"
 				onclick={() => jpTargetDialog?.close()}
 			>
 				<Icon name="close" />
 			</button>
 		</div>
-		<div class="alert alert-info mt-4 py-2 text-sm">
-			Nilai awal mengikuti JP per kelas/minggu dari Data Mata Pelajaran. Isi 0 jika mapel tidak
-			digunakan pada kelas dan jenis jadwal ini.
-		</div>
-		<div class="border-base-300 mt-4 max-h-[60vh] overflow-auto rounded-md border">
-			<table class="table-sm table">
-				<thead class="bg-base-200 sticky top-0 z-10">
-					<tr>
-						<th class="sticky left-0 z-20 min-w-48 bg-inherit">Mata Pelajaran</th>
-						{#each visibleKelas as kelas (kelas.id)}
-							<th class="min-w-24 text-center">{kelas.nama}</th>
+		<div class="app-modal-body">
+			<div class="bg-info/10 border-info/20 rounded-md border p-3 text-sm">
+				Nilai awal mengikuti JP per kelas/minggu dari Data Mata Pelajaran. Isi 0 jika mapel tidak
+				digunakan pada kelas dan jenis jadwal ini.
+			</div>
+			<!-- svelte-ignore a11y_no_noninteractive_tabindex (Allow keyboard scrolling of the target matrix.) -->
+			<div
+				class="schedule-target-scroll border-base-300 mt-4 overflow-auto rounded-md border"
+				tabindex="0"
+				role="region"
+				aria-label="Target JP per kelas"
+			>
+				<table class="table-sm table">
+					<thead class="bg-base-200 sticky top-0 z-10">
+						<tr>
+							<th class="sticky left-0 z-20 min-w-48 bg-inherit">Mata Pelajaran</th>
+							{#each visibleKelas as kelas (kelas.id)}
+								<th class="min-w-24 text-center">{kelas.nama}</th>
+							{/each}
+						</tr>
+					</thead>
+					<tbody>
+						{#each mapelItems as item (item.id)}
+							{#if visibleKelas.some((kelas) => itemSesuaiKelas(item, kelas))}
+								<tr>
+									<th class="bg-base-100 sticky left-0 z-10">
+										<div class="font-bold">{item.kode}</div>
+										<div class="text-base-content/60 max-w-44 truncate text-xs" title={item.nama}>
+											{item.nama}
+										</div>
+									</th>
+									{#each visibleKelas as kelas (kelas.id)}
+										<td class="text-center">
+											{#if itemSesuaiKelas(item, kelas)}
+												{@const key = targetKey(kelas.id, item.id)}
+												<input
+													class="input input-sm input-bordered w-20 text-center"
+													type="number"
+													min="0"
+													max="50"
+													value={jpTargetDraft[key] ?? 0}
+													oninput={(event) =>
+														(jpTargetDraft[key] = Number(event.currentTarget.value))}
+													aria-label={`Target ${item.kode} kelas ${kelas.nama}`}
+												/>
+											{:else}
+												<span class="text-base-content/30">-</span>
+											{/if}
+										</td>
+									{/each}
+								</tr>
+							{/if}
 						{/each}
-					</tr>
-				</thead>
-				<tbody>
-					{#each mapelItems as item (item.id)}
-						{#if visibleKelas.some((kelas) => itemSesuaiKelas(item, kelas))}
-							<tr>
-								<th class="bg-base-100 sticky left-0 z-10">
-									<div class="font-bold">{item.kode}</div>
-									<div class="text-base-content/60 max-w-44 truncate text-xs">{item.nama}</div>
-								</th>
-								{#each visibleKelas as kelas (kelas.id)}
-									<td class="text-center">
-										{#if itemSesuaiKelas(item, kelas)}
-											{@const key = targetKey(kelas.id, item.id)}
-											<input
-												class="input input-sm input-bordered w-20 text-center"
-												type="number"
-												min="0"
-												max="50"
-												value={jpTargetDraft[key] ?? 0}
-												oninput={(event) =>
-													(jpTargetDraft[key] = Number(event.currentTarget.value))}
-												aria-label={`Target ${item.kode} kelas ${kelas.nama}`}
-											/>
-										{:else}
-											<span class="text-base-content/30">-</span>
-										{/if}
-									</td>
-								{/each}
-							</tr>
-						{/if}
-					{/each}
-				</tbody>
-			</table>
+					</tbody>
+				</table>
+			</div>
 		</div>
-		<div class="modal-action">
+		<div class="modal-action app-modal-actions">
 			<button class="btn" type="button" onclick={() => jpTargetDialog?.close()}>Batal</button>
 			<button
 				class="btn btn-primary"
@@ -1498,75 +1575,81 @@
 	<form method="dialog" class="modal-backdrop"><button>Tutup</button></form>
 </dialog>
 
-<dialog class="modal" bind:this={dropDialog}>
-	<div class="modal-box max-w-md">
-		<h3 class="text-lg font-bold">Terapkan Item Jadwal</h3>
-		{#if pendingDrop}
-			<p class="text-base-content/70 mt-1 text-sm">
-				{pendingDrop.item.kode} - {pendingDrop.item.nama} ke {hariLabel[pendingDrop.hari]} jam {pendingDrop.jamKe}.
-			</p>
-			<div class="mt-4 grid gap-2">
-				{#if pendingDrop.blockCellKeys.length > 1}
+<dialog
+	class="modal app-modal schedule-modal schedule-drop-modal"
+	bind:this={dropDialog}
+	aria-labelledby="schedule-drop-title"
+>
+	<div class="modal-box app-modal-box">
+		<h3 id="schedule-drop-title" class="app-modal-title">Terapkan Item Jadwal</h3>
+		<div class="app-modal-body">
+			{#if pendingDrop}
+				<p class="text-base-content/70 mt-1 text-sm">
+					{pendingDrop.item.kode} - {pendingDrop.item.nama} ke {hariLabel[pendingDrop.hari]} jam {pendingDrop.jamKe}.
+				</p>
+				<div class="mt-4 grid gap-2">
+					{#if pendingDrop.blockCellKeys.length > 1}
+						<button
+							class="btn btn-primary justify-start shadow-none"
+							type="button"
+							onclick={() => applyPendingDrop('block')}
+						>
+							<span class="flex-1 text-left"
+								>Seluruh blok ({pendingDrop.blockCellKeys.length} sel)</span
+							>
+							{#if overwriteCountForDrop('block')}<span class="badge badge-warning"
+									>Timpa {overwriteCountForDrop('block')}</span
+								>{/if}
+						</button>
+					{/if}
 					<button
 						class="btn btn-primary justify-start shadow-none"
 						type="button"
-						onclick={() => applyPendingDrop('block')}
+						onclick={() => applyPendingDrop('cell')}
 					>
-						<span class="flex-1 text-left"
-							>Seluruh blok ({pendingDrop.blockCellKeys.length} sel)</span
+						<span class="flex-1 text-left">Sel ini saja</span>
+						{#if overwriteCountForDrop('cell')}<span class="badge badge-warning"
+								>Timpa {overwriteCountForDrop('cell')}</span
+							>{/if}
+					</button>
+					{#if pendingDrop.item.source === 'kegiatan'}
+						<button
+							class="btn btn-soft justify-start shadow-none"
+							type="button"
+							onclick={() => applyPendingDrop('jenjang')}
 						>
-						{#if overwriteCountForDrop('block')}<span class="badge badge-warning"
-								>Timpa {overwriteCountForDrop('block')}</span
-							>{/if}
-					</button>
-				{/if}
-				<button
-					class="btn btn-primary justify-start shadow-none"
-					type="button"
-					onclick={() => applyPendingDrop('cell')}
-				>
-					<span class="flex-1 text-left">Sel ini saja</span>
-					{#if overwriteCountForDrop('cell')}<span class="badge badge-warning"
-							>Timpa {overwriteCountForDrop('cell')}</span
-						>{/if}
-				</button>
-				{#if pendingDrop.item.source === 'kegiatan'}
-					<button
-						class="btn btn-soft justify-start shadow-none"
-						type="button"
-						onclick={() => applyPendingDrop('jenjang')}
-					>
-						<span class="flex-1 text-left"
-							>Semua kelas jenjang {jenjangLabel[pendingJenjang] ?? 'yang sama'}</span
+							<span class="flex-1 text-left"
+								>Semua kelas jenjang {jenjangLabel[pendingJenjang] ?? 'yang sama'}</span
+							>
+							{#if overwriteCountForDrop('jenjang')}<span class="badge badge-warning"
+									>Timpa {overwriteCountForDrop('jenjang')}</span
+								>{/if}
+						</button>
+						<button
+							class="btn btn-soft justify-start shadow-none"
+							type="button"
+							onclick={() => applyPendingDrop('row')}
 						>
-						{#if overwriteCountForDrop('jenjang')}<span class="badge badge-warning"
-								>Timpa {overwriteCountForDrop('jenjang')}</span
-							>{/if}
-					</button>
-					<button
-						class="btn btn-soft justify-start shadow-none"
-						type="button"
-						onclick={() => applyPendingDrop('row')}
-					>
-						<span class="flex-1 text-left">Semua kelas pada jam ini</span>
-						{#if overwriteCountForDrop('row')}<span class="badge badge-warning"
-								>Timpa {overwriteCountForDrop('row')}</span
-							>{/if}
-					</button>
-					<button
-						class="btn btn-soft justify-start shadow-none"
-						type="button"
-						onclick={() => applyPendingDrop('sameJamAllDays')}
-					>
-						<span class="flex-1 text-left">Semua hari pada jam ke-{pendingDrop.jamKe}</span>
-						{#if overwriteCountForDrop('sameJamAllDays')}<span class="badge badge-warning"
-								>Timpa {overwriteCountForDrop('sameJamAllDays')}</span
-							>{/if}
-					</button>
-				{/if}
-			</div>
-		{/if}
-		<div class="modal-action">
+							<span class="flex-1 text-left">Semua kelas pada jam ini</span>
+							{#if overwriteCountForDrop('row')}<span class="badge badge-warning"
+									>Timpa {overwriteCountForDrop('row')}</span
+								>{/if}
+						</button>
+						<button
+							class="btn btn-soft justify-start shadow-none"
+							type="button"
+							onclick={() => applyPendingDrop('sameJamAllDays')}
+						>
+							<span class="flex-1 text-left">Semua hari pada jam ke-{pendingDrop.jamKe}</span>
+							{#if overwriteCountForDrop('sameJamAllDays')}<span class="badge badge-warning"
+									>Timpa {overwriteCountForDrop('sameJamAllDays')}</span
+								>{/if}
+						</button>
+					{/if}
+				</div>
+			{/if}
+		</div>
+		<div class="modal-action app-modal-actions">
 			<button
 				class="btn"
 				type="button"
@@ -1580,36 +1663,50 @@
 	<form method="dialog" class="modal-backdrop"><button>Batal</button></form>
 </dialog>
 
-<dialog class="modal" bind:this={cellDialog}>
-	<div class="modal-box max-w-md">
-		<h3 class="text-lg font-bold">Edit Blok Jadwal</h3>
-		{#if selectedCell}
-			<p class="text-base-content/70 mt-1 text-sm">
-				{hariLabel[selectedCell.hari]} jam {selectedCell.jamKe} - {selectedKelas?.nama ?? 'Kelas'}
-				{#if selectedCell.blockCellKeys.length > 1}
-					<span class="badge badge-info ml-1"
-						>{selectedCell.blockCellKeys.length} sel tergabung</span
-					>
-				{/if}
-			</p>
-			<label class="form-control mt-4">
-				<span class="label-text mb-1">Item Jadwal</span>
-				<select class="select select-bordered" bind:value={editKode}>
-					<option value="">Kosong</option>
-					<optgroup label="Mata Pelajaran">
-						{#each selectedMapelItems as item (`edit-mapel-${item.id}`)}
-							<option value={item.kode}>{item.kode} - {item.nama}</option>
-						{/each}
-					</optgroup>
-					<optgroup label="Kegiatan">
-						{#each kegiatanItems as item (`edit-kegiatan-${item.id}`)}
-							<option value={item.kode}>{item.kode} - {item.nama}</option>
-						{/each}
-					</optgroup>
-				</select>
-			</label>
-		{/if}
-		<div class="modal-action flex-wrap">
+<dialog
+	class="modal app-modal schedule-modal"
+	bind:this={cellDialog}
+	aria-labelledby="schedule-cell-title"
+>
+	<div class="modal-box app-modal-box">
+		<h3 id="schedule-cell-title" class="app-modal-title">Edit Blok Jadwal</h3>
+		<div class="app-modal-body">
+			{#if selectedCell}
+				<p class="text-base-content/70 mt-1 text-sm">
+					{hariLabel[selectedCell.hari]} jam {selectedCell.jamKe} - {selectedKelas?.nama ?? 'Kelas'}
+					{#if selectedCell.blockCellKeys.length > 1}
+						<span class="badge badge-info ml-1"
+							>{selectedCell.blockCellKeys.length} sel tergabung</span
+						>
+					{/if}
+				</p>
+				<label class="schedule-field mt-4">
+					<span>Item Jadwal</span>
+					<select class="select w-full" bind:value={editKode}>
+						<option value="">Kosong</option>
+						<optgroup label="Mata Pelajaran">
+							{#each selectedMapelItems as item (`edit-mapel-${item.id}`)}
+								<option value={item.kode}>{item.kode} - {item.nama}</option>
+							{/each}
+						</optgroup>
+						<optgroup label="Kegiatan">
+							{#each kegiatanItems as item (`edit-kegiatan-${item.id}`)}
+								<option value={item.kode}>{item.kode} - {item.nama}</option>
+							{/each}
+						</optgroup>
+					</select>
+				</label>
+			{/if}
+		</div>
+		<div class="modal-action app-modal-actions schedule-cell-actions">
+			<button
+				class="btn"
+				type="button"
+				onclick={() => {
+					selectedCell = null;
+					cellDialog?.close();
+				}}>Batal</button
+			>
 			{#if selectedCell && selectedCell.blockCellKeys.length > 1}
 				<button
 					class="btn btn-error btn-outline"
@@ -1632,24 +1729,20 @@
 					>Simpan Sel</button
 				>
 			{/if}
-			<button
-				class="btn"
-				type="button"
-				onclick={() => {
-					selectedCell = null;
-					cellDialog?.close();
-				}}>Batal</button
-			>
 		</div>
 	</div>
 	<form method="dialog" class="modal-backdrop"><button>Batal</button></form>
 </dialog>
 
-<dialog class="modal" bind:this={importDialog}>
-	<div class="modal-box w-11/12 max-w-5xl rounded-lg">
+<dialog
+	class="modal app-modal schedule-modal schedule-import-modal"
+	bind:this={importDialog}
+	aria-labelledby="schedule-import-title"
+>
+	<div class="modal-box app-modal-box">
 		<div class="flex items-start justify-between gap-3">
 			<div>
-				<h3 class="text-lg font-bold">Import Jadwal Pelajaran</h3>
+				<h3 id="schedule-import-title" class="app-modal-title">Impor Jadwal Pelajaran</h3>
 				<p class="text-base-content/70 mt-1 text-sm">
 					Data diperiksa untuk {data.selectedContext?.jenis === 'persiapan'
 						? 'Masa Persiapan'
@@ -1662,119 +1755,129 @@
 				class="btn btn-ghost btn-sm btn-square"
 				type="button"
 				title="Tutup"
+				aria-label="Tutup impor jadwal"
 				onclick={() => importDialog?.close()}
 			>
 				<Icon name="close" />
 			</button>
 		</div>
 
-		<div class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end">
-			<label class="form-control min-w-0 flex-1">
-				<span class="label-text mb-1 font-semibold">File Excel</span>
-				<input
-					class="file-input file-input-bordered w-full"
-					type="file"
-					accept=".xlsx"
-					onchange={(event) => {
-						importFile = (event.currentTarget as HTMLInputElement).files?.[0] ?? null;
-						importPreview = null;
-					}}
-				/>
-			</label>
-			<button
-				class="btn btn-primary shadow-none"
-				type="button"
-				disabled={!importFile || importLoading}
-				onclick={previewImport}
-			>
-				{#if importLoading}<span class="loading loading-spinner loading-sm"></span>{:else}<Icon
-						name="search"
-					/>{/if}
-				Periksa File
-			</button>
-		</div>
-
-		{#if importPreview}
-			<div class="mt-5 grid grid-cols-3 gap-2">
-				<div class="bg-base-200 rounded-md p-3">
-					<div class="text-xs">Total Terisi</div>
-					<div class="text-xl font-bold">{importPreview.total}</div>
-				</div>
-				<div class="bg-success/15 rounded-md p-3">
-					<div class="text-xs">Valid</div>
-					<div class="text-success text-xl font-bold">{importPreview.validRows.length}</div>
-				</div>
-				<div class="bg-error/15 rounded-md p-3">
-					<div class="text-xs">Ditolak</div>
-					<div class="text-error text-xl font-bold">{importPreview.invalidRows.length}</div>
-				</div>
+		<div class="app-modal-body">
+			<div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+				<label class="schedule-field min-w-0 flex-1">
+					<span>File Excel</span>
+					<input
+						class="file-input file-input-bordered w-full"
+						type="file"
+						accept=".xlsx"
+						onchange={(event) => {
+							importFile = (event.currentTarget as HTMLInputElement).files?.[0] ?? null;
+							importPreview = null;
+						}}
+					/>
+				</label>
+				<button
+					class="btn btn-primary shadow-none"
+					type="button"
+					disabled={!importFile || importLoading}
+					onclick={previewImport}
+				>
+					{#if importLoading}<span class="loading loading-spinner loading-sm"></span>{:else}<Icon
+							name="search"
+						/>{/if}
+					Periksa File
+				</button>
 			</div>
 
-			{#if importPreview.invalidRows.length}
-				<div class="mt-4">
-					<h4 class="text-error mb-2 font-semibold">Baris yang perlu diperbaiki</h4>
-					<div class="border-base-300 max-h-52 overflow-auto rounded-md border">
-						<table class="table table-sm">
-							<thead class="bg-base-200 sticky top-0"
-								><tr><th>Baris</th><th>Hari/Jam</th><th>Kelas</th><th>Kode</th><th>Masalah</th></tr
-								></thead
-							>
-							<tbody>
-								{#each importPreview.invalidRows as row (row.rowNumber)}
-									<tr
-										><td>{row.rowNumber}</td><td>{row.hari} {row.jamKe}</td><td>{row.kelas}</td><td
-											>{row.kode}</td
-										><td class="text-error">{row.reason}</td></tr
-									>
-								{/each}
-							</tbody>
-						</table>
+			{#if importPreview}
+				<div class="mt-5 grid grid-cols-3 gap-2">
+					<div class="bg-base-200 rounded-md p-3">
+						<div class="text-xs">Total Terisi</div>
+						<div class="text-xl font-bold">{importPreview.total}</div>
+					</div>
+					<div class="bg-success/15 rounded-md p-3">
+						<div class="text-xs">Valid</div>
+						<div class="text-success text-xl font-bold">{importPreview.validRows.length}</div>
+					</div>
+					<div class="bg-error/15 rounded-md p-3">
+						<div class="text-xs">Ditolak</div>
+						<div class="text-error text-xl font-bold">{importPreview.invalidRows.length}</div>
+					</div>
+				</div>
+
+				{#if importPreview.invalidRows.length}
+					<div class="mt-4">
+						<h4 class="text-error mb-2 font-semibold">Baris yang perlu diperbaiki</h4>
+						<div class="border-base-300 max-h-52 overflow-auto rounded-md border">
+							<table class="table table-sm">
+								<thead class="bg-base-200 sticky top-0"
+									><tr
+										><th>Baris</th><th>Hari/Jam</th><th>Kelas</th><th>Kode</th><th>Masalah</th></tr
+									></thead
+								>
+								<tbody>
+									{#each importPreview.invalidRows as row (row.rowNumber)}
+										<tr
+											><td>{row.rowNumber}</td><td>{row.hari} {row.jamKe}</td><td>{row.kelas}</td
+											><td>{row.kode}</td><td class="text-error">{row.reason}</td></tr
+										>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					</div>
+				{/if}
+
+				{#if importPreview.validRows.length}
+					<div class="mt-4">
+						<h4 class="mb-2 font-semibold">Pratinjau data valid</h4>
+						<div class="border-base-300 max-h-64 overflow-auto rounded-md border">
+							<table class="table table-sm">
+								<thead class="bg-base-200 sticky top-0"
+									><tr><th>Hari</th><th>Jam</th><th>Kelas</th><th>Kode</th></tr></thead
+								>
+								<tbody>
+									{#each importPreview.validRows.slice(0, 100) as row (row.hari + '-' + row.jamKe + '-' + row.kelasId)}
+										<tr
+											><td>{hariLabel[row.hari]}</td><td>{row.jamKe}</td><td>{row.kelas}</td><td
+												class="font-semibold">{row.kode}</td
+											></tr
+										>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+						{#if importPreview.validRows.length > 100}
+							<p class="text-base-content/60 mt-1 text-xs">
+								100 dari {importPreview.validRows.length} baris ditampilkan.
+							</p>
+						{/if}
+					</div>
+				{/if}
+
+				<div class="mt-5 flex flex-wrap items-center justify-between gap-3">
+					<div class="join">
+						<button
+							class="btn btn-sm join-item"
+							class:btn-primary={importMode === 'merge'}
+							aria-pressed={importMode === 'merge'}
+							type="button"
+							onclick={() => (importMode = 'merge')}>Gabungkan</button
+						>
+						<button
+							class="btn btn-sm join-item"
+							class:btn-primary={importMode === 'replace'}
+							aria-pressed={importMode === 'replace'}
+							type="button"
+							onclick={() => (importMode = 'replace')}>Ganti Isi Tabel</button
+						>
 					</div>
 				</div>
 			{/if}
-
-			{#if importPreview.validRows.length}
-				<div class="mt-4">
-					<h4 class="mb-2 font-semibold">Pratinjau data valid</h4>
-					<div class="border-base-300 max-h-64 overflow-auto rounded-md border">
-						<table class="table table-sm">
-							<thead class="bg-base-200 sticky top-0"
-								><tr><th>Hari</th><th>Jam</th><th>Kelas</th><th>Kode</th></tr></thead
-							>
-							<tbody>
-								{#each importPreview.validRows.slice(0, 100) as row (row.hari + '-' + row.jamKe + '-' + row.kelasId)}
-									<tr
-										><td>{hariLabel[row.hari]}</td><td>{row.jamKe}</td><td>{row.kelas}</td><td
-											class="font-semibold">{row.kode}</td
-										></tr
-									>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-					{#if importPreview.validRows.length > 100}
-						<p class="text-base-content/60 mt-1 text-xs">
-							100 dari {importPreview.validRows.length} baris ditampilkan.
-						</p>
-					{/if}
-				</div>
-			{/if}
-
-			<div class="mt-5 flex flex-wrap items-center justify-between gap-3">
-				<div class="join">
-					<button
-						class="btn btn-sm join-item"
-						class:btn-primary={importMode === 'merge'}
-						type="button"
-						onclick={() => (importMode = 'merge')}>Gabungkan</button
-					>
-					<button
-						class="btn btn-sm join-item"
-						class:btn-primary={importMode === 'replace'}
-						type="button"
-						onclick={() => (importMode = 'replace')}>Ganti Isi Tabel</button
-					>
-				</div>
+		</div>
+		<div class="modal-action app-modal-actions">
+			<button class="btn" type="button" onclick={() => importDialog?.close()}>Batal</button>
+			{#if importPreview}
 				<button
 					class="btn btn-primary shadow-none"
 					type="button"
@@ -1783,13 +1886,222 @@
 				>
 					<Icon name="check" /> Terapkan ke Tabel
 				</button>
-			</div>
-		{/if}
+			{/if}
+		</div>
 	</div>
 	<form method="dialog" class="modal-backdrop"><button>Tutup</button></form>
 </dialog>
 
 <style>
+	.schedule-page {
+		--schedule-control-height: 2.5rem;
+		--schedule-gap: 0.75rem;
+	}
+
+	.schedule-heading {
+		margin-bottom: 1rem;
+	}
+
+	.schedule-toolbar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: end;
+		gap: 1rem;
+	}
+
+	.schedule-context {
+		display: grid;
+		min-width: 0;
+		flex: 1 1 22rem;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: var(--schedule-gap);
+	}
+
+	.schedule-field {
+		display: flex;
+		min-width: 0;
+		flex-direction: column;
+		gap: 0.5rem;
+		font-size: 0.875rem;
+		font-weight: 600;
+	}
+
+	.schedule-field .select {
+		height: var(--schedule-control-height, 2.5rem);
+		font-weight: 400;
+	}
+
+	.schedule-actions,
+	.schedule-view-toolbar {
+		display: flex;
+		min-width: 0;
+		flex-wrap: wrap;
+		align-items: end;
+		gap: 0.5rem;
+	}
+
+	.schedule-view-toolbar {
+		gap: var(--schedule-gap);
+		margin-bottom: 1rem;
+	}
+
+	.schedule-jenjang {
+		width: 12rem;
+		max-width: 100%;
+	}
+
+	.schedule-view-toolbar .join .btn {
+		height: var(--schedule-control-height);
+	}
+
+	.schedule-clear {
+		margin-left: auto;
+	}
+
+	.schedule-check-summary {
+		display: grid;
+		cursor: pointer;
+		gap: 0.75rem;
+		padding: 0.75rem;
+		list-style: none;
+		font-size: 0.875rem;
+	}
+
+	.schedule-check-summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.schedule-check-badges {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem;
+	}
+
+	.schedule-check-details {
+		max-height: 15rem;
+		overflow-y: auto;
+		padding: 0.75rem;
+	}
+
+	.schedule-check-details .badge {
+		flex-shrink: 0;
+	}
+
+	.schedule-check-details span {
+		overflow-wrap: anywhere;
+	}
+
+	.schedule-table-scroll {
+		height: clamp(24rem, 65dvh, 52rem);
+		overscroll-behavior: contain;
+	}
+
+	.schedule-palette-list {
+		max-height: 20rem;
+		overscroll-behavior: contain;
+	}
+
+	.schedule-panel {
+		display: none;
+		order: -1;
+	}
+
+	.mobile-panel-open .schedule-panel {
+		display: block;
+	}
+
+	.schedule-panel-desktop-control {
+		display: none;
+	}
+
+	.schedule-panel-short-title {
+		display: none;
+	}
+
+	.schedule-page :is(button, summary, select, input, [tabindex='0']):focus-visible {
+		outline: 2px solid var(--color-primary);
+		outline-offset: -2px;
+	}
+
+	.schedule-modal {
+		--app-modal-width: 42rem;
+	}
+
+	.schedule-target-modal {
+		--app-modal-width: 80rem;
+	}
+
+	.schedule-drop-modal {
+		--app-modal-width: 28rem;
+	}
+
+	.schedule-import-modal {
+		--app-modal-width: 64rem;
+	}
+
+	.schedule-target-scroll {
+		max-height: 50dvh;
+	}
+
+	.schedule-table thead,
+	.schedule-target-scroll :global(thead) {
+		z-index: 30;
+	}
+
+	.schedule-cell-actions .btn-error {
+		margin-right: auto;
+	}
+
+	@media (max-width: 39.99rem) {
+		.schedule-actions {
+			display: grid;
+			width: 100%;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			align-items: stretch;
+		}
+
+		.schedule-actions :is(.btn, .dropdown) {
+			width: 100%;
+			min-width: 0;
+		}
+
+		.schedule-actions .btn {
+			min-height: 2.5rem;
+			height: auto;
+			padding: 0.5rem;
+			font-size: 0.8125rem;
+		}
+
+		.schedule-actions > .btn,
+		.schedule-actions .dropdown .btn {
+			height: 100%;
+		}
+
+		.schedule-table-scroll {
+			height: 65dvh;
+			min-height: 20rem;
+		}
+
+		.schedule-jenjang {
+			width: 100%;
+		}
+
+		.schedule-target-scroll :global(th:first-child) {
+			min-width: 9rem;
+			max-width: 9rem;
+		}
+
+		.schedule-target-scroll :global(th:first-child div) {
+			max-width: 7rem;
+		}
+	}
+
+	@media (max-width: 23.99rem) {
+		.schedule-context {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+
 	@media (min-width: 80rem) {
 		.schedule-workspace {
 			grid-template-columns: minmax(0, 1fr) var(--panel-width);
@@ -1797,6 +2109,41 @@
 
 		.schedule-workspace.panel-left {
 			grid-template-columns: var(--panel-width) minmax(0, 1fr);
+		}
+
+		.schedule-panel {
+			display: block;
+			order: 0;
+		}
+
+		.schedule-panel-desktop-control {
+			display: flex;
+		}
+
+		.panel-collapsed .schedule-panel-heading {
+			flex-wrap: wrap;
+		}
+
+		.panel-collapsed .schedule-panel-heading h2 {
+			flex-basis: 100%;
+		}
+
+		.panel-collapsed .schedule-panel-body,
+		.panel-collapsed .schedule-panel-title,
+		.panel-collapsed .schedule-panel-count {
+			display: none;
+		}
+
+		.panel-collapsed .schedule-panel-short-title {
+			display: inline;
+		}
+
+		.schedule-mobile-trigger {
+			display: none;
+		}
+
+		.schedule-palette-list {
+			max-height: min(65dvh, 44rem);
 		}
 
 		.panel-left .schedule-main {
@@ -1809,13 +2156,23 @@
 	}
 	.schedule-table :global(th),
 	.schedule-table :global(td) {
-		border-color: hsl(var(--b3, 220 13% 91%));
+		border-color: var(--color-base-300);
+	}
+
+	.schedule-table {
+		border-collapse: separate;
+		border-spacing: 0;
+	}
+
+	.schedule-table :global(tr.day-start > td) {
+		border-top: 2px solid var(--color-base-300);
 	}
 
 	.schedule-head {
-		background: #2563eb;
-		color: white;
+		background: var(--color-base-200);
+		color: var(--color-base-content);
 		font-weight: 700;
+		height: 2.75rem;
 	}
 
 	.schedule-cell {
@@ -1833,15 +2190,6 @@
 		inset: 0.2rem;
 		position: absolute;
 		width: auto;
-	}
-
-	.schedule-cell.is-merged-activity .slot-button {
-		background-image: linear-gradient(
-			90deg,
-			rgba(255, 255, 255, 0.12),
-			transparent 35%,
-			rgba(255, 255, 255, 0.12)
-		);
 	}
 
 	.slot-span {
@@ -1862,16 +2210,17 @@
 	.sticky-col-day {
 		left: 0;
 		min-width: 4rem;
+		width: 4rem;
 	}
 
 	.group-jam-head,
 	.group-jam-cell {
-		border-left: 2px solid color-mix(in srgb, #2563eb 45%, transparent);
-		min-width: 5rem;
+		border-left: 2px solid color-mix(in oklab, var(--color-info) 35%, var(--color-base-300));
+		min-width: 5.5rem;
 	}
 
 	.group-jam-cell {
-		background: color-mix(in srgb, #dbeafe 45%, var(--color-base-100));
+		background: color-mix(in oklab, var(--color-info) 6%, var(--color-base-100));
 		padding: 0.25rem;
 	}
 
@@ -1900,17 +2249,17 @@
 	}
 
 	.compact-schedule .slot-button {
-		min-height: 2.25rem;
+		min-height: 2.625rem;
 		padding: 0.2rem;
 	}
 
 	.compact-schedule .slot-code {
-		font-size: 0.72rem;
+		font-size: 0.75rem;
 	}
 
 	.compact-schedule .slot-name {
-		max-width: 4.25rem;
-		font-size: 0.58rem;
+		max-width: 6.25rem;
+		font-size: 0.6875rem;
 	}
 
 	.compact-schedule .slot-detail {
@@ -1926,14 +2275,14 @@
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		gap: 0.05rem;
-		background: hsl(var(--b1));
+		gap: 0.125rem;
+		background: var(--color-base-100);
 		padding: 0.35rem;
 		text-align: center;
 	}
 
 	.slot-button:not(:disabled):hover {
-		outline: 2px solid #60a5fa;
+		outline: 2px solid var(--color-primary);
 		outline-offset: -2px;
 	}
 
@@ -1944,13 +2293,20 @@
 
 	.slot-button.has-value {
 		border-style: solid;
-		color: #0f172a;
+		border-color: color-mix(in oklab, var(--slot-color) 40%, var(--color-base-300));
+		border-left: 3px solid var(--slot-color);
+		background: color-mix(in oklab, var(--slot-color) 18%, var(--color-base-100));
+		color: var(--color-base-content);
+	}
+
+	.slot-button.has-value.is-conflict {
+		border-color: var(--color-error);
 	}
 
 	.slot-code {
-		font-size: 0.82rem;
+		font-size: 0.8125rem;
 		font-weight: 800;
-		line-height: 1;
+		line-height: 1.2;
 	}
 
 	.slot-name,
@@ -1962,23 +2318,23 @@
 	}
 
 	.slot-name {
-		font-size: 0.68rem;
+		font-size: 0.75rem;
 	}
 
 	.slot-detail,
 	.slot-empty {
-		font-size: 0.65rem;
+		font-size: 0.6875rem;
 		opacity: 0.72;
 	}
 
 	.palette-item {
 		align-items: center;
-		border: 1px solid hsl(var(--b3, 220 13% 91%));
-		border-radius: 0.5rem;
+		border: 1px solid var(--color-base-300);
+		border-radius: 0.375rem;
 		display: flex;
 		gap: 0.375rem;
-		min-height: 2.5rem;
-		padding: 0.35rem;
+		min-height: 3.25rem;
+		padding: 0.5rem;
 		width: 100%;
 	}
 
@@ -1991,8 +2347,8 @@
 	}
 
 	.palette-item:hover {
-		border-color: #60a5fa;
-		background: color-mix(in srgb, #dbeafe 38%, transparent);
+		border-color: var(--color-primary);
+		background: var(--color-base-200);
 	}
 
 	.palette-swatch {

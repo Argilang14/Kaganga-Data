@@ -113,12 +113,6 @@
 		formDialog?.showModal();
 	}
 
-	function openEditModal(pegawai: PegawaiRow) {
-		selectedPegawai = pegawai;
-		formActiveTab = 0;
-		formDialog?.showModal();
-	}
-
 	function openEditFromDetail(pegawai: PegawaiRow) {
 		closeDetailModal();
 		selectedPegawai = pegawai;
@@ -150,6 +144,20 @@
 	function closeDetailModal() {
 		detailData = null;
 		if (location.pathname.startsWith('/pegawai/')) history.back();
+	}
+
+	function openDetailDialog(dialog: HTMLDialogElement) {
+		dialog.showModal();
+	}
+
+	function handleFormTabKey(event: KeyboardEvent, index: number) {
+		const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+		if (!keys.includes(event.key)) return;
+		event.preventDefault();
+		formActiveTab = event.key === 'Home' ? 0 : event.key === 'End' ? formTabs.length - 1
+			: (index + (event.key === 'ArrowRight' ? 1 : -1) + formTabs.length) % formTabs.length;
+		(event.currentTarget as HTMLElement).parentElement
+			?.querySelector<HTMLButtonElement>(`#pegawai-form-tab-${formActiveTab}`)?.focus();
 	}
 
 	function nextFormTab() {
@@ -288,14 +296,11 @@
 	}
 </script>
 
-<div class="card bg-base-100 space-y-5 rounded-lg border border-none p-4 shadow-md">
+<div class="card bg-base-100 space-y-4 rounded-lg border-none p-4 shadow-md">
 	<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 		<div>
 			<h1 class="text-xl font-bold">Formulir Dan Tabel Isian Data Pegawai</h1>
-			<p class="text-base-content/70 mt-1 max-w-3xl text-sm leading-relaxed">
-				Kelola kepala sekolah, guru, operator, TU, keamanan, kebersihan, wali asuh, dan wali asrama.
-				Data wali kelas/asrama/asuh pada kelas mengambil nama pegawai dari sini.
-			</p>
+			<p class="text-base-content/70 mt-1 text-sm">Guru dan tenaga kependidikan sekolah.</p>
 		</div>
 		<div class="flex shrink-0 max-sm:w-full">
 			<button class="btn btn-soft rounded-r-none shadow-none max-sm:flex-1" type="button" onclick={openCreateModal}>
@@ -324,39 +329,31 @@
 		</div>
 	{/if}
 
-	<div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-		<div class="stats bg-base-200/45 rounded-md shadow-none">
-			<div class="stat py-4">
-				<div class="stat-title">Total Pegawai</div>
-				<div class="stat-value text-2xl">{data.totals.total}</div>
-			</div>
+	<dl class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+		<div class="border-base-300 bg-base-200/50 rounded-md border-l-2 px-3 py-2">
+			<dt class="text-base-content/65 text-xs">Total Pegawai</dt>
+			<dd class="mt-1 text-xl font-bold tabular-nums">{data.totals.total}</dd>
 		</div>
-		<div class="stats bg-success/10 rounded-md shadow-none">
-			<div class="stat py-4">
-				<div class="stat-title">Aktif</div>
-				<div class="stat-value text-success text-2xl">{data.totals.aktif}</div>
-			</div>
+		<div class="border-success bg-success/5 rounded-md border-l-2 px-3 py-2">
+			<dt class="text-base-content/65 text-xs">Aktif</dt>
+			<dd class="text-success mt-1 text-xl font-bold tabular-nums">{data.totals.aktif}</dd>
 		</div>
-		<div class="stats bg-primary/10 rounded-md shadow-none">
-			<div class="stat py-4">
-				<div class="stat-title">Guru/Kepala</div>
-				<div class="stat-value text-primary text-2xl">{data.totals.guru}</div>
-			</div>
+		<div class="border-info bg-info/5 rounded-md border-l-2 px-3 py-2">
+			<dt class="text-base-content/65 text-xs">Guru/Kepala</dt>
+			<dd class="mt-1 text-xl font-bold tabular-nums">{data.totals.guru}</dd>
 		</div>
-		<div class="stats bg-secondary/10 rounded-md shadow-none">
-			<div class="stat py-4">
-				<div class="stat-title">Asrama</div>
-				<div class="stat-value text-secondary text-2xl">{data.totals.asrama}</div>
-			</div>
+		<div class="border-warning bg-warning/5 rounded-md border-l-2 px-3 py-2">
+			<dt class="text-base-content/65 text-xs">Asrama</dt>
+			<dd class="mt-1 text-xl font-bold tabular-nums">{data.totals.asrama}</dd>
 		</div>
-	</div>
+	</dl>
 
 	<form
 		method="GET"
-		class="bg-base-200/35 grid gap-3 rounded-md p-4 lg:grid-cols-[1fr_220px_180px_auto]"
+		class="grid grid-cols-2 items-end gap-3 lg:grid-cols-[minmax(0,1fr)_180px_140px_auto]"
 	>
-		<label class="form-control gap-1">
-			<span class="label-text font-medium">Cari pegawai</span>
+		<label class="col-span-2 flex min-w-0 flex-col gap-1 lg:col-span-1">
+			<span class="text-xs font-medium">Cari pegawai</span>
 			<input
 				class="input input-bordered w-full"
 				name="q"
@@ -364,8 +361,8 @@
 				placeholder="Nama, NIP, atau NIK"
 			/>
 		</label>
-		<label class="form-control gap-1">
-			<span class="label-text font-medium">Jenis</span>
+		<label class="flex min-w-0 flex-col gap-1">
+			<span class="text-xs font-medium">Jenis</span>
 			<select class="select select-bordered w-full" name="jenis">
 				<option value="">Semua jenis</option>
 				{#each data.options.jenis as jenis (jenis)}
@@ -373,8 +370,8 @@
 				{/each}
 			</select>
 		</label>
-		<label class="form-control gap-1">
-			<span class="label-text font-medium">Status</span>
+		<label class="flex min-w-0 flex-col gap-1">
+			<span class="text-xs font-medium">Status</span>
 			<select class="select select-bordered w-full" name="status">
 				<option value="">Semua status</option>
 				{#each data.options.status as status (status)}
@@ -384,22 +381,18 @@
 				{/each}
 			</select>
 		</label>
-		<div class="flex items-end gap-2">
-			<button class="btn btn-primary flex-1" type="submit"><Icon name="search" /> Filter</button>
-			<a href="/pegawai" class="btn btn-soft" title="Reset filter"><Icon name="repeat" /></a>
+		<div class="col-span-2 flex items-end gap-2 lg:col-span-1">
+			<button class="btn btn-soft flex-1 shadow-none" type="submit"><Icon name="search" /> Filter</button>
+			<a href="/pegawai" class="btn btn-soft shadow-none" title="Reset filter" aria-label="Reset filter pegawai"><Icon name="repeat" /></a>
 		</div>
 	</form>
 
-	<div class="border-base-200 overflow-hidden rounded-md border">
+	<div class="bg-base-100 overflow-hidden rounded-md shadow-md">
+		{#if selectedIds.length}
 		<div
-			class="border-base-200 dark:border-base-300 flex flex-col gap-3 border-b px-4 py-3 md:flex-row md:items-center md:justify-between"
+			class="border-base-200 bg-base-200/50 flex items-center justify-between gap-3 border-b px-3 py-2"
 		>
-			<div>
-				<h2 class="font-semibold">Daftar Pegawai</h2>
-				<p class="text-base-content/60 text-sm">
-					{pegawaiList.length} data ditampilkan, {selectedIds.length} dipilih
-				</p>
-			</div>
+			<p class="text-sm font-medium" aria-live="polite">{selectedIds.length} pegawai dipilih</p>
 			<form
 				method="POST"
 				action="?/deleteBulk"
@@ -414,11 +407,12 @@
 				</button>
 			</form>
 		</div>
+		{/if}
 		<div class="overflow-x-auto">
-			<table class="table min-w-[880px]">
+			<table class="pegawai-table table min-w-[760px]">
 				<colgroup>
-					<col class="w-16" />
-					<col class="w-16" />
+					<col class="w-14" />
+					<col class="w-12" />
 					<col class="w-[34%]" />
 					<col class="w-[16%]" />
 					<col />
@@ -426,7 +420,7 @@
 					<col class="w-36" />
 				</colgroup>
 				<thead>
-					<tr class="bg-base-200 dark:bg-base-300 text-base-content text-left font-bold">
+					<tr class="bg-base-200 text-base-content text-left font-bold">
 						<th>
 							<input
 								class="checkbox"
@@ -446,7 +440,7 @@
 				</thead>
 				<tbody>
 					{#each pegawaiList as pegawai, index (pegawai.id)}
-						<tr class="hover:bg-base-200/40 h-[72px] transition-colors">
+						<tr class="hover:bg-base-200/40 transition-colors">
 							<td>
 								<input
 									class="checkbox"
@@ -458,11 +452,11 @@
 							</td>
 							<td>{(currentPage - 1) * (data.page?.perPage ?? 20) + index + 1}</td>
 							<td>
-								<div class="font-medium">{pegawai.nama}</div>
+								<div class="break-words font-medium">{pegawai.nama}</div>
 								<div class="text-base-content/60 mt-0.5 text-xs">NIP {pegawai.nip}</div>
 							</td>
 							<td>{jenisLabels[pegawai.jenis] ?? pegawai.jenis}</td>
-							<td>{pegawai.jabatan || '-'}</td>
+							<td class="break-words">{pegawai.jabatan || '-'}</td>
 							<td>
 								<span
 									class:badge-success={pegawai.status === 'aktif'}
@@ -593,33 +587,38 @@
 {#if detailData}
 	<dialog
 		class="modal"
-		open
+		aria-labelledby="pegawai-detail-title"
+		use:openDetailDialog
 		onclose={closeDetailModal}
 	>
-		<div class="modal-box max-h-[94vh] w-11/12 max-w-5xl p-5">
+		<div class="pegawai-detail-modal modal-box w-full max-w-2xl p-4">
 			<DetailPegawai data={detailData} onEdit={openEditFromDetail} onClose={closeDetailModal} />
 		</div>
 		<button type="button" class="modal-backdrop" onclick={closeDetailModal}>Tutup</button>
 	</dialog>
 {/if}
 
-<dialog class="modal" bind:this={formDialog}>
-	<div class="modal-box flex max-h-[92vh] w-11/12 max-w-4xl flex-col overflow-hidden p-5">
-		<h3 class="text-xl font-bold">
+<dialog class="modal" bind:this={formDialog} aria-labelledby="pegawai-form-title" aria-describedby="pegawai-form-description">
+	<div class="pegawai-form-modal modal-box flex w-full max-w-2xl flex-col p-4">
+		<h3 id="pegawai-form-title" class="shrink-0 text-xl font-bold">
 			{selectedPegawai ? 'Formulir Edit Pegawai Manual' : 'Formulir Tambah Pegawai Manual'}
 		</h3>
-		<p class="text-base-content/60 mt-1 text-sm">
+		<p id="pegawai-form-description" class="text-base-content/60 mt-1 shrink-0 text-sm">
 			Isi data pokok pegawai. Jika belum punya NIP, boleh isi tanda minus (-).
 		</p>
-		<div class="bg-base-200/55 mt-4 flex flex-wrap gap-1 rounded-md p-1" role="tablist">
-			{#each formTabs as tab, index}
+		<div class="bg-base-200 mt-4 flex shrink-0 gap-1 overflow-x-auto rounded-md p-1" role="tablist" aria-label="Bagian biodata pegawai">
+			{#each formTabs as tab, index (tab)}
 				<button
 					type="button"
 					role="tab"
+					id="pegawai-form-tab-{index}"
+					aria-controls="pegawai-form-panel-{index}"
 					aria-selected={formActiveTab === index}
-					class="btn btn-sm border-0 shadow-none"
-					class:btn-primary={formActiveTab === index}
+					tabindex={formActiveTab === index ? 0 : -1}
+					class="btn btn-sm shrink-0 border-0 shadow-none"
+					class:bg-base-100={formActiveTab === index}
 					class:btn-ghost={formActiveTab !== index}
+					onkeydown={(event) => handleFormTabKey(event, index)}
 					onclick={() => (formActiveTab = index)}>{tab}</button
 				>
 			{/each}
@@ -631,11 +630,11 @@
 			use:enhance={saveEnhance}
 			novalidate
 			onsubmit={validatePegawaiForm}
-			class="mt-3 flex min-h-0 flex-1 flex-col"
+			class="pegawai-form mt-3 flex min-h-0 flex-1 flex-col"
 		>
 			<input type="hidden" name="id" value={selectedPegawai?.id ?? ''} />
-			<div class="min-h-0 flex-1 overflow-y-auto rounded-md border border-base-200 p-4">
-				<section class="grid gap-4 md:grid-cols-2" class:hidden={formActiveTab !== 0}>
+			<div class="min-h-0 flex-1 overflow-y-auto p-1">
+				<div id="pegawai-form-panel-0" role="tabpanel" aria-labelledby="pegawai-form-tab-0" tabindex="0" class="grid gap-3 sm:grid-cols-2" class:hidden={formActiveTab !== 0}>
 				<label class="form-control gap-2"
 					><span class="label-text font-medium">Nama Pegawai</span><input
 						class="input input-bordered w-full"
@@ -729,14 +728,14 @@
 						class="select select-bordered w-full"
 						name="statusPerkawinan"
 						><option value="">Belum diisi</option
-						>{#each ['Belum Kawin', 'Kawin', 'Cerai Hidup', 'Cerai Mati'] as status}<option
+						>{#each ['Belum Kawin', 'Kawin', 'Cerai Hidup', 'Cerai Mati'] as status (status)}<option
 								value={status}
 								selected={selectedPegawai?.statusPerkawinan === status}>{status}</option
 							>{/each}</select
 					></label
 				>
-				</section>
-				<section class="grid gap-4 md:grid-cols-2" class:hidden={formActiveTab !== 2}>
+				</div>
+				<div id="pegawai-form-panel-2" role="tabpanel" aria-labelledby="pegawai-form-tab-2" tabindex="0" class="grid gap-3 sm:grid-cols-2" class:hidden={formActiveTab !== 2}>
 				<label class="form-control gap-2"
 					><span class="label-text font-medium">Jabatan</span><input
 						class="input input-bordered w-full"
@@ -790,8 +789,8 @@
 						value={selectedPegawai?.tanggalSk ?? ''}
 					/></label
 				>
-				</section>
-				<section class="grid gap-4 md:grid-cols-2" class:hidden={formActiveTab !== 1}>
+				</div>
+				<div id="pegawai-form-panel-1" role="tabpanel" aria-labelledby="pegawai-form-tab-1" tabindex="0" class="grid gap-3 sm:grid-cols-2" class:hidden={formActiveTab !== 1}>
 				<label class="form-control gap-2"
 					><span class="label-text font-medium">Telepon</span><input
 						class="input input-bordered w-full"
@@ -851,8 +850,8 @@
 						inputmode="numeric"
 					/></label
 				>
-				</section>
-				<section class="grid gap-4 md:grid-cols-2" class:hidden={formActiveTab !== 3}>
+				</div>
+				<div id="pegawai-form-panel-3" role="tabpanel" aria-labelledby="pegawai-form-tab-3" tabindex="0" class="grid gap-3 sm:grid-cols-2" class:hidden={formActiveTab !== 3}>
 				<label class="form-control gap-2"
 					><span class="label-text font-medium">Nama Kontak</span><input
 						class="input input-bordered w-full"
@@ -882,9 +881,9 @@
 						>{selectedPegawai?.catatan ?? ''}</textarea
 					></label
 				>
-				</section>
+				</div>
 			</div>
-			<div class="mt-4 flex items-center justify-between gap-3">
+			<div class="border-base-200 mt-4 flex shrink-0 flex-wrap items-center justify-between gap-2 border-t pt-3">
 				<button class="btn" type="button" onclick={() => formDialog?.close()}>Batal</button>
 				<div class="flex gap-2">
 					{#if formActiveTab > 0}
@@ -906,9 +905,9 @@
 	<form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
-<dialog class="modal" bind:this={importDialog} onclose={closeImportDialog}>
-	<div class="modal-box max-h-[92vh] w-11/12 max-w-5xl overflow-y-auto">
-		<h3 class="text-lg font-bold">Import Data Pegawai</h3>
+<dialog class="modal" bind:this={importDialog} onclose={closeImportDialog} aria-labelledby="pegawai-import-title">
+	<div class="modal-box w-full p-4" class:max-w-2xl={!importPreview} class:max-w-4xl={!!importPreview}>
+		<h3 id="pegawai-import-title" class="text-xl font-bold">Import Data Pegawai</h3>
 		<p class="text-base-content/70 mt-1 text-sm">
 			Periksa pratinjau sebelum menyimpan. Data lama dicocokkan melalui NIP, lalu NIK.
 		</p>
@@ -1027,3 +1026,32 @@
 	</div>
 	<form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
+
+<style>
+	.pegawai-table :global(tbody td) {
+		padding-block: 0.625rem;
+	}
+
+	.pegawai-form-modal {
+		max-height: min(85dvh, 56rem);
+		overflow: hidden;
+	}
+
+	.pegawai-form label {
+		display: flex;
+		min-width: 0;
+		flex-direction: column;
+		gap: 0.375rem;
+		font-size: 0.875rem;
+	}
+
+	.pegawai-form :is(input:not([type='hidden']), select, textarea) {
+		background-color: var(--color-base-200);
+	}
+
+	@media (max-width: 639px) {
+		.pegawai-form-modal {
+			max-height: calc(100dvh - 1rem);
+		}
+	}
+</style>

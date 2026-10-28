@@ -1,6 +1,11 @@
 import db from '$lib/server/db';
 import { ensureEducationUnitsSchema } from '$lib/server/db/ensure-education-units';
-import { tableMurid, tableMuridIdentityLink, tableMuridLifecycle } from '$lib/server/db/schema';
+import {
+	tableKelas,
+	tableMurid,
+	tableMuridIdentityLink,
+	tableMuridLifecycle
+} from '$lib/server/db/schema';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { writeAoaToBuffer } from '$lib/utils/excel.js';
 import { and, asc, eq, sql } from 'drizzle-orm';
@@ -30,11 +35,29 @@ export async function GET({ locals, url }) {
 	if (!activeSemesterId) {
 		throw error(400, 'Belum ada semester aktif. Atur semester aktif di menu Rapor.');
 	}
+	const kelasParam = url.searchParams.get('kelas_id');
+	const kelasId = kelasParam === null ? null : Number(kelasParam);
+	if (kelasParam !== null && (!/^[1-9]\d*$/.test(kelasParam) || !Number.isSafeInteger(kelasId)))
+		throw error(400, 'Pilihan kelas tidak valid. Pilih kembali kelas yang akan diunduh.');
+	const kelas =
+		kelasId === null
+			? null
+			: await db.query.tableKelas.findFirst({
+					columns: { id: true, nama: true },
+					where: and(
+						eq(tableKelas.id, kelasId),
+						eq(tableKelas.sekolahId, sekolahId),
+						eq(tableKelas.semesterId, activeSemesterId)
+					)
+				});
+	if (kelasId !== null && !kelas)
+		throw error(404, 'Kelas tidak ditemukan pada sekolah dan semester aktif.');
 
 	const candidates = await db.query.tableMurid.findMany({
 		where: and(
 			eq(tableMurid.sekolahId, sekolahId),
 			eq(tableMurid.semesterId, activeSemesterId),
+			kelas ? eq(tableMurid.kelasId, kelas.id) : undefined,
 			status === 'aktif'
 				? activeMuridFilter()
 				: status === 'arsip'
@@ -60,6 +83,8 @@ export async function GET({ locals, url }) {
 		)
 			daftarMurid.push(row);
 	}
+	if (kelas && candidates.length > 0 && daftarMurid.length === 0)
+		throw error(403, 'Tidak memiliki akses ke data murid di kelas ini.');
 	const lifecycleRows = await db
 		.select({
 			id: tableMuridIdentityLink.muridId,
@@ -168,12 +193,19 @@ export async function GET({ locals, url }) {
 	}
 
 	const buffer = await writeAoaToBuffer(rows);
+	const className = kelas?.nama.replace(/[^\p{L}\p{N} ._-]/gu, '_').slice(0, 80);
+	const filename = kelas
+		? `Data Murid-${status}-Kelas ${className}.xlsx`
+		: `Data Murid-${status}.xlsx`;
+	const asciiFilename = filename.replace(/[^a-zA-Z0-9 ._-]/g, '_');
 
 	return new Response(new Uint8Array(buffer), {
 		headers: {
 			'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 			'Cache-Control': 'private, no-store',
-			'Content-Disposition': `attachment; filename="Data Murid-${status}.xlsx"`
+			'Content-Disposition': kelas
+				? `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+				: `attachment; filename="${filename}"`
 		}
 	});
 }

@@ -173,6 +173,17 @@ export const appMenuItems: MenuItem[] = [
 		]
 	},
 	{
+		title: 'Pengasuhan & Asrama',
+		icon: 'book-open',
+		subMenu: [
+			{ title: 'Ringkasan Pengasuhan', path: '/pengasuhan/ringkasan' },
+			{ title: 'Laporan Piket', path: '/pengasuhan/piket' },
+			{ title: 'Kejadian & Tindak Lanjut', path: '/pengasuhan/kejadian' },
+			{ title: 'Perkembangan Anak', path: '/pengasuhan/perkembangan' },
+			{ title: 'Pantau Sakit', path: '/pengasuhan/sakit' }
+		]
+	},
+	{
 		title: 'Absensi',
 		icon: 'activity',
 		tags: ['qr', 'absensi digital', 'scan', 'presensi pegawai', 'kehadiran pegawai'],

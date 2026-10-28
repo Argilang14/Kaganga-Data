@@ -20,6 +20,7 @@ import {
 	type SummaryLevel
 } from '$lib/attendance-summary';
 import db from './db';
+import { projectIllnessAttendance, loadAttendanceIllness } from './attendance-illness';
 import {
 	tableAbsensiKegiatan,
 	tableIzinPulangMurid,
@@ -129,9 +130,8 @@ export async function loadAttendanceSummary(locals: App.Locals, params: URLSearc
 		orderBy: asc(tableMurid.nama)
 	});
 	const studentIds = students.map((item) => item.id);
-	const attendance = studentIds.length
+	const recordedAttendance = studentIds.length
 		? await db.query.tableAbsensiKegiatan.findMany({
-				columns: { muridId: true, status: true, metode: true },
 				where: and(
 					eq(tableAbsensiKegiatan.sekolahId, schoolId),
 					eq(tableAbsensiKegiatan.semesterId, options.semesterId),
@@ -145,6 +145,8 @@ export async function loadAttendanceSummary(locals: App.Locals, params: URLSearc
 				)
 			})
 		: [];
+	const attendance = await projectIllnessAttendance({ schoolId, semesterId: options.semesterId,
+		studentIds, dates: [tanggal], activities: [activity], rows: recordedAttendance });
 	// An actual permit is required for (p); a normal departure is not an absence.
 	const permits = studentIds.length
 		? await db.query.tableIzinPulangMurid.findMany({
@@ -175,7 +177,7 @@ export async function loadAttendanceSummary(locals: App.Locals, params: URLSearc
 		)
 	);
 	const effectiveAttendance: Array<{ muridId: number; status: SummaryStatus }> = attendance.filter(
-		(row) => row.metode !== 'auto' || !covered.has(row.muridId)
+		(row) => !covered.has(row.muridId) || (row.id > 0 && row.metode !== 'auto')
 	);
 	// Reuse monitoring's paired school/dorm projection; never persist a synthetic copy.
 	const linked = await db.query.tableKegiatanAbsensi.findMany({
@@ -210,6 +212,7 @@ export async function loadAttendanceSummary(locals: App.Locals, params: URLSearc
 		});
 		const rows = connectSchoolDormRows(
 			buildMonitoringRows({
+				illnesses: await loadAttendanceIllness(schoolId, options.semesterId, studentIds, tanggal),
 				date: tanggal,
 				columns,
 				records,

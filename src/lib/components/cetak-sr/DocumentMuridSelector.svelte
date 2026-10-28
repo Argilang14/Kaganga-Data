@@ -9,6 +9,7 @@
 		| 'keasramaan'
 		| 'kartu-absensi'
 		| 'qr-kelas'
+		| 'informasi-siswa'
 		| 'kartu-ujian'
 		| 'kartu-ujian-meja'
 		| 'jadwal-pelajaran'

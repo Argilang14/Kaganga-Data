@@ -1,4 +1,5 @@
 import { jakartaToday } from './dashboard-summary.ts';
+import { illnessCovers, illnessLabel, illnessNeedsReview, latestIllness, type AttendanceIllness } from './attendance-illness.ts';
 import { travelLocalTime } from './attendance-travel.ts';
 import { canonicalAttendanceActivityCode, selectAttendanceActivitySources } from './attendance-activity.ts';
 
@@ -115,6 +116,8 @@ export type MonitoringCell = {
 	method: string | null;
 	source: 'catatan' | 'izin_pulang' | 'kosong' | 'terhubung';
 	linkedFrom?: string;
+	illnessLabel?: string;
+	illnessReturnedAt?: string | null;
 };
 
 export function availableMonitoringTabs(mealsOnly: boolean) {
@@ -200,6 +203,7 @@ export function buildMonitoringRows(input: {
 	columns: MonitoringColumn[];
 	records: MonitoringRecord[];
 	permits: MonitoringPermit[];
+	illnesses?: AttendanceIllness[];
 }) {
 	const records = new Map<string, MonitoringRecord>();
 	for (const record of input.records) {
@@ -224,15 +228,18 @@ export function buildMonitoringRows(input: {
 		(student) => ({
 			...student,
 			cells: input.columns.map((column): MonitoringCell => {
+				const period = latestIllness(input.illnesses ?? [], student.id, input.date);
+				const illnessInfo = { illnessLabel: illnessLabel(period, input.date), illnessReturnedAt: period?.kembaliPada };
 				if (!column.source)
 					return { status: 'tanpa_sumber', time: null, method: null, source: 'kosong' };
 				const record = records.get(`${student.id}:${column.activityId ?? 'harian'}`);
 				if (
 					record &&
-					!(record.metode === 'auto' && permits.get(student.id)?.some((permit) => permitCoversMonitoring(input.date, column.time, permit))) &&
+					!(record.metode === 'auto' && (illnessNeedsReview(period, input.date) || (period && illnessCovers(period, input.date, column.time)) || permits.get(student.id)?.some((permit) => permitCoversMonitoring(input.date, column.time, permit)))) &&
 					['hadir', 'terlambat', 'sakit', 'izin', 'alfa', 'pulang'].includes(record.status)
 				)
 					return {
+						...illnessInfo,
 						status: record.status as MonitoringStatus,
 						time: record.waktuScan,
 						method: record.metode,
@@ -244,7 +251,9 @@ export function buildMonitoringRows(input: {
 						?.some((permit) => permitCoversMonitoring(input.date, column.time, permit))
 				)
 					return { status: 'izin_pulang', time: null, method: null, source: 'izin_pulang' };
-				return { status: 'belum', time: null, method: null, source: 'kosong' };
+				if (period && illnessCovers(period, input.date, column.time))
+					return { ...illnessInfo, status: 'sakit', time: null, method: null, source: 'terhubung', linkedFrom: illnessInfo.illnessLabel };
+				return { ...illnessInfo, status: 'belum', time: null, method: null, source: 'kosong' };
 			})
 		})
 	);

@@ -28,6 +28,9 @@
 	const currentPage = $derived.by(() => data.page.currentPage ?? 1);
 	const totalPages = $derived.by(() => Math.max(1, data.page.totalPages ?? 1));
 	const pages = $derived.by(() => Array.from({ length: totalPages }, (_, index) => index + 1));
+	const exportKelas = $derived(
+		data.daftarKelas.find((kelas) => String(kelas.id) === data.page.kelasId) ?? null
+	);
 
 	let selectedIds = $state<Set<number>>(new Set());
 	const hasSelection = $derived.by(() => selectedIds.size > 0);
@@ -46,7 +49,7 @@
 		}
 	});
 
-	let selectAllCheckbox: HTMLInputElement | null = null;
+	let selectAllCheckbox = $state<HTMLInputElement | null>(null);
 	let formSubmitting = $state(false);
 	let isBulkPhotoUploadOpen = $state(false);
 	let dropdownToggle: HTMLButtonElement | null = $state(null);
@@ -343,6 +346,7 @@
 						<button
 							bind:this={dropdownToggle}
 							type="button"
+							aria-label="Opsi data murid"
 							tabindex="0"
 							class="btn btn-soft rounded-l-none shadow-none"
 						>
@@ -350,7 +354,7 @@
 						</button>
 						<ul
 							tabindex="-1"
-							class="dropdown-content menu bg-base-100 rounded-box border-base-300 z-1 mt-2 w-50 border p-2 shadow-lg"
+							class="dropdown-content menu bg-base-100 rounded-box border-base-300 z-20 mt-2 w-50 border p-2 shadow-lg"
 						>
 							<li><a href="/murid/photos">Lihat Semua Foto</a></li>
 							{#if canEdit}
@@ -365,6 +369,14 @@
 									Download Murid Aktif
 								</a>
 							</li>
+							{#if exportKelas}
+								<li>
+									<a
+										href={`/api/murid/download-excel?status=aktif&kelas_id=${exportKelas.id}`}
+										class="text-left">Download Kelas {exportKelas.nama}</a
+									>
+								</li>
+							{/if}
 							{#if page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('murid_arsip')}
 								<li><a href="/api/murid/download-excel?status=arsip">Download Murid Arsip</a></li>
 								<li><a href="/api/murid/download-excel?status=semua">Download Semua Status</a></li>
@@ -377,7 +389,7 @@
 	</div>
 
 	<form
-		class="flex flex-col items-center gap-2 sm:flex-row"
+		class="flex max-w-2xl flex-col items-center gap-2 sm:flex-row"
 		data-sveltekit-keepfocus
 		data-sveltekit-replacestate
 		onsubmit={submitSearch}
@@ -405,94 +417,115 @@
 		showToast={false}
 	>
 		{#snippet children({ submitting })}
+			<!-- The table region is focusable so keyboard users can scroll it horizontally. -->
+			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 			<div
-				class="bg-base-100 dark:bg-base-200 mt-4 overflow-x-auto rounded-md shadow-md dark:shadow-none"
+				class="murid-table-scroll bg-base-100 dark:bg-base-200 mt-4 overflow-x-auto rounded-md shadow-md dark:shadow-none"
+				tabindex="0"
+				role="region"
+				aria-label="Tabel data murid"
 			>
-				<table class="border-base-200 table border dark:border-none">
-					<!-- head -->
-					<thead>
-						<tr class="bg-base-200 dark:bg-base-300 text-base-content text-left font-bold">
-							<th>
-								<input
-									type="checkbox"
-									class="checkbox"
-									bind:this={selectAllCheckbox}
-									checked={semuaDipilih}
-									onchange={(event) => toggleSelectAll(event.currentTarget.checked)}
-									aria-label="Pilih semua murid"
-									disabled={submitting}
-								/>
-							</th>
-							<th style="width: 50px; min-width: 40px;">No</th>
-							<th style="width: 45%;">Nama</th>
-							<th>Agama</th>
-							<th>Tempat Lahir</th>
-							<th>Tanggal Lahir</th>
-							<th>Aksi</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each data.daftarMurid as murid, index (murid)}
-							<tr>
-								<td>
+				{#if data.daftarMurid.length > 0}
+					<table
+						class="murid-table border-base-200 table border dark:border-none"
+						class:murid-table-populated={data.daftarMurid.length > 0}
+					>
+						{#if data.daftarMurid.length > 0}
+							<colgroup>
+								<col class="murid-col-select" /><col class="murid-col-number" />
+								<col class="murid-col-name" /><col class="murid-col-religion" />
+								<col /><col class="murid-col-date" /><col class="murid-col-action" />
+							</colgroup>
+						{/if}
+						<!-- head -->
+						<thead>
+							<tr class="bg-base-200 dark:bg-base-300 text-base-content text-left font-bold">
+								<th>
 									<input
 										type="checkbox"
 										class="checkbox"
-										name="muridIds"
-										value={murid.id}
-										checked={selectedIds.has(murid.id)}
-										onchange={(event) => toggleSelect(murid.id, event.currentTarget.checked)}
-										aria-label={`Pilih ${murid.nama}`}
+										bind:this={selectAllCheckbox}
+										checked={semuaDipilih}
+										onchange={(event) => toggleSelectAll(event.currentTarget.checked)}
+										aria-label="Pilih semua murid"
 										disabled={submitting}
 									/>
-								</td>
-								<td>{offset + index + 1}</td>
-								<td>{@html searchQueryMarker(data.page.search, murid.nama)}</td>
-								<td>{murid.agama}</td>
-								<td>{murid.tempatLahir}</td>
-								<td>{murid.tanggalLahir}</td>
-								<td>
-									<div class="flex flex-row">
-										<a
-											class="btn btn-sm btn-soft pointer-events-auto rounded-r-none shadow-none"
-											href="/murid/{murid.id}"
-											use:modalRoute={'detail-murid'}
-											title="Lihat detail murid"
-										>
-											<Icon name="eye" />
-										</a>
-
-										{#if canEdit}
+								</th>
+								<th>No</th>
+								<th>Nama</th>
+								<th>Agama</th>
+								<th>Tempat Lahir</th>
+								<th>Tanggal Lahir</th>
+								<th>Aksi</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each data.daftarMurid as murid, index (murid)}
+								<tr>
+									<td>
+										<input
+											type="checkbox"
+											class="checkbox"
+											name="muridIds"
+											value={murid.id}
+											checked={selectedIds.has(murid.id)}
+											onchange={(event) => toggleSelect(murid.id, event.currentTarget.checked)}
+											aria-label={`Pilih ${murid.nama}`}
+											disabled={submitting}
+										/>
+									</td>
+									<td>{offset + index + 1}</td>
+									<td>{@html searchQueryMarker(data.page.search, murid.nama)}</td>
+									<td>{murid.agama}</td>
+									<td>{murid.tempatLahir}</td>
+									<td>{murid.tanggalLahir}</td>
+									<td>
+										<div class="flex flex-row">
 											<a
-												class="btn btn-sm btn-error btn-soft rounded-l-none shadow-none"
-												href="/murid/{murid.id}/delete"
-												use:modalRoute={'delete-murid'}
-												title="Arsipkan murid"
+												class="btn btn-sm btn-soft pointer-events-auto rounded-r-none shadow-none"
+												href="/murid/{murid.id}"
+												use:modalRoute={'detail-murid'}
+												title="Lihat detail murid"
 											>
-												<Icon name="del" />
+												<Icon name="eye" />
 											</a>
-										{:else}
-											<button
-												type="button"
-												class="btn btn-sm btn-disabled rounded-l-none shadow-none"
-												disabled
-												title="Anda tidak memiliki izin untuk menghapus"
-											>
-												<Icon name="del" />
-											</button>
-										{/if}
-									</div>
-								</td>
-							</tr>
-						{:else}
-							<tr>
-								<td class="text-center p-7" colspan="7">
-									<em class="opacity-50">Belum ada data murid</em>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
+
+											{#if canEdit}
+												<a
+													class="btn btn-sm btn-error btn-soft rounded-l-none shadow-none"
+													href="/murid/{murid.id}/delete"
+													use:modalRoute={'delete-murid'}
+													title="Arsipkan murid"
+												>
+													<Icon name="del" />
+												</a>
+											{:else}
+												<button
+													type="button"
+													class="btn btn-sm btn-disabled rounded-l-none shadow-none"
+													disabled
+													title="Anda tidak memiliki izin untuk menghapus"
+												>
+													<Icon name="del" />
+												</button>
+											{/if}
+										</div>
+									</td>
+								</tr>
+							{:else}
+								<tr>
+									<td class="text-center p-7" colspan="7">
+										<em class="opacity-50">Belum ada data murid</em>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				{:else}
+					<div class="murid-empty text-base-content/60 p-7 text-center" role="status">
+						Belum ada data murid
+					</div>
+				{/if}
 			</div>
 		{/snippet}
 	</FormEnhance>
@@ -513,3 +546,61 @@
 </div>
 
 <MuridModals {formSubmitting} {submitBulkDelete} bind:isBulkPhotoUploadOpen />
+
+<style>
+	.murid-table-scroll {
+		container: murid-table / inline-size;
+	}
+	.murid-table-populated {
+		min-width: 54rem;
+		table-layout: fixed;
+	}
+	.murid-col-select,
+	.murid-col-number {
+		width: 3.25rem;
+	}
+	.murid-col-name {
+		width: 30%;
+	}
+	.murid-col-religion {
+		width: 7rem;
+	}
+	.murid-col-date {
+		width: 9rem;
+	}
+	.murid-col-action {
+		width: 6.5rem;
+	}
+	.murid-table :is(th, td) {
+		overflow-wrap: anywhere;
+	}
+	.murid-table td:last-child > div {
+		flex-wrap: nowrap;
+	}
+	.murid-table-scroll:focus-visible {
+		outline: 2px solid var(--color-primary);
+		outline-offset: -2px;
+	}
+	@container murid-table (min-width: 100rem) {
+		.murid-col-name {
+			width: 30rem;
+		}
+	}
+	@media (max-width: 767px) {
+		.murid-col-name {
+			width: 12rem;
+		}
+	}
+	@media (min-width: 390px) and (max-width: 767px) {
+		.murid-table-populated :is(th, td):nth-child(3) {
+			position: sticky;
+			left: 0;
+			z-index: 1;
+			background: var(--color-base-100);
+			border-right: 1px solid var(--color-base-200);
+		}
+		.murid-table-populated thead th:nth-child(3) {
+			background: var(--color-base-200);
+		}
+	}
+</style>

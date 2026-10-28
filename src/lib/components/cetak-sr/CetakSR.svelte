@@ -5,6 +5,7 @@
 	import Icon from '$lib/components/icon.svelte';
 	import GuestPdf from '$lib/components/cetak/GuestPdf.svelte';
 	import ClassQrPrint from '$lib/components/cetak/ClassQrPrint.svelte';
+	import StudentInformationPrint from '$lib/components/cetak/StudentInformationPrint.svelte';
 	import type { ClassQrPrintContext } from '$lib/class-monitoring';
 	import { responsePdfFilename } from '$lib/pdf-filename';
 	import PreviewHeader from '$lib/components/cetak-sr/PreviewHeader.svelte';
@@ -113,6 +114,7 @@
 		{ value: 'keasramaan', label: 'Rapor Keasramaan' },
 		{ value: 'kartu-absensi', label: 'Kartu Absensi Murid' },
 		{ value: 'qr-kelas', label: 'QR Kelas' },
+		{ value: 'informasi-siswa', label: 'Informasi Siswa' },
 		{ value: 'kartu-ujian', label: 'Kartu Ujian' },
 		{ value: 'jadwal-pelajaran', label: 'Jadwal Pelajaran' },
 		{ value: 'kalender-pendidikan', label: 'Kalender Pendidikan' },
@@ -125,8 +127,8 @@
 	];
 	const currentUserType = $derived((page.data.user as { type?: string } | null | undefined)?.type);
 	const visibleDocumentOptions = $derived.by(() => {
-		const general = ['kartu-absensi', 'qr-kelas', 'kartu-ujian', 'kartu-ujian-meja', 'jadwal-pelajaran', 'kalender-pendidikan', 'jurnal-mengajar', 'rekap-absensi-kegiatan', 'buku-tamu'];
-		const availableOptions = documentOptions.filter((option) => option.value !== 'qr-kelas' || data.classQrPrintContext);
+		const general = ['informasi-siswa', 'kartu-absensi', 'qr-kelas', 'kartu-ujian', 'kartu-ujian-meja', 'jadwal-pelajaran', 'kalender-pendidikan', 'jurnal-mengajar', 'rekap-absensi-kegiatan', 'buku-tamu'];
+		const availableOptions = documentOptions.filter((option) => (option.value !== 'qr-kelas' || data.classQrPrintContext) && (option.value !== 'informasi-siswa' || canPrintDocument(page.data.user, option.value)));
 		if (documentGroup === 'dokumen') return availableOptions.filter((option) => general.includes(option.value) && (option.value !== 'jurnal-mengajar' || data.jurnalAccess?.canPrint !== false) && (option.value !== 'rekap-absensi-kegiatan' || data.absensiAccess === true) && (option.value !== 'buku-tamu' || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('administrasi_buku_tamu')) && (!['kartu-ujian', 'kartu-ujian-meja'].includes(option.value) || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('ujian_cetak') || page.data.user?.permissions?.includes('ujian_manage')));
 		if (documentGroup === 'raport') return availableOptions.filter((option) => !general.includes(option.value) && canPrintDocument(page.data.user, option.value));
 		if (currentUserType === 'wali_asrama' || currentUserType === 'wali_asuh') {
@@ -423,6 +425,7 @@
 		() =>
 			selectedDocument !== 'jadwal-pelajaran' &&
 			selectedDocument !== 'qr-kelas' &&
+			selectedDocument !== 'informasi-siswa' &&
 			selectedDocument !== 'kalender-pendidikan' &&
 			selectedDocument !== 'jurnal-mengajar' &&
 			selectedDocument !== 'rekap-absensi-kegiatan' &&
@@ -1129,7 +1132,17 @@
 	}
 </script>
 
-{#if selectedDocument === 'qr-kelas' && data.classQrPrintContext}
+{#if selectedDocument === 'informasi-siswa'}
+	<section class="min-w-0 rounded-lg bg-base-100 p-4 shadow-md" aria-label="Cetak Informasi Siswa">
+		<h2 class="mb-4 text-xl font-bold">Cetak - Informasi Siswa</h2>
+		<label class="mb-4 block min-w-0"><span class="mb-1 block text-sm font-medium">Pilih Dokumen</span>
+			<select class="select h-10 w-full" bind:value={selectedDocument}>
+				{#each visibleDocumentOptions as option (option.value)}<option value={option.value}>{option.label}</option>{/each}
+			</select>
+		</label>
+		<StudentInformationPrint initialClassId={Number(data.kelasId) || undefined} />
+	</section>
+{:else if selectedDocument === 'qr-kelas' && data.classQrPrintContext}
 	<div class="card bg-base-100 rounded-lg border-none p-4 shadow-md">
 		<h2 class="mb-4 text-xl font-bold">Cetak - QR Kelas</h2>
 		<label class="mb-4 block min-w-0">

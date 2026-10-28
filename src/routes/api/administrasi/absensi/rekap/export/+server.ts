@@ -8,6 +8,8 @@ import {
 	todayLocalDate
 } from '$lib/server/absensi-digital';
 import db from '$lib/server/db';
+import { projectDailyIllness } from '$lib/server/attendance-illness';
+import { listLocalDatesInRange } from '$lib/server/absensi-kegiatan';
 import { studentAccessCondition } from '$lib/server/attendance-student-access';
 import { tableAbsensiHarian, tableMurid } from '$lib/server/db/schema';
 import { json } from '@sveltejs/kit';
@@ -42,7 +44,7 @@ export async function GET({ locals, url }) {
 		orderBy: asc(tableMurid.nama)
 	});
 	const muridIds = muridList.map((murid) => murid.id);
-	const absensiRows = muridIds.length
+	const recordedRows = muridIds.length
 		? await db.query.tableAbsensiHarian.findMany({
 				where: and(
 					eq(tableAbsensiHarian.sekolahId, sekolahId),
@@ -56,6 +58,8 @@ export async function GET({ locals, url }) {
 		: [];
 
 	const counts = new Map<number, Record<(typeof ABSENSI_STATUSES)[number], number>>();
+	const absensiRows = await projectDailyIllness({ schoolId: sekolahId, semesterId: academic.activeSemesterId,
+		studentIds: muridIds, dates: listLocalDatesInRange(tanggalAwal, tanggalAkhir), rows: recordedRows });
 	for (const murid of muridList) {
 		counts.set(murid.id, { hadir: 0, terlambat: 0, sakit: 0, izin: 0, alfa: 0 });
 	}

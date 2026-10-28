@@ -51,19 +51,17 @@
 {/if}
 
 {#if page.state.modal?.name === 'detail-murid'}
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<dialog
 		class="modal"
 		onclose={() => history.back()}
 		onclick={(e) => {
-			const rect = e.currentTarget.querySelector('.modal-box')?.getBoundingClientRect();
-			if (
-				rect &&
-				(e.clientX < rect.left ||
-					e.clientX > rect.right ||
-					e.clientY < rect.top ||
-					e.clientY > rect.bottom)
-			) {
+			if (e.target === e.currentTarget) {
+				e.preventDefault();
+				if (
+					e.currentTarget.querySelector('[data-profile-dirty="true"]') &&
+					!window.confirm('Tutup profil? Perubahan yang belum disimpan akan dibuang.')
+				)
+					return;
 				e.currentTarget.close();
 			}
 		}}
@@ -72,7 +70,17 @@
 		<div class="modal-box p-4 sm:w-full sm:max-w-2xl">
 			<DetailMurid data={page.state.modal?.data} />
 		</div>
-		<form method="dialog" class="modal-backdrop">
+		<form
+			method="dialog"
+			class="modal-backdrop"
+			onsubmit={(event) => {
+				if (
+					event.currentTarget.closest('dialog')?.querySelector('[data-profile-dirty="true"]') &&
+					!window.confirm('Tutup profil? Perubahan yang belum disimpan akan dibuang.')
+				)
+					event.preventDefault();
+			}}
+		>
 			<button>close</button>
 		</form>
 	</dialog>

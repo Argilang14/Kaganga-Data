@@ -12,9 +12,15 @@ import {
 	tablePresensiPegawai as attendance,
 	tableKalenderPendidikan as calendar,
 	tableJadwalPelajaran as schedule,
-	tableJadwalJam as slots
+	tableJadwalJam as slots,
+	tableJadwalMapel as scheduledSubject,
+	tableMataPelajaran as subject,
+	tableJadwalKegiatan as scheduledActivity,
+	tablePengumuman as announcement
 } from './db/schema';
-import { and, eq, inArray, sql, or, isNull, lte, gte, asc } from 'drizzle-orm';
+import { and, eq, inArray, sql, or, isNull, lte, gte, asc, desc } from 'drizzle-orm';
+import { canAccessMenu } from '$lib/role-menu-access';
+import { ensureInventarisPengumumanSchema } from './db/ensure-inventaris-pengumuman';
 import type { AcademicContext } from './db/academic';
 import { loadJurnalScheduleContext } from './jurnal-mengajar';
 import { isPresensiPegawaiWorkday } from './presensi-pegawai';
@@ -217,7 +223,7 @@ export async function loadDashboardDaily(
 		includeAgenda && (user?.type === 'admin' || ['user', 'wali_kelas'].includes(user?.type ?? ''));
 	const events = includeAgenda
 		? await db
-				.select({ title: calendar.judul, kind: calendar.jenis })
+				.select({ id: calendar.id, title: calendar.judul, kind: calendar.jenis })
 				.from(calendar)
 				.where(
 					and(
@@ -272,7 +278,9 @@ export async function loadDashboardDaily(
 		canAgenda && !holiday && ids.length && context?.templateIds.length
 			? await db
 					.select({
-						title: schedule.kodeKegiatan,
+						id: schedule.id,
+						title: sql<string>`coalesce(${scheduledSubject.nama}, ${subject.nama}, ${scheduledActivity.nama}, ${schedule.kodeKegiatan})`,
+						teacher: p.nama,
 						kelas: k.nama,
 						kelasId: k.id,
 						start: slots.pukulMulai,
@@ -281,6 +289,34 @@ export async function loadDashboardDaily(
 					.from(schedule)
 					.innerJoin(k, eq(schedule.kelasId, k.id))
 					.innerJoin(slots, eq(schedule.jamId, slots.id))
+					.leftJoin(
+						scheduledSubject,
+						and(
+							eq(schedule.jadwalMapelId, scheduledSubject.id),
+							eq(scheduledSubject.sekolahId, schoolId)
+						)
+					)
+					.leftJoin(
+						subject,
+						and(eq(schedule.mataPelajaranId, subject.id), eq(subject.kelasId, k.id))
+					)
+					.leftJoin(
+						scheduledActivity,
+						and(
+							eq(schedule.kegiatanId, scheduledActivity.id),
+							eq(scheduledActivity.sekolahId, schoolId)
+						)
+					)
+					.leftJoin(
+						p,
+						and(
+							eq(
+								p.id,
+								sql`coalesce(${schedule.guruPegawaiId}, ${scheduledSubject.guruPegawaiId}, ${subject.pengampuId})`
+							),
+							eq(p.sekolahId, schoolId)
+						)
+					)
 					.where(
 						and(
 							eq(schedule.sekolahId, schoolId),
@@ -295,6 +331,37 @@ export async function loadDashboardDaily(
 					.orderBy(asc(slots.pukulMulai), asc(k.nama))
 					.limit(20)
 			: [];
+	const canAnnouncements = includeAgenda && canAccessMenu(user, '/pengumuman');
+	if (canAnnouncements) await ensureInventarisPengumumanSchema();
+	const audience = user.type === 'user' ? 'guru' : user.type;
+	const announcements = canAnnouncements
+		? await db
+				.select({
+					id: announcement.id,
+					title: announcement.judul,
+					category: announcement.kategori,
+					priority: announcement.prioritas,
+					date: announcement.tanggalMulai
+				})
+				.from(announcement)
+				.where(
+					and(
+						eq(announcement.sekolahId, schoolId),
+						eq(announcement.aktif, true),
+						lte(announcement.tanggalMulai, date),
+						or(isNull(announcement.tanggalSelesai), gte(announcement.tanggalSelesai, date)),
+						user.type === 'admin' || user.permissions?.includes('pengumuman_manage')
+							? undefined
+							: sql`(${announcement.audiens} = 'semua' or ${announcement.audiens} = ${audience})`
+					)
+				)
+				.orderBy(
+					desc(announcement.prioritas),
+					desc(announcement.tanggalMulai),
+					desc(announcement.id)
+				)
+				.limit(5)
+		: [];
 	return {
 		date,
 		selectedClasses,
@@ -340,6 +407,8 @@ export async function loadDashboardDaily(
 			: null,
 		events,
 		lessons,
+		announcements,
+		canAnnouncements,
 		missing: {
 			photo: Number(student?.photo ?? 0),
 			qr: Number(student?.qr ?? 0),

@@ -25,6 +25,10 @@
 	});
 	const isLoginPage = $derived(page.url.pathname === '/login');
 	const isPublicGuestPage = $derived(page.url.pathname.startsWith('/tamu/'));
+	const isFluidWorkspace = $derived(
+		/^\/murid\/?$/.test(page.url.pathname) ||
+			/^\/pengasuhan\/(ringkasan|piket|kejadian|perkembangan|sakit)\/?$/.test(page.url.pathname)
+	);
 
 	const readonlyRoutes = [
 		'/murid',
@@ -157,7 +161,9 @@
 	<title>{appName}{page.data.meta.title ? ' - ' + page.data.meta.title : ''}</title>
 </svelte:head>
 
-{#if isLoginPage || isPublicGuestPage}
+{#if isLoginPage}
+	{@render children()}
+{:else if isPublicGuestPage}
 	<div class="bg-base-200 flex min-h-screen flex-col items-center justify-center p-3 sm:p-6">
 		{@render children()}
 	</div>
@@ -177,7 +183,10 @@
 					class="app-page-viewport min-h-0 flex-1 overflow-y-auto"
 				>
 					<div class="app-page-padding flex min-w-0 flex-row">
-						<div class="app-page-container mx-auto w-full min-w-0 flex-1">
+						<div
+							class="app-page-container mx-auto w-full min-w-0 flex-1"
+							class:app-page-fluid={isFluidWorkspace}
+						>
 							<ScrollToTop />
 							<div class={disableInteraction ? 'is-readonly' : ''}>
 								{@render children()}

@@ -13,6 +13,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { eq } from 'drizzle-orm';
 import { ensureProductionOperationsSchema } from '$lib/server/db/ensure-production-operations';
+import { backupStudentProfileFiles, profileFileRows, profileFilePath } from './student-profile-files';
 import {
 	photoDirectory,
 	safePhotoFilename,
@@ -181,6 +182,9 @@ function bytes(values: Array<{ size: number }>) {
 }
 
 export async function getSystemHealth() {
+	const privatePhotos = await profileFileRows(db.$client);
+	const privateFiles = await walkFiles(path.join(uploadsDir(), 'murid-profil'));
+	const privateMissing = privatePhotos.filter((row) => !privateFiles.some((file) => file.path === profileFilePath(Number(row.sekolah_id), String(row.storage_key))));
 	const dbPath = databasePath();
 	const attachmentRoot = path.join(uploadsDir(), 'attachments');
 	const [
@@ -230,6 +234,7 @@ export async function getSystemHealth() {
 		pegawaiRows.map((item) => item.foto)
 	);
 	const orphanFiles = [
+		...privateFiles.filter((file) => !privatePhotos.some((row) => file.path === profileFilePath(Number(row.sekolah_id), String(row.storage_key)))),
 		...attachmentFiles.filter((item) => !registeredAttachments.has(path.resolve(item.path))),
 		...muridPhotos.filter(
 			(item) =>
@@ -257,6 +262,7 @@ export async function getSystemHealth() {
 		})
 	];
 	const physicalFiles = [
+		...privateFiles,
 		...attachmentFiles,
 		...muridPhotos.filter((item) => /\.(?:jpe?g|png)$/i.test(item.path)),
 		...pegawaiPhotos,
@@ -296,7 +302,7 @@ export async function getSystemHealth() {
 			size: bytes(physicalFiles),
 			orphanCount: orphanFiles.length,
 			orphanSize: bytes(orphanFiles),
-			missingCount: missingFiles.length + missingPhotos.length,
+			missingCount: missingFiles.length + missingPhotos.length + privateMissing.length,
 			photoCount: muridPhotos.length + pegawaiPhotos.length,
 			thumbnailCount: muridThumbnails.length + pegawaiThumbnails.length,
 			temporaryCount: temporaryFiles.length,
@@ -327,13 +333,21 @@ export async function createTieredBackup(kind: 'daily' | 'weekly' | 'pre-update'
 		.returning();
 	try {
 		await db.$client.execute(`VACUUM INTO '${target.replaceAll('\\', '/').replaceAll("'", "''")}'`);
+		await backupStudentProfileFiles(target);
 		const size = (await fs.stat(target)).size;
 		const retention = kind === 'daily' ? 14 : kind === 'weekly' ? 12 : null;
 		if (retention) {
 			const backups = (await walkFiles(backupDir))
 				.filter((item) => /\.sqlite3$/i.test(item.path))
 				.sort((a, b) => b.modifiedAt - a.modifiedAt);
-			for (const old of backups.slice(retention)) await fs.unlink(old.path).catch(() => undefined);
+			for (const old of backups.slice(retention)) {
+				const removed = await fs.unlink(old.path).then(() => true, () => false);
+				const profileBackup = path.resolve(`${old.path}.murid-profil`);
+				if (removed && path.dirname(profileBackup) === path.resolve(backupDir)) {
+					await fs.rm(profileBackup, { recursive: true, force: true });
+					await fs.unlink(`${old.path}.murid-profil.json`).catch(() => undefined);
+				}
+			}
 		}
 		await db
 			.update(tableMaintenanceRun)
@@ -362,6 +376,8 @@ export async function createTieredBackup(kind: 'daily' | 'weekly' | 'pre-update'
 
 export async function cleanupSafeFiles() {
 	await ensureProductionOperationsSchema();
+	const privatePhotos = await profileFileRows(db.$client);
+	const privateFiles = await walkFiles(path.join(uploadsDir(), 'murid-profil'));
 	const attachmentRoot = path.join(uploadsDir(), 'attachments');
 	const [registeredRows, muridRows, pegawaiRows] = await Promise.all([
 		db.select({ storedPath: tableDocumentAttachment.storedPath }).from(tableDocumentAttachment),
@@ -397,6 +413,7 @@ export async function cleanupSafeFiles() {
 			walkFiles(thumbnailDirectory('pegawai'))
 		]);
 	const candidates = [
+		...privateFiles.filter((file) => file.modifiedAt < cutoff && !privatePhotos.some((row) => file.path === profileFilePath(Number(row.sekolah_id), String(row.storage_key)))),
 		...attachmentFiles.filter(
 			(item) =>
 				(!registeredAttachments.has(path.resolve(item.path)) ||

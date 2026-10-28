@@ -266,7 +266,7 @@ export async function POST({ request, locals }) {
 			)
 		});
 
-		if (existing) {
+		if (existing && ((existing.status !== 'sakit' && existing.metode !== 'auto') || kegiatan.kode !== 'apel_berangkat')) {
 			return json({
 				...(await receipt(existing, true, sekolahId)),
 				kegiatan: { id: kegiatan.id, nama: kegiatan.nama },
@@ -340,7 +340,7 @@ export async function POST({ request, locals }) {
 		)
 	});
 
-	if (existing) {
+	if (existing && existing.status !== 'sakit') {
 		return json({
 			...(await receipt(existing, true, sekolahId)),
 			murid: muridPayload(qr.murid)

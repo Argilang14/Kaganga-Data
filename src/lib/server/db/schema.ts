@@ -1,5 +1,17 @@
-import { relations } from 'drizzle-orm';
-import { blob, index, int, real, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core';
+import { relations, sql } from 'drizzle-orm';
+import {
+	blob,
+	check,
+	foreignKey,
+	index,
+	int,
+	real,
+	sqliteTable,
+	text,
+	unique,
+	uniqueIndex
+} from 'drizzle-orm/sqlite-core';
+import type { StudentProfileValues } from '../../murid-profile';
 
 const audit = {
 	createdAt: text()
@@ -7,6 +19,59 @@ const audit = {
 		.notNull(),
 	updatedAt: text()
 };
+
+export const tablePengasuhanCatatan = sqliteTable('pengasuhan_catatan', {
+	id: int().primaryKey({ autoIncrement: true }),
+	sekolahId: int().notNull().references(() => tableSekolah.id),
+	muridId: int().references(() => tableMurid.id, { onDelete: 'set null' }),
+	identityUid: text().notNull(),
+	namaSnapshot: text().notNull(),
+	kelasSnapshot: text().notNull(),
+	jenis: text({ enum: ['kejadian', 'perkembangan', 'sakit'] }).notNull(),
+	aspek: text(),
+	tanggal: text().notNull(),
+	waktu: text().notNull(),
+	judul: text().notNull(),
+	uraian: text().notNull(),
+	status: text({ enum: ['baru', 'diproses', 'selesai'] }).notNull().default('baru'),
+	petugasId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+	petugasNama: text().notNull(),
+	requestKey: text().notNull(),
+	requestHash: text().notNull(),
+	revisi: int().notNull().default(0),
+	...audit
+}, (table) => [
+	unique('pengasuhan_catatan_request_unique').on(table.sekolahId, table.petugasId, table.requestKey),
+	index('pengasuhan_catatan_roster_idx').on(table.sekolahId, table.identityUid, table.tanggal),
+	index('pengasuhan_catatan_list_idx').on(table.sekolahId, table.jenis, table.status, table.tanggal),
+	uniqueIndex('pengasuhan_sakit_aktif_unique').on(table.sekolahId, table.identityUid).where(sql`${table.jenis}='sakit' AND ${table.status}<>'selesai'`)
+]);
+
+export const tablePengasuhanPembaruan = sqliteTable('pengasuhan_pembaruan', {
+	id: int().primaryKey({ autoIncrement: true }),
+	catatanId: int().notNull().references(() => tablePengasuhanCatatan.id),
+	uraian: text().notNull(),
+	status: text({ enum: ['baru', 'diproses', 'selesai'] }).notNull(),
+	petugasId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+	petugasNama: text().notNull(),
+	requestKey: text().notNull(),
+	requestHash: text().notNull(),
+	...audit
+}, (table) => [unique('pengasuhan_pembaruan_request_unique').on(table.catatanId, table.petugasId, table.requestKey), index('pengasuhan_pembaruan_catatan_idx').on(table.catatanId, table.id)]);
+
+export const tablePengasuhanPiket = sqliteTable('pengasuhan_piket', {
+	id: int().primaryKey({ autoIncrement: true }),
+	sekolahId: int().notNull().references(() => tableSekolah.id),
+	petugasId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+	petugasNama: text().notNull(),
+	tanggal: text().notNull(),
+	shift: text({ enum: ['pagi', 'sore', 'malam'] }).notNull(),
+	ringkasan: text().notNull(),
+	serahTerima: text().notNull(),
+	status: text({ enum: ['draf', 'selesai'] }).notNull().default('draf'),
+	revisi: int().notNull().default(0),
+	...audit
+}, (table) => [unique('pengasuhan_piket_petugas_shift_unique').on(table.sekolahId, table.petugasId, table.tanggal, table.shift), index('pengasuhan_piket_school_idx').on(table.sekolahId, table.tanggal)]);
 
 export const tableAuthUser = sqliteTable(
 	'auth_user',
@@ -562,6 +627,135 @@ export const tableMuridIdentityLink = sqliteTable(
 	]
 );
 
+export const tableMuridProfilTambahan = sqliteTable(
+	'murid_profil_tambahan',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.notNull()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' }),
+		identityUid: text().notNull(),
+		nomorKk: text(),
+		desilDtsen: int(),
+		statusBansos: text({ enum: ['menerima', 'tidak_menerima'] }),
+		jenisBansos: text({ mode: 'json' })
+			.notNull()
+			.default(sql`'[]'`)
+			.$type<StudentProfileValues['jenisBansos']>(),
+		bansosLainnya: text(),
+		penghasilanKeluarga: text(),
+		jumlahTanggungan: int(),
+		rt: text(),
+		rw: text(),
+		statusHunian: text({ enum: ['milik_sendiri', 'sewa', 'menumpang', 'dinas', 'lainnya'] }),
+		luasTempatTinggal: real(),
+		statusSertifikat: text({ enum: ['ada', 'tidak_ada', 'tidak_diketahui'] }),
+		pemilikRumah: text(),
+		bersediaAsrama: int({ mode: 'boolean' }),
+		suratPernyataanDitandatangani: int({ mode: 'boolean' }),
+		tanggalSuratPernyataan: text(),
+		petugasPendataanId: int().references(() => tablePegawai.id, { onDelete: 'set null' }),
+		petugasPendataanNama: text(),
+		tanggalPendataan: text(),
+		catatanPetugas: text(),
+		revisi: int().notNull().default(0),
+		createdBy: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		updatedBy: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		...audit
+	},
+	(table) => [
+		unique('murid_profil_identity_unique').on(table.sekolahId, table.identityUid),
+		unique('murid_profil_id_school_unique').on(table.id, table.sekolahId),
+		check('murid_profil_uid_check', sql`length(trim(${table.identityUid}))>0`),
+		check(
+			'murid_profil_kk_check',
+			sql`${table.nomorKk} IS NULL OR (length(${table.nomorKk})=16 AND ${table.nomorKk} NOT GLOB '*[^0-9]*')`
+		),
+		check(
+			'murid_profil_desil_check',
+			sql`${table.desilDtsen} IS NULL OR (typeof(${table.desilDtsen})='integer' AND ${table.desilDtsen} BETWEEN 1 AND 10)`
+		),
+		check(
+			'murid_profil_bansos_status_check',
+			sql`${table.statusBansos} IN ('menerima','tidak_menerima')`
+		),
+		check(
+			'murid_profil_bansos_json_check',
+			sql`json_valid(${table.jenisBansos}) AND json_type(${table.jenisBansos})='array'`
+		),
+		check(
+			'murid_profil_bansos_check',
+			sql`coalesce(${table.statusBansos}='menerima',0) OR json_array_length(${table.jenisBansos})=0`
+		),
+		check(
+			'murid_profil_tanggungan_check',
+			sql`${table.jumlahTanggungan} IS NULL OR (typeof(${table.jumlahTanggungan})='integer' AND ${table.jumlahTanggungan} BETWEEN 0 AND 100)`
+		),
+		check(
+			'murid_profil_rt_check',
+			sql`${table.rt} IS NULL OR (length(${table.rt}) BETWEEN 1 AND 3 AND ${table.rt} NOT GLOB '*[^0-9]*')`
+		),
+		check(
+			'murid_profil_rw_check',
+			sql`${table.rw} IS NULL OR (length(${table.rw}) BETWEEN 1 AND 3 AND ${table.rw} NOT GLOB '*[^0-9]*')`
+		),
+		check(
+			'murid_profil_hunian_check',
+			sql`${table.statusHunian} IN ('milik_sendiri','sewa','menumpang','dinas','lainnya')`
+		),
+		check(
+			'murid_profil_luas_check',
+			sql`${table.luasTempatTinggal} IS NULL OR ${table.luasTempatTinggal} BETWEEN 0 AND 1000000`
+		),
+		check(
+			'murid_profil_sertifikat_check',
+			sql`${table.statusSertifikat} IN ('ada','tidak_ada','tidak_diketahui')`
+		),
+		check('murid_profil_asrama_check', sql`${table.bersediaAsrama} IN (0,1)`),
+		check('murid_profil_surat_status_check', sql`${table.suratPernyataanDitandatangani} IN (0,1)`),
+		check(
+			'murid_profil_surat_check',
+			sql`${table.tanggalSuratPernyataan} IS NULL OR (${table.suratPernyataanDitandatangani} IS NOT NULL AND ${table.suratPernyataanDitandatangani}=1)`
+		),
+		check('murid_profil_revisi_check', sql`${table.revisi}>=0`)
+	]
+);
+
+export const tableMuridProfilFoto = sqliteTable(
+	'murid_profil_foto',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		profilId: int().notNull(),
+		sekolahId: int().notNull(),
+		jenis: text({ enum: ['murid_tambahan', 'rumah', 'orang_tua'] }).notNull(),
+		storageKey: text().notNull().unique(),
+		mimeType: text({ enum: ['image/jpeg', 'image/png', 'image/webp'] }).notNull(),
+		ukuranBytes: int().notNull(),
+		sha256: text().notNull(),
+		createdBy: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		...audit
+	},
+	(table) => [
+		foreignKey({
+			name: 'murid_profil_foto_owner_fk',
+			columns: [table.profilId, table.sekolahId],
+			foreignColumns: [tableMuridProfilTambahan.id, tableMuridProfilTambahan.sekolahId]
+		}).onDelete('cascade'),
+		unique('murid_profil_foto_slot_unique').on(table.profilId, table.jenis),
+		index('murid_profil_foto_school_idx').on(table.sekolahId, table.profilId),
+		check(
+			'murid_profil_foto_jenis_check',
+			sql`${table.jenis} IN ('murid_tambahan','rumah','orang_tua')`
+		),
+		check(
+			'murid_profil_foto_mime_check',
+			sql`${table.mimeType} IN ('image/jpeg','image/png','image/webp')`
+		),
+		check('murid_profil_foto_bytes_check', sql`${table.ukuranBytes} BETWEEN 1 AND 5242880`),
+		check('murid_profil_foto_sha_check', sql`length(${table.sha256})=64`)
+	]
+);
+
 export const tableMuridRiwayatKelas = sqliteTable(
 	'murid_riwayat_kelas',
 	{
@@ -1004,6 +1198,25 @@ export const tableAbsensiKegiatan = sqliteTable(
 		index('absensi_kegiatan_metode_idx').on(table.metode)
 	]
 );
+
+export const tableAbsensiMasaSakit = sqliteTable('absensi_masa_sakit', {
+	id: int().primaryKey({ autoIncrement: true }),
+	sekolahId: int().references(() => tableSekolah.id, { onDelete: 'cascade' }).notNull(),
+	semesterId: int().references(() => tableSemester.id, { onDelete: 'cascade' }).notNull(),
+	muridId: int().references(() => tableMurid.id, { onDelete: 'cascade' }).notNull(),
+	tanggalMulai: text().notNull(),
+	tanggalSelesai: text().notNull(),
+	sumber: text().notNull(),
+	catatan: text(),
+	petugasUserId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+	kembaliPada: text(),
+	kembaliOleh: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+	dibatalkanPada: text(),
+	...audit
+}, (table) => [
+	index('absensi_masa_sakit_context_idx').on(table.sekolahId, table.semesterId, table.muridId, table.tanggalMulai),
+	uniqueIndex('absensi_masa_sakit_source_idx').on(table.sekolahId, table.semesterId, table.muridId, table.sumber, table.createdAt)
+]);
 
 export const tableIzinPulangMurid = sqliteTable(
 	'izin_pulang_murid',

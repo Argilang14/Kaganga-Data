@@ -2,8 +2,8 @@ import { applySessionCookie, authenticateUser, createSession } from '$lib/server
 import { isSecureRequest, resolveRequestProtocol } from '$lib/server/http';
 import { cookieNames } from '$lib/utils';
 import db from '$lib/server/db';
-import { tableKelas, tableMataPelajaran } from '$lib/server/db/schema';
-import { eq } from 'drizzle-orm';
+import { tableKelas, tableMataPelajaran, tableSekolah } from '$lib/server/db/schema';
+import { asc, eq } from 'drizzle-orm';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import {
@@ -20,7 +20,7 @@ function resolveRedirectTarget(value: string | null) {
 	return value;
 }
 
-export const load: PageServerLoad = async ({ locals, url }) => {
+export const load: PageServerLoad = async ({ locals, url, cookies }) => {
 	if (locals.user) {
 		const target = resolveRedirectTarget(url.searchParams.get('redirect')) ?? '/';
 		throw redirect(303, target);
@@ -31,7 +31,28 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		description: 'Masuk ke Kaganga untuk mengelola data sekolah Anda.'
 	};
 
-	return { meta };
+	// Expose only public branding; the protected school-logo routes stay private.
+	const activeId = Number(cookies.get(cookieNames.ACTIVE_SEKOLAH_ID));
+	const columns = { nama: true, logo: true, logoType: true } as const;
+	let school =
+		Number.isSafeInteger(activeId) && activeId > 0
+			? await db.query.tableSekolah.findFirst({ columns, where: eq(tableSekolah.id, activeId) })
+			: undefined;
+	school ??= await db.query.tableSekolah.findFirst({ columns, orderBy: asc(tableSekolah.id) });
+	const mime = school?.logoType?.toLowerCase() || 'image/png';
+	const safeImage = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif'].includes(
+		mime
+	);
+	return {
+		meta,
+		loginSchool: {
+			name: school?.nama || 'SRT 3 Provinsi Bengkulu',
+			logo:
+				school?.logo && safeImage
+					? `data:${mime};base64,${Buffer.from(school.logo).toString('base64')}`
+					: null
+		}
+	};
 };
 
 const LOGIN_LOG_PREFIX = '[login action]';
@@ -77,10 +98,7 @@ export const actions: Actions = {
 					: 'Nama pengguna atau kata sandi tidak valid.'
 			});
 		}
-		await Promise.all([
-			clearLoginFailures(username, clientAddress),
-			pruneLoginAttempts()
-		]);
+		await Promise.all([clearLoginFailures(username, clientAddress), pruneLoginAttempts()]);
 
 		const session = await createSession(user.id, {
 			userAgent: request.headers.get('user-agent'),

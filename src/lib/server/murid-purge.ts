@@ -71,6 +71,17 @@ export async function loadMuridPurgePlan(reader: Reader, sekolahId: number, life
 	const blockers: string[] = [];
 	const dependencies: { table: string; count: number; effect: 'hapus' | 'dipertahankan' }[] = [];
 	const digest = createHash('sha256').update(JSON.stringify({ row, members, histories }));
+	if (row.identityKey.startsWith('uid:') && tableNames.has('murid_profil_tambahan')) {
+		const profiles = await reader.all(
+			sql`SELECT id,revisi FROM murid_profil_tambahan WHERE sekolah_id=${sekolahId} AND identity_uid=${row.identityKey.slice(4)}`
+		);
+		if (profiles.length) {
+			digest.update(JSON.stringify({ profiles }));
+			blockers.push(
+				'Profil tambahan murid masih tersimpan. Kelola profil dan dokumentasinya sebelum menghapus identitas permanen.'
+			);
+		}
+	}
 	if (ids.length) {
 		const idList = sql.join(
 			ids.map((id) => sql`${id}`),

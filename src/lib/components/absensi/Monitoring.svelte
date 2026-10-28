@@ -125,6 +125,7 @@
 			{data.statusLabels[cell.status]}
 		</span>
 		{#if cell.linkedFrom}<span class="monitoring-cell-note">Info dari {cell.linkedFrom}</span>{/if}
+		{#if cell.illnessLabel && cell.illnessLabel !== cell.linkedFrom}<span class="monitoring-cell-note">{cell.illnessLabel}</span>{/if}
 		{#if cell.time || cell.method}
 			<span class="monitoring-cell-note">
 				{#if cell.time}<time datetime={cell.time}>{time(cell.time)}</time>{/if}

@@ -35,7 +35,7 @@ export type BulkPreviewResult = {
 	data: Array<{ murid: MuridData; data: PreviewPayload }>;
 };
 
-const DOCUMENT_PATHS: Record<Exclude<DocumentType, 'qr-kelas'>, string> = {
+const DOCUMENT_PATHS: Record<Exclude<DocumentType, 'qr-kelas' | 'informasi-siswa'>, string> = {
 	cover: '/cetak/cover',
 	biodata: '/cetak/biodata',
 	rapor: '/cetak/rapor',
@@ -61,6 +61,7 @@ export async function loadBulkPreviews_robust(
 	request: BulkPreviewRequest
 ): Promise<BulkPreviewResult> {
 	if (request.documentType === 'qr-kelas') throw new Error('QR kelas dicetak melalui panel QR Kelas.');
+	if (request.documentType === 'informasi-siswa') throw new Error('Informasi siswa dicetak melalui panel Informasi Siswa.');
 	const path = DOCUMENT_PATHS[request.documentType];
 
 	// Convert murid list to bulk load requests

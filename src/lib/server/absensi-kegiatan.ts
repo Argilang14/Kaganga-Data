@@ -1,4 +1,6 @@
 import db from '$lib/server/db';
+import { loadAttendanceIllness } from './attendance-illness';
+import { illnessNeedsReview, latestIllness } from '$lib/attendance-illness';
 import { loadAttendancePermits } from './attendance-permits';
 import { permitCoversMonitoring } from '$lib/attendance-monitoring';
 import { canonicalAttendanceActivityCode } from '$lib/attendance-activity';
@@ -319,10 +321,12 @@ export async function applyAutoAlfaKegiatan(params: {
 	});
 	const existingKeys = new Set(existingRows.map((row) => `${row.muridId}:${row.kegiatanId}`));
 	const permits = await loadAttendancePermits(params.sekolahId, muridIds, params.tanggal);
+	const illnesses = await loadAttendanceIllness(params.sekolahId, params.semesterId, muridIds, params.tanggal);
 	const now = (params.now ?? new Date()).toISOString();
 	const values = endedKegiatanRows.flatMap((kegiatan) =>
 		muridRows
 			.filter((murid) => !existingKeys.has(`${murid.id}:${kegiatan.id}`) &&
+				!illnessNeedsReview(latestIllness(illnesses, murid.id, params.tanggal), params.tanggal) &&
 				!permits.some((permit) => permit.muridId === murid.id && permitCoversMonitoring(params.tanggal, kegiatan.jamMulai, permit, params.now)))
 			.map((murid) => ({
 				sekolahId: params.sekolahId,

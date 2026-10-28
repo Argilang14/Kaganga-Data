@@ -10,6 +10,7 @@ import {
 	todayLocalDate
 } from '$lib/server/absensi-digital';
 import db from '$lib/server/db';
+import { projectDailyIllness } from '$lib/server/attendance-illness';
 import { studentAccessCondition } from '$lib/server/attendance-student-access';
 import { saveAttendance } from '$lib/server/attendance-mutation';
 import { canAttendance, canAttendActivity, attendanceDateAllowed } from '$lib/attendance-access';
@@ -88,7 +89,7 @@ export async function load({ locals, url }) {
 	});
 
 	const muridIds = muridList.map((murid) => murid.id);
-	const absensiRows = muridIds.length
+	const recordedRows = muridIds.length
 		? await db.query.tableAbsensiHarian.findMany({
 				where: and(
 					eq(tableAbsensiHarian.sekolahId, sekolahId),
@@ -101,6 +102,8 @@ export async function load({ locals, url }) {
 		: [];
 
 	const absensiByMurid = new Map<number, AbsensiRow>();
+	const absensiRows = await projectDailyIllness({ schoolId: sekolahId, semesterId: academic.activeSemesterId,
+		studentIds: muridIds, dates: [tanggal], rows: recordedRows });
 	for (const row of absensiRows) absensiByMurid.set(row.muridId, row);
 
 	const summary = emptySummary();

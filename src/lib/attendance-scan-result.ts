@@ -10,6 +10,11 @@ export function scanReceipt(
 	duplicate: boolean,
 	petugasNama: string | null
 ) {
+	if (record.metode === 'masa_sakit') return {
+		ok: true, code: 'already_present', status: 'sakit', waktuScan: null, metode: record.metode,
+		message: 'Keterangan sakit masih berlaku. Scan masuk sekolah untuk mencatat kembali hadir; kegiatan lain tidak mengakhiri masa sakit.',
+		petugas: record.petugasUserId && petugasNama ? { id: record.petugasUserId, nama: petugasNama } : null
+	};
 	if (record.metode === 'izin_pulang')
 		return {
 			ok: true,

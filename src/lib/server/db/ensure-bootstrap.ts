@@ -16,6 +16,7 @@ import { ensureMartikulasiSchema } from './ensure-martikulasi';
 import { ensureDapodikSchema } from './ensure-dapodik';
 import { ensureAccountSettingsSchema } from './ensure-account-settings';
 import { ensureDataGovernanceSchema } from './ensure-data-governance';
+import { ensureMuridProfileSchema } from './ensure-murid-profile';
 import { ensureDocumentManagementSchema } from './ensure-document-management';
 import { ensureInventarisPengumumanSchema } from './ensure-inventaris-pengumuman';
 import { ensureLongTermFoundationSchema } from './ensure-long-term-foundation';
@@ -24,6 +25,7 @@ import { ensureUjianSchema } from './ensure-ujian';
 import { ensureEducationUnitsSchema } from './ensure-education-units';
 import { ensureAbsensiDigitalSchema } from './ensure-absensi-digital';
 import { ensureAbsenceMonitoringSchema } from './ensure-absence-monitoring';
+import { ensureAttendanceIllnessSchema } from './ensure-attendance-illness';
 import { ensurePenggunaIdentitySchema, resetPenggunaIdentitySchemaEnsure } from './ensure-pengguna';
 
 let startupPromise: Promise<void> | null = null;
@@ -33,7 +35,9 @@ async function applyStartupEnsures() {
 	await ensureEducationUnitsSchema();
 	await ensureAbsensiDigitalSchema();
 	await ensureAbsenceMonitoringSchema();
+	await ensureAttendanceIllnessSchema();
 	await ensureDataGovernanceSchema();
+	await ensureMuridProfileSchema();
 	await ensureDocumentManagementSchema();
 	await ensureInventarisPengumumanSchema();
 	await ensureLongTermFoundationSchema();

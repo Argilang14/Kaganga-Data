@@ -6,7 +6,7 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async ({ locals, url }) => {
 	if (!locals.user || !locals.sekolah) throw error(401, 'Sesi sekolah tidak valid.');
 	const academic = await resolveSekolahAcademicContext(locals.sekolah.id);
-	return json(await loadDashboardDaily(locals, academic, url.searchParams), {
+	return json(await loadDashboardDaily(locals, academic, url.searchParams, true), {
 		headers: { 'Cache-Control': 'private, no-store' }
 	});
 };

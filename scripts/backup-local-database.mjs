@@ -2,6 +2,7 @@
 import { createClient } from '@libsql/client';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { backupStudentProfileFiles } from '../src/lib/server/student-profile-files.ts';
 
 const sourceUrl = process.env.DB_URL || 'file:./data/database.sqlite3';
 if (!sourceUrl.startsWith('file:')) {
@@ -18,6 +19,7 @@ await mkdir(backupDirectory, { recursive: true });
 const client = createClient({ url: sourceUrl });
 try {
 	await client.execute(`VACUUM INTO '${quotedBackupPath}'`);
+	await backupStudentProfileFiles(backupPath);
 	console.log(backupPath);
 	const table = await client.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='document_attachment'");
 	if (table.rows.length) {

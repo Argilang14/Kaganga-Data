@@ -54,3 +54,43 @@ test('izin manual dapat menambah pengecualian operator tetapi bukan izin sistem'
 test('nilai jabatan tidak dikenal tidak memperoleh bundel izin', () => {
 	assert.deepEqual(permissionsForAccessPosition('tidak_valid' as never), []);
 });
+
+test('profil pribadi murid memerlukan izin khusus, tidak otomatis mengikuti role atau jabatan', () => {
+	for (const position of [
+		'kepala_sekolah',
+		'waka_kesiswaan',
+		'waka_kurikulum',
+		'waka_sarpras',
+		'waka_keasramaan',
+		'waka_humas',
+		'operator'
+	] as const) {
+		assert.equal(
+			permissionsForAccessPosition(position).some((permission) =>
+				permission.startsWith('murid_profil_')
+			),
+			false
+		);
+	}
+	for (const type of [
+		'user',
+		'wali_kelas',
+		'wali_asuh',
+		'wali_asrama',
+		'tim_dapur',
+		'tim_keamanan'
+	])
+		assert.equal(
+			effectivePermissions({ type }).some((permission) => permission.startsWith('murid_profil_')),
+			false
+		);
+	assert.equal(
+		effectivePermissions({
+			type: 'user',
+			jabatanAkses: 'operator',
+			permissions: ['murid_profil_lihat']
+		}).includes('murid_profil_lihat'),
+		true
+	);
+	assert.equal(effectivePermissions({ type: 'admin' }).includes('murid_profil_cetak'), true);
+});

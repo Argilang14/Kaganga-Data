@@ -86,7 +86,11 @@ a[data-preloading] {
 	}
 
 	.app-page-container {
-		max-width: var(--app-content-width);
+		max-width: var(--app-page-max-width, var(--app-content-width));
+	}
+
+	.app-page-fluid {
+		--app-page-max-width: 100%;
 	}
 
 	.app-sidebar {

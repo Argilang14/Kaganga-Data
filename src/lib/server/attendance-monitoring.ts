@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { and, asc, eq, inArray, lte, gte, or, isNull, ne } from 'drizzle-orm';
 import db from './db';
+import { loadAttendanceIllness } from './attendance-illness';
 import { canAttendance, canAttendActivity, attendanceDateAllowed } from '$lib/attendance-access';
 import { canAccessMenu } from '$lib/role-menu-access';
 import {
@@ -192,6 +193,7 @@ export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSear
 			: [];
 	const names = new Map(classes.map((item) => [item.id, item.nama]));
 	const rawRows = buildMonitoringRows({
+		illnesses: await loadAttendanceIllness(sekolah.id, academic.activeSemesterId!, ids, date),
 		date,
 		columns: queryColumns,
 		records,

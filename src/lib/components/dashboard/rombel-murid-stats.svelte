@@ -38,12 +38,12 @@
 	]);
 </script>
 
-<div class="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3" aria-label="Statistik sekolah">
+<div class="dashboard-counts" role="group" aria-label="Statistik sekolah">
 	{#each items as item, index (item.label)}
 		<div
-			class={`dashboard-stat dashboard-stat--${item.tone} min-w-0 rounded-lg p-4 shadow-sm ${index === 2 ? 'col-span-2 sm:col-span-1' : ''}`}
+			class={`dashboard-stat dashboard-stat--${item.tone} dashboard-count-stat min-w-0 rounded-lg p-4 shadow-sm`}
 		>
-			<div class="mb-3 flex h-12 items-start justify-between gap-2 sm:h-8">
+			<div class="dashboard-stat-heading">
 				<span class="min-w-0 break-words text-sm font-medium text-base-content/75"
 					>{item.label}</span
 				><span
@@ -51,7 +51,7 @@
 					><Icon name={item.icon} class="size-4" /></span
 				>
 			</div>
-			<div class="text-3xl font-bold tabular-nums">{item.value}</div>
+			<div class="dashboard-stat-value tabular-nums">{item.value}</div>
 			{#if index === 0}<div class="mt-2 flex flex-wrap gap-1">
 					{#each rombelBadges as badge (badge.label)}<span
 							class="rounded bg-base-200 px-1 text-[10px] text-base-content/60"

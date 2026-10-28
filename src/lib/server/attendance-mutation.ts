@@ -19,6 +19,9 @@ import { todayLocalDate, type AbsensiStatus } from './absensi-digital';
 import type { AbsensiKegiatanStatus } from './absensi-kegiatan';
 import { writeAuditLog } from './audit-log';
 import { ensureDataGovernanceSchema } from './db/ensure-data-governance';
+import { ensureAttendanceIllnessSchema } from './db/ensure-attendance-illness';
+import { tableAbsensiMasaSakit as illness } from './db/schema';
+import { illnessCovers, illnessEndDate, latestIllness, canReturnFromIllness } from '$lib/attendance-illness';
 
 export async function saveAttendance(options: {
 	locals: App.Locals;
@@ -33,6 +36,7 @@ export async function saveAttendance(options: {
 	onlyEmpty?: boolean;
 	metode?: 'manual' | 'qr';
 	waktuScan?: string;
+	perpanjangSakit?: boolean;
 }) {
 	const { locals, request, semesterId, kelasId, tanggal, kegiatanId } = options;
 	const sekolahId = locals.sekolah?.id;
@@ -79,9 +83,20 @@ export async function saveAttendance(options: {
 		throw error(403, 'Sebagian murid di luar penugasan akun atau tidak aktif.');
 	const reason = options.catatan?.trim() || null;
 	if (reason && reason.length > 500) throw error(400, 'Catatan maksimal 500 karakter.');
+	const illnessSource = !kegiatan || ['sekolah', 'asrama'].includes(kegiatan.kategori);
+	const schoolEntry = !kegiatan || kegiatan.kode === 'apel_berangkat';
+	if (options.perpanjangSakit && (scan || options.status !== 'sakit' || !illnessSource || !reason))
+		throw error(400, 'Perpanjangan sakit memerlukan status Sakit dan catatan alasan pada kegiatan sekolah atau asrama.');
+	if (options.perpanjangSakit && !canAttendance(user, 'koreksi'))
+		throw error(403, 'Izin koreksi diperlukan untuk memperpanjang masa sakit.');
 	await ensureDataGovernanceSchema();
 	await ensureAbsenceMonitoringSchema();
+	await ensureAttendanceIllnessSchema();
 	return db.transaction(async (tx) => {
+		const periods = await tx.select().from(illness).where(and(
+			eq(illness.sekolahId, sekolahId), eq(illness.semesterId, semesterId), inArray(illness.muridId, ids),
+			lte(illness.tanggalMulai, tanggal), isNull(illness.dibatalkanPada)
+		));
 		const permits =
 			options.status && ['hadir', 'terlambat'].includes(options.status)
 				? await tx.query.tableIzinPulangMurid.findMany({
@@ -134,11 +149,22 @@ export async function saveAttendance(options: {
 		}> = [];
 		for (const muridId of ids) {
 			const before = byStudent.get(muridId);
+			const period = latestIllness(periods, muridId, tanggal);
+			const renewIllness = !!options.perpanjangSakit && (!period ||
+				!illnessCovers(period, tanggal) || illnessEndDate(tanggal) > period.tanggalSelesai);
+			if (!scan && illnessSource && options.status === 'sakit' && period &&
+				(!illnessCovers(period, tanggal) || options.perpanjangSakit) && !reason)
+				throw error(400, 'Isi catatan alasan untuk melanjutkan atau memperbarui masa sakit.');
+			const capturedAt = options.waktuScan ?? new Date().toISOString();
+			const returning = scan && schoolEntry && !!options.status && ['hadir', 'terlambat'].includes(options.status) &&
+				!!period && canReturnFromIllness(period, capturedAt);
+			const recoverSick = returning && !!before && (before.status === 'sakit' || before.metode === 'auto') &&
+				Date.parse(capturedAt) >= Date.parse(before.updatedAt ?? before.createdAt);
 			const point = scan
 				? travelLocalTime(new Date(options.waktuScan ?? Date.now())).time
 				: (kegiatan?.jamMulai ?? null);
 			if (
-				(!before || before.metode === 'auto') &&
+				(!before || before.metode === 'auto' || recoverSick) &&
 				permits.some(
 					(permit) => permit.muridId === muridId && permitCoversMonitoring(tanggal, point, permit)
 				)
@@ -152,11 +178,17 @@ export async function saveAttendance(options: {
 				});
 				continue;
 			}
+			if ((scan || options.onlyEmpty) && period && !returning && illnessCovers(period, tanggal, point) &&
+				(!before || before.status === 'sakit' || before.metode === 'auto')) {
+				skipped++;
+				records.push({ status: 'sakit', waktuScan: null, petugasUserId: period.petugasUserId, metode: 'masa_sakit' });
+				continue;
+			}
 			if (
 				before &&
-				(scan ||
+				((scan && !recoverSick) ||
 					options.onlyEmpty ||
-					(before.status === options.status && before.catatan === reason))
+					(!renewIllness && before.status === options.status && before.catatan === reason))
 			) {
 				skipped++;
 				records.push({
@@ -186,12 +218,12 @@ export async function saveAttendance(options: {
 				if (kegiatanId)
 					await tx
 						.update(tableAbsensiKegiatan)
-						.set({ ...common, status: options.status, autoAlfa: false })
+						.set({ ...common, status: options.status, autoAlfa: false, waktuScan: options.waktuScan ?? before.waktuScan })
 						.where(eq(tableAbsensiKegiatan.id, before.id));
 				else
 					await tx
 						.update(tableAbsensiHarian)
-						.set({ ...common, status: options.status as AbsensiStatus })
+						.set({ ...common, status: options.status as AbsensiStatus, waktuScan: options.waktuScan ?? before.waktuScan })
 						.where(eq(tableAbsensiHarian.id, before.id));
 			} else {
 				if (scan || options.onlyEmpty) {
@@ -265,6 +297,30 @@ export async function saveAttendance(options: {
 							createdAt: now
 						});
 				}
+			}
+			const source = `${tanggal}:${kegiatanId ?? 'harian'}`;
+			if (returning) {
+				const changed = await tx.update(illness).set({ kembaliPada: capturedAt, kembaliOleh: user.id, updatedAt: now })
+					.where(and(eq(illness.id, period.id), isNull(illness.kembaliPada))).returning();
+				if (changed.length) await writeAuditLog({ locals, request, action: 'update', entityType: 'absensi_masa_sakit',
+					entityId: String(period.id), summary: 'Kembali hadir melalui scan masuk sekolah.', before: period, after: changed[0] }, tx);
+			}
+			if (!scan && options.status === 'sakit' && illnessSource &&
+				(!period || !illnessCovers(period, tanggal) || renewIllness)) {
+				const created = await tx.insert(illness).values({ sekolahId, semesterId, muridId,
+					tanggalMulai: tanggal, tanggalSelesai: illnessEndDate(tanggal), sumber: source,
+					catatan: reason, petugasUserId: user.id, createdAt: now, updatedAt: now }).returning();
+				await writeAuditLog({ locals, request, action: 'create', entityType: 'absensi_masa_sakit',
+					entityId: String(created[0].id), summary: options.perpanjangSakit ? 'Perpanjangan masa sakit tiga hari kalender.' : 'Masa sakit tiga hari kalender.',
+					before: null, after: created[0] }, tx);
+			}
+			if (!scan && options.status !== 'sakit' && before?.status === 'sakit') {
+				const cancelled = await tx.update(illness).set({ dibatalkanPada: now, updatedAt: now }).where(and(
+					eq(illness.sekolahId, sekolahId), eq(illness.semesterId, semesterId), eq(illness.muridId, muridId),
+					eq(illness.sumber, source), isNull(illness.kembaliPada), isNull(illness.dibatalkanPada)
+				)).returning();
+				for (const item of cancelled) await writeAuditLog({ locals, request, action: 'update', entityType: 'absensi_masa_sakit',
+					entityId: String(item.id), summary: `Koreksi sumber masa sakit: ${reason}`, before: periods.find((p) => p.id === item.id), after: item }, tx);
 			}
 			await writeAuditLog(
 				{

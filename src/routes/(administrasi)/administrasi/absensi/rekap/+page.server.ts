@@ -8,6 +8,8 @@ import {
 	todayLocalDate
 } from '$lib/server/absensi-digital';
 import db from '$lib/server/db';
+import { projectDailyIllness } from '$lib/server/attendance-illness';
+import { listLocalDatesInRange } from '$lib/server/absensi-kegiatan';
 import { studentAccessCondition } from '$lib/server/attendance-student-access';
 import { tableAbsensiHarian, tableMurid } from '$lib/server/db/schema';
 import { redirect } from '@sveltejs/kit';
@@ -55,7 +57,7 @@ export async function load({ locals, url }) {
 			: [];
 
 	const selectedMuridIds = muridId ? [muridId] : muridList.map((murid) => murid.id);
-	const absensiRows =
+	const recordedRows =
 		academic.activeSemesterId && selectedMuridIds.length
 			? await db.query.tableAbsensiHarian.findMany({
 					where: and(
@@ -70,6 +72,9 @@ export async function load({ locals, url }) {
 			: [];
 
 	const rowsByMurid = new Map<number, ReturnType<typeof emptyCounts>>();
+	const absensiRows = academic.activeSemesterId ? await projectDailyIllness({ schoolId: sekolahId, semesterId: academic.activeSemesterId,
+		studentIds: muridList.filter((item) => !muridId || item.id === muridId).map((item) => item.id),
+		dates: listLocalDatesInRange(tanggalAwal, tanggalAkhir), rows: recordedRows }) : [];
 	for (const murid of muridList) rowsByMurid.set(murid.id, emptyCounts());
 	for (const row of absensiRows) {
 		const target = rowsByMurid.get(row.muridId);

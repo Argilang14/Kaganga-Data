@@ -1,11 +1,15 @@
 import { parseAccessPosition } from './access-position.ts';
 import { classMonitoringCapabilities } from './class-monitoring.ts';
+import { canUsePengasuhan } from './pengasuhan.ts';
+import { canUseStudentProfile } from './murid-profile.ts';
 
 export type MenuAccessUser =
 	| {
 			type?: string | null;
 			jabatanAkses?: string | null;
 			permissions?: readonly string[] | null;
+			sekolahId?: number | null;
+			mustChangePassword?: boolean;
 	  }
 	| null
 	| undefined;
@@ -43,6 +47,7 @@ export function hasMenuPermission(user: MenuAccessUser, permission: string) {
 
 export function canPrintDocument(user: MenuAccessUser, document: string) {
 	if (!user) return false;
+	if (document === 'informasi-siswa') return !user.mustChangePassword && hasMenuPermission(user, 'cetak_dokumen') && (user.type === 'admin' || canUseStudentProfile(user, user.sekolahId ?? 0, 'print'));
 	if (document === 'qr-kelas') return classMonitoringCapabilities(user).canManage;
 	if (unrestricted(user)) return true;
 	if (
@@ -69,6 +74,7 @@ export function canPrintDocument(user: MenuAccessUser, document: string) {
 
 // Longest prefix wins: an allowed parent never opens a protected child.
 const rules: [string, string[]][] = [
+	['/api/pdf/informasi-siswa', ['murid_profil_cetak']],
 	['/api/pdf/qr-kelas', ['class_monitoring_manage']],
 	['/murid/arsip', ['murid_arsip']],
 	['/murid', ['menu_murid']],
@@ -129,6 +135,7 @@ const rules: [string, string[]][] = [
 	['/cetak/pdf', ['cetak_dokumen', 'cetak_akademik', 'cetak_keasramaan']],
 	['/cetak', ['cetak_dokumen']],
 	['/api/murid', ['menu_murid']],
+	['/api/murid-profil', ['murid_profil_lihat', 'murid_profil_manage']],
 	['/api/murid-photo', ['menu_murid', 'absensi_lihat']],
 	['/api/murid-bulk-photo', ['kelas_manage']],
 	['/api/rapor', ['menu_murid']],
@@ -166,6 +173,7 @@ const rules: [string, string[]][] = [
 
 export function canAccessMenu(user: MenuAccessUser, pathname: string) {
 	if (!user) return false;
+	if (/^\/(?:api\/)?pengasuhan(?:\/|$)/.test(pathname)) return canUsePengasuhan(user);
 	if (
 		unrestricted(user) ||
 		(parseAccessPosition(user.jabatanAkses) !== 'waka_humas' &&
@@ -187,7 +195,8 @@ export function canAccessMenu(user: MenuAccessUser, pathname: string) {
 			'/api/favorites',
 			'/api/tasks',
 			'/api/notifikasi/ringkasan',
-			'/api/dashboard/daily'
+			'/api/dashboard/daily',
+			'/api/dashboard/trend'
 		].includes(path) ||
 		path.startsWith('/tamu/') ||
 		/^\/api\/buku-tamu\/[^/]+$/.test(path)

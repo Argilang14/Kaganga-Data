@@ -8,6 +8,33 @@ import {
 } from '../routes/pengguna/permissions.ts';
 
 const user = (type: string, extra = {}) => ({ type, ...extra });
+test('dashboard snapshot routes reach their scoped handlers without opening arbitrary API paths', () => {
+	for (const type of ['user', 'wali_asuh', 'wali_asrama', 'tim_dapur']) {
+		assert.equal(canAccessMenu(user(type), '/api/dashboard/daily'), true);
+		assert.equal(canAccessMenu(user(type), '/api/dashboard/trend'), true);
+		assert.equal(canAccessMenu(user(type), '/api/dashboard/unregistered'), false);
+	}
+	assert.equal(canAccessMenu(null, '/api/dashboard/trend'), false);
+});
+test('cetak informasi siswa memerlukan grant cetak pribadi, bukan izin baca atau jabatan saja', () => {
+	assert.ok(canPrintDocument(user('admin'), 'informasi-siswa'));
+	for (const type of ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama']) {
+		for (const permissions of [[], ['murid_profil_lihat'], ['murid_profil_manage']])
+			assert.equal(canPrintDocument(user(type, { sekolahId: 1, permissions }), 'informasi-siswa'), false);
+		assert.ok(canPrintDocument(user(type, { sekolahId: 1, permissions: ['cetak_dokumen', 'murid_profil_cetak'] }), 'informasi-siswa'));
+		assert.ok(canAccessMenu(user(type, { permissions: ['murid_profil_cetak'] }), '/api/pdf/informasi-siswa'));
+	}
+	assert.equal(canPrintDocument(user('user', { sekolahId: 1, jabatanAkses: 'kepala_sekolah' }), 'informasi-siswa'), false);
+});
+test('private student profile endpoints recognize explicit read/manage grants', () => {
+	for (const type of ['user', 'wali_asuh', 'wali_asrama']) {
+		assert.equal(canAccessMenu(user(type), '/api/murid-profil/1'), false);
+		for (const permission of ['murid_profil_lihat', 'murid_profil_manage']) {
+			assert.ok(canAccessMenu(user(type, { permissions: [permission] }), '/api/murid-profil/1'));
+			assert.ok(canAccessMenu(user(type, { permissions: [permission] }), '/api/murid-profil/1/foto/rumah'));
+		}
+	}
+});
 test('QR kelas printing remains restricted to class monitoring managers', () => {
 	assert.ok(canPrintDocument(user('admin'), 'qr-kelas'));
 	assert.ok(canPrintDocument(user('user', { jabatanAkses: 'kepala_sekolah' }), 'qr-kelas'));

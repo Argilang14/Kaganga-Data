@@ -1,4 +1,5 @@
 import type { Client } from '@libsql/client';
+import { verifyStudentProfileFiles } from '../student-profile-files.ts';
 
 function identifier(value: string) {
 	return `"${value.replaceAll('"', '""')}"`;
@@ -12,6 +13,7 @@ export async function restoreDatabaseContents(client: Client, sourcePath: string
 		const source = sourcePath.replaceAll('\\', '/').replaceAll("'", "''");
 		await client.execute(`ATTACH DATABASE '${source}' AS kaganga_restore`);
 		attached = true;
+		await verifyStudentProfileFiles(client, 'kaganga_restore');
 		const incoming = await client.execute(
 			"SELECT type, name, sql FROM kaganga_restore.sqlite_master WHERE name NOT LIKE 'sqlite_%' AND sql IS NOT NULL ORDER BY name"
 		);

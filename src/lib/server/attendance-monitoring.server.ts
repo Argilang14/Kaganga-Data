@@ -6,6 +6,8 @@ import {
 	type IzinPulangStatus
 } from '$lib/server/absence-monitoring';
 import db from '$lib/server/db';
+import { loadAttendanceIllness } from './attendance-illness';
+import { illnessCovers, illnessNeedsReview, latestIllness } from '$lib/attendance-illness';
 import { studentAccessCondition } from './attendance-student-access';
 import { ensureAbsenceMonitoringSchema } from '$lib/server/db/ensure-absence-monitoring';
 import { permitCoversMonitoring } from '$lib/attendance-monitoring';
@@ -202,9 +204,19 @@ export async function loadAttendanceMonitoring(params: {
 		holidayDates
 	});
 	const schoolDayIndex = new Map(schoolDays.map((date, index) => [date, index]));
-	const dailyRows = collapseActivityAttendanceByDay(attendanceRows.filter((row) => row.metode !== 'auto' ||
+	const illnesses = await loadAttendanceIllness(params.sekolahId, params.semesterId, students.map((student) => student.id), params.today);
+	const effective = attendanceRows.filter((row) => row.metode !== 'auto' ||
+		(!illnessNeedsReview(latestIllness(illnesses, row.muridId, row.tanggal), row.tanggal) &&
 		!izinRows.some((permit) => permit.status !== 'dibatalkan' && permit.muridId === row.muridId &&
 			permitCoversMonitoring(row.tanggal, row.kegiatan?.jamMulai ?? null, permit))));
+	const dailyRows = collapseActivityAttendanceByDay(effective);
+	const recordedDays = new Set(dailyRows.map((row) => `${row.muridId}:${row.tanggal}`));
+	for (const student of students) for (const tanggal of schoolDays) {
+		const period = latestIllness(illnesses, student.id, tanggal);
+		if (!period || !illnessCovers(period, tanggal) || recordedDays.has(`${student.id}:${tanggal}`) ||
+			izinRows.some((permit) => permit.status !== 'dibatalkan' && permit.muridId === student.id && permitCoversMonitoring(tanggal, null, permit))) continue;
+		dailyRows.push({ muridId: student.id, tanggal, status: 'sakit', sourceCount: 1 });
+	}
 	const dailyByStudent = new Map<number, Map<string, (typeof dailyRows)[number]['status']>>();
 	for (const row of dailyRows) {
 		const entries = dailyByStudent.get(row.muridId) ?? new Map();

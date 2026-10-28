@@ -37,6 +37,8 @@
 		metode: 'qr' | 'manual' | 'auto' | null;
 		waktuScan: string | null;
 		catatan: string;
+		illnessLabel: string;
+		canClear: boolean;
 	};
 	type PageData = {
 		tanggal: string;
@@ -414,6 +416,7 @@
 												: ''}
 										</div>
 									{/if}
+									{#if row.illnessLabel}<p class="text-base-content/65 mt-1 text-xs">{row.illnessLabel}</p>{/if}
 								</td>
 								<td class="attendance-note">
 									<label class="attendance-mobile-label" for={`catatan-${row.id}`}>Catatan</label>
@@ -427,6 +430,13 @@
 										placeholder="Catatan opsional"
 										disabled={!data.canEditSelected}
 									/>
+									{#if row.illnessLabel && data.selectedKegiatan && ['sekolah', 'asrama'].includes(data.selectedKegiatan.kategori)}
+										<label class="mt-2 flex items-start gap-2 text-xs">
+											<input type="checkbox" class="checkbox checkbox-sm" name="perpanjangSakit"
+												form={`manual-kegiatan-${row.id}`} disabled={!data.canEditSelected || !canAttendance(page.data.user, 'koreksi')} />
+											<span>Perpanjang sakit 3 hari dari tanggal terpilih (wajib catatan)</span>
+										</label>
+									{/if}
 								</td>
 								<td class="attendance-manual">
 									<label class="attendance-mobile-label" for={`status-${row.id}`}
@@ -472,7 +482,7 @@
 										<ClearAttendance
 											action={attendanceKegiatanAction('clearStatus', data)}
 											nama={row.nama}
-											disabled={!row.status || !data.canEditSelected}
+											disabled={!row.canClear || !data.canEditSelected}
 											fields={{
 												tanggal: data.tanggal,
 												kelasId: data.kelasId ?? '',

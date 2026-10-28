@@ -12,7 +12,7 @@
 
 <section
 	id="pengawasan-kelas"
-	class="dashboard-panel dashboard-leadership min-w-0 overflow-hidden rounded-lg shadow-sm"
+	class="dashboard-panel dashboard-leadership dashboard-class-summary min-w-0 overflow-hidden rounded-lg shadow-sm"
 	aria-label="Pengawasan per kelas"
 >
 	<header
@@ -38,7 +38,13 @@
 		</div>
 	{:else}
 		<div class="dashboard-class-list" class:dashboard-class-list--expanded={expanded}>
-			<div class="hidden overflow-x-auto sm:block">
+			<!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users need to scroll the wide table.) -->
+			<div
+				class="dashboard-class-table hidden overflow-x-auto sm:block"
+				role="region"
+				tabindex="0"
+				aria-label="Tabel pengawasan kelas, dapat digeser"
+			>
 				<table class="table table-sm min-w-[530px]" aria-label="Ringkasan kehadiran per kelas">
 					<thead class="bg-base-200/40"
 						><tr
@@ -115,7 +121,9 @@
 								value={item.percentage}
 								max="100"
 								aria-label={`Absensi tercatat ${item.nama}`}
-							></progress><span class="text-xs font-medium">{item.percentage}%</span>
+							></progress><span class="shrink-0 text-xs font-medium"
+								>{item.percentage}% tercatat</span
+							>
 						</div>
 					</article>
 				{/each}

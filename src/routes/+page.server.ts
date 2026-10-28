@@ -422,7 +422,8 @@ export const load: PageServerLoad = async (event) => {
 	const dailyDashboard = await loadDashboardDaily(
 		event.locals,
 		academicContext,
-		event.url.searchParams
+		event.url.searchParams,
+		true
 	);
 	const leadershipOverview = dailyDashboard.leadership
 		? await loadLeadershipOverview(

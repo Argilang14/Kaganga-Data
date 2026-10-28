@@ -5,4 +5,4 @@ export function getSchoolPrintFormat(school?: { jenjangPendidikan?: string | nul
 	return ['sd', 'smp', 'sma', 'slb', 'pkbm'].includes(level) ? 'default' : null;
 }
 
-export const generalPrintDocuments = ['kartu-absensi', 'qr-kelas', 'jadwal-pelajaran', 'kalender-pendidikan', 'jurnal-mengajar', 'buku-tamu'] as const;
+export const generalPrintDocuments = ['informasi-siswa', 'kartu-absensi', 'qr-kelas', 'jadwal-pelajaran', 'kalender-pendidikan', 'jurnal-mengajar', 'buku-tamu'] as const;

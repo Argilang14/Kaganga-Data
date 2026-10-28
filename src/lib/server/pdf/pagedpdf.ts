@@ -79,7 +79,7 @@ function findChromeExecutable(): string | undefined {
 
 let browser: Browser | null = null;
 
-async function getBrowser(): Promise<Browser> {
+export async function getBrowser(): Promise<Browser> {
 	if (browser) {
 		try {
 			await browser.version();

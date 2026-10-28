@@ -6,6 +6,8 @@
 
 	import { page } from '$app/state';
 	import { canDownloadDatabaseBackup } from '$lib/export-access';
+	import { canAccessMenu } from '$lib/role-menu-access';
+	import { resolve } from '$app/paths';
 	let canDownloadBackup = $derived(canDownloadDatabaseBackup(page.data.user));
 
 	// single permission to manage dashboard quick actions
@@ -16,17 +18,16 @@
 
 	let downloadingBackup = $state(false);
 
-	const handleExportInfo = () => {
-		showModal({
-			title: 'Export Dapodik',
-			body: 'Fitur belum tersedia, masih dalam tahap pengembangan.',
-			dismissible: true,
-			onPositive: {
-				label: 'Mengerti',
-				action: ({ close }) => close()
-			}
-		});
-	};
+	const links = $derived(
+		(
+			[
+				{ href: '/administrasi/absensi/scan', label: 'Scan QR', icon: 'grid' },
+				{ href: '/asesmen-sumatif', label: 'Input Nilai', icon: 'pen' },
+				{ href: '/rapor/jadwal-pelajaran', label: 'Kelola Jadwal', icon: 'calendar' },
+				{ href: '/cetak', label: 'Cetak Dokumen', icon: 'print' }
+			] as const
+		).filter((item) => canAccessMenu(page.data.user, item.href))
+	);
 
 	const handleBackupDownload = async () => {
 		if (typeof window === 'undefined' || downloadingBackup || !canDownloadBackup) return;
@@ -85,51 +86,42 @@
 			</span>
 			Tindakan Cepat
 		</h2>
-		<div class="grid grid-cols-1 gap-2">
+		<div class="dashboard-actions-grid">
+			{#each links as item (item.href)}
+				<a class="btn dashboard-action" href={resolve(item.href)}>
+					<Icon name={item.icon} /><span>{item.label}</span>
+				</a>
+			{/each}
 			<button
 				type="button"
-				onclick={() => (canDashboardManage ? handleExportInfo() : undefined)}
-				class="btn btn-primary w-full shadow-none"
+				onclick={handleBackupDownload}
+				class="btn dashboard-action"
+				aria-label="Backup Data"
+				disabled={downloadingBackup || !canDownloadBackup}
+				aria-disabled={!canDownloadBackup}
+				aria-busy={downloadingBackup}
+				title={!canDownloadBackup
+					? 'Backup database hanya tersedia untuk admin dan kepala sekolah'
+					: ''}
+			>
+				{#if downloadingBackup}
+					<span class="loading loading-spinner loading-sm"></span>
+				{:else}
+					<Icon name="database" />
+				{/if}
+				<span>{downloadingBackup ? 'Mengunduh…' : 'Backup Data'}</span>
+			</button>
+			<button
+				type="button"
+				onclick={() => (canDashboardManage ? handleImport() : undefined)}
+				class="btn dashboard-action"
 				disabled={!canDashboardManage}
 				aria-disabled={!canDashboardManage}
 				title={!canDashboardManage ? 'Anda tidak memiliki izin untuk melakukan tindakan cepat' : ''}
 			>
-				<Icon name="export" />
-				Export Dapodik
+				<Icon name="import" />
+				Import Data
 			</button>
-			<div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
-				<button
-					type="button"
-					onclick={handleBackupDownload}
-					class="btn btn-outline btn-accent w-full shadow-none"
-					disabled={downloadingBackup || !canDownloadBackup}
-					aria-disabled={!canDownloadBackup}
-					aria-busy={downloadingBackup}
-					title={!canDownloadBackup
-						? 'Backup database hanya tersedia untuk admin dan kepala sekolah'
-						: ''}
-				>
-					{#if downloadingBackup}
-						<span class="loading loading-spinner loading-sm"></span>
-					{:else}
-						<Icon name="database" />
-					{/if}
-					<span>{downloadingBackup ? 'Mengunduh…' : 'Backup Data'}</span>
-				</button>
-				<button
-					type="button"
-					onclick={() => (canDashboardManage ? handleImport() : undefined)}
-					class="btn btn-outline btn-accent w-full shadow-none"
-					disabled={!canDashboardManage}
-					aria-disabled={!canDashboardManage}
-					title={!canDashboardManage
-						? 'Anda tidak memiliki izin untuk melakukan tindakan cepat'
-						: ''}
-				>
-					<Icon name="import" />
-					Import Data
-				</button>
-			</div>
 		</div>
 	</div>
 </div>

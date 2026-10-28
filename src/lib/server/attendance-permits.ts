@@ -3,6 +3,7 @@ import db from './db';
 import { tableIzinPulangMurid as p, tableAbsensiKegiatan } from './db/schema';
 import { ensureAbsenceMonitoringSchema } from './db/ensure-absence-monitoring';
 import { permitCoversMonitoring } from '$lib/attendance-monitoring';
+import { projectIllnessAttendance } from './attendance-illness';
 
 export async function loadAttendancePermits(
 	schoolId: number,
@@ -74,5 +75,5 @@ export async function projectPermitAttendance(options: {
 				}
 			}
 	}
-	return [...projected.values()];
+	return projectIllnessAttendance({ ...options, rows: [...projected.values()] });
 }

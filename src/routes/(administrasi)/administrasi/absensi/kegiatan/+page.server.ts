@@ -20,6 +20,8 @@ import { studentAccessCondition } from '$lib/server/attendance-student-access';
 import { saveAttendance } from '$lib/server/attendance-mutation';
 import { canAttendance, attendanceDateAllowed } from '$lib/attendance-access';
 import { projectPermitAttendance } from '$lib/server/attendance-permits';
+import { loadAttendanceIllness } from '$lib/server/attendance-illness';
+import { illnessLabel, latestIllness } from '$lib/attendance-illness';
 import {
 	tableAbsensiKegiatan,
 	tableKegiatanAbsensi,
@@ -128,6 +130,7 @@ export async function load({ locals, url }) {
 	for (const row of absensiRows) absensiByMurid.set(row.muridId, row);
 
 	const summary = emptySummary();
+	const illnesses = await loadAttendanceIllness(sekolahId, academic.activeSemesterId, muridIds, tanggal);
 	const rows = muridList.map((murid, index) => {
 		const absensi = absensiByMurid.get(murid.id) ?? null;
 		if (absensi) summary[absensi.status] += 1;
@@ -140,7 +143,9 @@ export async function load({ locals, url }) {
 			status: absensi?.status ?? null,
 			metode: absensi?.metode ?? null,
 			waktuScan: absensi?.waktuScan ?? null,
-			catatan: absensi?.catatan ?? ''
+			catatan: absensi?.catatan ?? '',
+			illnessLabel: illnessLabel(latestIllness(illnesses, murid.id, tanggal), tanggal),
+			canClear: !!absensi && absensi.id > 0
 		};
 	});
 
@@ -228,7 +233,8 @@ export const actions = {
 			muridIds: [muridId],
 			tanggal,
 			status,
-			catatan
+			catatan,
+			perpanjangSakit: formData.get('perpanjangSakit') === 'on'
 		});
 
 		return { message: 'Absensi kegiatan berhasil disimpan.' };

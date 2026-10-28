@@ -14,6 +14,9 @@
 		enctype?: HTMLFormAttributes['enctype'];
 		init?: Record<string, unknown>;
 		onsuccess?: (params: { form: HTMLFormElement; data?: Record<string, unknown> }) => void;
+		onfailure?: (params: { form: HTMLFormElement; data?: Record<string, unknown> }) => void;
+		onerror?: () => void;
+		preventDuplicateSubmit?: boolean;
 		submitStateChange?: (submitting: boolean) => void;
 		showToast?: boolean;
 	}
@@ -26,6 +29,9 @@
 		enctype,
 		init,
 		onsuccess,
+		onfailure,
+		onerror,
+		preventDuplicateSubmit = false,
 		submitStateChange,
 		showToast = true
 	}: Props = $props();
@@ -83,7 +89,11 @@
 		return undefined;
 	}
 
-	const enhancedSubmit: SubmitFunction = () => {
+	const enhancedSubmit: SubmitFunction = ({ cancel, formElement }) => {
+		if (preventDuplicateSubmit && submitting) {
+			cancel();
+			return;
+		}
 		submitting = true;
 		return async (args: {
 			result?: SubmitOutcome;
@@ -166,9 +176,11 @@
 						if (showToast) {
 							toast(failureData?.fail || failureData?.message || 'Gagal', 'warning');
 						}
+						onfailure?.({ form: args.form ?? args.formElement ?? formElement, data: failureData });
 						break;
 					}
 					case 'error': {
+						onerror?.();
 						const actionErrMsg =
 							actionResult && typeof actionResult.error === 'object' && actionResult.error !== null
 								? (actionResult.error as { message?: string }).message
@@ -204,7 +216,8 @@
 				}
 			} catch (error) {
 				console.error(error);
-				toast(`Gagal mengirim formulir`, 'error');
+				onerror?.();
+				if (showToast) toast(`Gagal mengirim formulir`, 'error');
 			} finally {
 				submitting = false;
 				const localForm = args.form ?? args.formElement;

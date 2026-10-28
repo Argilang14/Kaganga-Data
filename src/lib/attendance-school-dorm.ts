@@ -49,6 +49,7 @@ export function connectSchoolDormRows(
 				const source = row.cells[origin];
 				if (
 					row.cells[target].status === 'belum' &&
+					!row.cells[target].illnessReturnedAt &&
 					source.source === 'catatan' &&
 					['sakit', 'izin'].includes(source.status)
 				)
@@ -60,6 +61,9 @@ export function connectSchoolDormRows(
 					};
 			}
 			const note = notes.join('; ');
+			if (pair.key === 'pergi' && present(arrival) && departure.status === 'sakit' &&
+				arrival.illnessReturnedAt && arrival.time && Date.parse(arrival.time) >= Date.parse(arrival.illnessReturnedAt))
+				return { ...base, status: 'tiba', label: 'Sudah tiba di sekolah', note: 'Sudah kembali hadir; catatan sakit asrama sebelumnya tetap tersimpan.' };
 			if (
 				(present(departure) && condition(arrival)) ||
 				(present(arrival) && condition(departure)) ||

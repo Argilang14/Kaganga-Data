@@ -1,6 +1,7 @@
 import { createClient, type Client } from '@libsql/client';
 import { mkdir, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { backupStudentProfileFiles } from '../student-profile-files.ts';
 
 export type DatabaseInspection = {
 	quickCheck: string;
@@ -62,5 +63,6 @@ export async function createConsistentDatabaseBackup(options: {
 	}
 	await options.client.execute(`VACUUM INTO '${quoteSqlitePath(backupPath)}'`);
 	await inspectDatabaseFile(backupPath);
+	await backupStudentProfileFiles(backupPath);
 	return backupPath;
 }

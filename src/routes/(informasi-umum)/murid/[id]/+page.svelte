@@ -11,8 +11,13 @@
 	import MuridPhotoUploadModal from '$lib/components/murid-photo-upload-modal.svelte';
 	import { page } from '$app/state';
 	import { canEditMurid } from '$lib/murid-permissions';
+	import StudentProfile from '$lib/components/murid/student-profile.svelte';
+	import { canUseStudentProfile } from '$lib/murid-profile';
 
 	let { data } = $props();
+	let profileActive = $state(false);
+	let profileDirty = $state(false);
+	const canReadProfile = $derived(canUseStudentProfile(page.data.user, page.data.sekolah?.id ?? 0, 'read'));
 
 	const canEditData = $derived.by(() => {
 		return canEditMurid(page.data.user);
@@ -258,7 +263,7 @@
 {/snippet}
 
 <div class="mb-6 text-xl font-bold">Detail Data Murid</div>
-<div class="max-h-[60vh] overflow-y-auto sm:max-h-none sm:overflow-y-visible">
+<div class="max-h-[60vh] overflow-y-auto sm:max-h-none sm:overflow-y-visible" data-profile-dirty={profileDirty ? 'true' : undefined}>
 	<div class="join join-vertical w-full max-w-full">
 		<div class="tabs tabs-box">
 			<!-- data Murid -->
@@ -430,12 +435,18 @@
 					{@render field('NIP Wali Asuh', data.murid.waliAsuhNip)}
 				</div>
 			</div>
+			{#if canReadProfile}
+				<input type="radio" name="tab-detil-murid" class="tab" aria-label="Informasi Tambahan" onchange={() => profileActive = true} />
+				<div class="tab-content bg-base-100 p-3 sm:p-4">
+					{#if profileActive}{#key data.murid.id}<StudentProfile muridId={data.murid.id} ondirty={(dirty) => profileDirty = dirty} />{/key}{/if}
+				</div>
+			{/if}
 		</div>
 	</div>
 </div>
 
 <div class="mt-4 flex flex-col gap-2 sm:flex-row">
-	<a class="btn btn-soft shadow-none" href="/murid">
+	<a class="btn btn-soft shadow-none" href="/murid" onclickcapture={(event) => { if (profileDirty && !window.confirm('Tutup profil? Perubahan yang belum disimpan akan dibuang.')) { event.preventDefault(); event.stopImmediatePropagation(); } }}>
 		<Icon name="close" />
 		Tutup
 	</a>
@@ -446,6 +457,7 @@
 			class="btn btn-primary btn-soft shadow-none"
 			href="/murid/form/{data.murid.id}"
 			use:modalRoute={'edit-murid'}
+			onclickcapture={(event) => { if (profileDirty && !window.confirm('Buka biodata utama? Perubahan profil tambahan yang belum disimpan akan dibuang.')) { event.preventDefault(); event.stopImmediatePropagation(); } }}
 		>
 			<Icon name="edit" />
 			Edit

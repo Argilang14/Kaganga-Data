@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { isIntegratedSchool } from '$lib/education-unit';
 	let { sekolah } = $props<{ sekolah: Sekolah | null }>();
 
 	const sekolahLogo = $derived(sekolah?.id ? `/sekolah/logo/${sekolah.id}` : '/sekolah.png');
@@ -11,16 +12,18 @@
 	aria-label="Identitas sekolah"
 >
 	{#if sekolah}
-		<div class="flex items-center gap-4">
+		<div class="dashboard-school-identity">
 			<div
-				class="dashboard-school-logo flex size-16 shrink-0 items-center justify-center rounded-lg p-2"
+				class="dashboard-school-logo flex size-10 shrink-0 items-center justify-center rounded-md p-1"
 			>
 				<img class="size-full object-contain" src={sekolahLogo} alt={`Logo ${sekolahNama}`} />
 			</div>
 			<div class="min-w-0 space-y-1">
 				<h2 class="text-xs font-semibold text-base-content/70">Sekolah Aktif</h2>
-				<p class="break-words text-base font-bold">{sekolahNama}</p>
-				<p class="text-xs text-base-content/60">NPSN: {sekolahNpsn}</p>
+				<p class="dashboard-school-name">{sekolahNama}</p>
+				<p class="dashboard-stat-caption">
+					{isIntegratedSchool(sekolah) ? 'NPSN per satuan pendidikan' : `NPSN: ${sekolahNpsn}`}
+				</p>
 			</div>
 		</div>
 	{:else}

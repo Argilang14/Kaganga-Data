@@ -10,8 +10,17 @@
 	import ClassAttendanceSummary from './class-attendance-summary.svelte';
 	import ActivitySummary from './activity-summary.svelte';
 	type Snapshot = Awaited<ReturnType<typeof loadDashboardDaily>>;
-	let { summary: initial, children }: { summary: Snapshot; children?: Snippet<[Snapshot]> } =
-		$props();
+	let {
+		summary: initial,
+		leading,
+		children,
+		sidebar
+	}: {
+		summary: Snapshot;
+		leading?: Snippet<[Snapshot]>;
+		children?: Snippet<[Snapshot]>;
+		sidebar?: Snippet<[Snapshot]>;
+	} = $props();
 	let live = $state.raw<{ base: Snapshot; data: Snapshot } | null>(null);
 	const summary = $derived(live?.base === initial ? live.data : initial);
 	async function refresh(signal: AbortSignal) {
@@ -92,160 +101,172 @@
 	}
 </script>
 
-<div class="min-w-0 space-y-4">
-	<section
-		id="absensi-hari-ini"
-		class="dashboard-panel dashboard-attendance min-w-0 overflow-hidden rounded-lg shadow-sm"
-		aria-label="Absensi hari ini"
-	>
-		<header
-			class="dashboard-panel-heading flex flex-wrap items-center justify-between gap-3 border-b border-base-200 px-5 py-3"
+<div class="dashboard-live-layout">
+	<div class="dashboard-main-stack">
+		{#if leading}{@render leading(summary)}{/if}
+		<section
+			id="absensi-hari-ini"
+			class="dashboard-panel dashboard-attendance min-w-0 overflow-hidden rounded-lg shadow-sm"
+			aria-label="Absensi hari ini"
 		>
-			<div class="flex min-w-0 items-center gap-3">
-				<span
-					class="flex size-9 shrink-0 items-center justify-center rounded-md bg-success/10 text-success"
-					aria-hidden="true"><Icon name="users" class="size-5" /></span
-				>
-				<div class="min-w-0">
-					<h2 class="text-lg font-bold">Absensi Hari Ini</h2>
-					<p class="text-xs text-base-content/55">Cakupan: {summary.scope}</p>
-				</div>
-			</div>
-			<div class="flex flex-wrap items-center gap-2">
-				<span class="text-xs text-base-content/65">{formatDashboardDate(summary.date)}</span>
-				{#if summary.monitoringHref}<a class="btn btn-ghost btn-sm" href={summary.monitoringHref}
-						><Icon name="activity" class="size-4" />Monitoring</a
-					>{/if}
-			</div>
-		</header>
-		<div class="flex flex-wrap items-center justify-between gap-x-3 border-b border-base-200 px-4">
-			{#if summary.activityTabs.length}<div
-					class="flex min-w-0"
-					role="tablist"
-					aria-label="Jenis absensi hari ini"
-				>
-					{#each summary.activityTabs as tab (tab.key)}<button
-							type="button"
-							role="tab"
-							aria-selected={summary.activityTab === tab.key}
-							aria-controls="dashboard-attendance-tab"
-							class="flex min-w-0 items-center justify-center gap-2 border-b-2 px-3 py-3 text-sm font-semibold sm:px-5"
-							class:border-success={summary.activityTab === tab.key}
-							class:text-success={summary.activityTab === tab.key}
-							class:border-transparent={summary.activityTab !== tab.key}
-							onclick={() => changeTab(tab.key)}
-						>
-							<Icon name={tab.icon} class="size-4 shrink-0" />{tab.label}
-						</button>{/each}
-				</div>{/if}
-			<div class="py-2">
-				<AttendanceRefresh context={initial} updatedAt={summary.generatedAt} onrefresh={refresh} />
-			</div>
-		</div>
-		<div
-			id="dashboard-attendance-tab"
-			role="tabpanel"
-			aria-label={summary.activityTabs.find((tab) => tab.key === summary.activityTab)?.label ??
-				'Sekolah'}
-		>
-			{#if summary.activityTab === 'sekolah'}
-				<div class="px-5 pt-3">
-					{#if summary.studentSource}<label
-							class="flex min-w-0 flex-wrap items-center gap-2 text-xs"
-						>
-							<span>Sumber masuk sekolah</span><select
-								aria-label="Sumber masuk sekolah"
-								class="select select-sm max-w-full"
-								value={summary.studentSource.source}
-								onchange={(event) => changeSource(event.currentTarget.value)}
-							>
-								<option value="">Pilih Sumber Kegiatan</option><option value="harian"
-									>Absensi Harian Sekolah</option
-								>
-								{#each summary.sourceOptions as option (option.id)}<option value={String(option.id)}
-										>{option.nama}</option
-									>{/each}
-							</select></label
-						>{/if}
-					{#if summary.studentSource && !summary.studentSource.source}<p
-							class="mt-3 text-sm text-warning"
-						>
-							Sumber masuk sekolah belum dipilih atau tidak aktif.
-						</p>{/if}
-					{#if summary.holiday}<p class="mt-3 flex items-center gap-2 text-sm text-warning">
-							<Icon name="calendar" class="size-4" />Hari libur atau hari non-efektif.
-						</p>{/if}
-				</div>
-				<div class="dashboard-school-stats" style={`--school-columns: ${schoolStats.length}`}>
-					{#each schoolStats as item (item.name)}{#if item.value}
-							<div
-								class={`dashboard-attendance-summary dashboard-attendance-summary--${item.tone} min-w-0 p-4`}
-							>
-								<div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-									<h3 class="flex items-center gap-2 text-sm font-semibold">
-										<Icon name="user" class="size-4" />{item.name}
-									</h3>
-									<div>
-										<strong class="text-xl tabular-nums">{item.value.recorded}</strong><span
-											class="text-xs text-base-content/55"
-										>
-											/ {item.value.total} terisi</span
-										>
-									</div>
-								</div>
-								<progress
-									class="progress progress-success block h-1.5 w-full"
-									value={attendanceRate(item.value)}
-									max="100"
-									aria-label={`Kelengkapan ${item.name}`}
-								></progress>
-								<div class="mt-2 flex justify-between gap-2 text-xs">
-									<span class="font-semibold text-success"
-										>{attendanceRate(item.value)}% tercatat</span
-									>
-									<span class:text-warning={item.value.unrecorded > 0}
-										>{item.value.unrecorded} belum diisi</span
-									>
-								</div>
-								<div class="mt-3 flex flex-wrap gap-1.5 text-xs">
-									{#each item.value.rows as row (row.status)}<span
-											class={`dashboard-attendance-status dashboard-attendance-status--${row.status}`}
-											><strong>{row.count}</strong> {labels[row.status] ?? row.status}</span
-										>{/each}
-									{#if !item.value.rows.length}<span class="text-base-content/55"
-											>Belum ada presensi tercatat</span
-										>{/if}
-								</div>
-							</div>
-						{/if}{/each}
-				</div>
-				{#if summary.students}<div
-						class="flex flex-wrap items-center gap-2 border-t border-base-200 px-5 py-3"
+			<header
+				class="dashboard-panel-heading flex flex-wrap items-center justify-between gap-3 border-b border-base-200 px-5 py-3"
+			>
+				<div class="flex min-w-0 items-center gap-3">
+					<span
+						class="flex size-9 shrink-0 items-center justify-center rounded-md bg-success/10 text-success"
+						aria-hidden="true"><Icon name="users" class="size-5" /></span
 					>
-						<span class="mr-1 text-xs font-medium text-base-content/60">Tidak hadir</span>
-						{#each summary.absences as group (group.status)}<button
+					<div class="min-w-0">
+						<h2 class="text-lg font-bold">Absensi Hari Ini</h2>
+						<p class="text-xs text-base-content/55">Cakupan: {summary.scope}</p>
+					</div>
+				</div>
+				<div class="flex flex-wrap items-center gap-2">
+					<span class="text-xs text-base-content/65">{formatDashboardDate(summary.date)}</span>
+					{#if summary.monitoringHref}<a class="btn btn-ghost btn-sm" href={summary.monitoringHref}
+							><Icon name="activity" class="size-4" />Monitoring</a
+						>{/if}
+				</div>
+			</header>
+			<div
+				class="flex flex-wrap items-center justify-between gap-x-3 border-b border-base-200 px-4"
+			>
+				{#if summary.activityTabs.length}<div
+						class="flex min-w-0"
+						role="tablist"
+						aria-label="Jenis absensi hari ini"
+					>
+						{#each summary.activityTabs as tab (tab.key)}<button
 								type="button"
-								class={`dashboard-status-chip dashboard-attendance-status--${group.status}`}
-								aria-label={`${labels[group.status]} ${group.total} anak`}
-								onclick={() => openAbsence(group.status)}
+								role="tab"
+								aria-selected={summary.activityTab === tab.key}
+								aria-controls="dashboard-attendance-tab"
+								class="flex min-w-0 items-center justify-center gap-2 border-b-2 px-3 py-3 text-sm font-semibold sm:px-5"
+								class:border-success={summary.activityTab === tab.key}
+								class:text-success={summary.activityTab === tab.key}
+								class:border-transparent={summary.activityTab !== tab.key}
+								onclick={() => changeTab(tab.key)}
 							>
-								<Icon
-									name={group.status === 'alfa'
-										? 'warning'
-										: group.status === 'sakit'
-											? 'info'
-											: 'pen'}
-									class="size-3.5"
-								/>
-								{labels[group.status]}<strong>{group.total}</strong>
+								<Icon name={tab.icon} class="size-4 shrink-0" />{tab.label}
 							</button>{/each}
 					</div>{/if}
-			{:else}<ActivitySummary activities={summary.activitySummaries} />{/if}
-		</div>
-	</section>
-	{#if children}{@render children(summary)}{:else if summary.leadership}<ClassAttendanceSummary
-			scope={summary.leadership}
-		/>{/if}
+				<div class="py-2">
+					<AttendanceRefresh
+						context={initial}
+						updatedAt={summary.generatedAt}
+						onrefresh={refresh}
+					/>
+				</div>
+			</div>
+			<div
+				id="dashboard-attendance-tab"
+				role="tabpanel"
+				aria-label={summary.activityTabs.find((tab) => tab.key === summary.activityTab)?.label ??
+					'Sekolah'}
+			>
+				{#if summary.activityTab === 'sekolah'}
+					<div class="px-5 pt-3">
+						{#if summary.studentSource}<label
+								class="flex min-w-0 flex-wrap items-center gap-2 text-xs"
+							>
+								<span>Sumber masuk sekolah</span><select
+									aria-label="Sumber masuk sekolah"
+									class="select select-sm max-w-full"
+									value={summary.studentSource.source}
+									onchange={(event) => changeSource(event.currentTarget.value)}
+								>
+									<option value="">Pilih Sumber Kegiatan</option><option value="harian"
+										>Absensi Harian Sekolah</option
+									>
+									{#each summary.sourceOptions as option (option.id)}<option
+											value={String(option.id)}>{option.nama}</option
+										>{/each}
+								</select></label
+							>{/if}
+						{#if summary.studentSource && !summary.studentSource.source}<p
+								class="mt-3 text-sm text-warning"
+							>
+								Sumber masuk sekolah belum dipilih atau tidak aktif.
+							</p>{/if}
+						{#if summary.holiday}<p class="mt-3 flex items-center gap-2 text-sm text-warning">
+								<Icon name="calendar" class="size-4" />Hari libur atau hari non-efektif.
+							</p>{/if}
+					</div>
+					<div class="dashboard-school-stats" style={`--school-columns: ${schoolStats.length}`}>
+						{#each schoolStats as item (item.name)}{#if item.value}
+								<div
+									class={`dashboard-attendance-summary dashboard-attendance-summary--${item.tone} min-w-0 p-4`}
+								>
+									<div class="mb-3 flex flex-col items-start gap-2">
+										<h3 class="flex items-center gap-2 text-sm font-semibold">
+											<Icon name="user" class="size-4" />{item.name}
+										</h3>
+										<div>
+											<strong class="text-xl tabular-nums">{item.value.recorded}</strong><span
+												class="text-xs text-base-content/55"
+											>
+												/ {item.value.total} terisi</span
+											>
+										</div>
+									</div>
+									<progress
+										class="progress progress-success block h-1.5 w-full"
+										value={attendanceRate(item.value)}
+										max="100"
+										aria-label={`Kelengkapan ${item.name}`}
+									></progress>
+									<div class="mt-2 flex justify-between gap-2 text-xs">
+										<span class="font-semibold text-success"
+											>{attendanceRate(item.value)}% tercatat</span
+										>
+										<span class:text-warning={item.value.unrecorded > 0}
+											>{item.value.unrecorded} belum diisi</span
+										>
+									</div>
+									<div class="mt-3 flex flex-wrap gap-1.5 text-xs">
+										{#each item.value.rows as row (row.status)}<span
+												class={`dashboard-attendance-status dashboard-attendance-status--${row.status}`}
+												><strong>{row.count}</strong> {labels[row.status] ?? row.status}</span
+											>{/each}
+										{#if !item.value.rows.length}<span class="text-base-content/55"
+												>Belum ada presensi tercatat</span
+											>{/if}
+									</div>
+								</div>
+							{/if}{/each}
+					</div>
+					{#if summary.students}<div
+							class="flex flex-wrap items-center gap-2 border-t border-base-200 px-5 py-3"
+						>
+							<span class="mr-1 text-xs font-medium text-base-content/60">Tidak hadir</span>
+							{#each summary.absences as group (group.status)}<button
+									type="button"
+									class={`dashboard-status-chip dashboard-attendance-status--${group.status}`}
+									aria-label={`${labels[group.status]} ${group.total} anak`}
+									onclick={() => openAbsence(group.status)}
+								>
+									<Icon
+										name={group.status === 'alfa'
+											? 'warning'
+											: group.status === 'sakit'
+												? 'info'
+												: 'pen'}
+										class="size-3.5"
+									/>
+									{labels[group.status]}<strong>{group.total}</strong>
+								</button>{/each}
+						</div>{/if}
+				{:else}<ActivitySummary activities={summary.activitySummaries} />{/if}
+			</div>
+		</section>
+		{#if children}{@render children(summary)}{:else if summary.leadership}<ClassAttendanceSummary
+				scope={summary.leadership}
+			/>{/if}
+	</div>
+	{#if sidebar}<aside class="dashboard-side-panel" aria-label="Jadwal dan informasi sekolah">
+			{@render sidebar(summary)}
+		</aside>{/if}
 </div>
 
 <dialog bind:this={dialog} class="modal" aria-labelledby="dashboard-absence-dialog-title">

@@ -1,5 +1,6 @@
 import { parseAccessPosition, type AccessPosition } from '../../lib/access-position.ts';
 import { roleMenuPermissions } from '../../lib/role-menu-access.ts';
+import { studentProfilePermissions } from '../../lib/murid-profile.ts';
 
 export const groupedUserPermissions = {
 	menu: {
@@ -118,6 +119,14 @@ export const groupedUserPermissions = {
 	murid: {
 		values: [['arsip', 'Kelola Arsip Murid, Alumni, dan Kenaikan Kelas']],
 		description: 'Arsip Murid dan Alumni'
+	},
+	murid_profil: {
+		values: [
+			['lihat', 'Lihat informasi keluarga dan dokumentasi murid'],
+			['manage', 'Kelola profil tambahan dan dokumentasi murid'],
+			['cetak', 'Cetak Informasi Siswa berisi data pribadi']
+		],
+		description: 'Profil Tambahan Murid - Izin Khusus, Tetap Sesuai Cakupan Penugasan'
 	},
 	audit: {
 		values: [['lihat', 'Lihat Riwayat Aktivitas Sistem']],
@@ -246,6 +255,7 @@ export function permissionsForAccessPosition(position?: AccessPosition | null): 
 	return userPermissions.filter(
 		(permission) =>
 			!systemOnlyPermissions.has(permission) &&
+			!studentProfilePermissions.some((privatePermission) => privatePermission === permission) &&
 			(resolvedPosition !== 'operator' || !operatorExcludedPermissions.has(permission))
 	);
 }

@@ -29,7 +29,7 @@ import { canAccessArea } from '$lib/menu-access';
 import { canViewLeadershipDashboard, dashboardClassSummary } from '$lib/dashboard-leadership';
 import { inferSummaryLevel } from '$lib/attendance-summary';
 import {
-	monitoringTabs,
+	availableMonitoringTabs,
 	monitoringStatusLabels,
 	type MonitoringTab
 } from '$lib/attendance-monitoring';
@@ -38,7 +38,8 @@ export async function loadDashboardDaily(
 	locals: App.Locals,
 	academic: AcademicContext,
 	searchParams = new URLSearchParams(),
-	includeAgenda = false
+	includeAgenda = false,
+	activeClassId: number | null = null
 ) {
 	const { user, sekolah } = locals;
 	if (!user || !sekolah) throw error(401, 'Sesi sekolah tidak valid.');
@@ -114,9 +115,7 @@ export async function loadDashboardDaily(
 			? await loadMonitoringSnapshot(locals, sourceParams)
 			: null;
 	const tabs = canAttendance(user, 'lihat')
-		? monitoringTabs.filter(
-				(item) => item.key !== 'asrama' && (user.type !== 'tim_dapur' || item.key === 'makan')
-			)
+		? availableMonitoringTabs(user.type === 'tim_dapur')
 		: [];
 	const requestedTab = searchParams.get('absensi_tab') ?? tabs[0]?.key ?? 'sekolah';
 	if (tabs.length && !tabs.some((item) => item.key === requestedTab))
@@ -173,13 +172,17 @@ export async function loadDashboardDaily(
 				.map(([status, count]) => ({ status, count }))
 		: [];
 	const absences = [];
-	for (const status of ['sakit', 'izin', 'alfa', 'izin_pulang'] as const) {
-		const total = Number(statuses.find((row) => row.status === status)?.count ?? 0);
+	for (const status of ['sakit', 'izin', 'alfa', 'izin_pulang', 'belum'] as const) {
+		const groupRows = (snapshot?.rows ?? []).filter((row) =>
+			status === 'belum'
+				? ['belum', 'tanpa_sumber'].includes(row.cells[0].status)
+				: row.cells[0].status === status
+		);
+		const total = groupRows.length;
 		const pageCount = Math.max(1, Math.ceil(total / 20));
 		const requested = Number(searchParams.get(`${status}_page`) ?? 1);
 		const page = Math.min(pageCount, Math.max(1, Number.isSafeInteger(requested) ? requested : 1));
-		const students = (snapshot?.rows ?? [])
-			.filter((row) => row.cells[0].status === status)
+		const students = groupRows
 			.slice((page - 1) * 20, page * 20)
 			.map(({ id, nama, kelas }) => ({ id, nama, kelas }));
 		const pageLink = (number: number) => {
@@ -274,8 +277,11 @@ export async function loadDashboardDaily(
 	const day = ['minggu', 'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu'][
 		new Date(`${date}T12:00:00+07:00`).getUTCDay()
 	];
+	const lessonClass = availableClasses.find(
+		(row) => row.id === (classId ?? activeClassId ?? user.kelasId)
+	);
 	const lessons =
-		canAgenda && !holiday && ids.length && context?.templateIds.length
+		canAgenda && !holiday && lessonClass && context?.templateIds.length
 			? await db
 					.select({
 						id: schedule.id,
@@ -322,7 +328,7 @@ export async function loadDashboardDaily(
 							eq(schedule.sekolahId, schoolId),
 							eq(k.sekolahId, schoolId),
 							eq(slots.sekolahId, schoolId),
-							inArray(schedule.kelasId, ids),
+							eq(schedule.kelasId, lessonClass.id),
 							inArray(schedule.templateId, context.templateIds),
 							eq(schedule.hari, day),
 							sql`${schedule.tipe} <> 'kosong'`
@@ -406,6 +412,7 @@ export async function loadDashboardDaily(
 			? attendanceSummary(Number(employee?.total ?? 0), employeeStatuses)
 			: null,
 		events,
+		lessonClass: lessonClass ? { id: lessonClass.id, nama: lessonClass.nama } : null,
 		lessons,
 		announcements,
 		canAnnouncements,

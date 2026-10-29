@@ -5,6 +5,7 @@
 	import GlobalModal from '$lib/components/global-modal.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import Menu from '$lib/components/menu.svelte';
+	import MobileDock from '$lib/components/mobile-dock.svelte';
 	import Navbar from '$lib/components/navbar.svelte';
 	import Toast, { toast } from '$lib/components/toast.svelte';
 	import { onMount } from 'svelte';
@@ -253,6 +254,7 @@
 			</aside>
 		</div>
 	</main>
+	{#if data.user}<MobileDock />{/if}
 {/if}
 
 <Toast />
@@ -260,6 +262,10 @@
 <NavIndicator />
 
 <style>
+	@media screen and (max-width: 767px) {
+		:global(.app-workspace) { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px)); }
+		:global(.app-shell .fab) { bottom: calc(5rem + env(safe-area-inset-bottom, 0px)); }
+	}
 	:global(
 		.is-readonly :is(button, input, select, textarea, a, [role='button']):not(.pointer-events-auto)
 	) {

@@ -2,17 +2,18 @@ import type { RequestHandler } from '@sveltejs/kit';
 import db from '$lib/server/db';
 import { calculateSumatifRts } from '$lib/sumatif-rts';
 import { canAccessExportClass } from '$lib/server/class-export-access';
-import { isRestrictedTeacher } from '$lib/access-position';
+import { getAksesMapelUser, needsMapelFilter } from '$lib/server/mapel-access';
+import { canAccessMenu } from '$lib/role-menu-access';
+import { parseImportedScore } from '$lib/score-import';
 import {
 	tableAsesmenSumatif,
 	tableAsesmenSumatifTujuan,
 	tableTujuanPembelajaran,
 	tableMataPelajaran,
 	tableMurid,
-	tableSekolah,
-	tableAuthUserMataPelajaran
+	tableSekolah
 } from '$lib/server/db/schema';
-import { eq, and, asc, inArray } from 'drizzle-orm';
+import { eq, and, asc } from 'drizzle-orm';
 
 const AGAMA_BASE_SUBJECT = 'Pendidikan Agama dan Budi Pekerti';
 const PKS_BASE_SUBJECT = 'Pendalaman Kitab Suci';
@@ -61,13 +62,7 @@ function resolvePksVariantName(agama: string | null | undefined) {
 }
 
 function parseNumericCell(value: unknown): number | null {
-	if (value == null) return null;
-	const text = typeof value === 'string' ? value.trim() : String(value).trim();
-	if (text === '') return null;
-	const normalized = text.replace(',', '.');
-	const num = Number(normalized);
-	if (!Number.isFinite(num)) return null;
-	return Math.round(num * 100) / 100;
+	return parseImportedScore(value);
 }
 
 function sanitizeBobot(value: number | null | undefined) {
@@ -133,6 +128,9 @@ function deriveLingkupBobot(
 }
 
 export const POST: RequestHandler = async ({ request, locals }) => {
+	if (!locals.user || !canAccessMenu(locals.user, '/api/asesmen-sumatif')) {
+		return new Response(JSON.stringify({ error: 'Tidak memiliki izin mengimpor nilai.' }), { status: 403 });
+	}
 	const contentType = request.headers.get('content-type') || '';
 	if (!contentType.toLowerCase().includes('multipart/form-data')) {
 		return new Response(JSON.stringify({ error: 'Content-Type harus multipart/form-data' }), {
@@ -144,8 +142,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const file = formData.get('file') as File | null;
 	const kelasId = Number(formData.get('kelas_id') ?? NaN);
 	const mapelIdRaw = String(formData.get('mapel_id') ?? '');
+	if (!(Number.isSafeInteger(Number(mapelIdRaw)) && Number(mapelIdRaw) > 0) && !['agama', 'pks'].includes(mapelIdRaw)) {
+		return new Response(JSON.stringify({ error: 'Pilih mata pelajaran yang akan diimpor.' }), { status: 400 });
+	}
 
-	if (!file) {
+	if (!(file instanceof File)) {
 		return new Response(JSON.stringify({ error: 'File tidak ditemukan pada request.' }), {
 			status: 400
 		});
@@ -178,7 +179,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	};
 	const ExcelJSImport = ExcelJS as unknown as { Workbook: { new (): WorkbookLike } };
 	const workbook = new ExcelJSImport.Workbook();
-	await workbook.xlsx.load(Buffer.from(arrayBuffer));
+	try {
+		await workbook.xlsx.load(Buffer.from(arrayBuffer));
+	} catch {
+		return new Response(JSON.stringify({ error: 'Berkas Excel tidak dapat dibaca.' }), { status: 400 });
+	}
 	const sheet = workbook.worksheets?.[0];
 	if (!sheet) {
 		return new Response(JSON.stringify({ error: 'Sheet Excel tidak ditemukan.' }), { status: 400 });
@@ -259,8 +264,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		if (!name) continue;
 		const vals: (number | null)[] = [];
 		for (let c = 2; c <= lastCol; c++) {
-			const v = parseNumericCell((row.getCell(c) as { value: unknown }).value);
-			vals.push(v);
+			try {
+				vals.push(parseNumericCell((row.getCell(c) as { value: unknown }).value));
+			} catch {
+				return new Response(JSON.stringify({ error: `Nilai pada baris ${r}, kolom ${c} harus berupa angka 0-100 atau kosong. Belum ada nilai yang diimpor.` }), { status: 400 });
+			}
 		}
 		students.push({ rowIndex: r, name, values: vals });
 	}
@@ -289,28 +297,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		);
 	}
 	let allowedMapelIds: Set<number> | null = null;
-	if (isRestrictedTeacher(locals.user) && locals.user) {
-		const assignments = await db.query.tableAuthUserMataPelajaran.findMany({
-			columns: { mataPelajaranId: true },
-			where: eq(tableAuthUserMataPelajaran.authUserId, locals.user.id)
-		});
-		const assignedIds = [
-			...new Set([
-				...assignments.map((row) => row.mataPelajaranId),
-				...(locals.user.mataPelajaranId ? [locals.user.mataPelajaranId] : [])
-			])
-		];
-		const assignedSubjects = assignedIds.length
-			? await db.query.tableMataPelajaran.findMany({
-					columns: { nama: true },
-					where: inArray(tableMataPelajaran.id, assignedIds)
-				})
-			: [];
-		const names = new Set(assignedSubjects.map((subject) => normalizeText(subject.nama)));
+	if (needsMapelFilter(locals.user, kelasId) && locals.user) {
+		const access = await getAksesMapelUser(locals.user, kelasId);
 		allowedMapelIds = new Set(
 			kelasMapels
 				.filter(
-					(subject) => assignedIds.includes(subject.id) || names.has(normalizeText(subject.nama))
+					(subject) => access.ids.has(subject.id) || access.names.has(normalizeText(subject.nama))
 				)
 				.map((subject) => subject.id)
 		);
@@ -375,23 +367,22 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				const agamaVariantName = resolveAgamaVariantName(muridRecord.agama);
 				const pksVariantName = resolvePksVariantName(muridRecord.agama);
 
-				if (agamaVariantName) {
+				if (mapelIdRaw === 'agama' && agamaVariantName) {
 					const variantRecord = kelasMapels.find(
 						(rec) => normalizeText(rec.nama) === normalizeText(agamaVariantName)
 					);
 					if (variantRecord) targetMapelId = variantRecord.id;
 				}
-				if (!targetMapelId && agamaBase) targetMapelId = agamaBase.id;
+				if (mapelIdRaw === 'agama' && !targetMapelId && agamaBase) targetMapelId = agamaBase.id;
 
-				if (!targetMapelId && pksVariantName) {
+				if (mapelIdRaw === 'pks' && !targetMapelId && pksVariantName) {
 					const variantRecord = kelasMapels.find(
 						(rec) => normalizeText(rec.nama) === normalizeText(pksVariantName)
 					);
 					if (variantRecord) targetMapelId = variantRecord.id;
 				}
-				if (!targetMapelId && pksBase) targetMapelId = pksBase.id;
+				if (mapelIdRaw === 'pks' && !targetMapelId && pksBase) targetMapelId = pksBase.id;
 
-				if (!targetMapelId) targetMapelId = kelasMapels[0]?.id ?? null;
 			}
 
 			if (!targetMapelId) {

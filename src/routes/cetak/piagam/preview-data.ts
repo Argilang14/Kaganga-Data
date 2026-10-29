@@ -2,6 +2,7 @@ import { error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import db from '$lib/server/db';
 import { getStudentEducationIdentity } from '$lib/server/education-units';
+import { getPrincipalPrintSignatures } from '$lib/server/print-signatures';
 import { tableMurid } from '$lib/server/db/schema';
 import { computeNilaiAkhirRekap } from '$lib/server/nilai-akhir';
 import type { PiagamPrintData } from '$lib/server/pdf/templates/piagam';
@@ -82,6 +83,7 @@ export async function getPiagamPreviewPayload({ locals, url }: { locals: App.Loc
 				with: {
 					waliKelas: {
 						columns: {
+							id: true,
 							nama: true,
 							nip: true
 						}
@@ -131,12 +133,14 @@ export async function getPiagamPreviewPayload({ locals, url }: { locals: App.Loc
 		getLogoDinasSrc(sekolah.id)
 	]);
 
+	const education = await getStudentEducationIdentity(sekolah.id, murid.id);
+	const signatures = await getPrincipalPrintSignatures(sekolah.id, education.jenjang, murid.kelas?.waliKelas?.id, url.searchParams.get('school_marks') === '1');
 	const piagamData: PiagamPrintData = {
 		sekolah: {
 			id: sekolah.id,
-			nama: (await getStudentEducationIdentity(sekolah.id, murid.id)).nama,
+			nama: education.nama,
 			jenjang: sekolah.jenjangPendidikan,
-			npsn: (await getStudentEducationIdentity(sekolah.id, murid.id)).npsn,
+			npsn: education.npsn,
 			alamat: {
 				jalan: sekolah.alamat?.jalan ?? '',
 				desa: sekolah.alamat?.desa ?? '',
@@ -172,11 +176,13 @@ export async function getPiagamPreviewPayload({ locals, url }: { locals: App.Loc
 			tempat: fallbackTempat(sekolah),
 			tanggal: formatTanggal(murid.semester?.tanggalBagiRaport) || formatTanggal(new Date()),
 			kepalaSekolah: {
+				signatureUrl: signatures.principal,
 				nama: sekolah.kepalaSekolah?.nama ?? '',
 				nip: sekolah.kepalaSekolah?.nip ?? '',
 				statusKepalaSekolah: sekolah.statusKepalaSekolah ?? 'definitif'
 			},
 			waliKelas: {
+				signatureUrl: signatures.teacher,
 				nama: murid.kelas?.waliKelas?.nama ?? '',
 				nip: murid.kelas?.waliKelas?.nip ?? ''
 			}

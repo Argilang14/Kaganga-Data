@@ -2,7 +2,7 @@ import { exec, execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import db from '$lib/server/db';
-import { isDatabaseMaintenanceActive } from '$lib/server/database-maintenance';
+import { isDatabaseMaintenanceActive, withDatabaseBackground } from '$lib/server/database-maintenance';
 import {
 	tableBellSettings,
 	tableJadwalPelajaran,
@@ -436,8 +436,9 @@ export async function startBellScheduler() {
 		console.error('[bell] Failed to ensure schema:', e);
 	}
 	console.log('[bell] Scheduler started');
-	intervalId = setInterval(tick, 15_000);
-	tick();
+	const run = () => { withDatabaseBackground(tick).catch((cause) => console.error('[bell]', cause)); };
+	intervalId = setInterval(run, 15_000);
+	run();
 }
 
 export function stopBellScheduler() {

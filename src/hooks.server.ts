@@ -14,7 +14,7 @@ import {
 	normalizeOrigin as normalizeFileOrigin
 } from '$lib/server/csrf-origins';
 import { startBellScheduler } from '$lib/server/bell-scheduler';
-import { isDatabaseMaintenanceActive } from '$lib/server/database-maintenance';
+import { isDatabaseMaintenanceActive, withDatabaseRequest, withDatabaseBackground } from '$lib/server/database-maintenance';
 import { canLegacyWaliKelasAccess, isLegacyWaliKelas } from '$lib/server/legacy-wali-kelas';
 import { canAccessArea, getProtectedArea, getAreaAction } from '$lib/menu-access';
 import { canAccessExportClass } from '$lib/server/class-export-access';
@@ -26,7 +26,7 @@ import { attendanceGuard } from '$lib/server/attendance-guard';
 import { canAccessMenu } from '$lib/role-menu-access';
 
 setTimeout(() => {
-	startBellScheduler().catch((e) => {
+	withDatabaseBackground(() => startBellScheduler()).catch((e) => {
 		console.error('[hooks] bell scheduler failed to start:', e);
 	});
 }, 1000);
@@ -433,7 +433,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Note: this does not change how SvelteKit parses the raw request body
 	// (that happens earlier), but makes the configured limit available.
 	event.locals.bodySizeLimit = bodySizeLimit;
-	return _composed({ event, resolve });
+	if (isDatabaseMaintenanceActive()) return json({ message: 'Database sementara tidak tersedia. Pemulihan sedang berjalan atau memerlukan pemeriksaan admin.' }, { status: 503, headers: { 'retry-after': '30' } });
+	return withDatabaseRequest(async () => _composed({ event, resolve }));
 };
 
 const sqliteErrors = {

@@ -34,7 +34,7 @@
 			<Icon name="select" class="size-4 text-info" />
 			<h2 class="text-sm font-semibold">Cakupan Pengawasan</h2>
 		</div>
-		{#each [...page.url.searchParams.entries()].filter(([key]) => !['jenjang', 'kelas_id', 'kelas_page', 'sakit_page', 'izin_page', 'alfa_page', 'izin_pulang_page'].includes(key)) as [key, value], index (index)}
+		{#each [...page.url.searchParams.entries()].filter(([key]) => !['jenjang', 'kelas_id', 'kelas_page', 'sakit_page', 'izin_page', 'alfa_page', 'izin_pulang_page', 'belum_page'].includes(key)) as [key, value], index (index)}
 			<input type="hidden" name={key} {value} />
 		{/each}
 		<label class="min-w-0 sm:w-44">

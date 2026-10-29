@@ -101,15 +101,6 @@
 	function dateLabel(value: string) {
 		return dateFormatter.format(new Date(`${value}T12:00:00Z`));
 	}
-	function initials(value: string) {
-		return value
-			.trim()
-			.split(/\s+/)
-			.slice(0, 2)
-			.map((word) => word[0])
-			.join('')
-			.toUpperCase();
-	}
 	function tone(status: string) {
 		return status === 'selesai'
 			? 'badge-success'
@@ -188,20 +179,22 @@
 	}}
 />
 
-<div class="app-page-padding care-workspace">
+<div class="care-workspace">
 	<div class="app-page-container care-page">
 		<header class="care-header">
 			<div class="care-heading">
-				<div class="care-heading-icon" aria-hidden="true">
-					<Icon name={section.icon} class="size-5" />
-				</div>
 				<div class="min-w-0">
-					<p class="care-eyebrow">Pengasuhan & Asrama</p>
 					<h1>{section.title}</h1>
+					<div class="care-context">
+						<span>Pengasuhan & Asrama</span>
+						<span>{data.students.length} murid tercakup</span>
+						<span>{data.isAdmin ? 'Lingkup sekolah' : 'Sesuai penugasan'}</span>
+						<time datetime={data.today}>{dateLabel(data.today)}</time>
+					</div>
 				</div>
 			</div>
 			<button
-				class="btn btn-primary btn-sm care-create"
+				class="btn btn-primary btn-soft care-create"
 				disabled={data.section !== 'piket' && !data.students.length}
 				aria-disabled={data.section !== 'piket' && !data.students.length}
 				onclick={() => open(data.section === 'piket' ? 'report' : 'create')}
@@ -210,16 +203,6 @@
 					: 'Catat Pengasuhan'}</button
 			>
 		</header>
-		<div class="care-context">
-			<span
-				><Icon name="users" class="size-4" />{data.students.length} murid tercakup
-				<span class="care-context-separator" aria-hidden="true">/</span>
-				{data.isAdmin ? 'Lingkup sekolah' : 'Sesuai penugasan'}</span
-			>
-			<time datetime={data.today}
-				><Icon name="calendar" class="size-4" />{dateLabel(data.today)}</time
-			>
-		</div>
 		<nav bind:this={navigation} aria-label="Pengasuhan" class="care-nav">
 			{#each Object.entries(careSections) as [key, item] (key)}
 				<a
@@ -362,9 +345,7 @@
 										>
 										<td
 											><div class="care-person">
-												<span class="care-initials" aria-hidden="true"
-													>{initials(row.petugasNama)}</span
-												><span class="care-cell-title break-words">{row.petugasNama}</span>
+												<span class="care-cell-title break-words">{row.petugasNama}</span>
 											</div></td
 										>
 										<td><p class="care-note-preview" title={row.ringkasan}>{row.ringkasan}</p></td>
@@ -392,9 +373,6 @@
 								{#each data.rows as row (row.id)}<tr>
 										<th scope="row"
 											><div class="care-person">
-												<span class="care-initials" aria-hidden="true"
-													>{initials(row.namaSnapshot)}</span
-												>
 												<div class="min-w-0">
 													<span class="care-cell-title break-words">{row.namaSnapshot}</span><span
 														class="care-cell-meta">{row.kelasSnapshot}</span
@@ -504,7 +482,7 @@
 	<div class="modal-box care-modal-box">
 		<header class="care-modal-header">
 			<div class="flex min-w-0 items-center gap-3">
-				<span class="care-modal-icon"><Icon name={modalIcon} class="size-5" /></span>
+				<Icon name={modalIcon} class="size-5 shrink-0 text-base-content/55" />
 				<div class="min-w-0">
 					<h2 id="care-modal-title">{modalTitle}</h2>
 					{#if mode === 'report' && report}<p class="care-cell-meta">
@@ -670,9 +648,6 @@
 							/>
 							<div class="care-record-heading">
 								<div class="care-person">
-									<span class="care-initials" aria-hidden="true"
-										>{initials(detail.record.namaSnapshot)}</span
-									>
 									<div class="min-w-0">
 										<h3>{detail.record.namaSnapshot}</h3>
 										<p class="care-cell-meta">{detail.record.kelasSnapshot}</p>
@@ -836,7 +811,10 @@
 		container: care-workspace / inline-size;
 		display: flex;
 		flex-direction: column;
-		gap: 1.25rem;
+		gap: 1rem;
+		padding: 1rem;
+		border-radius: var(--app-radius);
+		background: var(--color-base-100);
 	}
 	.care-header {
 		display: flex;
@@ -850,25 +828,9 @@
 		align-items: center;
 		gap: 0.875rem;
 	}
-	.care-heading-icon,
-	.care-modal-icon {
-		display: grid;
-		place-items: center;
-		flex-shrink: 0;
-		width: 2.75rem;
-		height: 2.75rem;
-		border-radius: var(--app-radius);
-		background: color-mix(in oklab, var(--color-info) 10%, var(--color-base-100));
-		color: var(--color-info);
-	}
-	.care-eyebrow {
-		margin: 0 0 0.25rem;
-		font-size: 0.75rem;
-		color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
-	}
 	.care-header h1 {
-		font-size: 1.5rem;
-		line-height: 1.3;
+		font-size: 1.25rem;
+		line-height: 1.4;
 		font-weight: 700;
 		overflow-wrap: anywhere;
 	}
@@ -880,21 +842,14 @@
 	.care-context {
 		display: flex;
 		flex-wrap: wrap;
-		justify-content: space-between;
-		gap: 0.5rem 1rem;
-		margin-top: -0.5rem;
-		font-size: 0.8125rem;
+		gap: 0.25rem 0.75rem;
+		margin-top: 0.375rem;
+		font-size: 0.75rem;
 		color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
 	}
-	.care-context > span,
-	.care-context > time {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.5rem;
-	}
-	.care-context-separator {
-		opacity: 0.4;
+	.care-context > :not(:first-child) {
+		padding-left: 0.75rem;
+		border-left: 1px solid var(--color-base-300);
 	}
 	.care-nav {
 		display: flex;
@@ -937,20 +892,20 @@
 		width: 100%;
 		display: grid;
 		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 1rem;
+		gap: 0;
+		border-block: 1px solid var(--color-base-200);
 	}
 	.care-metric {
 		--metric-color: var(--color-info);
 		display: grid;
 		grid-template-columns: auto minmax(0, 1fr) auto;
 		align-items: center;
-		gap: 0.875rem;
+		gap: 0.625rem;
 		min-width: 0;
-		min-height: 6rem;
-		padding: 1rem;
-		border: 1px solid color-mix(in oklab, var(--metric-color) 25%, var(--color-base-300));
-		border-radius: var(--app-radius);
-		background: color-mix(in oklab, var(--metric-color) 4%, var(--color-base-100));
+		min-height: 4.75rem;
+		padding: 0.75rem;
+		border-left: 2px solid color-mix(in oklab, var(--metric-color) 65%, var(--color-base-300));
+		background: color-mix(in oklab, var(--metric-color) 3%, var(--color-base-100));
 		transition:
 			border-color 120ms,
 			background-color 120ms;
@@ -975,25 +930,23 @@
 	.care-metric-icon {
 		display: grid;
 		place-items: center;
-		width: 2.25rem;
-		height: 2.25rem;
-		border-radius: var(--app-radius);
-		background: color-mix(in oklab, var(--metric-color) 12%, var(--color-base-100));
+		width: 1.5rem;
+		height: 1.5rem;
 		color: color-mix(in oklab, var(--metric-color) 70%, var(--color-base-content));
 	}
 	.care-metric-value {
-		font-size: 1.5rem;
+		font-size: 1.25rem;
 		font-weight: 700;
 		line-height: 1.1;
 		font-variant-numeric: tabular-nums;
 	}
 	.care-metric h2 {
-		font-size: 0.875rem;
+		font-size: 0.8125rem;
 		line-height: 1.5;
 		font-weight: 600;
 	}
 	.care-metric-note {
-		margin-top: 0.25rem;
+		margin-top: 0.125rem;
 		font-size: 0.75rem;
 		line-height: 1.5;
 		color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
@@ -1001,32 +954,26 @@
 	.care-register {
 		min-width: 0;
 		overflow: hidden;
-		border: 1px solid var(--color-base-300);
-		border-radius: var(--app-radius);
-		background: var(--color-base-100);
 	}
 	.care-register-heading {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.75rem;
-		padding: 1rem;
-		border-bottom: 1px solid var(--color-base-200);
-		border-top: 2px solid color-mix(in oklab, var(--color-info) 55%, var(--color-base-300));
+		padding-block: 0.25rem 0.75rem;
 	}
 	.care-register-heading h2 {
-		font-size: 0.9375rem;
+		font-size: 0.875rem;
 		line-height: 1.5;
 		font-weight: 600;
 		overflow-wrap: anywhere;
 	}
 	.care-filters {
-		max-width: var(--app-content-width);
 		display: grid;
-		grid-template-columns: minmax(12rem, 1fr) minmax(10rem, 0.65fr) minmax(10rem, 0.65fr) auto;
+		grid-template-columns: minmax(12rem, 1.5fr) minmax(10rem, 1fr) minmax(10rem, 1fr) auto;
 		align-items: end;
-		gap: 0.875rem;
-		padding: 1rem;
+		gap: 0.75rem;
+		padding-block: 0.25rem 1rem;
 	}
 	.care-filters label,
 	.care-fields label {
@@ -1037,7 +984,7 @@
 	}
 	.care-filters label > span:first-child,
 	.care-fields label > span:first-child {
-		font-size: 0.8125rem;
+		font-size: 0.75rem;
 		line-height: 1.4;
 		font-weight: 500;
 	}
@@ -1046,10 +993,11 @@
 	.care-dialog .input,
 	.care-dialog .select {
 		min-width: 0;
-		height: 2.5rem;
-		min-height: 2.5rem;
-		font-size: 0.8125rem;
+		height: var(--care-control-height, 2.5rem);
+		min-height: var(--care-control-height, 2.5rem);
+		font-size: 0.875rem;
 		box-shadow: none;
+		background: var(--color-base-200);
 	}
 	.care-search-input {
 		display: flex;
@@ -1074,12 +1022,13 @@
 		container: care-table / inline-size;
 		overflow-x: auto;
 		overscroll-behavior-inline: contain;
-		border-top: 1px solid var(--color-base-200);
+		border: 1px solid var(--color-base-200);
+		border-radius: calc(var(--app-radius) - 2px);
 	}
 	.care-table {
 		min-width: 52rem;
 		table-layout: fixed;
-		font-size: 0.8125rem;
+		font-size: 0.875rem;
 	}
 	.care-col-person {
 		width: 25%;
@@ -1097,17 +1046,17 @@
 	.care-table td {
 		height: 4rem;
 		padding: 0.75rem var(--care-cell-pad);
-		vertical-align: middle;
+		vertical-align: top;
 		border-bottom-color: var(--color-base-200);
 		overflow-wrap: anywhere;
 	}
 	.care-table thead th {
-		height: 2.75rem;
-		padding-block: 0.625rem;
+		height: auto;
+		padding-block: 0.75rem;
 		background: var(--color-base-200);
 		color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
-		font-size: 0.75rem;
-		font-weight: 600;
+		font-size: 0.875rem;
+		font-weight: 700;
 		white-space: nowrap;
 	}
 	.care-table tbody tr:hover {
@@ -1128,22 +1077,9 @@
 	.care-person > :last-child {
 		min-width: 0;
 	}
-	.care-initials {
-		display: grid;
-		place-items: center;
-		width: 2.125rem;
-		height: 2.125rem;
-		flex-shrink: 0;
-		border: 1px solid color-mix(in oklab, var(--color-info) 15%, var(--color-base-300));
-		border-radius: var(--app-radius);
-		background: color-mix(in oklab, var(--color-info) 6%, var(--color-base-100));
-		font-size: 0.6875rem;
-		color: color-mix(in oklab, var(--color-info) 60%, var(--color-base-content));
-		font-weight: 600;
-	}
 	.care-cell-title {
 		display: block;
-		font-size: 0.8125rem;
+		font-size: 0.875rem;
 		font-weight: 500;
 		line-height: 1.5;
 	}
@@ -1179,7 +1115,7 @@
 		height: auto;
 		min-height: 1.5rem;
 		padding: 0.25rem 0.5rem;
-		font-size: 0.6875rem;
+		font-size: 0.75rem;
 		line-height: 1.25;
 		font-weight: 500;
 		white-space: nowrap;
@@ -1213,9 +1149,10 @@
 		flex-direction: column;
 		justify-content: center;
 		gap: 0.5rem;
-		min-height: 12rem;
-		padding: 2rem 1rem;
-		border-top: 1px solid var(--color-base-200);
+		min-height: 9rem;
+		padding: 1.75rem 1rem;
+		border: 1px solid var(--color-base-200);
+		border-radius: calc(var(--app-radius) - 2px);
 		text-align: center;
 	}
 	.care-empty-icon {
@@ -1245,8 +1182,7 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.75rem;
-		padding: 0.75rem 1rem;
-		border-top: 1px solid var(--color-base-200);
+		padding-block: 1rem 0;
 		font-size: 0.75rem;
 		color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
 	}
@@ -1288,10 +1224,6 @@
 		line-height: 1.4;
 		overflow-wrap: anywhere;
 	}
-	.care-modal-icon {
-		width: 2.25rem;
-		height: 2.25rem;
-	}
 	.care-form {
 		display: flex;
 		min-height: 0;
@@ -1320,6 +1252,7 @@
 		min-height: 2.5rem;
 		min-width: 4.5rem;
 		box-shadow: none;
+		font-size: 0.875rem;
 	}
 	.care-fields {
 		display: flex;
@@ -1510,7 +1443,11 @@
 			grid-template-columns: 1fr;
 		}
 		.care-metric {
-			min-height: 5rem;
+			min-height: 3.25rem;
+			padding-block: 0.625rem;
+		}
+		.care-metric-note {
+			display: none;
 		}
 		.care-search,
 		.care-filter-actions {
@@ -1519,15 +1456,16 @@
 	}
 	@media (max-width: 767px) {
 		.care-metrics {
-			gap: 0.75rem;
+			gap: 0;
 		}
 		.care-metric {
-			padding: 0.875rem;
+			padding: 0.625rem 0.75rem;
 		}
 	}
 	@media (max-width: 639px) {
 		.care-page {
 			gap: 1rem;
+			padding: 0.875rem;
 		}
 		.care-header {
 			align-items: flex-start;
@@ -1536,15 +1474,11 @@
 		.care-header h1 {
 			font-size: 1.25rem;
 		}
-		.care-heading-icon {
-			width: 2.5rem;
-			height: 2.5rem;
-		}
 		.care-create {
 			width: 100%;
 		}
 		.care-context {
-			margin-top: 0;
+			margin-top: 0.375rem;
 			font-size: 0.75rem;
 		}
 		.care-context > time {
@@ -1566,7 +1500,7 @@
 		}
 		.care-register-heading,
 		.care-filters {
-			padding: 0.875rem;
+			padding-inline: 0;
 		}
 		.care-register-heading h2 {
 			font-size: 0.875rem;
@@ -1584,7 +1518,7 @@
 		}
 		.care-pagination {
 			flex-wrap: wrap;
-			padding-inline: 0.875rem;
+			padding-inline: 0;
 		}
 		.care-page-label {
 			display: none;
@@ -1601,10 +1535,6 @@
 		}
 		.care-modal-header h2 {
 			font-size: 1rem;
-		}
-		.care-modal-icon {
-			width: 2rem;
-			height: 2rem;
 		}
 		.care-record-heading {
 			flex-wrap: wrap;

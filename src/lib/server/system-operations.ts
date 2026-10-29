@@ -1,4 +1,5 @@
 import db from '$lib/server/db';
+import { withDatabaseBackground } from '$lib/server/database-maintenance';
 import {
 	tableDocumentAttachment,
 	tableMaintenanceRun,
@@ -478,7 +479,7 @@ export function startMaintenanceScheduler() {
 	};
 	if (globalStore.__kagangaMaintenanceTimer) return;
 	const run = () =>
-		runScheduledMaintenance().catch((error) =>
+		withDatabaseBackground(() => runScheduledMaintenance()).catch((error) =>
 			console.warn('[maintenance] backup otomatis gagal', error)
 		);
 	setTimeout(run, 30_000);

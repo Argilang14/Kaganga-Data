@@ -423,7 +423,8 @@ export const load: PageServerLoad = async (event) => {
 		event.locals,
 		academicContext,
 		event.url.searchParams,
-		true
+		true,
+		parentData.kelasAktif?.id ?? null
 	);
 	const leadershipOverview = dailyDashboard.leadership
 		? await loadLeadershipOverview(

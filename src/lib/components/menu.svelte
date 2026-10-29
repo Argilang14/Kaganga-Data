@@ -5,9 +5,7 @@
 	import { searchQueryMarker } from '$lib/utils';
 	import Icon from './icon.svelte';
 	import { appMenuItems } from './menu';
-	import { isAuthorizedUser } from '../../routes/pengguna/permissions';
-	import { canAccessArea, getProtectedArea } from '$lib/menu-access';
-	import { canAccessMenu } from '$lib/role-menu-access';
+	import { visibleNavigation } from '$lib/navigation-menu';
 	import {
 		attendanceMenuPath,
 		attendanceReportMenuLink,
@@ -15,6 +13,7 @@
 	} from '$lib/attendance-report-navigation';
 
 	const expanded = new StorageState<boolean>('menu-expanded');
+	let { onSelect }: { onSelect?: () => void } = $props();
 
 	let search = $state('');
 	const activeSemesterTipe = $derived(
@@ -25,19 +24,7 @@
 	);
 
 	function filterMenuByPermission(items: MenuItem[]): MenuItem[] {
-		return items
-			.map((item) => {
-				if (item.condition && item.condition !== activeSemesterTipe) return null;
-				if (item.path && !canAccessMenu(user, item.path)) return null;
-				const area = item.path ? getProtectedArea(item.path) : null;
-				if (area && !canAccessArea(user, area)) return null;
-				if (item.permission && !isAuthorizedUser([item.permission], user ?? undefined)) return null;
-				if (!item.subMenu) return item;
-				const subMenu = filterMenuByPermission(item.subMenu);
-				if (!subMenu.length && !item.path) return null;
-				return subMenu.length === item.subMenu.length ? item : { ...item, subMenu };
-			})
-			.filter((item): item is MenuItem => item !== null);
+		return visibleNavigation(items, user, activeSemesterTipe);
 	}
 
 	function filterByCondition(item: MenuItem, semesterTipe: string | null): boolean {
@@ -114,6 +101,7 @@
 	}
 
 	function closeMobileDrawer() {
+		onSelect?.();
 		if (!window.matchMedia('(max-width: 1023px)').matches) return;
 		const drawer = document.getElementById('my-drawer-2') as HTMLInputElement | null;
 		if (drawer) drawer.checked = false;

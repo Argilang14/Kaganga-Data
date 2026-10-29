@@ -2,9 +2,13 @@
 	import { onMount } from 'svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import { favoritesStore } from '$lib/stores/favorites.svelte';
+	import { page } from '$app/state';
+	import { appMenuItems } from '$lib/components/menu';
+	import { allowedNavigationFavorites } from '$lib/navigation-menu';
 
 	let open = $state(true);
 	let editing = $state(false);
+	const visibleFavorites = $derived(allowedNavigationFavorites(favoritesStore.items, appMenuItems, page.data.user, page.data.activeSemesterTipe ?? null));
 
 	onMount(async () => {
 		if (favoritesStore.items.length === 0) {
@@ -45,7 +49,7 @@
 				<h2 class="text-sm font-bold">Menu Favorit</h2>
 				<div class="flex-1"></div>
 				<div class="join">
-					{#if favoritesStore.items.length > 0}
+					{#if visibleFavorites.length > 0}
 						<button
 							type="button"
 							class="btn btn-sm join-item shadow-none"
@@ -68,14 +72,14 @@
 		</div>
 		{#if open}
 			<div class="p-0">
-				{#if favoritesStore.items.length === 0}
+				{#if visibleFavorites.length === 0}
 					<div class="text-base-content/60 px-4 pb-4 text-sm">
 						Belum ada menu favorit. Klik bintang di navbar untuk menambahkan.
 					</div>
 				{:else}
 					<div class="max-h-48 overflow-y-auto">
 						<ul class="divide-base-200 divide-y">
-							{#each favoritesStore.items as fav (fav.id)}
+							{#each visibleFavorites as fav (fav.id)}
 								<li class="flex items-center gap-2 px-4 py-2">
 									<Icon name="star" class="text-success shrink-0" />
 									<a href={fav.path} class="hover:text-primary flex-1 text-sm">{fav.title}</a>

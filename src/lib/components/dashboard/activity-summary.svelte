@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import Icon from '$lib/components/icon.svelte';
+	import { monitoringStatusLabels, type MonitoringStatus } from '$lib/attendance-monitoring';
 	import type { loadDashboardDaily } from '$lib/server/dashboard-daily';
 	type Activity = Awaited<ReturnType<typeof loadDashboardDaily>>['activitySummaries'][number];
 	let { activities }: { activities: Activity[] } = $props();
 	let dialog: HTMLDialogElement;
-	let selected = $state<{ key: string; status: string } | null>(null);
+	const statusButtons = ['sakit', 'izin', 'alfa', 'izin_pulang', 'belum'] as const;
+	let selected = $state<{ key: string; status: MonitoringStatus | 'present' } | null>(null);
 	const selection = $derived.by(() => {
 		const activity = activities.find((item) => item.key === selected?.key);
 		if (!activity || !selected) return null;
@@ -13,7 +15,9 @@
 		const groups = activity.groups.filter((group) =>
 			status === 'present'
 				? ['hadir', 'terlambat', 'pulang'].includes(group.status)
-				: group.status === status
+				: status === 'belum'
+					? ['belum', 'tanpa_sumber'].includes(group.status)
+					: group.status === status
 		);
 		return {
 			activity,
@@ -22,16 +26,19 @@
 					? activity.key === 'pulang'
 						? 'Pulang'
 						: 'Hadir'
-					: (groups[0]?.label ?? '-'),
+					: monitoringStatusLabels[selected.status],
 			total: groups.reduce((sum, group) => sum + group.total, 0),
 			students: groups.flatMap((group) => group.students).slice(0, 20)
 		};
 	});
-	function open(activity: Activity, status: string) {
+	function open(activity: Activity, status: MonitoringStatus | 'present') {
 		selected = { key: activity.key, status };
 		dialog.showModal();
 	}
 	function icon(key: string) {
+		if (key === 'asrama_berangkat') return 'right';
+		if (key === 'asrama_tiba') return 'users';
+		if (key === 'apel_malam') return 'moon';
 		if (['pagi', 'siang', 'makan_malam'].includes(key)) return 'coffee';
 		return ['subuh', 'magrib', 'isya'].includes(key) ? 'moon' : 'sun';
 	}
@@ -93,14 +100,16 @@
 				></progress>
 			</div>
 			<div class="dashboard-activity-statuses flex flex-wrap gap-1.5">
-				{#each activity.groups.filter((group) => !['hadir', 'terlambat', 'pulang', 'tanpa_sumber'].includes(group.status)) as group (group.status)}
+				{#each statusButtons as status (status)}
+					{@const total =
+						activity.counts[status] + (status === 'belum' ? activity.counts.tanpa_sumber : 0)}
 					<button
 						type="button"
-						class={`dashboard-status-chip dashboard-attendance-status--${group.status}`}
-						aria-label={`${activity.label}: ${group.label} ${group.total} murid`}
-						onclick={() => open(activity, group.status)}
+						class={`dashboard-status-chip dashboard-attendance-status--${status}`}
+						aria-label={`${activity.label}: ${monitoringStatusLabels[status]} ${total} murid`}
+						onclick={() => open(activity, status)}
 					>
-						{group.label}<strong class="tabular-nums">{group.total}</strong>
+						{monitoringStatusLabels[status]}<strong class="tabular-nums">{total}</strong>
 					</button>
 				{/each}
 				{#if activity.counts.terlambat > 0}<button

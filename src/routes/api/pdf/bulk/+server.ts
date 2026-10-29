@@ -23,6 +23,7 @@ type BulkRequest = {
 	docLabel?: string;
 	kelasLabel?: string;
 	bgLogo?: boolean;
+	includeSchoolMarks?: boolean;
 	raporPeriode?: string;
 	parentSignature?: string;
 	kartuLayout?: 'duplex' | 'photo-qr' | 'qr-only';
@@ -50,6 +51,7 @@ async function fetchStudentData(
 		url.searchParams.set('krit_baik', String(body.criteria.kritBaik));
 	}
 	if (body.bgLogo) url.searchParams.set('bg_logo', '1');
+	if (['rapor', 'piagam'].includes(body.docType) && body.includeSchoolMarks === true) url.searchParams.set('school_marks', '1');
 	if (body.raporPeriode) url.searchParams.set('rapor_periode', body.raporPeriode);
 	if (
 		body.parentSignature === 'ayah' ||

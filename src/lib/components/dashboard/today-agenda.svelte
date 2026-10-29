@@ -17,8 +17,13 @@
 		<header
 			class="dashboard-panel-heading flex flex-wrap items-center justify-between gap-2 border-b border-base-200"
 		>
-			<h2 class="flex items-center gap-2 font-bold">
-				<Icon name="calendar" class="size-4 text-info" />Jadwal Hari Ini
+			<h2 class="flex min-w-0 items-center gap-2 font-bold">
+				<Icon name="calendar" class="size-4 shrink-0 text-info" /><span class="break-words"
+					>Jadwal Hari Ini
+					{#if summary.lessonClass}<span class="ml-1 text-xs font-medium text-base-content/60"
+							>Kelas {summary.lessonClass.nama}</span
+						>{/if}</span
+				>
 			</h2>
 			{#if canAccessMenu(page.data.user, '/rapor/jadwal-pelajaran')}<a
 					href={resolve('/rapor/jadwal-pelajaran')}
@@ -28,6 +33,9 @@
 		<div class="px-4 py-2">
 			{#if summary.holiday}<p class="py-4 text-sm text-base-content/60">
 					Hari libur atau non-efektif.
+				</p>
+			{:else if !summary.lessonClass}<p class="py-4 text-sm text-base-content/60">
+					Pilih kelas aktif yang sesuai penugasan Anda untuk melihat jadwal.
 				</p>
 			{:else if lessons.length}<ol class="divide-y divide-base-200">
 					{#each lessons as lesson (lesson.id)}<li class="dashboard-agenda-row">
@@ -44,7 +52,7 @@
 						</li>{/each}
 				</ol>
 			{:else}<p class="py-4 text-sm text-base-content/60">
-					Belum ada jadwal hari ini untuk kelas dalam cakupan Anda.
+					Belum ada jadwal hari ini untuk kelas ini.
 				</p>{/if}
 			{#if summary.lessons.length > 5}<button
 					class="btn btn-ghost btn-sm my-1 w-full"

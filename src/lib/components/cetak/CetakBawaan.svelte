@@ -39,6 +39,7 @@
 	let selectedTemplate = $state<'1' | '2'>('1');
 	let searchTerm = $state('');
 	let showBgLogo = $state(true);
+	let includeReportSignatures = $state(false);
 	let downloadLoading = $state(false);
 
 	// show TP listing: 'compact' | 'full-desc'
@@ -181,6 +182,7 @@
 					template: documentType === 'piagam' ? selectedTemplate : undefined,
 					docLabel,
 					bgLogo: showBgLogo,
+					includeSchoolMarks: ['rapor', 'piagam'].includes(documentType) && includeReportSignatures,
 					pdfVariant,
 					raporPeriode:
 						documentType === 'rapor' && selectedRaporPeriode ? selectedRaporPeriode : undefined
@@ -297,6 +299,7 @@
 					docLabel: selectedDocumentEntry?.label ?? documentType,
 					kelasLabel: kelasAktifLabel ? kelasAktifLabel.replace(/\s+/g, '') : 'Semua-Kelas',
 					bgLogo: showBgLogo,
+					includeSchoolMarks: ['rapor', 'piagam'].includes(documentType) && includeReportSignatures,
 					pdfVariant,
 					raporPeriode:
 						documentType === 'rapor' && selectedRaporPeriode ? selectedRaporPeriode : undefined
@@ -342,6 +345,12 @@
 		{academicContext}
 	/>
 
+	{#if selectedDocument === 'rapor' || selectedDocument === 'piagam'}
+		<label class="mb-3 flex min-h-11 items-center gap-3 text-sm">
+			<input type="checkbox" class="toggle toggle-success" bind:checked={includeReportSignatures} onchange={closePdfModal} />
+			Tanda tangan digital kepsek
+		</label>
+	{/if}
 	<DocumentMuridSelector
 		bind:selectedDocument
 		bind:selectedTemplate

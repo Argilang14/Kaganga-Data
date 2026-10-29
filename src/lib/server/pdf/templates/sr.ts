@@ -1,6 +1,7 @@
 import { formatUpper, formatValue, getTutwuriBwDataUri } from './shared';
 import type { CoverPrintData } from './cover';
 import type { RaporPrintData } from './rapor';
+import { printSignatureImage } from '$lib/print-signature-image';
 
 type BiodataSRData = {
 	sekolah: {
@@ -1476,14 +1477,14 @@ ${renderSRNonAcademicBlock(data)}
 		<div class="sr-sign-box sr-sign-teacher">
 			<div class="sr-sign-role">Wali Kelas</div>
 			<div class="sr-sign-identity">
-				<div class="sr-sign-name">${renderSignatureName(data.waliKelas.nama, true)}</div>
+				<div class="sr-sign-name">${printSignatureImage(data.waliKelas.signatureUrl)}${renderSignatureName(data.waliKelas.nama, true)}</div>
 				${data.waliKelas.nip ? `<div class="sr-nip">NIP . ${formatValue(data.waliKelas.nip)}</div>` : ''}
 			</div>
 		</div>
 		<div class="sr-sign-box sr-sign-principal">
 			<div class="sr-sign-role">${kepalaStatus}</div>
 			<div class="sr-sign-identity">
-				<div class="sr-sign-name">${renderSignatureName(data.kepalaSekolah.nama, true)}</div>
+				<div class="sr-sign-name">${printSignatureImage(data.kepalaSekolah.signatureUrl)}${renderSignatureName(data.kepalaSekolah.nama, true)}</div>
 				${data.kepalaSekolah.nip ? `<div class="sr-nip">NIP . ${formatValue(data.kepalaSekolah.nip)}</div>` : ''}
 			</div>
 		</div>

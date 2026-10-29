@@ -1,4 +1,5 @@
 import { sharedStyles, formatValue, formatUpper, getTutwuriBwDataUri } from './shared';
+import { printSignatureImage } from '$lib/print-signature-image';
 import { parseTingkat, lastGradeOfFase, isGraduatingFase, isGraduatingGrade } from '$lib/tingkat';
 
 export interface RaporPrintData {
@@ -24,6 +25,7 @@ export interface RaporPrintData {
 		semester: string;
 	};
 	waliKelas: {
+		signatureUrl?: string | null;
 		nama: string;
 		nip?: string | null;
 	};
@@ -31,6 +33,7 @@ export interface RaporPrintData {
 		nama?: string | null;
 	};
 	kepalaSekolah: {
+		signatureUrl?: string | null;
 		nama: string;
 		nip?: string | null;
 		statusKepalaSekolah?: string | null;
@@ -534,7 +537,7 @@ ${
 			</tr>
 			<tr>
 				<td class="text-center">____________________</td>
-				<td class="text-center font-bold underline">${data.waliKelas.nama}</td>
+				<td class="text-center font-bold underline">${printSignatureImage(data.waliKelas.signatureUrl)}${data.waliKelas.nama}</td>
 			</tr>
 			${
 				data.waliKelas.nip
@@ -554,7 +557,7 @@ ${
 				<td colspan="2" class="spacer-5"></td>
 			</tr>
 			<tr>
-				<td colspan="2" class="text-center font-bold underline">${data.kepalaSekolah.nama}</td>
+				<td colspan="2" class="text-center font-bold underline">${printSignatureImage(data.kepalaSekolah.signatureUrl)}${data.kepalaSekolah.nama}</td>
 			</tr>
 			${
 				data.kepalaSekolah.nip

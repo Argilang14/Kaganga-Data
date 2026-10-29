@@ -196,6 +196,7 @@
 	let showUjianLmsAccount = $state(false);
 	let showUjianDeskPrincipalSignature = $state(true);
 	let includeSchoolMarks = $state(false);
+	let includeReportSignatures = $state(false);
 	let selectedJadwalJenjang = $state<'semua' | 'srd' | 'srmp' | 'srma'>('semua');
 	let selectedKalenderPeriode = $state<
 		'tahun_kalender' | 'tahun_ajaran' | 'semester_ganjil' | 'semester_genap'
@@ -792,7 +793,7 @@
 							? selectedJadwalOrientation
 							: undefined,
 					layoutMode: documentType === 'jadwal-pelajaran' ? selectedJadwalLayout : undefined,
-					includeSchoolMarks: documentType === 'jadwal-pelajaran' ? includeSchoolMarks : false,
+					includeSchoolMarks: documentType === 'jadwal-pelajaran' ? includeSchoolMarks : ['rapor', 'piagam'].includes(documentType) && includeReportSignatures,
 					jenjang:
 						documentType === 'jadwal-pelajaran' || documentType === 'kalender-pendidikan'
 							? selectedJadwalJenjang
@@ -1005,6 +1006,7 @@
 					template: documentType === 'piagam' ? selectedTemplate : undefined,
 					pdfVariant,
 					docLabel: selectedDocumentEntry?.label ?? documentType,
+					includeSchoolMarks: ['rapor', 'piagam'].includes(documentType) && includeReportSignatures,
 					kelasLabel: kelasAktifLabel ? kelasAktifLabel.replace(/\s+/g, '') : 'Semua-Kelas',
 					bgLogo: showBgLogo,
 					raporPeriode:
@@ -1678,6 +1680,14 @@
 			<a class="btn btn-outline" href="/martikulasi/pengaturan">Pengaturan</a>
 			<a class="btn btn-outline" href="/asesmen-martikulasi">Input Nilai</a>
 		</div>
+	{/if}
+	{#if selectedDocument === 'rapor' || selectedDocument === 'piagam'}
+		<label class="mt-3 flex min-h-11 items-center gap-3 text-sm">
+			<input type="checkbox" class="toggle toggle-success" bind:checked={includeReportSignatures} onchange={() => {
+				if (pdfViewerUrl) { URL.revokeObjectURL(pdfViewerUrl); pdfViewerUrl = ''; pdfViewerTitle = ''; }
+			}} />
+			Tanda tangan digital kepsek
+		</label>
 	{/if}
 	<PreviewFooter
 		{hasMurid}

@@ -36,7 +36,7 @@
 	function changeSource(source: string) {
 		const params = new URLSearchParams(page.url.search);
 		params.set('sumber_masuk', source);
-		for (const key of ['sakit_page', 'izin_page', 'alfa_page', 'izin_pulang_page'])
+		for (const key of ['sakit_page', 'izin_page', 'alfa_page', 'izin_pulang_page', 'belum_page'])
 			params.delete(key);
 		void goto(`/?${params}#absensi-hari-ini`, { noScroll: true, keepFocus: true });
 	}
@@ -54,7 +54,8 @@
 		alfa: 'Alfa',
 		pulang: 'Pulang',
 		dinas_luar: 'Dinas luar',
-		cuti: 'Cuti'
+		cuti: 'Cuti',
+		belum: 'Belum Tercatat'
 	};
 	function attendanceRate(value: { total: number; recorded: number }) {
 		return value.total > 0 ? Math.round((value.recorded / value.total) * 100) : 0;
@@ -74,7 +75,7 @@
 	const schoolStats = $derived.by(() => {
 		const departure = summary.activitySummaries.find((activity) => activity.key === 'pulang');
 		return [
-			{ name: 'Murid', tone: 'students', value: summary.students },
+			{ name: 'Berangkat Sekolah', tone: 'students', value: summary.students },
 			{
 				name: 'Pulang Sekolah',
 				tone: 'departure',
@@ -133,7 +134,7 @@
 				class="flex flex-wrap items-center justify-between gap-x-3 border-b border-base-200 px-4"
 			>
 				{#if summary.activityTabs.length}<div
-						class="flex min-w-0"
+						class="flex w-full min-w-0 sm:w-auto"
 						role="tablist"
 						aria-label="Jenis absensi hari ini"
 					>
@@ -142,13 +143,13 @@
 								role="tab"
 								aria-selected={summary.activityTab === tab.key}
 								aria-controls="dashboard-attendance-tab"
-								class="flex min-w-0 items-center justify-center gap-2 border-b-2 px-3 py-3 text-sm font-semibold sm:px-5"
+								class="flex min-w-0 flex-1 items-center justify-center gap-1 border-b-2 px-1.5 py-3 text-xs font-semibold sm:flex-none sm:gap-2 sm:px-3 sm:text-sm"
 								class:border-success={summary.activityTab === tab.key}
 								class:text-success={summary.activityTab === tab.key}
 								class:border-transparent={summary.activityTab !== tab.key}
 								onclick={() => changeTab(tab.key)}
 							>
-								<Icon name={tab.icon} class="size-4 shrink-0" />{tab.label}
+								<Icon name={tab.icon} class="hidden size-4 shrink-0 sm:block" />{tab.label}
 							</button>{/each}
 					</div>{/if}
 				<div class="py-2">
@@ -239,7 +240,7 @@
 					{#if summary.students}<div
 							class="flex flex-wrap items-center gap-2 border-t border-base-200 px-5 py-3"
 						>
-							<span class="mr-1 text-xs font-medium text-base-content/60">Tidak hadir</span>
+							<span class="mr-1 text-xs font-medium text-base-content/60">Status murid</span>
 							{#each summary.absences as group (group.status)}<button
 									type="button"
 									class={`dashboard-status-chip dashboard-attendance-status--${group.status}`}
@@ -251,7 +252,9 @@
 											? 'warning'
 											: group.status === 'sakit'
 												? 'info'
-												: 'pen'}
+												: group.status === 'belum'
+													? 'users'
+													: 'pen'}
 										class="size-3.5"
 									/>
 									{labels[group.status]}<strong>{group.total}</strong>

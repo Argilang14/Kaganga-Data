@@ -1,6 +1,6 @@
 import { createClient } from '@libsql/client';
 import { randomBytes, createHash, randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -387,6 +387,69 @@ try {
 		{ name: 'rapkumer-session', value: token, url: base },
 		{ name: 'active-sekolah-id', value: String(school), url: base }
 	);
+	if (process.env.QA_JOURNAL_REFERENCE === '1') {
+		const adminToken = cookies.get('admin').split(';')[0].split('=')[1];
+		await page.setCookie({ name: 'rapkumer-session', value: adminToken, url: base });
+		const reference = [];
+		for (const width of [1440, 1024, 768, 390]) {
+			await page.setViewport({ width, height: 1000 });
+			await page.goto(`${base}/jurnal-mengajar?kelas_id=${students[0].kelas_id}`, {
+				waitUntil: 'networkidle0'
+			});
+			await page.waitForSelector('table');
+			await page.screenshot({
+				path: path.join(dir, `reference-jurnal-${width}.png`),
+				fullPage: true
+			});
+			reference.push(
+				await page.evaluate((width) => {
+					const measure = (selector) => {
+						const element = document.querySelector(selector);
+						if (!element) return null;
+						const rect = element.getBoundingClientRect(),
+							style = getComputedStyle(element);
+						return {
+							width: rect.width,
+							height: rect.height,
+							top: rect.top,
+							font: style.fontSize,
+							padding: style.padding,
+							radius: style.borderRadius
+						};
+					};
+					return {
+						width,
+						sidebar: measure('.app-sidebar'),
+						navbar: measure('.app-navbar'),
+						page: measure('.app-page-viewport > div'),
+						title: measure('.card h2'),
+						tableHeader: measure('table thead th'),
+						tableRow: measure('table tbody tr'),
+						cell: measure('table tbody td'),
+						button: measure('.card > div button.btn-primary'),
+						input: measure('input[type=date]')
+					};
+				}, width)
+			);
+		}
+		await writeFile(path.join(dir, 'journal-reference.json'), JSON.stringify(reference, null, 2));
+		if (process.env.QA_JOURNAL_COMPARE_DIR) {
+			const previous = JSON.parse(
+				await readFile(
+					path.join(process.env.QA_JOURNAL_COMPARE_DIR, 'journal-reference.json'),
+					'utf8'
+				)
+			);
+			assert.deepEqual(
+				reference,
+				previous,
+				'Jurnal Mengajar control page dimensions must remain unchanged'
+			);
+			pass('halaman kontrol Jurnal Mengajar tidak berubah pada empat viewport');
+		}
+		await page.setCookie({ name: 'rapkumer-session', value: token, url: base });
+		pass('acuan jurnal mengajar diukur pada empat viewport tanpa mengubah data jurnal');
+	}
 	for (const [width, height] of [
 		[1440, 1000],
 		[768, 1024],

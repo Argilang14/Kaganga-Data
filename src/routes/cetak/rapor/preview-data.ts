@@ -2,6 +2,8 @@ import { error } from '@sveltejs/kit';
 import { asc, and, eq } from 'drizzle-orm';
 import db from '$lib/server/db';
 import { getStudentEducationIdentity } from '$lib/server/education-units';
+import { getPrincipalPrintSignatures } from '$lib/server/print-signatures';
+import type { RaporPrintData } from '$lib/server/pdf/templates/rapor';
 import { ensureCatatanWaliSchema } from '$lib/server/db/ensure-catatan-wali';
 import {
 	tableAsesmenEkstrakurikuler,
@@ -154,6 +156,7 @@ export async function getRaporPreviewPayload({ locals, url }: RaporContext) {
 				with: {
 					waliKelas: {
 						columns: {
+							id: true,
 							nama: true,
 							nip: true
 						}
@@ -558,6 +561,8 @@ export async function getRaporPreviewPayload({ locals, url }: RaporContext) {
 			: null);
 
 	const semesterData = murid.kelas?.semester ?? murid.semester;
+	const education = await getStudentEducationIdentity(sekolah.id, murid.id);
+	const signatures = await getPrincipalPrintSignatures(sekolah.id, education.jenjang, waliKelasPegawai?.id, url.searchParams.get('school_marks') === '1');
 	const tahunAjaranData = murid.kelas?.tahunAjaran;
 	const computedKehadiran =
 		semesterData?.id && tahunAjaranData?.id
@@ -566,7 +571,7 @@ export async function getRaporPreviewPayload({ locals, url }: RaporContext) {
 
 	const raporData: RaporPrintData = {
 		sekolah: {
-			nama: (await getStudentEducationIdentity(sekolah.id, murid.id)).nama,
+			nama: education.nama,
 			alamat: composeAlamat(sekolah),
 			bgLogoSrc,
 			jenjangVariant: sekolah.jenjangVariant ?? null
@@ -589,10 +594,12 @@ export async function getRaporPreviewPayload({ locals, url }: RaporContext) {
 				: (murid.semester?.nama ?? '')
 		},
 		waliKelas: {
+			signatureUrl: signatures.teacher,
 			nama: waliKelasPegawai?.nama ?? '',
 			nip: waliKelasPegawai?.nip ?? null
 		},
 		kepalaSekolah: {
+			signatureUrl: signatures.principal,
 			nama: sekolah.kepalaSekolah?.nama ?? '',
 			nip: sekolah.kepalaSekolah?.nip ?? null,
 			statusKepalaSekolah: sekolah.statusKepalaSekolah ?? 'definitif'

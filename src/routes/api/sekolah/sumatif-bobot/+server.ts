@@ -1,4 +1,5 @@
 import db from '$lib/server/db';
+import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import {
 	tableSekolah,
 	tableAsesmenSumatif,
@@ -7,7 +8,7 @@ import {
 } from '$lib/server/db/schema';
 import { isAuthorizedUser } from '../../../pengguna/permissions';
 import { json } from '@sveltejs/kit';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 
 function recalcNilaiAkhirRts(
 	naLingkup: number | null | undefined,
@@ -91,6 +92,9 @@ export async function PUT({ request, locals }) {
 		return json({ error: 'Payload tidak valid.' }, { status: 400 });
 	}
 
+	if (!body || typeof body !== 'object' || Array.isArray(body)) {
+		return json({ error: 'Payload tidak valid.' }, { status: 400 });
+	}
 	const payload = body as Record<string, unknown>;
 	const rapor = payload['rapor'] === 'rts' ? 'rts' : 'ras';
 
@@ -98,7 +102,7 @@ export async function PUT({ request, locals }) {
 		const lingkup = Number(payload['lingkup'] ?? NaN);
 		const sts = Number(payload['sts'] ?? NaN);
 
-		if (!Number.isFinite(lingkup) || !Number.isFinite(sts)) {
+		if (![lingkup, sts].every((value) => Number.isFinite(value) && value >= 0 && value <= 100)) {
 			return json({ error: 'Nilai bobot harus angka.' }, { status: 400 });
 		}
 
@@ -110,58 +114,66 @@ export async function PUT({ request, locals }) {
 		}
 
 		try {
-			await db
-				.update(tableSekolah)
-				.set({
-					sumatifBobotRtsLingkup: intLingkup,
-					sumatifBobotRtsSts: intSts,
-					updatedAt: new Date().toISOString()
-				})
-				.where(eq(tableSekolah.id, sekolah.id));
-		} catch (err) {
-			console.error('Gagal menyimpan bobot sumatif RTS', err);
-			return json({ error: 'Gagal menyimpan bobot.' }, { status: 500 });
-		}
+			await db.transaction(async (tx) => {
+				const context = await resolveSekolahAcademicContext(sekolah.id, tx);
+				if (!context.activeSemesterId || !context.tahunAjaranList.some((tahun) => tahun.isAktif && tahun.semester.some((semester) => semester.id === context.activeSemesterId && semester.isAktif))) throw new Error('Semester aktif belum tersedia.');
+				await tx
+					.update(tableSekolah)
+					.set({
+						sumatifBobotRtsLingkup: intLingkup,
+						sumatifBobotRtsSts: intSts,
+						updatedAt: new Date().toISOString()
+					})
+					.where(eq(tableSekolah.id, sekolah.id));
+				// Rapor semester terdahulu tidak dihitung ulang.
+				const kelasRecords = await tx
+					.select({ id: tableKelas.id })
+					.from(tableKelas)
+					.where(
+						and(
+							eq(tableKelas.sekolahId, sekolah.id),
+							eq(tableKelas.semesterId, context.activeSemesterId)
+						)
+					);
+				const kelasIds = kelasRecords.map((r) => r.id);
+				if (kelasIds.length > 0) {
+					const mapelRecords = await tx
+						.select({ id: tableMataPelajaran.id })
+						.from(tableMataPelajaran)
+						.where(inArray(tableMataPelajaran.kelasId, kelasIds));
+					const mapelIds = mapelRecords.map((r) => r.id);
+					if (mapelIds.length > 0) {
+						const records = await tx
+							.select({
+								id: tableAsesmenSumatif.id,
+								naLingkup: tableAsesmenSumatif.naLingkup,
+								sts: tableAsesmenSumatif.sts,
+								nilaiAkhirRts: tableAsesmenSumatif.nilaiAkhirRts
+							})
+							.from(tableAsesmenSumatif)
+							.where(inArray(tableAsesmenSumatif.mataPelajaranId, mapelIds));
 
-		// Recalculate stored nilaiAkhirRts for all records using the new RTS bobot
-		try {
-			const kelasRecords = await db
-				.select({ id: tableKelas.id })
-				.from(tableKelas)
-				.where(eq(tableKelas.sekolahId, sekolah.id));
-			const kelasIds = kelasRecords.map((r) => r.id);
-			if (kelasIds.length > 0) {
-				const mapelRecords = await db
-					.select({ id: tableMataPelajaran.id })
-					.from(tableMataPelajaran)
-					.where(inArray(tableMataPelajaran.kelasId, kelasIds));
-				const mapelIds = mapelRecords.map((r) => r.id);
-				if (mapelIds.length > 0) {
-					const records = await db
-						.select({
-							id: tableAsesmenSumatif.id,
-							naLingkup: tableAsesmenSumatif.naLingkup,
-							sts: tableAsesmenSumatif.sts,
-							nilaiAkhirRts: tableAsesmenSumatif.nilaiAkhirRts
-						})
-						.from(tableAsesmenSumatif)
-						.where(inArray(tableAsesmenSumatif.mataPelajaranId, mapelIds));
-
-					for (const record of records) {
-						const newNilai = recalcNilaiAkhirRts(record.naLingkup, record.sts, intLingkup, intSts);
-						if (newNilai !== record.nilaiAkhirRts) {
-							await db
-								.update(tableAsesmenSumatif)
-								.set({ nilaiAkhirRts: newNilai })
-								.where(eq(tableAsesmenSumatif.id, record.id));
+						for (const record of records) {
+							const newNilai = recalcNilaiAkhirRts(
+								record.naLingkup,
+								record.sts,
+								intLingkup,
+								intSts
+							);
+							if (newNilai !== record.nilaiAkhirRts) {
+								await tx
+									.update(tableAsesmenSumatif)
+									.set({ nilaiAkhirRts: newNilai })
+									.where(eq(tableAsesmenSumatif.id, record.id));
+							}
 						}
 					}
 				}
-			}
+			});
 		} catch (err) {
 			console.error('Gagal memperbarui nilai akhir RTS', err);
 			return json(
-				{ error: 'Bobot tersimpan, tapi gagal memperbarui nilai akhir RTS.' },
+				{ error: 'Bobot dan nilai RTS belum diubah. Periksa semester aktif lalu coba kembali.' },
 				{ status: 500 }
 			);
 		}
@@ -174,7 +186,7 @@ export async function PUT({ request, locals }) {
 	const sts = Number(payload['sts'] ?? NaN);
 	const sas = Number(payload['sas'] ?? NaN);
 
-	if (!Number.isFinite(lingkup) || !Number.isFinite(sts) || !Number.isFinite(sas)) {
+	if (![lingkup, sts, sas].every((value) => Number.isFinite(value) && value >= 0 && value <= 100)) {
 		return json({ error: 'Nilai bobot harus angka.' }, { status: 400 });
 	}
 
@@ -187,66 +199,71 @@ export async function PUT({ request, locals }) {
 	}
 
 	try {
-		await db
-			.update(tableSekolah)
-			.set({
-				sumatifBobotLingkup: intLingkup,
-				sumatifBobotSts: intSts,
-				sumatifBobotSas: intSas,
-				updatedAt: new Date().toISOString()
-			})
-			.where(eq(tableSekolah.id, sekolah.id));
-	} catch (err) {
-		console.error('Gagal menyimpan bobot sumatif', err);
-		return json({ error: 'Gagal menyimpan bobot.' }, { status: 500 });
-	}
+		await db.transaction(async (tx) => {
+			const context = await resolveSekolahAcademicContext(sekolah.id, tx);
+			if (!context.activeSemesterId || !context.tahunAjaranList.some((tahun) => tahun.isAktif && tahun.semester.some((semester) => semester.id === context.activeSemesterId && semester.isAktif))) throw new Error('Semester aktif belum tersedia.');
+			await tx
+				.update(tableSekolah)
+				.set({
+					sumatifBobotLingkup: intLingkup,
+					sumatifBobotSts: intSts,
+					sumatifBobotSas: intSas,
+					updatedAt: new Date().toISOString()
+				})
+				.where(eq(tableSekolah.id, sekolah.id));
+			const kelasRecords = await tx
+				.select({ id: tableKelas.id })
+				.from(tableKelas)
+				.where(
+					and(
+						eq(tableKelas.sekolahId, sekolah.id),
+						eq(tableKelas.semesterId, context.activeSemesterId)
+					)
+				);
+			const kelasIds = kelasRecords.map((r) => r.id);
+			if (kelasIds.length > 0) {
+				const mapelRecords = await tx
+					.select({ id: tableMataPelajaran.id })
+					.from(tableMataPelajaran)
+					.where(inArray(tableMataPelajaran.kelasId, kelasIds));
+				const mapelIds = mapelRecords.map((r) => r.id);
+				if (mapelIds.length > 0) {
+					const records = await tx
+						.select({
+							id: tableAsesmenSumatif.id,
+							naLingkup: tableAsesmenSumatif.naLingkup,
+							sts: tableAsesmenSumatif.sts,
+							sas: tableAsesmenSumatif.sas,
+							nilaiAkhir: tableAsesmenSumatif.nilaiAkhir
+						})
+						.from(tableAsesmenSumatif)
+						.where(inArray(tableAsesmenSumatif.mataPelajaranId, mapelIds));
 
-	// Recalculate stored nilaiAkhir for all records using the new weights
-	try {
-		const kelasRecords = await db
-			.select({ id: tableKelas.id })
-			.from(tableKelas)
-			.where(eq(tableKelas.sekolahId, sekolah.id));
-		const kelasIds = kelasRecords.map((r) => r.id);
-		if (kelasIds.length > 0) {
-			const mapelRecords = await db
-				.select({ id: tableMataPelajaran.id })
-				.from(tableMataPelajaran)
-				.where(inArray(tableMataPelajaran.kelasId, kelasIds));
-			const mapelIds = mapelRecords.map((r) => r.id);
-			if (mapelIds.length > 0) {
-				const records = await db
-					.select({
-						id: tableAsesmenSumatif.id,
-						naLingkup: tableAsesmenSumatif.naLingkup,
-						sts: tableAsesmenSumatif.sts,
-						sas: tableAsesmenSumatif.sas,
-						nilaiAkhir: tableAsesmenSumatif.nilaiAkhir
-					})
-					.from(tableAsesmenSumatif)
-					.where(inArray(tableAsesmenSumatif.mataPelajaranId, mapelIds));
-
-				for (const record of records) {
-					const newNilai = recalcNilaiAkhir(
-						record.naLingkup,
-						record.sts,
-						record.sas,
-						intLingkup,
-						intSts,
-						intSas
-					);
-					if (newNilai !== record.nilaiAkhir) {
-						await db
-							.update(tableAsesmenSumatif)
-							.set({ nilaiAkhir: newNilai })
-							.where(eq(tableAsesmenSumatif.id, record.id));
+					for (const record of records) {
+						const newNilai = recalcNilaiAkhir(
+							record.naLingkup,
+							record.sts,
+							record.sas,
+							intLingkup,
+							intSts,
+							intSas
+						);
+						if (newNilai !== record.nilaiAkhir) {
+							await tx
+								.update(tableAsesmenSumatif)
+								.set({ nilaiAkhir: newNilai })
+								.where(eq(tableAsesmenSumatif.id, record.id));
+						}
 					}
 				}
 			}
-		}
+		});
 	} catch (err) {
 		console.error('Gagal memperbarui nilai akhir', err);
-		return json({ error: 'Bobot tersimpan, tapi gagal memperbarui nilai akhir.' }, { status: 500 });
+		return json(
+			{ error: 'Bobot dan nilai belum diubah. Periksa semester aktif lalu coba kembali.' },
+			{ status: 500 }
+		);
 	}
 
 	return json({ message: 'Bobot sumatif berhasil diperbarui.' });

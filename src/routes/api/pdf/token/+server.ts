@@ -138,7 +138,7 @@ export const POST = (async ({ locals, request }) => {
 	if (parentSignature) url.searchParams.set('ttd_wali', parentSignature);
 	if (orientation) url.searchParams.set('orientation', orientation);
 	if (docType === 'jadwal-pelajaran') url.searchParams.set('layout_mode', layoutMode);
-	if (docType === 'jadwal-pelajaran' && body.includeSchoolMarks === true) url.searchParams.set('school_marks', '1');
+	if (['jadwal-pelajaran', 'rapor', 'piagam'].includes(docType) && body.includeSchoolMarks === true) url.searchParams.set('school_marks', '1');
 	if (jenjang) url.searchParams.set('jenjang', jenjang);
 	if (periodeMode) url.searchParams.set('periode_mode', periodeMode);
 	if (tahunAjaranId) url.searchParams.set('tahun_ajaran_id', String(tahunAjaranId));
@@ -167,7 +167,7 @@ export const POST = (async ({ locals, request }) => {
 		parentSignature,
 		orientation,
 		layoutMode: docType === 'jadwal-pelajaran' ? layoutMode : undefined,
-		includeSchoolMarks: docType === 'jadwal-pelajaran' && body.includeSchoolMarks === true,
+		includeSchoolMarks: ['jadwal-pelajaran', 'rapor', 'piagam'].includes(docType) && body.includeSchoolMarks === true,
 		jenjang,
 		periodeMode,
 		tahunAjaranId,

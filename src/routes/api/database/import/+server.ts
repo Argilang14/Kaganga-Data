@@ -2,7 +2,7 @@ import { env } from '$env/dynamic/private';
 import { DATABASE_IMPORT_MAX_BYTES, DATABASE_IMPORT_MAX_LABEL } from '$lib/database-import';
 import { resolveSession } from '$lib/server/auth';
 import { startBellScheduler, stopBellScheduler } from '$lib/server/bell-scheduler';
-import { beginDatabaseMaintenance, endDatabaseMaintenance } from '$lib/server/database-maintenance';
+import { beginDatabaseMaintenance, endDatabaseMaintenance, waitForDatabaseDrain, markDatabaseRecoveryFailed, isDatabaseMaintenanceActive, withDatabaseBackground } from '$lib/server/database-maintenance';
 import db, { reloadDbClient } from '$lib/server/db';
 import { restoreDatabaseContents } from '$lib/server/db/database-restore';
 import {
@@ -129,6 +129,7 @@ async function persistUpload(request: Request, tempPath: string) {
 }
 
 export async function POST({ request, cookies }) {
+	if (process.env.NODE_APP_INSTANCE !== undefined) throw error(409, 'Pemulihan hanya didukung pada server satu proses.');
 	const existingToken = cookies.get(cookieNames.AUTH_SESSION);
 	const resolvedSession = existingToken
 		? await resolveSession(existingToken).catch(() => null)
@@ -165,6 +166,7 @@ export async function POST({ request, cookies }) {
 		// Migrasi dilakukan pada berkas staging, bukan database aktif.
 		await runMigration(tempPath);
 		await inspectDatabaseFile(tempPath, { requireKagangaTables: true });
+		await waitForDatabaseDrain();
 		backupPath = await createConsistentDatabaseBackup({
 			client: db.$client,
 			databasePath,
@@ -208,14 +210,17 @@ export async function POST({ request, cookies }) {
 				console.warn('[database-import] database sebelumnya berhasil dipulihkan');
 			} catch (rollbackCause) {
 				console.error('[database-import] pemulihan otomatis gagal:', rollbackCause);
-				throw error(500, `Pemulihan otomatis gagal. Backup tersedia di ${backupPath}.`);
+				markDatabaseRecoveryFailed();
+				throw error(503, 'Pemulihan otomatis gagal. Akses database dihentikan; admin perlu memulihkan backup sebelum server digunakan kembali.');
 			}
 		}
 		if (cause && typeof cause === 'object' && 'status' in cause) throw cause;
 		throw error(500, 'Import gagal. Database sebelumnya tetap aman dan telah dipulihkan.');
 	} finally {
 		endDatabaseMaintenance();
-		if (schedulerStopped) startBellScheduler().catch(console.error);
+		if (schedulerStopped && !isDatabaseMaintenanceActive()) {
+			withDatabaseBackground(() => startBellScheduler()).catch(console.error);
+		}
 		// Pembersihan file yang ditahan Windows tidak boleh menunda respons hasil import.
 		cleanupStaging(tempPath).catch(console.error);
 	}

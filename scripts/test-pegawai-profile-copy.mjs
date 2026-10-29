@@ -566,7 +566,10 @@ try {
 	const deniedDocument = await request('same', `/api/pegawai-document/${document.id}`);
 	expectStatus(deniedDocument, [303, 403], 'same-school document IDOR');
 	if (deniedDocument.status === 303)
-		assert.ok(deniedDocument.headers.get('location')?.startsWith('/forbidden?'), 'Access denial must redirect to forbidden, not expose the file.');
+		assert.ok(
+			deniedDocument.headers.get('location')?.startsWith('/forbidden?'),
+			'Access denial must redirect to forbidden, not expose the file.'
+		);
 	expectStatus(
 		await request('other', `/api/pegawai-document/${document.id}`),
 		404,
@@ -590,11 +593,7 @@ try {
 	for (const role of ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'tim_dapur']) {
 		const account = `staff-${role}`;
 		expectStatus(await request(account, profilePath), 200, `${role} own profile`);
-		expectStatus(
-			await request(account, `/api/pegawai-photo/${ownId}`),
-			200,
-			`${role} own photo`
-		);
+		expectStatus(await request(account, `/api/pegawai-photo/${ownId}`), 200, `${role} own photo`);
 		expectStatus(
 			await request(account, `/api/pegawai-photo/${sameSchoolId}`),
 			403,
@@ -610,7 +609,9 @@ try {
 	const anonymousProfile = await request(null, profilePath);
 	assert.ok([302, 303, 307, 308].includes(anonymousProfile.responseStatus));
 	assert.match(anonymousProfile.headers.get('location') ?? '', /\/login(?:\?|$)/);
-	pass('Every staff role can read its own profile/photo; other, unlinked, mismatched, and anonymous access is denied');
+	pass(
+		'Every staff role can read its own profile/photo; other, unlinked, mismatched, and anonymous access is denied'
+	);
 	for (const [account, id, expected] of [
 		['owner', sameSchoolId, 403],
 		['owner', otherSchoolId, 403],
@@ -839,9 +840,9 @@ try {
 	});
 	await page.type('#profile-panel-biodata input[name="telepon"]', browserPhone);
 	const saveButtonState = await page.evaluate(() => {
-		const button = [...document.querySelectorAll('#profile-panel-biodata button[type="submit"]')].find(
-			(node) => node.textContent?.trim() === 'Simpan biodata'
-		);
+		const button = [
+			...document.querySelectorAll('#profile-panel-biodata button[type="submit"]')
+		].find((node) => node.textContent?.trim() === 'Simpan biodata');
 		if (!(button instanceof HTMLButtonElement)) return null;
 		button.scrollIntoView({ block: 'end', inline: 'nearest' });
 		const panel = button.closest('main, [role="main"], .overflow-y-auto');
@@ -856,7 +857,8 @@ try {
 	await page.screenshot({ path: path.join(folder, 'profile-save-button-bottom.png') });
 	await page.click('#profile-panel-biodata button[type="submit"]');
 	await waitForDatabase(
-		async () => (await row('SELECT telepon FROM pegawai WHERE id=?', [ownId])).telepon === browserPhone,
+		async () =>
+			(await row('SELECT telepon FROM pegawai WHERE id=?', [ownId])).telepon === browserPhone,
 		'browser biodata submit'
 	);
 	await page.reload({ waitUntil: 'networkidle0' });
@@ -888,7 +890,11 @@ try {
 		const save = [...(dialog?.querySelectorAll('button') ?? [])].find(
 			(button) => button.textContent?.trim() === 'Simpan'
 		);
-		if (!(dialog instanceof HTMLDialogElement) || !(box instanceof HTMLElement) || !(save instanceof HTMLButtonElement))
+		if (
+			!(dialog instanceof HTMLDialogElement) ||
+			!(box instanceof HTMLElement) ||
+			!(save instanceof HTMLButtonElement)
+		)
 			return null;
 		save.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 		const modalBox = box.getBoundingClientRect();
@@ -999,6 +1005,65 @@ try {
 	pass(
 		'Desktop, 390px, 320px, dark mode, and profile tabs render without overflow or data leakage'
 	);
+	const measurements = [];
+	for (const width of [1920, 1440, 1366, 1024, 768, 390, 320]) {
+		await page.setViewport({ width, height: 900 });
+		await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }]);
+		await page.goto(base + profilePath, { waitUntil: 'networkidle0' });
+		for (const key of ['biodata', 'pendidikan', 'sertifikasi', 'berkas']) {
+			await page.click(`input[name="employee-profile-tab"][value="${key}"]`);
+			const metric = await page.evaluate((tab) => {
+				const panel = document.querySelector(`#profile-panel-${tab}`);
+				const rect = (element) => {
+					const r = element.getBoundingClientRect();
+					return { left: r.left, right: r.right, width: r.width, height: r.height };
+				};
+				return {
+					tab,
+					width: innerWidth,
+					overflow: document.documentElement.scrollWidth > innerWidth,
+					workspace: getComputedStyle(document.querySelector('.profile-workspace'))
+						.gridTemplateColumns,
+					controls: [...panel.querySelectorAll('input:not([type=hidden]),select,textarea')].map(
+						rect
+					),
+					scrollers: [...panel.querySelectorAll('.overflow-x-auto')].map((el) => ({
+						...rect(el),
+						content: el.scrollWidth
+					})),
+					tabs: rect(document.querySelector('.profile-tabs'))
+				};
+			}, key);
+			assert.equal(metric.overflow, false, `Profile ${key} overflows at ${width}`);
+			for (const control of metric.controls)
+				assert.ok(
+					control.width > 0 && control.left >= 0 && control.right <= width + 1,
+					`Control in ${key} escapes at ${width}`
+				);
+			assert.ok(metric.tabs.right <= width + 1);
+			measurements.push(metric);
+			if ([1440, 768, 390].includes(width)) {
+				await page.$eval('.employee-profile', (el) => el.scrollIntoView({ block: 'start' }));
+				await page.screenshot({ path: path.join(folder, `responsive-${key}-${width}.png`) });
+			}
+		}
+	}
+	await writeFile(path.join(folder, 'ui-measurements.json'), JSON.stringify(measurements, null, 2));
+	await page.setViewport({ width: 390, height: 844 });
+	await page.goto(base + profilePath, { waitUntil: 'networkidle0' });
+	await page.focus('input[name="employee-profile-tab"][value="biodata"]');
+	await page.keyboard.press('ArrowRight');
+	await page.waitForFunction(() => !document.querySelector('#profile-panel-pendidikan').hidden);
+	await page.click('.profile-record-counts button:last-child');
+	await page.waitForFunction(() => !document.querySelector('#profile-panel-berkas').hidden);
+	await page.$eval('.profile-person h2', (el) => {
+		el.textContent = 'NamaPegawaiSangatPanjangTanpaSpasi'.repeat(6);
+	});
+	assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+	assert.deepEqual(errors, []);
+	pass(
+		'All four profile tabs fit seven widths 320-1920px; radio keyboard, summary shortcuts, long names and local table overflow remain usable'
+	);
 
 	const auditTable = await row(
 		"SELECT name FROM sqlite_master WHERE type='table' AND name='audit_log'"
@@ -1008,12 +1073,19 @@ try {
 			"SELECT action, summary FROM audit_log WHERE username_snapshot='qa-profile-owner' AND entity_type='pegawai' AND entity_id=? ORDER BY id",
 			[String(ownId)]
 		);
-		assert.equal(ownerAudit.length, 4, `Mutasi mandiri tercatat ${ownerAudit.length}, seharusnya 4.`);
+		assert.equal(
+			ownerAudit.length,
+			4,
+			`Mutasi mandiri tercatat ${ownerAudit.length}, seharusnya 4.`
+		);
 		assert.equal(
 			ownerAudit.filter((entry) => entry.summary === 'Pegawai memperbarui profil pribadi').length,
 			2
 		);
-		assert.equal(ownerAudit.filter((entry) => entry.summary === 'Foto pegawai diperbarui').length, 1);
+		assert.equal(
+			ownerAudit.filter((entry) => entry.summary === 'Foto pegawai diperbarui').length,
+			1
+		);
 		assert.equal(ownerAudit.filter((entry) => entry.summary === 'Foto pegawai dihapus').length, 1);
 		pass('Every successful self profile/photo mutation is present in audit_log');
 	}

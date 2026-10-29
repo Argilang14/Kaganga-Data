@@ -26,11 +26,14 @@ const bytes = await readFile(backup);
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 await writeFile(sourcePath, bytes);
 await copyFile('dist/windows/stage/Kaganga/data/database.sqlite3', databasePath);
+const fixture = createClient({ url: `file:${databasePath}` });
+await fixture.execute('UPDATE auth_user SET must_change_password=0 WHERE username_normalized=\'admin\'');
+fixture.close();
 let log = '';
 const server = spawn(process.execPath, ['build/index.js'], {
 	cwd: process.cwd(), windowsHide: true,
 	env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', ORIGIN: base,
-		DB_URL: `file:${databasePath}`, BODY_SIZE_LIMIT: '512M', NODE_ENV: 'production' },
+		DB_URL: `file:${databasePath}`, KAGANGA_DATA_DIR: directory, BODY_SIZE_LIMIT: '512M', NODE_ENV: 'production' },
 	stdio: ['ignore', 'pipe', 'pipe']
 });
 server.stdout.on('data', (value) => { log += value.toString(); });

@@ -59,6 +59,7 @@
 		else params.delete(key);
 		params.delete('page');
 		if (key === 'jenjang') params.delete('kelas_id');
+		if (key === 'kamar_id') { params.delete('kelas_id'); params.delete('jenjang'); }
 		if (key === 'tab') {
 			params.delete('kolom');
 			params.delete('status');
@@ -190,6 +191,7 @@
 				<p class="monitoring-date">
 					<Icon name="calendar" class="h-3.5 w-3.5 shrink-0" />{dateLabel}
 				</p>
+				{#if data.asrama}<p class="mt-1 text-sm text-base-content/70">{data.asrama.asrama} / {data.asrama.nama}</p>{/if}
 			</div>
 		</div>
 		<div class="monitoring-refresh">
@@ -269,6 +271,14 @@
 		</button>
 	</div>
 	<div id="monitoring-extra-filters" class="monitoring-extra-filters" hidden={!showFilters}>
+		{#if data.asramaOptions.length}
+			<label class="flex min-w-0 flex-col gap-1.5 text-sm"><span>Asrama / Kamar</span>
+				<select class="select w-full" value={data.asrama?.id ?? 0} onchange={event=>filter('kamar_id',event.currentTarget.value)}>
+					<option value={0}>Semua kamar yang diizinkan</option>
+					{#each data.asramaOptions as room (room.id)}<option value={room.id}>{room.asrama} / {room.nama}</option>{/each}
+				</select>
+			</label>
+		{/if}
 		<label class="flex min-w-0 flex-col gap-1.5 text-sm">
 			<span>Jenjang</span>
 			<select

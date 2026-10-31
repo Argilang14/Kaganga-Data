@@ -16,6 +16,7 @@ import { ensureMartikulasiSchema } from './ensure-martikulasi';
 import { ensureDapodikSchema } from './ensure-dapodik';
 import { ensureAccountSettingsSchema } from './ensure-account-settings';
 import { ensureDataGovernanceSchema } from './ensure-data-governance';
+import { ensureDormitorySchema } from './ensure-dormitory';
 import { ensureMuridProfileSchema } from './ensure-murid-profile';
 import { ensureDocumentManagementSchema } from './ensure-document-management';
 import { ensureInventarisPengumumanSchema } from './ensure-inventaris-pengumuman';
@@ -37,6 +38,7 @@ async function applyStartupEnsures() {
 	await ensureAbsenceMonitoringSchema();
 	await ensureAttendanceIllnessSchema();
 	await ensureDataGovernanceSchema();
+	await ensureDormitorySchema();
 	await ensureMuridProfileSchema();
 	await ensureDocumentManagementSchema();
 	await ensureInventarisPengumumanSchema();

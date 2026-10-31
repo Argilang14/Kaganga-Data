@@ -57,6 +57,8 @@
 	type ImportPreview = {
 		fileName: string;
 		legacyFormat: boolean;
+		sourceFormat?: string;
+		peringatan: number;
 		total: number;
 		baru: number;
 		perbarui: number;
@@ -69,11 +71,13 @@
 			jenis: string;
 			action: 'baru' | 'perbarui' | 'bermasalah';
 			errors: string[];
+			warnings: string[];
 		}>;
 	};
 	let importPreview = $state<ImportPreview | null>(null);
 	let importError = $state('');
 	let importBusy = $state(false);
+	let skipInvalid = $state(false);
 	let openingDetailId = $state<number | null>(null);
 	let detailData = $state<DetailPegawaiData | null>(null);
 
@@ -259,7 +263,7 @@
 		return async ({ result, update }) => {
 			importBusy = false;
 			if (result.type === 'failure') {
-				importError = String(result.data?.fail ?? 'File Excel tidak dapat diproses.');
+				importError = String(result.data?.fail ?? 'File pegawai tidak dapat diproses.');
 				return;
 			}
 			if (result.type === 'success' && isPreview) {
@@ -275,6 +279,7 @@
 	};
 
 	function resetImportPreview() {
+		skipInvalid = false;
 		importPreview = null;
 		importError = '';
 	}
@@ -909,7 +914,7 @@
 	<div class="modal-box w-full p-4" class:max-w-2xl={!importPreview} class:max-w-4xl={!!importPreview}>
 		<h3 id="pegawai-import-title" class="text-xl font-bold">Import Data Pegawai</h3>
 		<p class="text-base-content/70 mt-1 text-sm">
-			Periksa pratinjau sebelum menyimpan. Data lama dicocokkan melalui NIP, lalu NIK.
+			Data lama dicocokkan melalui NIP dan NIK. Identitas yang bertentangan harus diperiksa terlebih dahulu.
 		</p>
 		<div class="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
 			<div class="bg-primary text-primary-content rounded-md px-2 py-2 font-semibold">1. Pilih File</div>
@@ -924,16 +929,20 @@
 			enctype="multipart/form-data"
 			class="mt-4 space-y-4"
 		>
+			<label class="block space-y-2">
+				<span class="text-sm font-medium">File pegawai</span>
 			<input
 				class="file-input file-input-bordered w-full"
 				type="file"
 				name="file"
-				accept=".xlsx"
+				accept=".xlsx,.csv"
+				disabled={importBusy}
 				onchange={resetImportPreview}
 				required
 			/>
+			</label>
 			<p class="text-base-content/55 text-xs">
-				Maksimal 5 MB dan 2.000 pegawai per file. Template delapan kolom lama tetap didukung.
+				XLSX Kaganga atau CSV Guru/Tendik Setara. Maksimal 5 MB dan 2.000 pegawai per file.
 			</p>
 			{#if importError}
 				<div class="alert alert-error alert-soft text-sm">
@@ -945,6 +954,23 @@
 				<p class="text-base-content/65 text-sm">
 					File: <strong>{importPreview.fileName}</strong>
 				</p>
+				{#if importPreview.sourceFormat?.startsWith('setara-')}
+					<div class="alert alert-info alert-soft text-sm" role="status">
+						<Icon name="info" />
+						<span>CSV {importPreview.sourceFormat === 'setara-guru' ? 'Guru' : 'Tendik'} Setara. Isian kosong tidak menimpa biodata lama. Nama, jenis, jabatan, dan status pegawai lama tetap. Mapel, NRG, RT/RW disimpan pada Catatan; akun dan penugasan tidak diubah.</span>
+					</div>
+				{/if}
+				{#if importPreview.peringatan > 0}
+					<div class="alert alert-warning alert-soft text-sm" role="status">
+						<Icon name="warning" /><span>{importPreview.peringatan} baris memuat tanggal SK/TMT yang perlu diperiksa. Tanggal sumber tetap dipertahankan.</span>
+					</div>
+				{/if}
+				{#if importPreview.bermasalah > 0 && importPreview.sourceFormat?.startsWith('setara-')}
+					<label class="border-warning/40 bg-warning/5 flex items-start gap-3 rounded-md border p-3 text-sm">
+						<input type="checkbox" name="skipInvalid" class="checkbox checkbox-sm mt-0.5 shrink-0" bind:checked={skipInvalid} disabled={importBusy} />
+						<span>Impor hanya baris valid. {importPreview.bermasalah} baris bermasalah dilewati dan tidak mengubah data lama.</span>
+					</label>
+				{/if}
 				<div class="border-base-200 rounded-md border">
 					<div class="border-base-200 grid grid-cols-2 gap-3 border-b p-3 sm:grid-cols-4">
 						<div>
@@ -990,7 +1016,11 @@
 												class="badge badge-soft">{row.action}</span
 											></td
 										>
-										<td class="text-error text-xs">{row.errors.join(' ') || '-'}</td>
+										<td class="text-xs">
+											{#if row.errors.length}<p class="text-error">{row.errors.join(' ')}</p>{/if}
+											{#if row.warnings.length}<p class="text-warning">{row.warnings.join(' ')}</p>{/if}
+											{#if !row.errors.length && !row.warnings.length}-{/if}
+										</td>
 									</tr>
 								{/each}
 							</tbody>
@@ -1010,17 +1040,17 @@
 					formaction="?/previewImport"
 					disabled={importBusy}
 				>
-					<Icon name="eye" /> Periksa Data
+					{#if importBusy}<span class="loading loading-spinner loading-sm"></span>{:else}<Icon name="eye" />{/if} Periksa Data
 				</button>
 				<button
 					class="btn btn-primary"
 					type="submit"
 					formaction="?/importExcel"
-					disabled={importBusy || !importPreview || importPreview.bermasalah > 0}
+					disabled={importBusy || !importPreview || (importPreview.bermasalah > 0 && !skipInvalid) || (importPreview.baru + importPreview.perbarui === 0)}
 				>
 					<Icon name="import" /> Simpan Import
 				</button>
-				<button class="btn" type="button" onclick={() => importDialog?.close()}>Batal</button>
+				<button class="btn" type="button" disabled={importBusy} onclick={() => importDialog?.close()}>Batal</button>
 			</div>
 		</form>
 	</div>

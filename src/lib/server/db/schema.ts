@@ -791,6 +791,63 @@ export const tableMuridRiwayatKelas = sqliteTable(
 	]
 );
 
+export const tableRaporArsip = sqliteTable(
+	'rapor_arsip',
+	{
+		id: text().primaryKey(),
+		sekolahId: int().notNull().references(() => tableSekolah.id),
+		historyId: int().notNull().references(() => tableMuridRiwayatKelas.id, { onDelete: 'restrict' }),
+		muridId: int().notNull().references(() => tableMurid.id, { onDelete: 'restrict' }),
+		identityUid: text().notNull(),
+		jenis: text({ enum: ['sekolah', 'asrama'] }).notNull(),
+		periode: text({ enum: ['rts', 'ras'] }).notNull(),
+		snapshotJson: text().notNull(),
+		sourceHash: text().notNull(),
+		storageKey: text().notNull().unique(),
+		sha256: text().notNull(),
+		sizeBytes: int().notNull(),
+		finalizedBy: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		createdAt: text().notNull().default(sql`CURRENT_TIMESTAMP`)
+	},
+	(table) => [
+		unique('rapor_arsip_context_unique').on(table.historyId, table.jenis, table.periode),
+		index('rapor_arsip_school_identity_idx').on(table.sekolahId, table.identityUid)
+	]
+);
+
+export const tableRaporArsipRevisi = sqliteTable('rapor_arsip_revisi', {
+	id: text().primaryKey(),
+	arsipId: text().notNull().references(() => tableRaporArsip.id, {onDelete:'restrict'}),
+	nomor: int().notNull(), sebelumnyaId: text().notNull(), alasan: text().notNull(),
+	snapshotJson: text().notNull(), sourceHash: text().notNull(),
+	storageKey: text().notNull().unique(), sha256: text().notNull(), sizeBytes: int().notNull(),
+	finalizedBy: int().references(() => tableAuthUser.id, {onDelete:'set null'}),
+	createdAt: text().notNull().default(sql`CURRENT_TIMESTAMP`)
+}, (table) => [unique('rapor_arsip_revisi_nomor_unique').on(table.arsipId,table.nomor)]);
+
+// Separate storage keeps the CHECK constraints and immutable school/dormitory archives intact.
+export const tableRaporMartikulasiArsip = sqliteTable('rapor_martikulasi_arsip', {
+	id: text().primaryKey(),
+	sekolahId: int().notNull().references(() => tableSekolah.id),
+	historyId: int().notNull().references(() => tableMuridRiwayatKelas.id, { onDelete: 'restrict' }),
+	muridId: int().notNull().references(() => tableMurid.id, { onDelete: 'restrict' }),
+	identityUid: text().notNull(), jenis: text({ enum: ['martikulasi'] }).notNull(),
+	periode: text({ enum: ['ras'] }).notNull(), snapshotJson: text().notNull(),
+	sourceHash: text().notNull(), storageKey: text().notNull().unique(),
+	sha256: text().notNull(), sizeBytes: int().notNull(),
+	finalizedBy: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+	createdAt: text().notNull().default(sql`CURRENT_TIMESTAMP`)
+}, (t) => [unique('rapor_martikulasi_context_unique').on(t.historyId, t.jenis, t.periode), index('rapor_martikulasi_identity_idx').on(t.sekolahId,t.identityUid)]);
+export const tableRaporMartikulasiRevisi = sqliteTable('rapor_martikulasi_revisi', {
+	id: text().primaryKey(),
+	arsipId: text().notNull().references(() => tableRaporMartikulasiArsip.id, { onDelete: 'restrict' }),
+	nomor: int().notNull(), sebelumnyaId: text().notNull(), alasan: text().notNull(),
+	snapshotJson: text().notNull(), sourceHash: text().notNull(),
+	storageKey: text().notNull().unique(), sha256: text().notNull(), sizeBytes: int().notNull(),
+	finalizedBy: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+	createdAt: text().notNull().default(sql`CURRENT_TIMESTAMP`)
+}, (t) => [unique('rapor_martikulasi_revisi_nomor_unique').on(t.arsipId,t.nomor)]);
+
 export const tableAuditLog = sqliteTable(
 	'audit_log',
 	{
@@ -3808,3 +3865,110 @@ export const tableMartikulasiNilaiRelations = relations(tableMartikulasiNilai, (
 		references: [tableMartikulasiHasil.id]
 	})
 }));
+
+export const tableAsrama = sqliteTable(
+	'asrama',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.notNull()
+			.references(() => tableSekolah.id),
+		nama: text().notNull(),
+		namaKey: text().notNull(),
+		kategori: text({ enum: ['putra', 'putri'] }).notNull(),
+		aktif: int().notNull().default(1),
+		versi: int().notNull().default(1),
+		...audit
+	},
+	(t) => [unique('asrama_nama_unique').on(t.sekolahId, t.namaKey)]
+);
+export const tableAsramaKamar = sqliteTable(
+	'asrama_kamar',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.notNull()
+			.references(() => tableSekolah.id),
+		asramaId: int()
+			.notNull()
+			.references(() => tableAsrama.id),
+		nama: text().notNull(),
+		namaKey: text().notNull(),
+		kapasitas: int().notNull(),
+		aktif: int().notNull().default(1),
+		versi: int().notNull().default(1),
+		...audit
+	},
+	(t) => [unique('asrama_kamar_nama_unique').on(t.asramaId, t.namaKey)]
+);
+export const tableAsramaPenugasan = sqliteTable(
+	'asrama_penugasan',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.notNull()
+			.references(() => tableSekolah.id),
+		kamarId: int()
+			.notNull()
+			.references(() => tableAsramaKamar.id),
+		pegawaiId: int()
+			.notNull()
+			.references(() => tablePegawai.id),
+		peran: text({ enum: ['utama', 'pendamping'] }).notNull(),
+		mulai: text().notNull(),
+		selesai: text(),
+		namaSnapshot: text().notNull(),
+		alasan: text().notNull(),
+		petugasId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		selesaiAlasan: text(),
+		selesaiOleh: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		createdAt: text()
+			.notNull()
+			.$defaultFn(() => new Date().toISOString())
+	},
+	(t) => [
+		uniqueIndex('asrama_wali_utama')
+			.on(t.kamarId)
+			.where(sql`${t.selesai} IS NULL AND ${t.peran}='utama'`),
+		uniqueIndex('asrama_wali_unik')
+			.on(t.kamarId, t.pegawaiId)
+			.where(sql`${t.selesai} IS NULL`),
+		index('asrama_wali_scope').on(t.sekolahId, t.pegawaiId, t.selesai, t.kamarId)
+	]
+);
+export const tableAsramaPenempatan = sqliteTable(
+	'asrama_penempatan',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.notNull()
+			.references(() => tableSekolah.id),
+		kamarId: int()
+			.notNull()
+			.references(() => tableAsramaKamar.id),
+		identityUid: text().notNull(),
+		muridId: int()
+			.notNull()
+			.references(() => tableMurid.id),
+		sebelumnyaId: int(),
+		mulai: text().notNull(),
+		selesai: text(),
+		alasan: text().notNull(),
+		namaSnapshot: text().notNull(),
+		kelasSnapshot: text().notNull(),
+		petugasId: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		selesaiAlasan: text(),
+		selesaiOleh: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		createdAt: text()
+			.notNull()
+			.$defaultFn(() => new Date().toISOString())
+	},
+	(t) => [
+		foreignKey({ columns: [t.sebelumnyaId], foreignColumns: [t.id] }),
+		uniqueIndex('asrama_penghuni_aktif')
+			.on(t.sekolahId, t.identityUid)
+			.where(sql`${t.selesai} IS NULL`),
+		index('asrama_penghuni_kamar').on(t.sekolahId, t.kamarId, t.mulai, t.selesai),
+		index('asrama_penghuni_uid').on(t.sekolahId, t.identityUid, t.mulai, t.selesai)
+	]
+);

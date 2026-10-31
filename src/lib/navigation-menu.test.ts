@@ -5,6 +5,7 @@ import {
 	navigationLeaves,
 	visibleNavigation
 } from './navigation-menu.ts';
+import { dormSections } from './dormitory.ts';
 
 const items: MenuItem[] = [
 	{
@@ -34,4 +35,30 @@ test('menu semester dan izin sama untuk daftar, pencarian, favorit, dan dock', (
 	);
 	assert.deepEqual(allowedNavigationFavorites(favorites, items, admin, 'genap'), []);
 	assert.deepEqual(visibleNavigation(items, null, 'genap'), []);
+});
+
+test('sidebar asrama membagi halaman dan mempertahankan pembatasan wali', () => {
+	const dorm: MenuItem[] = [
+		{
+			title: 'Data Asrama',
+			permission: 'asrama_lihat',
+			subMenu: dormSections.map((s) => ({ title: s.menu, path: `/asrama/${s.slug}` }))
+		}
+	];
+	const warden = { type: 'wali_asrama', permissions: [] } as unknown as AuthUser;
+	assert.deepEqual(
+		navigationLeaves(visibleNavigation(dorm, warden, 'ganjil')).map((i) => i.path),
+		['/asrama/kamar', '/asrama/penghuni', '/asrama/penugasan']
+	);
+	assert.equal(
+		navigationLeaves(
+			visibleNavigation(dorm, { type: 'admin', permissions: [] } as unknown as AuthUser, 'ganjil')
+		).length,
+		6
+	);
+	assert.equal(
+		visibleNavigation(dorm, { type: 'user', permissions: [] } as unknown as AuthUser, 'ganjil')
+			.length,
+		0
+	);
 });

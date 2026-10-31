@@ -134,6 +134,13 @@ function formatNilai(value: number | null | undefined): string {
 	}).format(rounded);
 }
 
+export function raporSubjectApplies(name: string, agama: string | null | undefined) {
+	const normalized = normalizeText(name);
+	if (normalized.startsWith('pendidikan agama')) return normalized === normalizeText(resolveAgamaVariantName(agama) ?? AGAMA_BASE_SUBJECT);
+	if (normalized.startsWith('pendalaman kitab suci')) return normalized === normalizeText(resolvePksVariantDbName(agama) ?? PKS_BASE_SUBJECT);
+	return true;
+}
+
 export async function getRaporPreviewPayload({ locals, url }: RaporContext) {
 	const sekolah = locals.sekolah;
 	if (!sekolah?.id) {

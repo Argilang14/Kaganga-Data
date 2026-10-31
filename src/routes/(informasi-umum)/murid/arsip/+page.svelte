@@ -401,15 +401,24 @@
 								<dialog class="archive-dialog modal" aria-labelledby={`archive-history-title-${row.id}`}>
 									<div class="modal-box w-full max-w-2xl space-y-4 p-4 text-sm">
 										<header>
-											<h2 id={`archive-history-title-${row.id}`} class="text-xl font-bold">Riwayat Kelas</h2>
+											<h2 id={`archive-history-title-${row.id}`} class="text-xl font-bold">Riwayat Pendidikan</h2>
 											<p class="text-base-content/65 mt-1 break-words">{row.nama}</p>
 										</header>
-										<ol class="divide-base-200 divide-y">
-											{#each row.history as history (history.id)}<li class="py-3 first:pt-0 last:pb-0">
-												<div class="break-words font-semibold">{history.kelasSnapshot}{history.faseSnapshot ? ` - ${history.faseSnapshot}` : ''}</div>
-												<div class="text-base-content/65 mt-1 break-words text-xs">{history.semesterSnapshot} · {history.tahunAjaranSnapshot}</div>
-											</li>{:else}<li class="text-base-content/60 py-6 text-center">Belum ada riwayat kelas.</li>{/each}
-										</ol>
+										<div class="overflow-x-auto">
+											<table class="table table-sm min-w-[560px]">
+												<thead><tr><th>Periode</th><th>Kelas</th><th>Rapor sekolah</th><th>Rapor asrama</th></tr></thead>
+												<tbody>{#each row.history as history (history.id)}
+													<tr><td><strong>{history.tahunAjaranSnapshot}</strong><div class="text-base-content/60 text-xs">{history.semesterSnapshot}</div></td>
+													<td>{history.kelasSnapshot}<div class="text-base-content/60 text-xs">{history.faseSnapshot ?? ''}</div></td>
+													{#each ['sekolah','asrama'] as kind (kind)}<td>
+														{#if history.muridId && history.identityKey.startsWith('uid:') && !row.needsIdentityReview}
+															<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- Base path is resolved before adding the report selection query. -->
+															<a class="btn btn-sm btn-soft" href={resolve(`/murid/arsip/rapor/${history.id}`)+`?jenis=${kind}&periode=ras`}><Icon name="eye" /> Periksa</a>
+														{:else}<span class="text-base-content/55 text-xs">Sumber belum tersedia</span>{/if}
+													</td>{/each}</tr>
+												{:else}<tr><td colspan="4" class="py-6 text-center text-base-content/60">Belum ada riwayat pendidikan.</td></tr>{/each}</tbody>
+											</table>
+										</div>
 										<form method="dialog" class="border-base-200 flex justify-end border-t pt-3"><button class="btn btn-soft"><Icon name="close" /> Tutup</button></form>
 									</div>
 									<form method="dialog" class="modal-backdrop"><button aria-label="Tutup riwayat kelas">Tutup</button></form>

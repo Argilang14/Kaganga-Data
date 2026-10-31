@@ -197,6 +197,18 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 			for (const route of [
 				'/',
 				'/pegawai',
+				...(version === '2.3.1'
+					? [
+							'/asrama/gedung',
+							'/asrama/kamar',
+							'/asrama/penghuni',
+							'/asrama/penugasan',
+							'/asrama/riwayat',
+							'/asrama/penempatan',
+							'/murid/arsip/rapor',
+							'/murid/arsip/rapor?jenis=martikulasi&periode=ras'
+						]
+					: []),
 				'/pengguna',
 				'/pengaturan',
 				'/ujian',

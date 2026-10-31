@@ -17,6 +17,8 @@ import { resolveSekolahAcademicContext } from './db/academic';
 import { guardianStudentCondition } from './assignment-summary';
 import { activeMuridFilter } from './murid-query';
 import { writeAuditLog } from './audit-log';
+import { dormView } from './dormitory-access';
+import { dormMembershipCondition } from './dormitory-membership';
 import {
 	CareValidationError,
 	canUsePengasuhan,
@@ -41,7 +43,7 @@ export const careToday = () =>
 		day: '2-digit'
 	}).format(new Date());
 
-export async function careContext(locals: App.Locals) {
+export async function careContext(locals: App.Locals, roomId = 0) {
 	const user = locals.user;
 	const school = locals.sekolah;
 	if (!user) error(401, 'Silakan masuk terlebih dahulu.');
@@ -89,13 +91,14 @@ export async function careContext(locals: App.Locals) {
 				eq(tableMurid.sekolahId, school.id),
 				eq(tableMurid.semesterId, academic.activeSemesterId ?? -1),
 				activeMuridFilter(),
-				assigned
+				assigned,
+				roomId ? dormMembershipCondition(school.id,roomId) : undefined
 			)
 		);
 	const students = await roster.orderBy(tableKelas.nama, tableMurid.nama);
 	const scope = and(
 		eq(notes.sekolahId, school.id),
-		user.type === 'admin'
+		user.type === 'admin' && !roomId
 			? undefined
 			: inArray(
 					notes.identityUid,
@@ -107,7 +110,8 @@ export async function careContext(locals: App.Locals) {
 
 export async function loadCare(event: RequestEvent, section: CareSection) {
 	event.setHeaders({ 'cache-control': 'private, no-store' });
-	const ctx = await careContext(event.locals);
+	const dorm = await dormView(event.locals,event.url.searchParams,event.cookies);
+	const ctx = await careContext(event.locals,dorm.room?.id);
 	const q = (event.url.searchParams.get('q') ?? '').trim().slice(0, 100);
 	const status = event.url.searchParams.get('status') ?? '';
 	const kelas = event.url.searchParams.get('kelas') ?? '';
@@ -169,6 +173,7 @@ export async function loadCare(event: RequestEvent, section: CareSection) {
 			: [];
 	return {
 		section,
+		asrama: dorm.room,
 		students: ctx.students,
 		rows: section === 'piket' ? [] : rows,
 		reports: reportRows,

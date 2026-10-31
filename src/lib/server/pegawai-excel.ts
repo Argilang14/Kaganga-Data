@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { readSetaraPegawaiCsv } from './pegawai-setara.ts';
 
 export const PEGAWAI_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
 export const PEGAWAI_IMPORT_MAX_ROWS = 2000;
@@ -145,12 +146,14 @@ export type ParsedPegawaiRow = {
 	rowNumber: number;
 	values: PegawaiExcelValues;
 	errors: string[];
+	warnings?: string[];
 };
 
 export type ParsedPegawaiWorkbook = {
 	rows: ParsedPegawaiRow[];
 	providedColumns: Set<PegawaiExcelKey>;
 	legacyFormat: boolean;
+	sourceFormat?: 'xlsx' | 'setara-guru' | 'setara-tendik';
 };
 
 export type ExistingPegawaiIdentity = {
@@ -158,12 +161,14 @@ export type ExistingPegawaiIdentity = {
 	kodePegawai: string | null;
 	nip: string;
 	nik: string | null;
+	nama?: string;
 };
 
 export type PegawaiImportResolution = {
 	row: ParsedPegawaiRow;
 	existingId: number | null;
 	action: 'baru' | 'perbarui' | 'bermasalah';
+	existing?: ExistingPegawaiIdentity;
 };
 
 function normalizeHeader(value: string) {
@@ -180,7 +185,7 @@ function normalizeText(value: unknown) {
 
 function usableIdentity(value: string | null | undefined) {
 	const normalized = value?.trim().toLowerCase() ?? '';
-	return normalized && normalized !== '-' ? normalized : null;
+	return normalized && normalized !== '-' && !/^0+$/.test(normalized) ? normalized : null;
 }
 
 export function resolvePegawaiImportRows(
@@ -202,7 +207,9 @@ export function resolvePegawaiImportRows(
 		}
 	}
 
-	return parsed.rows.map((row) => {
+	const isSetara = parsed.sourceFormat?.startsWith('setara-');
+	const resolutions = parsed.rows.map((original) => {
+		const row = { ...original, errors: [...original.errors] };
 		const matches = new Set<number>();
 		for (const key of ['kodePegawai', 'nip', 'nik'] as const) {
 			const value = usableIdentity(row.values[key]);
@@ -213,23 +220,58 @@ export function resolvePegawaiImportRows(
 			row.errors.push('Identitas pada file mengarah ke pegawai lama yang berbeda.');
 		}
 		const existingId = matches.size === 1 ? [...matches][0] : null;
+		const existing = existingRows.find((item) => item.id === existingId);
+		if (isSetara && existing) {
+			for (const key of ['nip', 'nik'] as const) {
+				const oldValue = usableIdentity(existing[key]);
+				const newValue = usableIdentity(row.values[key]);
+				if (oldValue && newValue && oldValue !== newValue) row.errors.push(`${key.toUpperCase()} berbeda dari pegawai yang cocok. Periksa identitas terlebih dahulu.`);
+			}
+		}
+		if (isSetara && !existingId && existingRows.some((item) => item.nama?.trim().toLowerCase() === row.values.nama.trim().toLowerCase())) {
+			row.errors.push('Nama sudah ada, tetapi NIP/NIK belum cocok. Lengkapi identitas pegawai lama sebelum impor.');
+		}
 		return {
 			row,
 			existingId,
+			existing,
 			action: row.errors.length ? 'bermasalah' : existingId ? 'perbarui' : 'baru'
 		};
 	});
+	if (isSetara) {
+		const seen = new Set<number>();
+		for (const resolution of resolutions) {
+			if (!resolution.existingId) continue;
+			if (seen.has(resolution.existingId)) {
+				resolution.row.errors.push('Lebih dari satu baris mengarah ke pegawai lama yang sama.');
+				resolution.action = 'bermasalah';
+			}
+			seen.add(resolution.existingId);
+		}
+	}
+	return resolutions as PegawaiImportResolution[];
 }
 
 export function buildPegawaiImportUpdatePayload(
 	values: PegawaiExcelValues,
-	providedColumns: Set<PegawaiExcelKey>
+	providedColumns: Set<PegawaiExcelKey>,
+	options?: { setara: boolean; existing?: Partial<PegawaiExcelValues> }
 ) {
 	const payload: Partial<PegawaiExcelValues> & { updatedAt: string } = {
 		updatedAt: new Date().toISOString()
 	};
 	for (const column of PEGAWAI_EXCEL_COLUMNS) {
 		if (!providedColumns.has(column.key)) continue;
+		if (options?.setara) {
+			const value = values[column.key];
+			if (!value || value === '-') continue;
+			if (column.key === 'status') continue;
+			if (['jenis', 'jabatan', 'nama'].includes(column.key) && options.existing?.[column.key]) continue;
+			if (column.key === 'catatan') {
+				payload.catatan = [...new Set([options.existing?.catatan, value].filter(Boolean).join('\n').split('\n'))].join('\n');
+				continue;
+			}
+		}
 		(payload as Record<string, unknown>)[column.key] = values[column.key];
 	}
 	return payload;
@@ -302,14 +344,14 @@ function emptyValues(): PegawaiExcelValues {
 }
 
 export async function parsePegawaiWorkbook(file: File): Promise<ParsedPegawaiWorkbook> {
-	if (!file.size) throw new Error('File Excel pegawai kosong.');
-	if (!file.name.toLowerCase().endsWith('.xlsx'))
-		throw new Error('File pegawai harus berformat XLSX.');
-	if (file.size > PEGAWAI_IMPORT_MAX_BYTES) throw new Error('Ukuran file Excel maksimal 5 MB.');
+	if (!file.size) throw new Error('File pegawai kosong.');
+	if (!/\.(xlsx|csv)$/i.test(file.name)) throw new Error('Gunakan file XLSX Kaganga atau CSV Guru/Tendik Setara.');
+	if (file.size > PEGAWAI_IMPORT_MAX_BYTES) throw new Error('Ukuran file pegawai maksimal 5 MB.');
 
 	const workbook: any = new ExcelJS.Workbook();
-	await workbook.xlsx.load(await file.arrayBuffer());
-	const sheet = workbook.worksheets[0];
+	const setara = file.name.toLowerCase().endsWith('.csv') ? await readSetaraPegawaiCsv(file, PEGAWAI_IMPORT_MAX_ROWS) : null;
+	if (!setara) await workbook.xlsx.load(await file.arrayBuffer());
+	const sheet = setara?.sheet ?? workbook.worksheets[0];
 	if (!sheet) throw new Error('File Excel tidak memiliki lembar data.');
 	if (sheet.actualRowCount - 1 > PEGAWAI_IMPORT_MAX_ROWS) {
 		throw new Error(`Import dibatasi maksimal ${PEGAWAI_IMPORT_MAX_ROWS} pegawai per file.`);
@@ -368,7 +410,11 @@ export async function parsePegawaiWorkbook(file: File): Promise<ParsedPegawaiWor
 				errors.push(`Format ${key} tidak valid.`);
 			}
 		}
-		rows.push({ rowNumber, values, errors });
+		if (setara) {
+			if (values.nip !== '-' && !/^\d{18}$/.test(values.nip)) errors.push('NIP Setara harus 18 digit atau kosong.');
+			if (!values.nik || !/^\d{16}$/.test(values.nik)) errors.push('NIK Setara harus diisi 16 digit untuk pencocokan.');
+		}
+		rows.push({ rowNumber, values, errors, ...(setara ? { warnings: setara.warnings.get(rowNumber) ?? [] } : {}) });
 	}
 
 	const seen = new Map<string, number>();
@@ -390,6 +436,7 @@ export async function parsePegawaiWorkbook(file: File): Promise<ParsedPegawaiWor
 	return {
 		rows,
 		providedColumns,
+		sourceFormat: setara?.sourceFormat ?? 'xlsx',
 		legacyFormat:
 			providedColumns.has('kodePegawai') ||
 			providedColumns.has('nomorIndukPppk') ||

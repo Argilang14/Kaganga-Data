@@ -1,6 +1,7 @@
 import { canAccessArea, getProtectedArea } from './menu-access.ts';
 import { canAccessMenu } from './role-menu-access.ts';
 import { isAuthorizedUser } from '../routes/pengguna/permissions.ts';
+import { dormSections, dormSectionVisible } from './dormitory.ts';
 
 export type NavigationUser = Pick<AuthUser, 'permissions' | 'type'> & {
 	id?: number;
@@ -17,6 +18,8 @@ export function visibleNavigation(
 ): MenuItem[] {
 	if (!user) return [];
 	return items.flatMap((item) => {
+		const dormSection=dormSections.find(section=>item.path===`/asrama/${section.slug}`);
+		if(dormSection&&!dormSectionVisible(user,dormSection.key)) return [];
 		if (item.condition && item.condition !== semester) return [];
 		if (item.path && !canAccessMenu(user, item.path)) return [];
 		const area = item.path ? getProtectedArea(item.path) : null;

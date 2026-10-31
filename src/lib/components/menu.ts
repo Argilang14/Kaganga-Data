@@ -1,3 +1,5 @@
+import { dormSections } from '../dormitory.ts';
+
 export const appMenuItems: MenuItem[] = [
 	{
 		title: 'Informasi Umum',
@@ -23,6 +25,8 @@ export const appMenuItems: MenuItem[] = [
 				title: 'Data Murid',
 				path: '/murid'
 			},
+			{ title: 'Data Asrama', permission: 'asrama_lihat', tags: ['kamar', 'penghuni', 'wali asrama', 'mutasi asrama'],
+				subMenu:dormSections.map(section=>({title:section.menu,path:`/asrama/${section.slug}`})) },
 			{
 				title: 'Arsip Murid & Alumni',
 				path: '/murid/arsip',
@@ -32,7 +36,8 @@ export const appMenuItems: MenuItem[] = [
 			{
 				title: 'Riwayat Pertumbuhan',
 				path: '/riwayat-pertumbuhan'
-			}
+			},
+			{title:'Riwayat Rapor',path:'/murid/arsip/rapor',permission:'rapor_arsip_lihat',tags:['rapor final','arsip pendidikan','revisi rapor']}
 		]
 	},
 	{

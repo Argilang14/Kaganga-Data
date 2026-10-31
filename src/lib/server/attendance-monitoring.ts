@@ -1,4 +1,4 @@
-import { error } from '@sveltejs/kit';
+import { error, type Cookies } from '@sveltejs/kit';
 import { and, asc, eq, inArray, lte, gte, or, isNull, ne } from 'drizzle-orm';
 import db from './db';
 import { loadAttendanceIllness } from './attendance-illness';
@@ -28,6 +28,8 @@ import { inferSummaryLevel, isSummaryDate } from '$lib/attendance-summary';
 import { loadAbsensiKelasOptions } from './absensi-digital';
 import { studentAccessCondition } from './attendance-student-access';
 import { activeMuridFilter } from './murid-query';
+import { dormView } from './dormitory-access';
+import { dormMembershipCondition } from './dormitory-membership';
 import {
 	tableMurid as m,
 	tableKegiatanAbsensi as activity,
@@ -36,13 +38,14 @@ import {
 	tableIzinPulangMurid as permit
 } from './db/schema';
 
-export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSearchParams) {
+export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSearchParams, cookies?: Cookies) {
 	const { user, sekolah } = locals;
 	if (!user || !sekolah) throw error(401, 'Sesi sekolah tidak valid.');
 	if (user.type !== 'admin' && user.sekolahId !== sekolah.id)
 		throw error(403, 'Sekolah di luar penugasan akun.');
 	if (!canAttendance(user, 'lihat')) throw error(403, 'Izin melihat absensi belum diberikan.');
 	const date = params.get('tanggal') ?? monitoringToday();
+	const dorm = await dormView(locals,params,cookies,true);
 	if (!isSummaryDate(date) || date > monitoringToday())
 		throw error(400, 'Pilih tanggal valid, bukan tanggal mendatang.');
 	// A kitchen account never receives non-meal activity metadata, even with a forged tab.
@@ -107,6 +110,7 @@ export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSear
 					where: and(
 						await studentAccessCondition(user, sekolah.id, academic.activeSemesterId),
 						activeMuridFilter(),
+						dorm.room ? dormMembershipCondition(sekolah.id,dorm.room.id,date) : undefined,
 						inArray(
 							m.kelasId,
 							selectedClasses.map((item) => item.id)
@@ -239,6 +243,8 @@ export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSear
 	});
 	return {
 		date,
+		asrama: dorm.room,
+		asramaOptions: dorm.rooms,
 		today: monitoringToday(),
 		tab,
 		tabs,
@@ -266,8 +272,8 @@ export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSear
 	};
 }
 
-export async function loadAttendanceMonitoring(locals: App.Locals, params: URLSearchParams) {
-	const snapshot = await loadMonitoringSnapshot(locals, params);
+export async function loadAttendanceMonitoring(locals: App.Locals, params: URLSearchParams, cookies?: Cookies) {
+	const snapshot = await loadMonitoringSnapshot(locals, params, cookies);
 	const { rows, columns } = snapshot;
 	const focus = params.get('kolom') ?? columns[0].key;
 	const index = columns.findIndex((column) => column.key === focus);

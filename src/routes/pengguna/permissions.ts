@@ -3,6 +3,11 @@ import { roleMenuPermissions } from '../../lib/role-menu-access.ts';
 import { studentProfilePermissions } from '../../lib/murid-profile.ts';
 
 export const groupedUserPermissions = {
+	asrama: {
+		values: [['lihat', 'Lihat Data Asrama sesuai penugasan'], ['manage', 'Kelola gedung dan kamar asrama'],
+			['penempatan', 'Kelola penempatan dan mutasi penghuni'], ['penugasan', 'Kelola penugasan wali asrama']],
+		description: 'Data Asrama'
+	},
 	menu: {
 		values: [
 			['murid', 'Akses Data Murid sesuai penugasan'],
@@ -119,6 +124,10 @@ export const groupedUserPermissions = {
 	murid: {
 		values: [['arsip', 'Kelola Arsip Murid, Alumni, dan Kenaikan Kelas']],
 		description: 'Arsip Murid dan Alumni'
+	},
+	rapor_arsip: {
+		values: [['lihat','Lihat Riwayat Rapor Sesuai Penugasan'],['finalisasi','Finalisasi Rapor Setelah Pemeriksaan'],['revisi','Terbitkan Revisi Rapor Final'],['massal','Finalisasi Rapor Massal per Kelas']],
+		description: 'Arsip Rapor - Finalisasi dan Revisi Memerlukan Persetujuan Khusus'
 	},
 	murid_profil: {
 		values: [
@@ -255,6 +264,7 @@ export function permissionsForAccessPosition(position?: AccessPosition | null): 
 	return userPermissions.filter(
 		(permission) =>
 			!systemOnlyPermissions.has(permission) &&
+			!['rapor_arsip_finalisasi','rapor_arsip_revisi','rapor_arsip_massal'].includes(permission) &&
 			!studentProfilePermissions.some((privatePermission) => privatePermission === permission) &&
 			(resolvedPosition !== 'operator' || !operatorExcludedPermissions.has(permission))
 	);

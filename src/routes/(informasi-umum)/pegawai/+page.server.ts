@@ -248,7 +248,6 @@ function referenceTotal(refs: Awaited<ReturnType<typeof countReferences>>) {
 async function preparePegawaiImport(file: File, sekolahId: number) {
 	const parsed = await parsePegawaiWorkbook(file);
 	const existingRows = await db.query.tablePegawai.findMany({
-		columns: { id: true, kodePegawai: true, nip: true, nik: true },
 		where: eq(tablePegawai.sekolahId, sekolahId)
 	});
 	return { parsed, resolutions: resolvePegawaiImportRows(parsed, existingRows) };
@@ -614,7 +613,7 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const file = formData.get('file');
 		if (!(file instanceof File) || !file.size) {
-			return fail(400, { fail: 'Pilih file Excel pegawai terlebih dahulu.' });
+			return fail(400, { fail: 'Pilih file XLSX atau CSV Setara terlebih dahulu.' });
 		}
 
 		const sekolahId = locals.sekolah?.id;
@@ -625,7 +624,7 @@ export const actions: Actions = {
 			prepared = await preparePegawaiImport(file, sekolahId);
 		} catch (error) {
 			return fail(400, {
-				fail: error instanceof Error ? error.message : 'File Excel pegawai tidak valid.'
+				fail: error instanceof Error ? error.message : 'File pegawai tidak valid.'
 			});
 		}
 		const { parsed, resolutions } = prepared;
@@ -633,6 +632,8 @@ export const actions: Actions = {
 			preview: {
 				fileName: file.name,
 				legacyFormat: parsed.legacyFormat,
+				sourceFormat: parsed.sourceFormat,
+				peringatan: resolutions.filter((item) => item.row.warnings?.length).length,
 				total: resolutions.length,
 				baru: resolutions.filter((item) => item.action === 'baru').length,
 				perbarui: resolutions.filter((item) => item.action === 'perbarui').length,
@@ -644,7 +645,8 @@ export const actions: Actions = {
 					nik: row.values.nik,
 					jenis: row.values.jenis,
 					action,
-					errors: row.errors
+					errors: row.errors,
+					warnings: row.warnings ?? []
 				}))
 			}
 		};
@@ -659,7 +661,7 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const file = formData.get('file');
 		if (!(file instanceof File) || !file.size) {
-			return fail(400, { fail: 'Pilih file Excel pegawai terlebih dahulu.' });
+			return fail(400, { fail: 'Pilih file XLSX atau CSV Setara terlebih dahulu.' });
 		}
 
 		let prepared;
@@ -667,11 +669,12 @@ export const actions: Actions = {
 			prepared = await preparePegawaiImport(file, sekolahId);
 		} catch (error) {
 			return fail(400, {
-				fail: error instanceof Error ? error.message : 'File Excel pegawai tidak valid.'
+				fail: error instanceof Error ? error.message : 'File pegawai tidak valid.'
 			});
 		}
 		const invalid = prepared.resolutions.filter((item) => item.action === 'bermasalah');
-		if (invalid.length) {
+		const skipInvalid = prepared.parsed.sourceFormat?.startsWith('setara-') && formData.get('skipInvalid') === 'on';
+		if (invalid.length && !skipInvalid) {
 			const examples = invalid
 				.slice(0, 5)
 				.map((item) => `baris ${item.row.rowNumber}: ${item.row.errors.join(' ')}`)
@@ -683,9 +686,15 @@ export const actions: Actions = {
 
 		let inserted = 0;
 		let updated = 0;
+		let skipped = 0;
 		try {
 			await db.transaction(async (tx) => {
-				for (const resolution of prepared.resolutions) {
+				const existingRows = await tx.query.tablePegawai.findMany({ where: eq(tablePegawai.sekolahId, sekolahId) });
+				const resolutions = resolvePegawaiImportRows(prepared.parsed, existingRows);
+				if (!skipInvalid && resolutions.some((item) => item.action === 'bermasalah')) throw new Error('Identitas pegawai berubah. Periksa ulang pratinjau.');
+				if (resolutions.every((item) => item.action === 'bermasalah')) throw new Error('Tidak ada baris valid untuk diimpor.');
+				for (const resolution of resolutions) {
+					if (resolution.action === 'bermasalah') { skipped += 1; continue; }
 					const now = new Date().toISOString();
 					if (resolution.existingId) {
 						await tx
@@ -693,7 +702,8 @@ export const actions: Actions = {
 							.set(
 								buildPegawaiImportUpdatePayload(
 									resolution.row.values,
-									prepared.parsed.providedColumns
+									prepared.parsed.providedColumns,
+									{ setara: !!prepared.parsed.sourceFormat?.startsWith('setara-'), existing: resolution.existing }
 								)
 							)
 							.where(
@@ -702,6 +712,8 @@ export const actions: Actions = {
 									eq(tablePegawai.sekolahId, sekolahId)
 								)
 							);
+						await tx.insert(tablePegawaiRiwayat).values({ sekolahId, pegawaiId: resolution.existingId,
+							authUserId: locals.user!.id, aksi: 'import', bagian: 'biodata', ringkasan: `Pembaruan massal ${prepared.parsed.sourceFormat ?? 'xlsx'}.` });
 						updated += 1;
 						continue;
 					}
@@ -725,6 +737,8 @@ export const actions: Actions = {
 							.update(tablePegawai)
 							.set({ kodePegawai: `PGW-${String(createdId).padStart(8, '0')}` })
 							.where(and(eq(tablePegawai.id, createdId), eq(tablePegawai.sekolahId, sekolahId)));
+						await tx.insert(tablePegawaiRiwayat).values({ sekolahId, pegawaiId: createdId,
+							authUserId: locals.user!.id, aksi: 'import', bagian: 'biodata', ringkasan: `Penambahan massal ${prepared.parsed.sourceFormat ?? 'xlsx'}.` });
 					}
 					inserted += 1;
 				}
@@ -737,7 +751,8 @@ export const actions: Actions = {
 		}
 
 		return {
-			message: `Import pegawai selesai. Baru: ${inserted}, diperbarui: ${updated}, gagal: 0.`
+			message: `Import pegawai selesai. Baru: ${inserted}, diperbarui: ${updated}, dilewati: ${skipped}.`,
+			inserted, updated, skipped
 		};
 	}
 };

@@ -41,6 +41,17 @@ test('operator tidak otomatis menerima kewenangan persetujuan', () => {
 	assert.equal(permissions.includes('komunikasi_approve'), false);
 });
 
+test('finalisasi, revisi dan massal rapor memerlukan delegasi eksplisit di luar admin',()=>{
+	const approvals=['rapor_arsip_finalisasi','rapor_arsip_revisi','rapor_arsip_massal'] as const;
+	for(const position of ['kepala_sekolah','waka_kurikulum','waka_keasramaan','operator'] as const){
+		for(const permission of approvals)assert.equal(permissionsForAccessPosition(position).includes(permission),false);
+	}
+	for(const permission of approvals){
+		assert.equal(effectivePermissions({type:'admin'}).includes(permission),true);
+		assert.equal(effectivePermissions({type:'user',jabatanAkses:'waka_kurikulum',permissions:[permission]}).includes(permission),true);
+	}
+});
+
 test('izin manual dapat menambah pengecualian operator tetapi bukan izin sistem', () => {
 	const permissions = effectivePermissions({
 		type: 'user',

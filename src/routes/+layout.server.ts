@@ -10,9 +10,10 @@ import {
 import { cookieNames, findTitleByPath } from '$lib/utils.js';
 import { redirect } from '@sveltejs/kit';
 import type { LayoutServerLoad } from './$types';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { getLegacyWaliKelasIds, isLegacyWaliKelas } from '$lib/server/legacy-wali-kelas';
-import { getAssignmentSummaries } from '$lib/server/assignment-summary';
+import { getAssignmentSummaries, guardianStudentCondition } from '$lib/server/assignment-summary';
+import { dormView, dormCookie } from '$lib/server/dormitory-access';
 import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 
 export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
@@ -67,15 +68,13 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 				)
 			});
 			if (pegawai?.nama) {
-				const waliColumn =
-					userWithType.type === 'wali_asrama' ? tableMurid.waliAsramaNama : tableMurid.waliAsuhNama;
 				const rows = await db
 					.selectDistinct({ kelasId: tableMurid.kelasId })
 					.from(tableMurid)
 					.where(
 						and(
 							eq(tableMurid.sekolahId, sekolah.id),
-							sql`LOWER(trim(${waliColumn})) = ${pegawai.nama.trim().toLowerCase()}`
+							await guardianStudentCondition(user, sekolah.id)
 						)
 					);
 				const kelasIds = rows.map((row) => row.kelasId);
@@ -283,6 +282,11 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 	}
 
 	// Set cookies AFTER all async operations are complete
+	const dorm = await dormView(locals, url.searchParams, cookies,
+		url.pathname === '/administrasi/absensi/monitoring');
+	if (url.searchParams.has('kamar_id')) {
+		cookies.set(dormCookie, String(dorm.room?.id ?? 0), { path:'/', secure:locals.requestIsSecure ?? false, httpOnly:true, sameSite:'lax' });
+	}
 	const secure = locals.requestIsSecure ?? false;
 	if (kelasAktif) {
 		cookies.set(cookieNames.ACTIVE_KELAS_ID, String(kelasAktif.id), {
@@ -294,6 +298,8 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 	}
 
 	return {
+		daftarAsrama: dorm.rooms,
+		asramaAktif: dorm.room,
 		assignmentSummary:
 			user && sekolah?.id
 				? ((

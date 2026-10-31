@@ -27,6 +27,7 @@
 	const isLoginPage = $derived(page.url.pathname === '/login');
 	const isPublicGuestPage = $derived(page.url.pathname.startsWith('/tamu/'));
 	const isFluidWorkspace = $derived(
+		/^\/asrama(?:\/|$)/.test(page.url.pathname) ||
 		/^\/murid\/?$/.test(page.url.pathname) ||
 			/^\/pengasuhan\/(ringkasan|piket|kejadian|perkembangan|sakit)\/?$/.test(page.url.pathname)
 	);
@@ -51,6 +52,7 @@
 	const disableInteraction = $derived(
 		isRestrictedTeacher(data.user) &&
 			isReadonlyPage &&
+			!(page.url.pathname === '/murid/arsip/rapor' || page.url.pathname.startsWith('/murid/arsip/rapor/')) &&
 			!(
 				page.url.pathname.startsWith('/murid') && data.user?.permissions?.includes('kelas_manage')
 			) &&

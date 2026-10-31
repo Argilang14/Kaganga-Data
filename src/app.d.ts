@@ -42,6 +42,8 @@ declare global {
 			nilaiRataRata: number | null;
 		};
 		interface PageData {
+			daftarAsrama?: import('./lib/dormitory').DormRoom[];
+			asramaAktif?: import('./lib/dormitory').DormRoom | null;
 			assignmentSummary?: string | null;
 			meta: PageMeta;
 			sekolah?: Omit<Sekolah, 'logo'>;

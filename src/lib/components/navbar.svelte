@@ -8,6 +8,7 @@
 	import { toast } from '$lib/components/toast.svelte';
 	import { showModal } from '$lib/components/global-modal.svelte';
 	import { onMount, type Component } from 'svelte';
+	import { dormViewHref } from '$lib/dormitory';
 
 	type NavbarProps = {
 		stopServer?: () => void;
@@ -44,6 +45,9 @@
 	let notificationCount = $state(0);
 	const daftarKelas = $derived(page.data.daftarKelas ?? []);
 	const kelasAktif = $derived(page.data.kelasAktif ?? null);
+	const daftarAsrama = $derived(page.data.daftarAsrama ?? []);
+	const asramaAktif = $derived(page.data.asramaAktif ?? null);
+	const asramaContext = $derived(page.url.pathname==='/asrama'||page.url.pathname.startsWith('/asrama/')||page.url.pathname.startsWith('/pengasuhan/')||page.url.pathname==='/administrasi/absensi/monitoring');
 	const user = $derived(page.data.user ?? null);
 	const canViewNotifications = $derived(
 		user?.type === 'admin' || user?.permissions?.includes('notifikasi_lihat') === true
@@ -52,6 +56,7 @@
 		if (!kelasAktif) return 'Pilih Kelas';
 		return kelasAktif.fase ? `${kelasAktif.nama} - ${kelasAktif.fase}` : kelasAktif.nama;
 	});
+	const contextLabel = $derived(asramaContext&&asramaAktif?`${asramaAktif.asrama} / ${asramaAktif.nama}`:kelasAktifLabel);
 
 	// Human-readable display name for current user (prefer pegawaiName if available)
 	const displayUserName = $derived.by(() => {
@@ -296,12 +301,12 @@
 				<div class="dropdown dropdown-end">
 					<button
 						type="button"
-						aria-label={`Ganti kelas: ${kelasAktifLabel}`}
-						title="Ganti kelas"
+						aria-label={`Pilih kelas atau asrama: ${contextLabel}`}
+						title="Pilih kelas atau asrama"
 						onclick={(event) => event.currentTarget.focus()}
 						class="btn btn-soft app-class-switcher rounded-full shadow-none"
 					>
-						<span class="hidden sm:block">{excerpt(kelasAktifLabel, 16)}</span>
+						<span class="hidden sm:block">{excerpt(contextLabel, 16)}</span>
 						<Icon name="users" class="sm:hidden" />
 						<Icon name="select" class="hidden sm:block" />
 					</button>
@@ -400,6 +405,19 @@
 							</p>
 						{/if}
 
+						{#if daftarAsrama.length}
+							<details class="bg-base-200 collapse-plus collapse mt-1 rounded-none">
+								<summary class="collapse-title font-semibold">Pindah Asrama</summary>
+								<div class="flex max-h-[30vh] flex-col overflow-y-auto p-1">
+									<a class="btn btn-ghost btn-sm justify-start" href={dormViewHref(page.url.pathname,page.url.search,0)}>Semua kamar yang diizinkan</a>
+									{#each daftarAsrama as kamar (kamar.id)}
+										<a class="btn btn-ghost btn-sm h-auto min-h-9 justify-start whitespace-normal py-2 text-left" class:btn-active={asramaAktif?.id===kamar.id} href={dormViewHref(page.url.pathname,page.url.search,kamar.id)}>{kamar.asrama} / {kamar.nama}</a>
+									{/each}
+								</div>
+							</details>
+						{:else if user?.type==='admin'||user?.type==='wali_asrama'||user?.type==='wali_asuh'}
+							<a href="/asrama" class="btn btn-ghost btn-sm mt-1 justify-start">Data Asrama</a>
+						{/if}
 						<li class="mt-1">
 							<a class="btn btn-sm rounded-none shadow-none" href="/pengaturan">
 								<Icon name="gear" />

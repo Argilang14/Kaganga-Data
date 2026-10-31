@@ -1,6 +1,6 @@
 import db from './db';
 import { tableAuthUserKelas, tableKelas, tableMurid, tablePegawai } from './db/schema';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { canLegacyWaliKelasAccess } from './legacy-wali-kelas';
 import { hasClassExportAccess } from '../export-access';
 import { resolveSekolahAcademicContext } from './db/academic';
@@ -22,11 +22,9 @@ export async function canAccessExportClass(user: App.Locals['user'], sekolahId: 
 			where: and(eq(tablePegawai.id, user.pegawaiId), eq(tablePegawai.sekolahId, sekolahId))
 		});
 		if (pegawai?.nama.trim()) {
-			const column = user.type === 'wali_asrama' ? tableMurid.waliAsramaNama : tableMurid.waliAsuhNama;
 			assigned = Boolean(await db.query.tableMurid.findFirst({
 				columns: { id: true },
 				where: and(eq(tableMurid.sekolahId, sekolahId), eq(tableMurid.kelasId, kelasId),
-					sql`LOWER(trim(${column})) = ${pegawai.nama.trim().toLowerCase()}`,
 					await guardianStudentCondition(user, sekolahId))
 			}));
 		}

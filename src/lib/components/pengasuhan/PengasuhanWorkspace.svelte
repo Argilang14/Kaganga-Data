@@ -187,6 +187,7 @@
 					<h1>{section.title}</h1>
 					<div class="care-context">
 						<span>Pengasuhan & Asrama</span>
+						{#if data.asrama}<span>{data.asrama.asrama} / {data.asrama.nama}</span>{/if}
 						<span>{data.students.length} murid tercakup</span>
 						<span>{data.isAdmin ? 'Lingkup sekolah' : 'Sesuai penugasan'}</span>
 						<time datetime={data.today}>{dateLabel(data.today)}</time>
@@ -256,6 +257,7 @@
 			</div>
 			{#if data.section !== 'piket'}
 				<form class="care-filters" method="GET">
+					{#if data.asrama}<input type="hidden" name="kamar_id" value={data.asrama.id}/>{/if}
 					<label class="care-search"
 						><span>Cari catatan</span><span class="input care-search-input"
 							><Icon name="search" class="size-4 shrink-0 text-base-content/45" /><input

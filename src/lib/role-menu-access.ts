@@ -22,6 +22,7 @@ export function roleMenuPermissions(type?: string | null): string[] {
 	if (type === 'wali_asuh' || type === 'wali_asrama')
 		return [
 			...shared,
+			'asrama_lihat',
 			'keasramaan_lihat',
 			'keasramaan_input',
 			'mata_pelajaran_keasramaan',
@@ -74,6 +75,9 @@ export function canPrintDocument(user: MenuAccessUser, document: string) {
 
 // Longest prefix wins: an allowed parent never opens a protected child.
 const rules: [string, string[]][] = [
+	['/asrama', ['asrama_lihat']],
+	['/api/rapor-arsip', ['murid_arsip','rapor_arsip_lihat']],
+	['/murid/arsip/rapor', ['murid_arsip','rapor_arsip_lihat']],
 	['/api/pdf/informasi-siswa', ['murid_profil_cetak']],
 	['/api/pdf/qr-kelas', ['class_monitoring_manage']],
 	['/murid/arsip', ['murid_arsip']],

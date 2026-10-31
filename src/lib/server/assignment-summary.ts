@@ -2,6 +2,8 @@ import db from './db';
 import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 import { tableAuthUserKelas, tableKelas, tableMurid, tablePegawai } from './db/schema';
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import { ensureDormitorySchema } from './db/ensure-dormitory';
+import { dormGuardianCondition } from './dormitory-membership';
 
 type SummaryUser = { id: number; type: string; pegawaiId?: number | null; kelasId?: number | null };
 
@@ -28,6 +30,12 @@ export async function getAssignmentSummaries(users: SummaryUser[], sekolahId: nu
 	for (const user of users) {
 		if (user.type === 'admin') { result.set(user.id, 'Administrator'); continue; }
 		if (user.type === 'wali_asuh' || user.type === 'wali_asrama') {
+			if (user.type === 'wali_asrama' && user.pegawaiId) {
+				const [summary] = await db.select({ count:sql<number>`count(*)` }).from(tableMurid)
+					.where(and(eq(tableMurid.sekolahId,sekolahId),eq(tableMurid.semesterId,semesterId),
+						await guardianStudentCondition({ ...user, type:'wali_asrama',pegawaiId:user.pegawaiId??null,username:'',permissions:[],jabatanAkses:null,sekolahId,kelasId:user.kelasId??null,mataPelajaranId:null,mustChangePassword:false },sekolahId)));
+				result.set(user.id,`${summary.count} murid dibina`); continue;
+			}
 			const name = user.pegawaiId ? names.get(user.pegawaiId) : null;
 			if (!name) continue;
 			if ((nameCounts.get(name) ?? 0) > 1) { result.set(user.id, 'Nama wali sama; periksa penugasan'); continue; }
@@ -53,7 +61,12 @@ export async function guardianStudentCondition(user: App.Locals['user'] | null, 
 	if (!user.pegawaiId) return sql`0`;
 	const employees = await db.query.tablePegawai.findMany({ columns: { id: true, nama: true }, where: eq(tablePegawai.sekolahId, sekolahId) });
 	const name = employees.find(row => row.id === user.pegawaiId)?.nama.trim().toLowerCase();
+	if (user.type === 'wali_asrama') {
+		await ensureDormitorySchema();
+		const unique = !!name && employees.filter(row => row.nama.trim().toLowerCase() === name).length === 1;
+		return dormGuardianCondition(sekolahId, user.pegawaiId, unique ? name : null);
+	}
 	if (!name || employees.filter(row => row.nama.trim().toLowerCase() === name).length !== 1) return sql`0`;
-	const column = user.type === 'wali_asrama' ? tableMurid.waliAsramaNama : tableMurid.waliAsuhNama;
+	const column = tableMurid.waliAsuhNama;
 	return sql`lower(trim(${column})) = ${name}`;
 }

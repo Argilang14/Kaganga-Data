@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 import { asc, and, eq } from 'drizzle-orm';
 import db from '$lib/server/db';
 import { getStudentEducationIdentity } from '$lib/server/education-units';
@@ -248,7 +249,7 @@ export async function getKeasramaanPreviewPayload({ locals, url }: KeasramaanCon
 
 	// Wali_asuh: only allow viewing their own students
 	const userWithType = locals.user as { type?: string; pegawaiId?: number } | null;
-	if (userWithType?.type === 'wali_asuh' && userWithType.pegawaiId) {
+	if (userWithType?.type === 'wali_asuh' && userWithType.pegawaiId && !hasSchoolWideOperationalAccess(locals.user)) {
 		const peg = await db.query.tablePegawai.findFirst({
 			columns: { nama: true },
 			where: eq(tablePegawai.id, userWithType.pegawaiId)

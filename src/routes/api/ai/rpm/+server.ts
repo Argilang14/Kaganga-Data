@@ -1,3 +1,4 @@
+import { schoolWideAcademic } from '$lib/user-role';
 import db from '$lib/server/db';
 import { tableMataPelajaran, tableTujuanPembelajaran } from '$lib/server/db/schema';
 import { ADMIN_TYPES, getAiSettings, withAi429Retry } from '$lib/server/ai';
@@ -85,7 +86,7 @@ export const POST = async ({ request, locals }) => {
 	if (!(await canAccessExportClass(user, sekolahId, kelas.id))) {
 		return json({ message: 'Anda tidak memiliki akses ke kelas ini.' }, { status: 403 });
 	}
-	if (user.type === 'user' && !(await bolehAksesMapel(user, mapel))) {
+	if (!schoolWideAcademic(user) && user.type === 'user' && !(await bolehAksesMapel(user, mapel))) {
 		return json({ message: 'Anda tidak memiliki akses ke mata pelajaran ini.' }, { status: 403 });
 	}
 

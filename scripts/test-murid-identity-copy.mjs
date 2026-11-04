@@ -239,22 +239,22 @@ try {
 		return result;
 	}
 	const protectedBefore = await protectedData();
-	let result = await post('/murid/arsip?/updateStatus', {
+	let result = await post('/murid/semua?view=arsip&/updateStatus', {
 		lifecycleIds: pending.id,
 		status: 'aktif'
 	});
 	assert.equal(result.status, 400, result.body);
-	result = await post('/murid/arsip?/updateStatus', {
+	result = await post('/murid/semua?view=arsip&/updateStatus', {
 		lifecycleIds: pending.id,
 		status: 'aktif',
 		identityReviewed: 'true',
 		alasan: 'Identitas diperiksa pada fixture QA'
 	});
 	assert.equal(result.status, 400, result.body);
-	const reviewPage = await (await get('/murid/arsip?perlu_periksa=1&q=Identitas%20QA')).text();
+	const reviewPage = await (await get('/murid/semua?view=arsip&perlu_periksa=1&q=Identitas%20QA')).text();
 	assert.match(reviewPage, /Periksa Identitas/);
 	assert.match(reviewPage, /IDENTITY-QA-3/);
-	result = await post('/murid/arsip?/resolveIdentity', {
+	result = await post('/murid/semua?view=arsip&/resolveIdentity', {
 		lifecycleIds: [pending.id, pending.id + 1],
 		status: 'aktif',
 		identityKey: pending.identity_key,
@@ -262,7 +262,7 @@ try {
 		alasan: 'Tidak boleh memulihkan massal identitas ambigu'
 	});
 	assert.equal(result.status, 400, result.body);
-	result = await post('/murid/arsip?/resolveIdentity', {
+	result = await post('/murid/semua?view=arsip&/resolveIdentity', {
 		lifecycleIds: pending.id,
 		status: 'aktif',
 		identityKey: 'uid:wrong',
@@ -270,7 +270,7 @@ try {
 		alasan: 'Identitas yang dikirim tidak cocok'
 	});
 	assert.equal(result.status, 409, result.body);
-	result = await post('/murid/arsip?/resolveIdentity', {
+	result = await post('/murid/semua?view=arsip&/resolveIdentity', {
 		lifecycleIds: pending.id,
 		status: 'aktif',
 		identityKey: pending.identity_key,
@@ -279,7 +279,7 @@ try {
 		alasan: 'Formulir pemeriksaan kedaluwarsa'
 	});
 	assert.equal(result.status, 409, result.body);
-	result = await post('/murid/arsip?/resolveIdentity', {
+	result = await post('/murid/semua?view=arsip&/resolveIdentity', {
 		lifecycleIds: pending.id,
 		status: 'aktif',
 		identityKey: pending.identity_key,
@@ -376,7 +376,7 @@ try {
 		if (status !== 'arsip')
 			assert.equal(rows.find((row) => row[0] === 'Identitas QA 2')[3], '0009876543');
 	}
-	result = await post('/murid/arsip?/updateStatus', { lifecycleIds: archived.id, status: 'aktif' });
+	result = await post('/murid/semua?view=arsip&/updateStatus', { lifecycleIds: archived.id, status: 'aktif' });
 	assert.equal(result.status, 200, result.body);
 	const beforeCount = Number((await db.execute('SELECT count(*) AS n FROM murid')).rows[0].n);
 	result = await post('/murid/form?/save', {
@@ -447,7 +447,7 @@ try {
 			args: [school, `uid:${links[1].identity_uid}`]
 		})
 	).rows[0];
-	result = await post('/murid/arsip?/previewPromotion', {
+	result = await post('/murid/semua?view=arsip&/previewPromotion', {
 		lifecycleIds: sourceLifecycle.id,
 		targetClassId: kelas
 	});
@@ -490,7 +490,7 @@ try {
 		sourceUnit = { satuan_id: unit.id, nama_snapshot: unit.nama, npsn_snapshot: unit.npsn };
 	}
 	if (sourceUnit) {
-		result = await post('/murid/arsip?/promote', {
+		result = await post('/murid/semua?view=arsip&/promote', {
 			lifecycleIds: sourceLifecycle.id,
 			targetClassId: Number(target.lastInsertRowid),
 			confirmed: 'true'
@@ -508,7 +508,7 @@ try {
 			]
 		});
 	}
-	result = await post('/murid/arsip?/promote', {
+	result = await post('/murid/semua?view=arsip&/promote', {
 		lifecycleIds: sourceLifecycle.id,
 		targetClassId: Number(target.lastInsertRowid),
 		confirmed: 'true'
@@ -548,7 +548,7 @@ try {
 		).rows[0].status,
 		firstStatus
 	);
-	result = await post('/murid/arsip?/updateStatus', {
+	result = await post('/murid/semua?view=arsip&/updateStatus', {
 		lifecycleIds: sourceLifecycle.id,
 		status: 'keluar',
 		tanggalStatus: '2026-10-11'
@@ -573,7 +573,7 @@ try {
 		[students[0].nama, students[0].nis, classRow.nama, '', original.tanggal_lahir]
 	]);
 	assert.equal(result.status, 400, result.body);
-	result = await post('/murid/arsip?/previewPromotion', {
+	result = await post('/murid/semua?view=arsip&/previewPromotion', {
 		lifecycleIds: archived.id,
 		targetClassId: Number(target.lastInsertRowid)
 	});
@@ -589,7 +589,7 @@ try {
 		sql: "UPDATE auth_user SET type='user',permissions='[\"murid_arsip\"]' WHERE id=?",
 		args: [admin.id]
 	});
-	result = await post('/murid/arsip?/resolveIdentity', {
+	result = await post('/murid/semua?view=arsip&/resolveIdentity', {
 		lifecycleIds: pending.id,
 		status: 'aktif',
 		identityKey: pending.identity_key,
@@ -623,7 +623,7 @@ try {
 	});
 	for (const width of [1366, 768, 390, 320]) {
 		await page.setViewport({ width, height: 900 });
-		await page.goto(`${base}/murid/arsip?perlu_periksa=1&q=Identitas%20QA%203`, {
+		await page.goto(`${base}/murid/semua?view=arsip&perlu_periksa=1&q=Identitas%20QA%203`, {
 			waitUntil: 'networkidle0'
 		});
 		await page.waitForSelector('button[data-review-id]');
@@ -681,7 +681,7 @@ try {
 		await page.screenshot({ path: path.join(folder, `murid-${width}.png`), fullPage: true });
 	}
 	await page.setViewport({ width: 1366, height: 900 });
-	await page.goto(`${base}/murid/arsip?q=Identitas%20QA`, { waitUntil: 'networkidle0' });
+	await page.goto(`${base}/murid/semua?view=arsip&q=Identitas%20QA`, { waitUntil: 'networkidle0' });
 	await page.screenshot({ path: path.join(folder, 'arsip.png'), fullPage: true });
 	await page.click('button[data-history-id]');
 	await page.waitForSelector('dialog[open] h2');
@@ -690,12 +690,12 @@ try {
 	await page.keyboard.press('Escape');
 	await page.waitForSelector('dialog[open]', { hidden: true });
 	assert.ok(await page.$eval('button[data-history-id]', (el) => document.activeElement === el));
-	result = await post('/murid/arsip?/updateStatus', {
+	result = await post('/murid/semua?view=arsip&/updateStatus', {
 		lifecycleIds: pending.id,
 		status: 'aktif'
 	});
 	assert.equal(result.status, 200, result.body);
-	await page.goto(`${base}/murid/arsip?q=Identitas%20QA%203`, { waitUntil: 'networkidle0' });
+	await page.goto(`${base}/murid/semua?view=arsip&q=Identitas%20QA%203`, { waitUntil: 'networkidle0' });
 	await page.click('input[aria-label="Pilih Identitas QA 3"]:not(:disabled)');
 	const statusForm = 'form[action="?/updateStatus"]';
 	const placementForm = 'form[action="?/previewPromotion"]';
@@ -783,25 +783,25 @@ try {
 		'Nilai, presensi, QR, foto dan data sumber tidak boleh berubah saat arsip/pemulihan'
 	);
 	// Permanent deletion uses the same isolated database; no live student is touched.
-	result = await post('/murid/arsip?/previewPurge', { lifecycleIds: sourceLifecycle.id });
+	result = await post('/murid/semua?view=arsip&/previewPurge', { lifecycleIds: sourceLifecycle.id });
 	assert.equal(result.status, 409, result.body);
-	result = await post('/murid/arsip?/previewPurge', { lifecycleIds: pending.id });
+	result = await post('/murid/semua?view=arsip&/previewPurge', { lifecycleIds: pending.id });
 	assert.equal(result.status, 409, result.body);
 	await db.execute({
 		sql: "UPDATE auth_user SET type='user',permissions='[\"murid_arsip\"]' WHERE id=?",
 		args: [admin.id]
 	});
-	result = await post('/murid/arsip?/previewPurge', { lifecycleIds: pending.id });
+	result = await post('/murid/semua?view=arsip&/previewPurge', { lifecycleIds: pending.id });
 	assert.equal(result.status, 403, result.body);
-	result = await post('/murid/arsip?/purge', { lifecycleIds: pending.id });
+	result = await post('/murid/semua?view=arsip&/purge', { lifecycleIds: pending.id });
 	assert.equal(result.status, 403, result.body);
 	await db.execute({
 		sql: "UPDATE auth_user SET type='admin',permissions='[]' WHERE id=?",
 		args: [admin.id]
 	});
-	result = await post('/murid/arsip?/updateStatus', { lifecycleIds: pending.id, status: 'aktif' });
+	result = await post('/murid/semua?view=arsip&/updateStatus', { lifecycleIds: pending.id, status: 'aktif' });
 	assert.equal(result.status, 200, result.body);
-	result = await post('/murid/arsip?/promote', {
+	result = await post('/murid/semua?view=arsip&/promote', {
 		lifecycleIds: pending.id,
 		targetClassId: Number(target.lastInsertRowid),
 		confirmed: 'true'
@@ -814,7 +814,7 @@ try {
 		})
 	).rows.map((row) => Number(row.murid_id));
 	assert.equal(toDeleteIds.length, 2);
-	result = await post('/murid/arsip?/updateStatus', {
+	result = await post('/murid/semua?view=arsip&/updateStatus', {
 		lifecycleIds: pending.id,
 		status: 'keluar',
 		tanggalStatus: '2026-10-11',
@@ -825,7 +825,7 @@ try {
 		sql: 'UPDATE murid_lifecycle SET needs_identity_review=1 WHERE id=?',
 		args: [pending.id]
 	});
-	result = await post('/murid/arsip?/previewPurge', { lifecycleIds: pending.id });
+	result = await post('/murid/semua?view=arsip&/previewPurge', { lifecycleIds: pending.id });
 	assert.equal(result.status, 409, result.body);
 	await db.execute({
 		sql: 'UPDATE murid_lifecycle SET needs_identity_review=0 WHERE id=?',
@@ -839,11 +839,11 @@ try {
 		sql: "INSERT INTO martikulasi_hasil(sekolah_id,tahun_ajaran_id,kelas_id,murid_id,nomor_sttm,created_at) VALUES(?,?,?,?,'STTM-QA',CURRENT_TIMESTAMP)",
 		args: [school, classRow.tahun_ajaran_id, kelas, students[2].id]
 	});
-	result = await post('/murid/arsip?/previewPurge', { lifecycleIds: pending.id });
+	result = await post('/murid/semua?view=arsip&/previewPurge', { lifecycleIds: pending.id });
 	assert.equal(result.status, 200, result.body);
 	let purgePlan = parseActionData(JSON.parse(result.body).data).purgePreview;
 	assert.ok(purgePlan.blockers.some((item) => item.includes('STTM')));
-	result = await post('/murid/arsip?/purge', {
+	result = await post('/murid/semua?view=arsip&/purge', {
 		lifecycleIds: pending.id,
 		fingerprint: purgePlan.fingerprint,
 		confirmName: students[2].nama,
@@ -859,7 +859,7 @@ try {
 		sql: "INSERT INTO document_attachment(sekolah_id,entity_type,entity_id,entity_label_snapshot,category,original_name,stored_path,mime_type,size_bytes,sha256,created_at) VALUES(?,'murid',?,?,'ijazah','QA.pdf','qa/permanent-delete.pdf','application/pdf',1,?,CURRENT_TIMESTAMP)",
 		args: [school, String(students[2].id), students[2].nama, 'a'.repeat(64)]
 	});
-	result = await post('/murid/arsip?/previewPurge', { lifecycleIds: pending.id });
+	result = await post('/murid/semua?view=arsip&/previewPurge', { lifecycleIds: pending.id });
 	purgePlan = parseActionData(JSON.parse(result.body).data).purgePreview;
 	assert.ok(purgePlan.blockers.some((item) => item.includes('lampiran')));
 	await db.execute({
@@ -874,7 +874,7 @@ try {
 		sql: "INSERT INTO ujian_peserta(session_id,murid_id,murid_nama_snapshot,nomor_peserta,created_at) VALUES(?,?,?,'12345001',CURRENT_TIMESTAMP)",
 		args: [Number(examSession.lastInsertRowid), students[2].id, students[2].nama]
 	});
-	result = await post('/murid/arsip?/previewPurge', { lifecycleIds: pending.id });
+	result = await post('/murid/semua?view=arsip&/previewPurge', { lifecycleIds: pending.id });
 	purgePlan = parseActionData(JSON.parse(result.body).data).purgePreview;
 	assert.equal(purgePlan.blockers.length, 0);
 	assert.equal(purgePlan.periods, 2);
@@ -888,7 +888,7 @@ try {
 			(item) => item.table === 'ujian_peserta' && item.effect === 'dipertahankan'
 		)
 	);
-	result = await post('/murid/arsip?/purge', {
+	result = await post('/murid/semua?view=arsip&/purge', {
 		lifecycleIds: pending.id,
 		fingerprint: purgePlan.fingerprint,
 		confirmName: 'Nama salah',
@@ -900,7 +900,7 @@ try {
 		sql: 'UPDATE asesmen_sumatif SET nilai_akhir=91 WHERE murid_id=?',
 		args: [students[2].id]
 	});
-	result = await post('/murid/arsip?/purge', {
+	result = await post('/murid/semua?view=arsip&/purge', {
 		lifecycleIds: pending.id,
 		fingerprint: purgePlan.fingerprint,
 		confirmName: students[2].nama,
@@ -910,7 +910,7 @@ try {
 	assert.equal(result.status, 409, result.body);
 	for (const width of [1366, 768, 390, 320]) {
 		await page.setViewport({ width, height: 900 });
-		await page.goto(`${base}/murid/arsip?q=Identitas%20QA%203`, { waitUntil: 'networkidle0' });
+		await page.goto(`${base}/murid/semua?view=arsip&q=Identitas%20QA%203`, { waitUntil: 'networkidle0' });
 		// The archive row has one permanent-delete command; its preview is a separate modal form.
 		await page.click(`button[data-purge-id="${pending.id}"]`);
 		await page.waitForSelector('dialog[open] form[action="?/previewPurge"]');
@@ -1001,12 +1001,12 @@ try {
 		})
 	).rows[0];
 	assert.ok(legacySnapshot);
-	result = await post('/murid/arsip?/previewPurge', { lifecycleIds: legacySnapshot.id });
+	result = await post('/murid/semua?view=arsip&/previewPurge', { lifecycleIds: legacySnapshot.id });
 	assert.equal(result.status, 200, result.body);
 	const legacyPlan = parseActionData(JSON.parse(result.body).data).purgePreview;
 	assert.equal(legacyPlan.periods, 0);
 	assert.equal(legacyPlan.blockers.length, 0);
-	result = await post('/murid/arsip?/purge', {
+	result = await post('/murid/semua?view=arsip&/purge', {
 		lifecycleIds: legacySnapshot.id,
 		fingerprint: legacyPlan.fingerprint,
 		confirmName: legacySnapshot.nama_snapshot,

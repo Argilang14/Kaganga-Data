@@ -8,18 +8,19 @@ interface KeasramaanPrintData {
 		jenjangVariant?: string | null;
 	};
 	murid: { nama: string; nis: string; nisn: string };
-	rombel: { nama: string; fase: string };
+	rombel: { nama: string; fase: string; label?: string };
 	periode: { tahunAjaran: string; semester: string };
 	waliAsrama: { nama: string; nip?: string | null } | null;
 	waliKelas: { nama: string; nip?: string | null } | null;
 	waliAsuh: { nama: string; nip?: string | null } | null;
 	kepalaSekolah: { nama: string; nip?: string | null; statusKepalaSekolah?: string | null } | null;
+	catatanWaliAsrama?: string;
 	ttd: { tempat: string; tanggal: string };
 	kehadiran: { sakit: number; izin: number; alfa: number } | null;
 	keasramaanRows: Array<{
 		no: number;
 		indikator: string;
-		predikat: 'perlu-bimbingan' | 'cukup' | 'baik' | 'sangat-baik';
+		predikat: '' | 'perlu-bimbingan' | 'cukup' | 'baik' | 'sangat-baik';
 		deskripsi: string;
 		kategoriHeader?: string;
 	}>;
@@ -348,7 +349,7 @@ ${logoUrl ? `<img src="${logoUrl}" alt="Watermark" class="watermark">` : ''}
 	<div class="label">Nama Murid</div>
 	<div>:</div>
 	<div class="uppercase">${formatUpper(data.murid.nama)}</div>
-	<div class="label">Kelas</div>
+	<div class="label">${formatValue(data.rombel.label ?? 'Kelas')}</div>
 	<div>:</div>
 	<div>${formatValue(data.rombel.nama)}</div>
 
@@ -380,6 +381,7 @@ ${logoUrl ? `<img src="${logoUrl}" alt="Watermark" class="watermark">` : ''}
 	</thead>
 ${tableBody}
 </table>
+${data.catatanWaliAsrama ? `<div style="margin-top:12pt"><strong>Catatan Wali Asrama</strong><p>${formatValue(data.catatanWaliAsrama)}</p></div>` : ''}
 
 ${kehadiranSection}
 

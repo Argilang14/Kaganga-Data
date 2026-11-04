@@ -54,9 +54,9 @@ export async function syncMuridGovernance(
 			tahunAjaranNama: tableTahunAjaran.nama
 		})
 		.from(tableMurid)
-		.innerJoin(tableKelas, eq(tableMurid.kelasId, tableKelas.id))
+		.leftJoin(tableKelas, eq(tableMurid.kelasId, tableKelas.id))
 		.innerJoin(tableSemester, eq(tableMurid.semesterId, tableSemester.id))
-		.innerJoin(tableTahunAjaran, eq(tableKelas.tahunAjaranId, tableTahunAjaran.id))
+		.innerJoin(tableTahunAjaran, eq(tableSemester.tahunAjaranId, tableTahunAjaran.id))
 		.where(and(eq(tableMurid.sekolahId, sekolahId), inArray(tableMurid.id, uniqueIds)));
 
 	const now = new Date().toISOString();
@@ -122,7 +122,7 @@ export async function syncMuridGovernance(
 				}
 			});
 
-		await reader
+		if (row.kelasId && row.kelasNama) await reader
 			.insert(tableMuridRiwayatKelas)
 			.values({
 				sekolahId,

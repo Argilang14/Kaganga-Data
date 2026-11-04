@@ -4,6 +4,7 @@ type PdfParams = {
 	docType: string;
 	muridId: number;
 	kelasId?: number;
+	penempatanId?: number;
 	tpMode?: string;
 	kritCukup?: number;
 	kritBaik?: number;

@@ -1,10 +1,12 @@
 import db from '$lib/server/db';
+import { ensureUserRolesSchema, resetUserRolesSchema } from './ensure-user-roles';
 import { ensurePegawaiSchema } from '$lib/server/db/ensure-pegawai';
 
 let ensured = false;
 
 export function resetPenggunaIdentitySchemaEnsure() {
 	ensured = false;
+	resetUserRolesSchema();
 }
 
 export async function ensurePenggunaIdentitySchema() {
@@ -31,5 +33,6 @@ export async function ensurePenggunaIdentitySchema() {
 			) IS NOT NULL
 	`);
 
+	await ensureUserRolesSchema();
 	ensured = true;
 }

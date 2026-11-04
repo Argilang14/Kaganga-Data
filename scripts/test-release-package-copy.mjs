@@ -197,7 +197,7 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 			for (const route of [
 				'/',
 				'/pegawai',
-				...(version === '2.3.1'
+				...(['2.3.1', '2.3.2'].includes(version)
 					? [
 							'/asrama/gedung',
 							'/asrama/kamar',
@@ -207,6 +207,19 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 							'/asrama/penempatan',
 							'/murid/arsip/rapor',
 							'/murid/arsip/rapor?jenis=martikulasi&periode=ras'
+						]
+					: []),
+				...(version === '2.3.2'
+					? [
+							'/murid/semua',
+							'/murid/pasif',
+							'/murid/asrama',
+							'/asrama',
+							'/keasramaan',
+							'/asesmen-keasramaan',
+							'/catatan-wali-asrama',
+							'/rekap-nilai-asrama',
+							'/cetak-raport'
 						]
 					: []),
 				'/pengguna',

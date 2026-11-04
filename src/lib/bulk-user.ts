@@ -8,7 +8,13 @@ export const bulkUserRoleLabels: Record<BulkUserRole, string> = {
 	wali_asrama: 'Wali Asrama',
 	tim_dapur: 'Tim Dapur',
 	tim_keamanan: 'Tim Keamanan',
-	operator: 'Operator'
+	operator: 'Operator',
+	kepala_sekolah: 'Kepala Sekolah',
+	waka_kurikulum: 'Waka Kurikulum',
+	waka_kesiswaan: 'Waka Kesiswaan',
+	waka_sarpras: 'Waka Sarpras',
+	waka_keasramaan: 'Waka Keasramaan',
+	waka_humas: 'Waka Humas'
 };
 export const BULK_USER_LIMIT = 100;
 export type BulkUserCandidate = {
@@ -24,6 +30,7 @@ export type BulkUserCandidate = {
 	mataPelajaranIds: number[];
 	studentIds: number[];
 	classes: string[];
+	rooms?: string[];
 	subjects: string[];
 	permissions: string[];
 	fingerprint: string;
@@ -73,7 +80,13 @@ export function proposeBulkUsername(
 		wali_asrama: 'asrama',
 		tim_dapur: 'dapur',
 		tim_keamanan: 'keamanan',
-		operator: 'operator'
+		operator: 'operator',
+		kepala_sekolah: 'kepsek',
+		waka_kurikulum: 'wakakur',
+		waka_kesiswaan: 'kesiswaan',
+		waka_sarpras: 'sarpras',
+		waka_keasramaan: 'keasramaan',
+		waka_humas: 'humas'
 	}[role];
 	const base = `${prefix}.${slug || `pegawai${id}`}`;
 	let username = base;

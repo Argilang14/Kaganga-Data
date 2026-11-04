@@ -54,7 +54,10 @@ export async function GET({ locals, url }) {
 				nama: tableKelas.nama,
 				fase: tableKelas.fase,
 				tahunAjaran: tableTahunAjaran.nama,
-				semester: tableSemester.tipe
+				semester: tableSemester.tipe,
+				waliKelasId: tableKelas.waliKelasId,
+				semesterAktif: tableSemester.isAktif,
+				tahunAktif: tableTahunAjaran.isAktif
 			})
 			.from(tableKelas)
 			.innerJoin(tableSemester, eq(tableKelas.semesterId, tableSemester.id))
@@ -64,7 +67,7 @@ export async function GET({ locals, url }) {
 	]);
 
 	return Response.json(
-		{ pegawaiList, mataPelajaran, kelasList },
+		{ pegawaiList: pegawaiList.map(row => ({ ...row, waliKelasIds: kelasList.filter(k => k.waliKelasId === row.id && k.semesterAktif && k.tahunAktif).map(k => k.id) })), mataPelajaran, kelasList },
 		{
 			headers: { 'cache-control': 'no-store, private' }
 		}

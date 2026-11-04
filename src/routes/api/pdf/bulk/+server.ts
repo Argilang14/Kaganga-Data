@@ -16,6 +16,8 @@ type BulkRequest = {
 	docType: DocumentType;
 	muridIds: number[];
 	kelasId?: number;
+	penempatanIds?: Record<string, number>;
+	semesterId?: number;
 	tpMode?: string;
 	criteria?: { kritCukup: number; kritBaik: number };
 	template?: '1' | '2';
@@ -45,13 +47,23 @@ async function fetchStudentData(
 	const url = new URL('http://localhost');
 	url.searchParams.set('murid_id', String(muridId));
 	if (body.kelasId) url.searchParams.set('kelas_id', String(body.kelasId));
+	if (body.docType === 'keasramaan') {
+		if (body.penempatanIds !== undefined) {
+			const placementId = body.penempatanIds?.[String(muridId)];
+			if (!Number.isSafeInteger(placementId) || Number(placementId) <= 0)
+				error(400, 'Penempatan murid tidak valid. Muat ulang daftar murid.');
+			url.searchParams.set('penempatan_id', String(placementId));
+		}
+		if (body.semesterId) url.searchParams.set('semester_id', String(body.semesterId));
+	}
 	if (body.tpMode === 'full-desc') url.searchParams.set('full_tp', 'desc');
 	if (body.criteria) {
 		url.searchParams.set('krit_cukup', String(body.criteria.kritCukup));
 		url.searchParams.set('krit_baik', String(body.criteria.kritBaik));
 	}
 	if (body.bgLogo) url.searchParams.set('bg_logo', '1');
-	if (['rapor', 'piagam'].includes(body.docType) && body.includeSchoolMarks === true) url.searchParams.set('school_marks', '1');
+	if (['rapor', 'piagam'].includes(body.docType) && body.includeSchoolMarks === true)
+		url.searchParams.set('school_marks', '1');
 	if (body.raporPeriode) url.searchParams.set('rapor_periode', body.raporPeriode);
 	if (
 		body.parentSignature === 'ayah' ||

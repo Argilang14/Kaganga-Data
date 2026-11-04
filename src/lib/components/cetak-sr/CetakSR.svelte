@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+	import { goto } from '$app/navigation';
 	import { canPrintDocument } from '$lib/role-menu-access';
 	/* eslint-disable @typescript-eslint/no-unused-vars */
 	import { page } from '$app/state';
@@ -38,6 +40,7 @@
 				defaultSigner: 'wali_kelas' | 'guru_mapel';
 			};
 			academicContext?: unknown;
+			dormReport?: { label: string; semesterId: number | null } | null;
 			kelasId?: number | string | null;
 			tahunAjaranList?: Array<{
 				id: number;
@@ -74,7 +77,13 @@
 				guruPegawaiId: number | null;
 				guru: { id: number; nama: string; nip: string | null } | null;
 			}>;
-			daftarMurid?: Array<{ id: number; nama: string; nis?: string | null; nisn?: string | null }>;
+			daftarMurid?: Array<{
+				id: number;
+				nama: string;
+				nis?: string | null;
+				nisn?: string | null;
+				penempatan_id?: number;
+			}>;
 			piagamRankingOptions?: Array<{
 				muridId: number;
 				peringkat: number;
@@ -127,12 +136,47 @@
 	];
 	const currentUserType = $derived((page.data.user as { type?: string } | null | undefined)?.type);
 	const visibleDocumentOptions = $derived.by(() => {
-		const general = ['informasi-siswa', 'kartu-absensi', 'qr-kelas', 'kartu-ujian', 'kartu-ujian-meja', 'jadwal-pelajaran', 'kalender-pendidikan', 'jurnal-mengajar', 'rekap-absensi-kegiatan', 'buku-tamu'];
-		const availableOptions = documentOptions.filter((option) => (option.value !== 'qr-kelas' || data.classQrPrintContext) && (option.value !== 'informasi-siswa' || canPrintDocument(page.data.user, option.value)));
-		if (documentGroup === 'dokumen') return availableOptions.filter((option) => general.includes(option.value) && (option.value !== 'jurnal-mengajar' || data.jurnalAccess?.canPrint !== false) && (option.value !== 'rekap-absensi-kegiatan' || data.absensiAccess === true) && (option.value !== 'buku-tamu' || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('administrasi_buku_tamu')) && (!['kartu-ujian', 'kartu-ujian-meja'].includes(option.value) || page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('ujian_cetak') || page.data.user?.permissions?.includes('ujian_manage')));
-		if (documentGroup === 'raport') return availableOptions.filter((option) => !general.includes(option.value) && canPrintDocument(page.data.user, option.value));
+		const general = [
+			'informasi-siswa',
+			'kartu-absensi',
+			'qr-kelas',
+			'kartu-ujian',
+			'kartu-ujian-meja',
+			'jadwal-pelajaran',
+			'kalender-pendidikan',
+			'jurnal-mengajar',
+			'rekap-absensi-kegiatan',
+			'buku-tamu'
+		];
+		const availableOptions = documentOptions.filter(
+			(option) =>
+				(option.value !== 'qr-kelas' || data.classQrPrintContext) &&
+				(option.value !== 'informasi-siswa' || canPrintDocument(page.data.user, option.value))
+		);
+		if (documentGroup === 'dokumen')
+			return availableOptions.filter(
+				(option) =>
+					general.includes(option.value) &&
+					(option.value !== 'jurnal-mengajar' || data.jurnalAccess?.canPrint !== false) &&
+					(option.value !== 'rekap-absensi-kegiatan' || data.absensiAccess === true) &&
+					(option.value !== 'buku-tamu' ||
+						page.data.user?.type === 'admin' ||
+						page.data.user?.permissions?.includes('administrasi_buku_tamu')) &&
+					(!['kartu-ujian', 'kartu-ujian-meja'].includes(option.value) ||
+						page.data.user?.type === 'admin' ||
+						page.data.user?.permissions?.includes('ujian_cetak') ||
+						page.data.user?.permissions?.includes('ujian_manage'))
+			);
+		if (documentGroup === 'raport')
+			return availableOptions.filter(
+				(option) =>
+					!general.includes(option.value) && canPrintDocument(page.data.user, option.value)
+			);
 		if (currentUserType === 'wali_asrama' || currentUserType === 'wali_asuh') {
-			return availableOptions.filter((option) => !general.includes(option.value) && canPrintDocument(page.data.user, option.value));
+			return availableOptions.filter(
+				(option) =>
+					!general.includes(option.value) && canPrintDocument(page.data.user, option.value)
+			);
 		}
 		return availableOptions.filter(
 			(option) =>
@@ -147,10 +191,21 @@
 	});
 
 	let selectedDocument = $state<DocumentType | ''>(
-		page.url.searchParams.get('dokumen') === 'kartu-ujian-meja'
-			? 'kartu-ujian'
-			: ((page.url.searchParams.get('dokumen') as DocumentType) ?? '')
+		data.dormReport
+			? 'keasramaan'
+			: page.url.searchParams.get('dokumen') === 'kartu-ujian-meja'
+				? 'kartu-ujian'
+				: ((page.url.searchParams.get('dokumen') as DocumentType) ?? '')
 	);
+	$effect(() => {
+		if (!selectedDocument || (selectedDocument === 'keasramaan') === !!data.dormReport) return;
+		const params = new URLSearchParams(page.url.search);
+		params.set('dokumen', selectedDocument);
+		if (selectedDocument === 'keasramaan') params.set('bagian', 'asrama');
+		else for (const key of ['bagian', 'kamar_id', 'semester_id', 'riwayat']) params.delete(key);
+		void goto(resolve(`/cetak-raport?${params}`), { noScroll: true, keepFocus: true });
+	});
+
 	let selectedRaporPeriode = $state<RaporPeriode | ''>('');
 	let selectedMuridId = $state('');
 	let selectedTemplate = $state<'1' | '2'>('1');
@@ -278,7 +333,16 @@
 	let pdfViewerTitle = $state('');
 	let pdfViewerEl = $state<HTMLElement | null>(null);
 	const ujianSelectionKey = $derived(
-		[selectedDocument, selectedUjianSessionId, selectedUjianKelas, selectedUjianRuang, showUjianDeskCard, showUjianAttendanceQr, showUjianLmsAccount, showUjianDeskPrincipalSignature].join('|')
+		[
+			selectedDocument,
+			selectedUjianSessionId,
+			selectedUjianKelas,
+			selectedUjianRuang,
+			showUjianDeskCard,
+			showUjianAttendanceQr,
+			showUjianLmsAccount,
+			showUjianDeskPrincipalSignature
+		].join('|')
 	);
 	let previousUjianSelectionKey = $state('');
 	$effect(() => {
@@ -366,6 +430,7 @@
 
 	const kelasAktif = $derived(page.data.kelasAktif ?? null);
 	const kelasAktifLabel = $derived.by(() => {
+		if (selectedDocument === 'keasramaan') return data.dormReport?.label ?? null;
 		if (!kelasAktif) return null;
 		return kelasAktif.fase ? `${kelasAktif.nama} - ${kelasAktif.fase}` : kelasAktif.nama;
 	});
@@ -396,10 +461,11 @@
 	const isKartuUjianSelected = $derived(selectedDocument === 'kartu-ujian');
 	const isKartuUjianMejaSelected = $derived(isKartuUjianSelected && showUjianDeskCard);
 	const isMartikulasiSkSelected = $derived.by(() => selectedDocument === 'martikulasi-sk');
-	const isMartikulasiSelected = $derived.by(() =>
-		selectedDocument === 'martikulasi-sk' ||
-		selectedDocument === 'martikulasi-raport' ||
-		selectedDocument === 'martikulasi-sttm'
+	const isMartikulasiSelected = $derived.by(
+		() =>
+			selectedDocument === 'martikulasi-sk' ||
+			selectedDocument === 'martikulasi-raport' ||
+			selectedDocument === 'martikulasi-sttm'
 	);
 	const qrNotReadyCount = $derived((qrReadiness?.missing ?? 0) + (qrReadiness?.outdated ?? 0));
 	const hasValidJurnalPeriod = $derived.by(
@@ -431,7 +497,8 @@
 			selectedDocument !== 'jurnal-mengajar' &&
 			selectedDocument !== 'rekap-absensi-kegiatan' &&
 			selectedDocument !== 'martikulasi-sk' &&
-			selectedDocument !== 'kartu-ujian' && selectedDocument !== 'kartu-ujian-meja'
+			selectedDocument !== 'kartu-ujian' &&
+			selectedDocument !== 'kartu-ujian-meja'
 	);
 	const navigationMuridIds = $derived.by(() => {
 		if (isPiagamSelected) {
@@ -578,7 +645,10 @@
 				: 'Pilih kelas dan rentang tanggal absensi yang valid';
 		}
 		if (isMartikulasiSelected) return 'Preview PDF dokumen Martikulasi';
-		if (isKartuUjianSelected) return selectedUjianSession?.participantCount ? `Preview PDF ${isKartuUjianMejaSelected ? 'Kartu Ujian Meja' : 'Kartu Ujian'}` : 'Pilih sesi ujian yang memiliki peserta';
+		if (isKartuUjianSelected)
+			return selectedUjianSession?.participantCount
+				? `Preview PDF ${isKartuUjianMejaSelected ? 'Kartu Ujian Meja' : 'Kartu Ujian'}`
+				: 'Pilih sesi ujian yang memiliki peserta';
 		return `Download PDF ${selectedDocumentEntry?.label ?? 'dokumen'} untuk ${selectedMurid?.nama ?? ''}`;
 	});
 
@@ -621,9 +691,9 @@
 					? 'Pilih rentang tanggal jurnal yang valid.'
 					: documentType === 'rekap-absensi-kegiatan'
 						? 'Pilih kelas dan rentang tanggal absensi yang valid.'
-					: documentType === 'piagam'
-						? 'Tidak ada data peringkat piagam untuk kelas ini.'
-						: 'Tidak ada murid di kelas ini.';
+						: documentType === 'piagam'
+							? 'Tidak ada data peringkat piagam untuk kelas ini.'
+							: 'Tidak ada murid di kelas ini.';
 			toast(message, 'warning');
 			return;
 		}
@@ -634,7 +704,8 @@
 			documentType === 'jurnal-mengajar' ||
 			documentType === 'rekap-absensi-kegiatan' ||
 			documentType === 'martikulasi-sk' ||
-			documentType === 'kartu-ujian' || documentType === 'kartu-ujian-meja'
+			documentType === 'kartu-ujian' ||
+			documentType === 'kartu-ujian-meja'
 		) {
 			await loadPdf(null);
 			return;
@@ -708,7 +779,8 @@
 				if (selectedUjianKelas) params.set('kelas', selectedUjianKelas);
 				if (selectedUjianRuang) params.set('ruang', selectedUjianRuang);
 				const pdfRes = await fetch(`/api/pdf/kartu-ujian?${params}`);
-				if (!pdfRes.ok) throw new Error(await responseErrorMessage(pdfRes, 'Gagal memuat kartu ujian'));
+				if (!pdfRes.ok)
+					throw new Error(await responseErrorMessage(pdfRes, 'Gagal memuat kartu ujian'));
 				const blob = await pdfRes.blob();
 				if (selectionKey !== ujianSelectionKey) return;
 				pdfViewerFilename = responsePdfFilename(pdfRes);
@@ -724,7 +796,12 @@
 				documentType === 'martikulasi-raport' ||
 				documentType === 'martikulasi-sttm'
 			) {
-				const jenis = documentType === 'martikulasi-sk' ? 'sk' : documentType === 'martikulasi-raport' ? 'raport' : 'sttm';
+				const jenis =
+					documentType === 'martikulasi-sk'
+						? 'sk'
+						: documentType === 'martikulasi-raport'
+							? 'raport'
+							: 'sttm';
 				const params = new URLSearchParams({
 					jenis,
 					tahun_ajaran_id: String(selectedPrintTahunAjaranId ?? '')
@@ -778,7 +855,16 @@
 				body: JSON.stringify({
 					docType: documentType,
 					muridId: murid?.id,
-					kelasId: data.kelasId ? Number(data.kelasId) : undefined,
+					kelasId:
+						documentType === 'keasramaan'
+							? undefined
+							: data.kelasId
+								? Number(data.kelasId)
+								: undefined,
+					penempatanId:
+						documentType === 'keasramaan'
+							? daftarMurid.find((m) => m.id === murid?.id)?.penempatan_id
+							: undefined,
 					tpMode: fullTP,
 					kriteria: { kritCukup, kritBaik },
 					template: documentType === 'piagam' ? selectedTemplate : undefined,
@@ -793,7 +879,10 @@
 							? selectedJadwalOrientation
 							: undefined,
 					layoutMode: documentType === 'jadwal-pelajaran' ? selectedJadwalLayout : undefined,
-					includeSchoolMarks: documentType === 'jadwal-pelajaran' ? includeSchoolMarks : ['rapor', 'piagam'].includes(documentType) && includeReportSignatures,
+					includeSchoolMarks:
+						documentType === 'jadwal-pelajaran'
+							? includeSchoolMarks
+							: ['rapor', 'piagam'].includes(documentType) && includeReportSignatures,
 					jenjang:
 						documentType === 'jadwal-pelajaran' || documentType === 'kalender-pendidikan'
 							? selectedJadwalJenjang
@@ -805,7 +894,11 @@
 							: undefined,
 					jenisJadwal: documentType === 'jadwal-pelajaran' ? selectedJadwalJenis : undefined,
 					semesterId:
-						documentType === 'kalender-pendidikan' ? selectedKalenderSemesterId : undefined,
+						documentType === 'keasramaan'
+							? data.dormReport?.semesterId
+							: documentType === 'kalender-pendidikan'
+								? selectedKalenderSemesterId
+								: undefined,
 					wakaKurikulumPegawaiId:
 						documentType === 'jadwal-pelajaran' || documentType === 'kalender-pendidikan'
 							? selectedWakaKurikulumId
@@ -921,10 +1014,7 @@
 		if (!isPreviewableDocument(documentType)) {
 			return;
 		}
-		if (
-			documentType === 'martikulasi-raport' ||
-			documentType === 'martikulasi-sttm'
-		) {
+		if (documentType === 'martikulasi-raport' || documentType === 'martikulasi-sttm') {
 			downloadLoading = true;
 			try {
 				const params = new URLSearchParams({
@@ -1000,7 +1090,17 @@
 				body: JSON.stringify({
 					docType: documentType,
 					muridIds: muridList.map((m) => m.id),
-					kelasId: data.kelasId ? Number(data.kelasId) : undefined,
+					kelasId:
+						documentType === 'keasramaan'
+							? undefined
+							: data.kelasId
+								? Number(data.kelasId)
+								: undefined,
+					penempatanIds:
+						documentType === 'keasramaan'
+							? Object.fromEntries(daftarMurid.map((m) => [m.id, m.penempatan_id]))
+							: undefined,
+					semesterId: documentType === 'keasramaan' ? data.dormReport?.semesterId : undefined,
 					tpMode: fullTP === 'full-desc' ? 'full-desc' : undefined,
 					criteria: { kritCukup, kritBaik },
 					template: documentType === 'piagam' ? selectedTemplate : undefined,
@@ -1137,9 +1237,12 @@
 {#if selectedDocument === 'informasi-siswa'}
 	<section class="min-w-0 rounded-lg bg-base-100 p-4 shadow-md" aria-label="Cetak Informasi Siswa">
 		<h2 class="mb-4 text-xl font-bold">Cetak - Informasi Siswa</h2>
-		<label class="mb-4 block min-w-0"><span class="mb-1 block text-sm font-medium">Pilih Dokumen</span>
+		<label class="mb-4 block min-w-0"
+			><span class="mb-1 block text-sm font-medium">Pilih Dokumen</span>
 			<select class="select h-10 w-full" bind:value={selectedDocument}>
-				{#each visibleDocumentOptions as option (option.value)}<option value={option.value}>{option.label}</option>{/each}
+				{#each visibleDocumentOptions as option (option.value)}<option value={option.value}
+						>{option.label}</option
+					>{/each}
 			</select>
 		</label>
 		<StudentInformationPrint initialClassId={Number(data.kelasId) || undefined} />
@@ -1174,602 +1277,669 @@
 		<GuestPdf />
 	</div>
 {:else}
-<div class="card bg-base-100 rounded-lg border border-none p-4 shadow-md">
+	<div class="card bg-base-100 rounded-lg border border-none p-4 shadow-md">
+		<PreviewHeader
+			{headingTitle}
+			{kelasAktifLabel}
+			{academicContext}
+			{canNavigateMurid}
+			{hasPrevMurid}
+			{hasNextMurid}
+			loading={downloadLoading}
+			onNavigatePrev={() => navigateMurid('prev')}
+			onNavigateNext={() => navigateMurid('next')}
+		/>
 
-	<PreviewHeader
-		{headingTitle}
-		{kelasAktifLabel}
-		{academicContext}
-		{canNavigateMurid}
-		{hasPrevMurid}
-		{hasNextMurid}
-		loading={downloadLoading}
-		onNavigatePrev={() => navigateMurid('prev')}
-		onNavigateNext={() => navigateMurid('next')}
-	/>
+		<DocumentMuridSelector
+			bind:selectedDocument
+			bind:selectedTemplate
+			bind:selectedRaporPeriode
+			bind:selectedMuridId
+			{daftarMurid}
+			{piagamRankingOptions}
+			documentOptions={visibleDocumentOptions}
+			onDownload={handleDownloadSingle}
+			onBulkDownload={handleDownloadBulk}
+			{downloadDisabled}
+			{downloadButtonTitle}
+			{downloadLoading}
+		/>
 
-	<DocumentMuridSelector
-		bind:selectedDocument
-		bind:selectedTemplate
-		bind:selectedRaporPeriode
-		bind:selectedMuridId
-		{daftarMurid}
-		{piagamRankingOptions}
-		documentOptions={visibleDocumentOptions}
-		onDownload={handleDownloadSingle}
-		onBulkDownload={handleDownloadBulk}
-		{downloadDisabled}
-		{downloadButtonTitle}
-		{downloadLoading}
-	/>
-
-	{#if isKartuUjianSelected}
-		<div class="border-base-300 bg-base-200/35 mt-3 grid items-end gap-3 rounded-lg border p-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,.65fr)_auto]">
-			<label class="form-control min-w-0">
-				<span class="label-text mb-1">Sesi Ujian</span>
-				<select class="select select-bordered bg-base-100 w-full" bind:value={selectedUjianSessionId} disabled={downloadLoading} onchange={() => { selectedUjianKelas = ''; selectedUjianRuang = ''; }}>
-					<option value={null}>Pilih sesi ujian</option>
-					{#each ujianSessions as session}
-						<option value={session.id}>{session.singkatan || session.nama} · {session.tahunAjaran} ({session.participantCount} peserta)</option>
-					{/each}
-				</select>
-			</label>
-			<label class="form-control min-w-0">
-				<span class="label-text mb-1">Kelas Peserta</span>
-				<select class="select select-bordered bg-base-100 w-full" bind:value={selectedUjianKelas} disabled={!selectedUjianSession || downloadLoading}>
-					<option value="">Semua kelas</option>
-					{#each selectedUjianSession?.classes ?? [] as kelas}
-						<option value={kelas}>{kelas}</option>
-					{/each}
-				</select>
-			</label>
-			<label class="form-control min-w-0">
-				<span class="label-text mb-1">Ruang Ujian</span>
-				<select class="select select-bordered bg-base-100 w-full" bind:value={selectedUjianRuang} disabled={!selectedUjianSession || downloadLoading}>
-					<option value="">Semua ruang</option>
-					{#each selectedUjianSession?.rooms ?? [] as ruang}
-						<option value={ruang}>{ruang}</option>
-					{/each}
-				</select>
-			</label>
-			<a class="btn btn-soft" href="/ujian"><Icon name="gear" /> Kelola Sesi</a>
-			<div class="md:col-span-2 xl:col-span-4 flex flex-wrap items-center gap-2 text-sm">
-				<button
-					type="button"
-					class="btn btn-sm shadow-none"
-					class:btn-success={showUjianDeskCard}
-					class:btn-soft={!showUjianDeskCard}
-					role="switch"
-					aria-checked={showUjianDeskCard}
-					aria-label="Kartu Ujian Meja"
-					title="Gunakan format kartu ujian meja"
-					disabled={downloadLoading}
-					onclick={() => showUjianDeskCard = !showUjianDeskCard}
-				>Kartu Ujian Meja {showUjianDeskCard ? 'ON' : 'OFF'}</button>
-				{#if !isKartuUjianMejaSelected}
-				<button
-					type="button"
-					class="btn btn-sm shadow-none"
-					class:btn-success={showUjianAttendanceQr}
-					class:btn-soft={!showUjianAttendanceQr}
-					role="switch"
-					aria-checked={showUjianAttendanceQr}
-					aria-label="QR Absensi"
-					title="Tampilkan QR absensi murid pada kartu ujian"
-					disabled={downloadLoading}
-					onclick={() => {
-						showUjianAttendanceQr = !showUjianAttendanceQr;
-						if (pdfViewerUrl) URL.revokeObjectURL(pdfViewerUrl);
-						pdfViewerUrl = '';
-						pdfViewerTitle = '';
-					}}
-				>QR Absensi {showUjianAttendanceQr ? 'ON' : 'OFF'}</button>
-				{/if}
-				<button
-					type="button"
-					class="btn btn-sm shadow-none"
-					class:btn-success={showUjianLmsAccount}
-					class:btn-soft={!showUjianLmsAccount}
-					role="switch"
-					aria-checked={showUjianLmsAccount}
-					aria-label="Akun LMS"
-					title="Tampilkan username dan password LMS pada kartu ujian"
-					disabled={downloadLoading}
-					onclick={() => {
-						showUjianLmsAccount = !showUjianLmsAccount;
-						if (pdfViewerUrl) URL.revokeObjectURL(pdfViewerUrl);
-						pdfViewerUrl = '';
-						pdfViewerTitle = '';
-					}}
-				>Akun LMS {showUjianLmsAccount ? 'ON' : 'OFF'}</button>
-				{#if isKartuUjianMejaSelected}
+		{#if isKartuUjianSelected}
+			<div
+				class="border-base-300 bg-base-200/35 mt-3 grid items-end gap-3 rounded-lg border p-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,.65fr)_auto]"
+			>
+				<label class="form-control min-w-0">
+					<span class="label-text mb-1">Sesi Ujian</span>
+					<select
+						class="select select-bordered bg-base-100 w-full"
+						bind:value={selectedUjianSessionId}
+						disabled={downloadLoading}
+						onchange={() => {
+							selectedUjianKelas = '';
+							selectedUjianRuang = '';
+						}}
+					>
+						<option value={null}>Pilih sesi ujian</option>
+						{#each ujianSessions as session}
+							<option value={session.id}
+								>{session.singkatan || session.nama} · {session.tahunAjaran} ({session.participantCount}
+								peserta)</option
+							>
+						{/each}
+					</select>
+				</label>
+				<label class="form-control min-w-0">
+					<span class="label-text mb-1">Kelas Peserta</span>
+					<select
+						class="select select-bordered bg-base-100 w-full"
+						bind:value={selectedUjianKelas}
+						disabled={!selectedUjianSession || downloadLoading}
+					>
+						<option value="">Semua kelas</option>
+						{#each selectedUjianSession?.classes ?? [] as kelas}
+							<option value={kelas}>{kelas}</option>
+						{/each}
+					</select>
+				</label>
+				<label class="form-control min-w-0">
+					<span class="label-text mb-1">Ruang Ujian</span>
+					<select
+						class="select select-bordered bg-base-100 w-full"
+						bind:value={selectedUjianRuang}
+						disabled={!selectedUjianSession || downloadLoading}
+					>
+						<option value="">Semua ruang</option>
+						{#each selectedUjianSession?.rooms ?? [] as ruang}
+							<option value={ruang}>{ruang}</option>
+						{/each}
+					</select>
+				</label>
+				<a class="btn btn-soft" href="/ujian"><Icon name="gear" /> Kelola Sesi</a>
+				<div class="md:col-span-2 xl:col-span-4 flex flex-wrap items-center gap-2 text-sm">
 					<button
 						type="button"
 						class="btn btn-sm shadow-none"
-						class:btn-success={showUjianDeskPrincipalSignature}
-						class:btn-soft={!showUjianDeskPrincipalSignature}
+						class:btn-success={showUjianDeskCard}
+						class:btn-soft={!showUjianDeskCard}
 						role="switch"
-						aria-checked={showUjianDeskPrincipalSignature}
-						aria-label="TTD Kepsek"
-						title="Tampilkan blok tanda tangan, nama, dan NIP kepala sekolah"
+						aria-checked={showUjianDeskCard}
+						aria-label="Kartu Ujian Meja"
+						title="Gunakan format kartu ujian meja"
 						disabled={downloadLoading}
-						onclick={() => showUjianDeskPrincipalSignature = !showUjianDeskPrincipalSignature}
-					>TTD Kepsek {showUjianDeskPrincipalSignature ? 'ON' : 'OFF'}</button>
-				{/if}
-				<span class="badge badge-outline">A4 Portrait</span>
-				<span class="badge badge-outline">{isKartuUjianMejaSelected ? '8' : '4'} kartu per halaman</span>
+						onclick={() => (showUjianDeskCard = !showUjianDeskCard)}
+						>Kartu Ujian Meja {showUjianDeskCard ? 'ON' : 'OFF'}</button
+					>
+					{#if !isKartuUjianMejaSelected}
+						<button
+							type="button"
+							class="btn btn-sm shadow-none"
+							class:btn-success={showUjianAttendanceQr}
+							class:btn-soft={!showUjianAttendanceQr}
+							role="switch"
+							aria-checked={showUjianAttendanceQr}
+							aria-label="QR Absensi"
+							title="Tampilkan QR absensi murid pada kartu ujian"
+							disabled={downloadLoading}
+							onclick={() => {
+								showUjianAttendanceQr = !showUjianAttendanceQr;
+								if (pdfViewerUrl) URL.revokeObjectURL(pdfViewerUrl);
+								pdfViewerUrl = '';
+								pdfViewerTitle = '';
+							}}>QR Absensi {showUjianAttendanceQr ? 'ON' : 'OFF'}</button
+						>
+					{/if}
+					<button
+						type="button"
+						class="btn btn-sm shadow-none"
+						class:btn-success={showUjianLmsAccount}
+						class:btn-soft={!showUjianLmsAccount}
+						role="switch"
+						aria-checked={showUjianLmsAccount}
+						aria-label="Akun LMS"
+						title="Tampilkan username dan password LMS pada kartu ujian"
+						disabled={downloadLoading}
+						onclick={() => {
+							showUjianLmsAccount = !showUjianLmsAccount;
+							if (pdfViewerUrl) URL.revokeObjectURL(pdfViewerUrl);
+							pdfViewerUrl = '';
+							pdfViewerTitle = '';
+						}}>Akun LMS {showUjianLmsAccount ? 'ON' : 'OFF'}</button
+					>
+					{#if isKartuUjianMejaSelected}
+						<button
+							type="button"
+							class="btn btn-sm shadow-none"
+							class:btn-success={showUjianDeskPrincipalSignature}
+							class:btn-soft={!showUjianDeskPrincipalSignature}
+							role="switch"
+							aria-checked={showUjianDeskPrincipalSignature}
+							aria-label="TTD Kepsek"
+							title="Tampilkan blok tanda tangan, nama, dan NIP kepala sekolah"
+							disabled={downloadLoading}
+							onclick={() => (showUjianDeskPrincipalSignature = !showUjianDeskPrincipalSignature)}
+							>TTD Kepsek {showUjianDeskPrincipalSignature ? 'ON' : 'OFF'}</button
+						>
+					{/if}
+					<span class="badge badge-outline">A4 Portrait</span>
+					<span class="badge badge-outline"
+						>{isKartuUjianMejaSelected ? '8' : '4'} kartu per halaman</span
+					>
+				</div>
 			</div>
-		</div>
-	{/if}
+		{/if}
 
-	{#if selectedDocument === 'kartu-absensi' && daftarMurid.length}
-		<div class="border-base-300 bg-base-200/40 mt-3 rounded-lg border px-4 py-3 text-sm">
-			<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-				<div>
-					<div class="font-semibold">Model kartu</div>
-					<div class="text-base-content/65 text-xs">{selectedKartuLayout === 'qr-only' ? '94 × 123 mm · Portrait' : '85,6 × 54 mm · Landscape'}</div>
-				</div>
-				<div class="join" role="group" aria-label="Model kartu pelajar dan absensi">
-					<button
-						class:btn-primary={selectedKartuLayout === 'duplex'}
-						class="btn join-item btn-sm shadow-none"
-						type="button"
-						onclick={() => (selectedKartuLayout = 'duplex')}>Dua Sisi</button
-					>
-					<button
-						class:btn-primary={selectedKartuLayout === 'photo-qr'}
-						class="btn join-item btn-sm shadow-none"
-						type="button"
-						onclick={() => (selectedKartuLayout = 'photo-qr')}>Foto + QR</button
-					>
-					<button
-						class:btn-primary={selectedKartuLayout === 'qr-only'}
-						class="btn join-item btn-sm shadow-none"
-						type="button"
-						onclick={() => (selectedKartuLayout = 'qr-only')}>QR Saja</button
-					>
-				</div>
-			</div>
-			<div class="flex flex-wrap items-center gap-3">
-				<span class="badge badge-outline whitespace-nowrap">A4 · {selectedKartuLayout === 'qr-only' ? '4' : '8'} kartu</span>
-			{#if qrReadinessLoading}
-				<span class="loading loading-spinner loading-sm"></span>
-				<span>Memeriksa kesiapan QR {daftarMurid.length} murid...</span>
-			{:else if qrReadinessError}
-				<Icon name="alert" />
-				<span class="min-w-0 flex-1">{qrReadinessError}</span>
-				<button class="btn btn-soft btn-sm shadow-none" type="button" onclick={refreshQrReadiness}>
-					<Icon name="repeat" />
-					Periksa Lagi
-				</button>
-			{:else if qrReadiness}
-				<Icon name={qrNotReadyCount ? 'alert' : 'check'} />
-				<div class="min-w-0 flex-1">
-					<div class="font-semibold">
-						{qrReadiness.ready} dari {qrReadiness.total} QR siap dicetak
+		{#if selectedDocument === 'kartu-absensi' && daftarMurid.length}
+			<div class="border-base-300 bg-base-200/40 mt-3 rounded-lg border px-4 py-3 text-sm">
+				<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+					<div>
+						<div class="font-semibold">Model kartu</div>
+						<div class="text-base-content/65 text-xs">
+							{selectedKartuLayout === 'qr-only'
+								? '94 × 123 mm · Portrait'
+								: '85,6 × 54 mm · Landscape'}
+						</div>
 					</div>
-					{#if qrNotReadyCount}
-						<div class="text-base-content/65 text-xs">
-							{qrReadiness.missing} belum dibuat dan {qrReadiness.outdated} memakai format lama.
+					<div class="join" role="group" aria-label="Model kartu pelajar dan absensi">
+						<button
+							class:btn-primary={selectedKartuLayout === 'duplex'}
+							class="btn join-item btn-sm shadow-none"
+							type="button"
+							onclick={() => (selectedKartuLayout = 'duplex')}>Dua Sisi</button
+						>
+						<button
+							class:btn-primary={selectedKartuLayout === 'photo-qr'}
+							class="btn join-item btn-sm shadow-none"
+							type="button"
+							onclick={() => (selectedKartuLayout = 'photo-qr')}>Foto + QR</button
+						>
+						<button
+							class:btn-primary={selectedKartuLayout === 'qr-only'}
+							class="btn join-item btn-sm shadow-none"
+							type="button"
+							onclick={() => (selectedKartuLayout = 'qr-only')}>QR Saja</button
+						>
+					</div>
+				</div>
+				<div class="flex flex-wrap items-center gap-3">
+					<span class="badge badge-outline whitespace-nowrap"
+						>A4 · {selectedKartuLayout === 'qr-only' ? '4' : '8'} kartu</span
+					>
+					{#if qrReadinessLoading}
+						<span class="loading loading-spinner loading-sm"></span>
+						<span>Memeriksa kesiapan QR {daftarMurid.length} murid...</span>
+					{:else if qrReadinessError}
+						<Icon name="alert" />
+						<span class="min-w-0 flex-1">{qrReadinessError}</span>
+						<button
+							class="btn btn-soft btn-sm shadow-none"
+							type="button"
+							onclick={refreshQrReadiness}
+						>
+							<Icon name="repeat" />
+							Periksa Lagi
+						</button>
+					{:else if qrReadiness}
+						<Icon name={qrNotReadyCount ? 'alert' : 'check'} />
+						<div class="min-w-0 flex-1">
+							<div class="font-semibold">
+								{qrReadiness.ready} dari {qrReadiness.total} QR siap dicetak
+							</div>
+							{#if qrNotReadyCount}
+								<div class="text-base-content/65 text-xs">
+									{qrReadiness.missing} belum dibuat dan {qrReadiness.outdated} memakai format lama.
+								</div>
+							{:else}
+								<div class="text-base-content/65 text-xs">
+									Semua kartu dapat dicetak tanpa mengganti token QR aktif.
+								</div>
+							{/if}
 						</div>
-					{:else}
-						<div class="text-base-content/65 text-xs">
-							Semua kartu dapat dicetak tanpa mengganti token QR aktif.
-						</div>
+						{#if qrNotReadyCount}
+							<button
+								class="btn btn-primary btn-sm shadow-none"
+								type="button"
+								disabled={qrGenerateLoading}
+								onclick={generateMissingQr}
+							>
+								{#if qrGenerateLoading}
+									<span class="loading loading-spinner loading-sm"></span>
+								{:else}
+									<Icon name="plus" />
+								{/if}
+								Buat QR yang Belum Siap
+							</button>
+						{/if}
 					{/if}
 				</div>
-				{#if qrNotReadyCount}
-					<button
-						class="btn btn-primary btn-sm shadow-none"
-						type="button"
-						disabled={qrGenerateLoading}
-						onclick={generateMissingQr}
-					>
-						{#if qrGenerateLoading}
-							<span class="loading loading-spinner loading-sm"></span>
-						{:else}
-							<Icon name="plus" />
-						{/if}
-						Buat QR yang Belum Siap
-					</button>
-				{/if}
-				{/if}
 			</div>
-		</div>
-	{/if}
+		{/if}
 
-	{#if selectedDocument === 'rekap-absensi-kegiatan'}
-		<div
-			class="border-base-300 bg-base-200/30 mt-3 grid items-end gap-3 rounded-lg border p-3 sm:grid-cols-2 xl:grid-cols-5"
-		>
-			<label class="form-control min-w-0">
-				<span class="label-text mb-1">Tanggal Awal</span>
-				<input class="input input-bordered bg-base-100 w-full" type="date" bind:value={absensiTanggalAwal} />
-			</label>
-			<label class="form-control min-w-0">
-				<span class="label-text mb-1">Tanggal Akhir</span>
-				<input class="input input-bordered bg-base-100 w-full" type="date" bind:value={absensiTanggalAkhir} />
-			</label>
-			<label class="form-control min-w-0">
-				<span class="label-text mb-1">Kelas</span>
-				<select class="select select-bordered bg-base-100 w-full" bind:value={absensiKelasId}>
-					<option value={null}>Pilih kelas</option>
-					{#each absensiKelasList as kelas (kelas.id)}
-						<option value={kelas.id}>{kelas.nama}{kelas.fase ? ` - ${kelas.fase}` : ''}</option>
-					{/each}
-				</select>
-			</label>
-			<label class="form-control min-w-0">
-				<span class="label-text mb-1">Kegiatan</span>
-				<select class="select select-bordered bg-base-100 w-full" bind:value={absensiKegiatanId}>
-					<option value={null}>Semua kegiatan</option>
-					{#each absensiKegiatanList as kegiatan (kegiatan.id)}
-						<option value={kegiatan.id}>{kegiatan.nama}</option>
-					{/each}
-				</select>
-			</label>
-			<a
-				class="btn btn-outline h-12 min-h-12 w-full whitespace-normal text-center leading-tight"
-				href={`/administrasi/absensi/kegiatan/rekap?kelas_id=${absensiKelasId ?? ''}&tanggal_awal=${absensiTanggalAwal}&tanggal_akhir=${absensiTanggalAkhir}${absensiKegiatanId ? `&kegiatan_id=${absensiKegiatanId}` : ''}`}
+		{#if selectedDocument === 'rekap-absensi-kegiatan'}
+			<div
+				class="border-base-300 bg-base-200/30 mt-3 grid items-end gap-3 rounded-lg border p-3 sm:grid-cols-2 xl:grid-cols-5"
 			>
-				Buka Rekap Kegiatan
-			</a>
-		</div>
-	{/if}
-
-	{#if selectedDocument === 'jadwal-pelajaran' || selectedDocument === 'kalender-pendidikan'}
-		<div
-			class="border-base-300 bg-base-200/30 mt-3 grid gap-3 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-3 {selectedDocument ===
-			'jadwal-pelajaran'
-				? '2xl:grid-cols-7'
-				: '2xl:grid-cols-[minmax(0,.85fr)_minmax(0,1fr)_minmax(0,.9fr)_minmax(0,.9fr)_minmax(0,1.75fr)_minmax(0,1.45fr)_minmax(0,1.25fr)]'}"
-		>
-			<label class="form-control min-w-0">
-				<span class="label-text mb-1">Tahun Ajaran</span>
-				<select
-					class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
-					bind:value={selectedPrintTahunAjaranId}
-				>
-					{#each tahunAjaranList as tahun}
-						<option value={tahun.id}>{tahun.nama}</option>
-					{/each}
-				</select>
-			</label>
-			{#if selectedDocument === 'jadwal-pelajaran'}
 				<label class="form-control min-w-0">
-					<span class="label-text mb-1">Jenis Jadwal</span>
+					<span class="label-text mb-1">Tanggal Awal</span>
+					<input
+						class="input input-bordered bg-base-100 w-full"
+						type="date"
+						bind:value={absensiTanggalAwal}
+					/>
+				</label>
+				<label class="form-control min-w-0">
+					<span class="label-text mb-1">Tanggal Akhir</span>
+					<input
+						class="input input-bordered bg-base-100 w-full"
+						type="date"
+						bind:value={absensiTanggalAkhir}
+					/>
+				</label>
+				<label class="form-control min-w-0">
+					<span class="label-text mb-1">Kelas</span>
+					<select class="select select-bordered bg-base-100 w-full" bind:value={absensiKelasId}>
+						<option value={null}>Pilih kelas</option>
+						{#each absensiKelasList as kelas (kelas.id)}
+							<option value={kelas.id}>{kelas.nama}{kelas.fase ? ` - ${kelas.fase}` : ''}</option>
+						{/each}
+					</select>
+				</label>
+				<label class="form-control min-w-0">
+					<span class="label-text mb-1">Kegiatan</span>
+					<select class="select select-bordered bg-base-100 w-full" bind:value={absensiKegiatanId}>
+						<option value={null}>Semua kegiatan</option>
+						{#each absensiKegiatanList as kegiatan (kegiatan.id)}
+							<option value={kegiatan.id}>{kegiatan.nama}</option>
+						{/each}
+					</select>
+				</label>
+				<a
+					class="btn btn-outline h-12 min-h-12 w-full whitespace-normal text-center leading-tight"
+					href={`/administrasi/absensi/kegiatan/rekap?kelas_id=${absensiKelasId ?? ''}&tanggal_awal=${absensiTanggalAwal}&tanggal_akhir=${absensiTanggalAkhir}${absensiKegiatanId ? `&kegiatan_id=${absensiKegiatanId}` : ''}`}
+				>
+					Buka Rekap Kegiatan
+				</a>
+			</div>
+		{/if}
+
+		{#if selectedDocument === 'jadwal-pelajaran' || selectedDocument === 'kalender-pendidikan'}
+			<div
+				class="border-base-300 bg-base-200/30 mt-3 grid gap-3 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-3 {selectedDocument ===
+				'jadwal-pelajaran'
+					? '2xl:grid-cols-7'
+					: '2xl:grid-cols-[minmax(0,.85fr)_minmax(0,1fr)_minmax(0,.9fr)_minmax(0,.9fr)_minmax(0,1.75fr)_minmax(0,1.45fr)_minmax(0,1.25fr)]'}"
+			>
+				<label class="form-control min-w-0">
+					<span class="label-text mb-1">Tahun Ajaran</span>
 					<select
 						class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
-						bind:value={selectedJadwalJenis}
+						bind:value={selectedPrintTahunAjaranId}
 					>
+						{#each tahunAjaranList as tahun}
+							<option value={tahun.id}>{tahun.nama}</option>
+						{/each}
+					</select>
+				</label>
+				{#if selectedDocument === 'jadwal-pelajaran'}
+					<label class="form-control min-w-0">
+						<span class="label-text mb-1">Jenis Jadwal</span>
+						<select
+							class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
+							bind:value={selectedJadwalJenis}
+						>
+							<option value="persiapan">Masa Persiapan</option>
+							<option value="ganjil">Semester Ganjil</option>
+							<option value="genap">Semester Genap</option>
+						</select>
+					</label>
+				{:else}
+					<label class="form-control min-w-0">
+						<span class="label-text mb-1">Semester</span>
+						<select
+							class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
+							bind:value={selectedKalenderSemesterId}
+						>
+							<option value={null}>Semua Semester</option>
+							{#each kalenderSemesterOptions as semester}
+								<option value={semester.id}>{semester.nama}</option>
+							{/each}
+						</select>
+					</label>
+				{/if}
+				<label class="form-control min-w-0">
+					<span class="label-text mb-1">Jenjang</span>
+					<select
+						class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
+						bind:value={selectedJadwalJenjang}
+					>
+						<option value="semua">Semua Jenjang</option>
+						<option value="srd">SRD</option>
+						<option value="srmp">SRMP</option>
+						<option value="srma">SRMA</option>
+					</select>
+				</label>
+				<label class="form-control min-w-0">
+					<span class="label-text mb-1">Orientasi A4</span>
+					<select
+						class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
+						bind:value={selectedJadwalOrientation}
+					>
+						<option value="landscape">Landscape</option>
+						<option value="portrait">Portrait</option>
+					</select>
+				</label>
+				{#if selectedDocument === 'jadwal-pelajaran'}
+					<label class="form-control min-w-0">
+						<span class="label-text mb-1">Tampilan Tabel</span>
+						<select
+							class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
+							bind:value={selectedJadwalLayout}
+						>
+							<option value="padat">Padat (1 Halaman)</option>
+							<option value="multi">Mudah Dibaca (Multi Halaman)</option>
+						</select>
+					</label>
+				{/if}
+				{#if selectedDocument === 'kalender-pendidikan'}
+					<label class="form-control min-w-0">
+						<span class="label-text mb-1">Periode Kalender</span>
+						<select
+							class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
+							bind:value={selectedKalenderPeriode}
+						>
+							<option value="tahun_ajaran">Tahun Ajaran (Juli-Juni)</option>
+							<option value="semester_ganjil">Semester Ganjil (Juli-Desember)</option>
+							<option value="semester_genap">Semester Genap (Januari-Juni)</option>
+						</select>
+					</label>
+				{/if}
+				<label class="form-control min-w-0">
+					<span class="label-text mb-1">Waka Kurikulum</span>
+					<select
+						class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
+						bind:value={selectedWakaKurikulumId}
+						disabled={!pegawaiGuruList.length}
+					>
+						<option value={null}>
+							{pegawaiGuruList.length ? 'Pilih pegawai guru' : 'Belum ada pegawai guru aktif'}
+						</option>
+						{#each pegawaiGuruList as pegawai}
+							<option value={pegawai.id}>
+								{pegawai.nama}{pegawai.jabatan ? ' - ' + pegawai.jabatan : ''}
+							</option>
+						{/each}
+					</select>
+				</label>
+				<div class="flex min-w-0 items-end">
+					<a
+						class="btn btn-outline h-12 min-h-12 w-full whitespace-normal text-center leading-tight"
+						href={selectedDocument === 'jadwal-pelajaran' ? jadwalSourceHref : kalenderSourceHref}
+					>
+						Buka sumber di Akademik
+					</a>
+				</div>
+			</div>
+		{/if}
+
+		{#if selectedDocument === 'jadwal-pelajaran'}
+			<label class="mt-3 inline-flex items-center gap-3 text-sm">
+				<input type="checkbox" class="toggle toggle-success" bind:checked={includeSchoolMarks} />
+				Tanda tangan dan stempel kepala sekolah
+			</label>
+		{/if}
+
+		{#if selectedDocument === 'jurnal-mengajar'}
+			<div
+				class="border-base-300 bg-base-200/30 mt-3 grid gap-3 rounded-lg border p-3 md:grid-cols-2 xl:grid-cols-4"
+			>
+				<fieldset class="form-control">
+					<legend class="label-text mb-1">Lingkup Cetak</legend>
+					<div class="join w-full">
+						<button
+							type="button"
+							class="btn join-item flex-1"
+							class:btn-primary={jurnalScope === 'kelas'}
+							class:btn-soft={jurnalScope !== 'kelas'}
+							aria-pressed={jurnalScope === 'kelas'}
+							onclick={() => changeJurnalScope('kelas')}>Per Kelas</button
+						>
+						<button
+							type="button"
+							class="btn join-item flex-1"
+							class:btn-primary={jurnalScope === 'mapel'}
+							class:btn-soft={jurnalScope !== 'mapel'}
+							aria-pressed={jurnalScope === 'mapel'}
+							onclick={() => changeJurnalScope('mapel')}>Per Mapel</button
+						>
+					</div>
+				</fieldset>
+				<label class="form-control min-w-0">
+					<span class="label-text mb-1"
+						>Kelas{jurnalScope === 'mapel' && !jurnalAccess.requiresClass
+							? ' (Opsional)'
+							: ''}</span
+					>
+					<select
+						class="select select-bordered bg-base-100 w-full min-w-0"
+						bind:value={jurnalKelasId}
+					>
+						<option value={null}
+							>{jurnalScope === 'mapel' && !jurnalAccess.requiresClass
+								? 'Semua kelas'
+								: 'Pilih kelas'}</option
+						>
+						{#each jurnalKelasList as kelas}
+							<option value={kelas.id}>{kelas.nama} · {kelas.semester.nama}</option>
+						{/each}
+					</select>
+				</label>
+				<label class="form-control min-w-0">
+					<span class="label-text mb-1"
+						>Mata Pelajaran{jurnalScope === 'kelas' && jurnalPenandatangan !== 'guru_mapel'
+							? ' (Opsional)'
+							: ''}</span
+					>
+					<select
+						class="select select-bordered bg-base-100 w-full min-w-0"
+						bind:value={jurnalMapelId}
+					>
+						<option value={null}>{jurnalScope === 'kelas' ? 'Semua mapel' : 'Pilih mapel'}</option>
+						{#each jurnalMapelList as mapel}
+							<option value={mapel.id}>{mapel.kode} · {mapel.nama}</option>
+						{/each}
+					</select>
+				</label>
+				<label class="form-control">
+					<span class="label-text mb-1">Jenis Jadwal</span>
+					<select class="select select-bordered bg-base-100 w-full" bind:value={jurnalJenis}>
 						<option value="persiapan">Masa Persiapan</option>
 						<option value="ganjil">Semester Ganjil</option>
 						<option value="genap">Semester Genap</option>
 					</select>
 				</label>
-			{:else}
-				<label class="form-control min-w-0">
-					<span class="label-text mb-1">Semester</span>
+				<label class="form-control">
+					<span class="label-text mb-1">Tanggal Mulai</span>
+					<input
+						class="input input-bordered bg-base-100 w-full"
+						type="date"
+						bind:value={jurnalTanggalMulai}
+					/>
+				</label>
+				<label class="form-control">
+					<span class="label-text mb-1">Tanggal Selesai</span>
+					<input
+						class="input input-bordered bg-base-100 w-full"
+						type="date"
+						bind:value={jurnalTanggalSelesai}
+					/>
+				</label>
+				<label class="form-control">
+					<span class="label-text mb-1">Penandatangan</span>
 					<select
-						class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
-						bind:value={selectedKalenderSemesterId}
+						class="select select-bordered bg-base-100 w-full"
+						bind:value={jurnalPenandatangan}
 					>
-						<option value={null}>Semua Semester</option>
-						{#each kalenderSemesterOptions as semester}
-							<option value={semester.id}>{semester.nama}</option>
+						<option
+							value="wali_kelas"
+							disabled={!jurnalKelasId || !jurnalAccess.allowedSigners.includes('wali_kelas')}
+							>Wali Kelas</option
+						>
+						<option
+							value="guru_mapel"
+							disabled={!jurnalMapelId || !jurnalAccess.allowedSigners.includes('guru_mapel')}
+							>Guru Mata Pelajaran</option
+						>
+					</select>
+				</label>
+				<div class="flex items-end">
+					<a class="btn btn-outline h-12 min-h-12 w-full md:w-auto" href="/jurnal-mengajar"
+						>Buka sumber di Kurikulum</a
+					>
+				</div>
+				{#if jurnalPenandatangan === 'wali_kelas' && jurnalKelasId && !jurnalKelas?.waliKelas}
+					<div class="alert alert-warning py-2 md:col-span-2 xl:col-span-4">
+						Wali kelas belum ditentukan pada Data Kelas.
+					</div>
+				{:else if jurnalPenandatangan === 'guru_mapel' && jurnalMapelId && !jurnalMapel?.guru}
+					<div class="alert alert-warning py-2 md:col-span-2 xl:col-span-4">
+						Guru belum ditentukan pada Data Mata Pelajaran.
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		{#if isMartikulasiSelected}
+			<div
+				class="border-base-300 bg-base-200/30 mt-3 grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(0,260px)_1fr_auto_auto] md:items-end"
+			>
+				<label class="form-control min-w-0">
+					<span class="label-text mb-1">Tahun Ajaran</span>
+					<select
+						class="select select-bordered bg-base-100 w-full"
+						bind:value={selectedPrintTahunAjaranId}
+					>
+						{#each tahunAjaranList as tahun}
+							<option value={tahun.id}>{tahun.nama}</option>
 						{/each}
 					</select>
 				</label>
-			{/if}
-			<label class="form-control min-w-0">
-				<span class="label-text mb-1">Jenjang</span>
-				<select
-					class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
-					bind:value={selectedJadwalJenjang}
-				>
-					<option value="semua">Semua Jenjang</option>
-					<option value="srd">SRD</option>
-					<option value="srmp">SRMP</option>
-					<option value="srma">SRMA</option>
-				</select>
-			</label>
-			<label class="form-control min-w-0">
-				<span class="label-text mb-1">Orientasi A4</span>
-				<select
-					class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
-					bind:value={selectedJadwalOrientation}
-				>
-					<option value="landscape">Landscape</option>
-					<option value="portrait">Portrait</option>
-				</select>
-			</label>
-			{#if selectedDocument === 'jadwal-pelajaran'}
-				<label class="form-control min-w-0">
-					<span class="label-text mb-1">Tampilan Tabel</span>
-					<select
-						class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
-						bind:value={selectedJadwalLayout}
-					>
-						<option value="padat">Padat (1 Halaman)</option>
-						<option value="multi">Mudah Dibaca (Multi Halaman)</option>
-					</select>
-				</label>
-			{/if}
-			{#if selectedDocument === 'kalender-pendidikan'}
-				<label class="form-control min-w-0">
-					<span class="label-text mb-1">Periode Kalender</span>
-					<select
-						class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
-						bind:value={selectedKalenderPeriode}
-					>
-						<option value="tahun_ajaran">Tahun Ajaran (Juli-Juni)</option>
-						<option value="semester_ganjil">Semester Ganjil (Juli-Desember)</option>
-						<option value="semester_genap">Semester Genap (Januari-Juni)</option>
-					</select>
-				</label>
-			{/if}
-			<label class="form-control min-w-0">
-				<span class="label-text mb-1">Waka Kurikulum</span>
-				<select
-					class="select select-bordered bg-base-100 w-full min-w-0 pr-10"
-					bind:value={selectedWakaKurikulumId}
-					disabled={!pegawaiGuruList.length}
-				>
-					<option value={null}>
-						{pegawaiGuruList.length ? 'Pilih pegawai guru' : 'Belum ada pegawai guru aktif'}
-					</option>
-					{#each pegawaiGuruList as pegawai}
-						<option value={pegawai.id}>
-							{pegawai.nama}{pegawai.jabatan ? ' - ' + pegawai.jabatan : ''}
-						</option>
-					{/each}
-				</select>
-			</label>
-			<div class="flex min-w-0 items-end">
-				<a
-					class="btn btn-outline h-12 min-h-12 w-full whitespace-normal text-center leading-tight"
-					href={selectedDocument === 'jadwal-pelajaran' ? jadwalSourceHref : kalenderSourceHref}
-				>
-					Buka sumber di Akademik
-				</a>
-			</div>
-		</div>
-	{/if}
-
-	{#if selectedDocument === 'jadwal-pelajaran'}
-		<label class="mt-3 inline-flex items-center gap-3 text-sm">
-			<input type="checkbox" class="toggle toggle-success" bind:checked={includeSchoolMarks} />
-			Tanda tangan dan stempel kepala sekolah
-		</label>
-	{/if}
-
-	{#if selectedDocument === 'jurnal-mengajar'}
-		<div
-			class="border-base-300 bg-base-200/30 mt-3 grid gap-3 rounded-lg border p-3 md:grid-cols-2 xl:grid-cols-4"
-		>
-			<fieldset class="form-control">
-				<legend class="label-text mb-1">Lingkup Cetak</legend>
-				<div class="join w-full">
-					<button
-						type="button"
-						class="btn join-item flex-1"
-						class:btn-primary={jurnalScope === 'kelas'}
-						class:btn-soft={jurnalScope !== 'kelas'}
-						aria-pressed={jurnalScope === 'kelas'}
-						onclick={() => changeJurnalScope('kelas')}>Per Kelas</button
-					>
-					<button
-						type="button"
-						class="btn join-item flex-1"
-						class:btn-primary={jurnalScope === 'mapel'}
-						class:btn-soft={jurnalScope !== 'mapel'}
-						aria-pressed={jurnalScope === 'mapel'}
-						onclick={() => changeJurnalScope('mapel')}>Per Mapel</button
-					>
+				<div class="text-base-content/65 text-sm">
+					{#if selectedDocument === 'martikulasi-sk'}
+						SK menggunakan susunan tim dan nomor pada Pengaturan Martikulasi.
+					{:else if selectedDocument === 'martikulasi-raport'}
+						Pilih murid untuk preview atau gunakan Semua Murid untuk satu PDF massal.
+					{:else}
+						STTM hanya mencetak hasil lengkap. Terbitkan nomor sebelum cetak final.
+					{/if}
 				</div>
-			</fieldset>
-			<label class="form-control min-w-0">
-				<span class="label-text mb-1"
-					>Kelas{jurnalScope === 'mapel' && !jurnalAccess.requiresClass ? ' (Opsional)' : ''}</span
-				>
-				<select
-					class="select select-bordered bg-base-100 w-full min-w-0"
-					bind:value={jurnalKelasId}
-				>
-					<option value={null}
-						>{jurnalScope === 'mapel' && !jurnalAccess.requiresClass
-							? 'Semua kelas'
-							: 'Pilih kelas'}</option
-					>
-					{#each jurnalKelasList as kelas}
-						<option value={kelas.id}>{kelas.nama} · {kelas.semester.nama}</option>
-					{/each}
-				</select>
-			</label>
-			<label class="form-control min-w-0">
-				<span class="label-text mb-1"
-					>Mata Pelajaran{jurnalScope === 'kelas' && jurnalPenandatangan !== 'guru_mapel'
-						? ' (Opsional)'
-						: ''}</span
-				>
-				<select
-					class="select select-bordered bg-base-100 w-full min-w-0"
-					bind:value={jurnalMapelId}
-				>
-					<option value={null}>{jurnalScope === 'kelas' ? 'Semua mapel' : 'Pilih mapel'}</option>
-					{#each jurnalMapelList as mapel}
-						<option value={mapel.id}>{mapel.kode} · {mapel.nama}</option>
-					{/each}
-				</select>
-			</label>
-			<label class="form-control">
-				<span class="label-text mb-1">Jenis Jadwal</span>
-				<select class="select select-bordered bg-base-100 w-full" bind:value={jurnalJenis}>
-					<option value="persiapan">Masa Persiapan</option>
-					<option value="ganjil">Semester Ganjil</option>
-					<option value="genap">Semester Genap</option>
-				</select>
-			</label>
-			<label class="form-control">
-				<span class="label-text mb-1">Tanggal Mulai</span>
+				<a class="btn btn-outline" href="/martikulasi/pengaturan">Pengaturan</a>
+				<a class="btn btn-outline" href="/asesmen-martikulasi">Input Nilai</a>
+			</div>
+		{/if}
+		{#if selectedDocument === 'rapor' || selectedDocument === 'piagam'}
+			<label class="mt-3 flex min-h-11 items-center gap-3 text-sm">
 				<input
-					class="input input-bordered bg-base-100 w-full"
-					type="date"
-					bind:value={jurnalTanggalMulai}
+					type="checkbox"
+					class="toggle toggle-success"
+					bind:checked={includeReportSignatures}
+					onchange={() => {
+						if (pdfViewerUrl) {
+							URL.revokeObjectURL(pdfViewerUrl);
+							pdfViewerUrl = '';
+							pdfViewerTitle = '';
+						}
+					}}
 				/>
+				Tanda tangan digital kepsek
 			</label>
-			<label class="form-control">
-				<span class="label-text mb-1">Tanggal Selesai</span>
-				<input
-					class="input input-bordered bg-base-100 w-full"
-					type="date"
-					bind:value={jurnalTanggalSelesai}
-				/>
-			</label>
-			<label class="form-control">
-				<span class="label-text mb-1">Penandatangan</span>
-				<select class="select select-bordered bg-base-100 w-full" bind:value={jurnalPenandatangan}>
-					<option
-						value="wali_kelas"
-						disabled={!jurnalKelasId || !jurnalAccess.allowedSigners.includes('wali_kelas')}
-						>Wali Kelas</option
-					>
-					<option
-						value="guru_mapel"
-						disabled={!jurnalMapelId || !jurnalAccess.allowedSigners.includes('guru_mapel')}
-						>Guru Mata Pelajaran</option
-					>
-				</select>
-			</label>
-			<div class="flex items-end">
-				<a class="btn btn-outline h-12 min-h-12 w-full md:w-auto" href="/jurnal-mengajar"
-					>Buka sumber di Kurikulum</a
-				>
-			</div>
-			{#if jurnalPenandatangan === 'wali_kelas' && jurnalKelasId && !jurnalKelas?.waliKelas}
-				<div class="alert alert-warning py-2 md:col-span-2 xl:col-span-4">
-					Wali kelas belum ditentukan pada Data Kelas.
-				</div>
-			{:else if jurnalPenandatangan === 'guru_mapel' && jurnalMapelId && !jurnalMapel?.guru}
-				<div class="alert alert-warning py-2 md:col-span-2 xl:col-span-4">
-					Guru belum ditentukan pada Data Mata Pelajaran.
-				</div>
-			{/if}
-		</div>
-	{/if}
-
-	{#if isMartikulasiSelected}
-		<div class="border-base-300 bg-base-200/30 mt-3 grid gap-3 rounded-lg border p-3 md:grid-cols-[minmax(0,260px)_1fr_auto_auto] md:items-end">
-			<label class="form-control min-w-0">
-				<span class="label-text mb-1">Tahun Ajaran</span>
-				<select class="select select-bordered bg-base-100 w-full" bind:value={selectedPrintTahunAjaranId}>
-					{#each tahunAjaranList as tahun}
-						<option value={tahun.id}>{tahun.nama}</option>
-					{/each}
-				</select>
-			</label>
-			<div class="text-base-content/65 text-sm">
-				{#if selectedDocument === 'martikulasi-sk'}
-					SK menggunakan susunan tim dan nomor pada Pengaturan Martikulasi.
-				{:else if selectedDocument === 'martikulasi-raport'}
-					Pilih murid untuk preview atau gunakan Semua Murid untuk satu PDF massal.
-				{:else}
-					STTM hanya mencetak hasil lengkap. Terbitkan nomor sebelum cetak final.
-				{/if}
-			</div>
-			<a class="btn btn-outline" href="/martikulasi/pengaturan">Pengaturan</a>
-			<a class="btn btn-outline" href="/asesmen-martikulasi">Input Nilai</a>
-		</div>
-	{/if}
-	{#if selectedDocument === 'rapor' || selectedDocument === 'piagam'}
-		<label class="mt-3 flex min-h-11 items-center gap-3 text-sm">
-			<input type="checkbox" class="toggle toggle-success" bind:checked={includeReportSignatures} onchange={() => {
-				if (pdfViewerUrl) { URL.revokeObjectURL(pdfViewerUrl); pdfViewerUrl = ''; pdfViewerTitle = ''; }
-			}} />
-			Tanda tangan digital kepsek
-		</label>
-	{/if}
-	<PreviewFooter
-		{hasMurid}
-		{muridCount}
-		{isPiagamSelected}
-		{selectedTemplate}
-		isRaporSelected={selectedDocument === 'rapor'}
-		isBiodataSelected={selectedDocument === 'biodata'}
-		isKeasramaanSelected={selectedDocument === 'keasramaan'}
-		isJadwalSelected={selectedDocument === 'jadwal-pelajaran'}
-		showStandaloneBgToggle={isJurnalSelected || isMartikulasiSelected}
-		doesNotNeedMurid={!documentNeedsMurid}
-		showParentSignatureSelect={isSRVariant && selectedDocument === 'rapor'}
-		{parentSignature}
-		onParentSignatureChange={(value: ParentSignatureChoice) => {
-			parentSignature = value;
-		}}
-		{kritCukup}
-		{kritBaik}
-		tpMode={fullTP}
-		kelasId={data.kelasId ?? null}
-		{showBgLogo}
-		onToggleBgLogo={(value: boolean) => {
-			showBgLogo = value;
-			if (pdfViewerUrl) {
-				URL.revokeObjectURL(pdfViewerUrl);
-				pdfViewerUrl = '';
-				pdfViewerTitle = '';
-			}
-		}}
-		onSetKriteria={(cukup: number, baik: number) => {
-			// optimistic update in UI
-			kritCukup = cukup;
-			kritBaik = baik;
-			// persist to server (requires sekolah_manage permission)
-			fetch('/api/sekolah/rapor-kriteria', {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ cukup: kritCukup, baik: kritBaik })
-			})
-				.then(async (res) => {
-					if (res.ok) {
-						toast('Kriteria rapor tersimpan di server.', 'success');
-					} else {
-						const payload = await res.json().catch(() => ({}));
-						console.error('Gagal menyimpan kriteria rapor', payload);
-						toast(payload?.error ?? 'Gagal menyimpan kriteria rapor.', 'error');
-					}
+		{/if}
+		<PreviewFooter
+			{hasMurid}
+			{muridCount}
+			{isPiagamSelected}
+			{selectedTemplate}
+			isRaporSelected={selectedDocument === 'rapor'}
+			isBiodataSelected={selectedDocument === 'biodata'}
+			isKeasramaanSelected={selectedDocument === 'keasramaan'}
+			isJadwalSelected={selectedDocument === 'jadwal-pelajaran'}
+			showStandaloneBgToggle={isJurnalSelected || isMartikulasiSelected}
+			doesNotNeedMurid={!documentNeedsMurid}
+			showParentSignatureSelect={isSRVariant && selectedDocument === 'rapor'}
+			{parentSignature}
+			onParentSignatureChange={(value: ParentSignatureChoice) => {
+				parentSignature = value;
+			}}
+			{kritCukup}
+			{kritBaik}
+			tpMode={fullTP}
+			kelasId={data.kelasId ?? null}
+			{showBgLogo}
+			onToggleBgLogo={(value: boolean) => {
+				showBgLogo = value;
+				if (pdfViewerUrl) {
+					URL.revokeObjectURL(pdfViewerUrl);
+					pdfViewerUrl = '';
+					pdfViewerTitle = '';
+				}
+			}}
+			onSetKriteria={(cukup: number, baik: number) => {
+				// optimistic update in UI
+				kritCukup = cukup;
+				kritBaik = baik;
+				// persist to server (requires sekolah_manage permission)
+				fetch('/api/sekolah/rapor-kriteria', {
+					method: 'PUT',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ cukup: kritCukup, baik: kritBaik })
 				})
-				.catch((err) => {
-					console.error('Error saving kriteria rapor', err);
-					toast('Gagal menyimpan kriteria rapor (jaringan).', 'error');
-				});
-		}}
-		onToggleFullTP={(value: 'compact' | 'full-desc') => {
-			fullTP = value;
-		}}
-		onBgRefresh={handleBgRefresh}
+					.then(async (res) => {
+						if (res.ok) {
+							toast('Kriteria rapor tersimpan di server.', 'success');
+						} else {
+							const payload = await res.json().catch(() => ({}));
+							console.error('Gagal menyimpan kriteria rapor', payload);
+							toast(payload?.error ?? 'Gagal menyimpan kriteria rapor.', 'error');
+						}
+					})
+					.catch((err) => {
+						console.error('Error saving kriteria rapor', err);
+						toast('Gagal menyimpan kriteria rapor (jaringan).', 'error');
+					});
+			}}
+			onToggleFullTP={(value: 'compact' | 'full-desc') => {
+				fullTP = value;
+			}}
+			onBgRefresh={handleBgRefresh}
+		/>
+	</div>
+
+	{#if pdfViewerUrl}
+		<div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+			<span class="break-all text-sm">{pdfViewerFilename}</span><a
+				class="btn btn-primary"
+				href={pdfViewerUrl}
+				download={pdfViewerFilename}><Icon name="download" /> Unduh PDF</a
+			>
+		</div>
+		<object
+			bind:this={pdfViewerEl}
+			data={pdfViewerUrl}
+			type="application/pdf"
+			class="rounded-box mt-4 h-[85vh] w-full"
+			title={pdfViewerTitle}
+		>
+			<embed src={pdfViewerUrl} type="application/pdf" class="h-full w-full" />
+		</object>
+	{/if}
+
+	<PreviewContent
+		{previewDocument}
+		{previewData}
+		{previewError}
+		{selectedTemplate}
+		{bgRefreshKey}
+		{showBgLogo}
+		onPrintableReady={handlePrintableReady}
+		onBulkPrintableReady={handleBulkPrintableReady}
 	/>
-</div>
-
-{#if pdfViewerUrl}
-	<div class="mt-4 flex flex-wrap items-center justify-between gap-3"><span class="break-all text-sm">{pdfViewerFilename}</span><a class="btn btn-primary" href={pdfViewerUrl} download={pdfViewerFilename}><Icon name="download" /> Unduh PDF</a></div>
-	<object
-		bind:this={pdfViewerEl}
-		data={pdfViewerUrl}
-		type="application/pdf"
-		class="rounded-box mt-4 h-[85vh] w-full"
-		title={pdfViewerTitle}
-	>
-		<embed src={pdfViewerUrl} type="application/pdf" class="h-full w-full" />
-	</object>
-{/if}
-
-<PreviewContent
-	{previewDocument}
-	{previewData}
-	{previewError}
-	{selectedTemplate}
-	{bgRefreshKey}
-	{showBgLogo}
-	onPrintableReady={handlePrintableReady}
-	onBulkPrintableReady={handleBulkPrintableReady}
-/>
 {/if}

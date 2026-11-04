@@ -10,16 +10,23 @@ import {
 	tableKelas,
 	tableMataPelajaran,
 	tableMurid,
-	tableSekolah
+	tableSekolah,
+	tableAsramaPenugasan,
+	tableAsramaKamar,
+	tableAsrama
 } from './db/schema';
 import { resolveSekolahAcademicContext } from './db/academic';
 import { activeMuridFilter } from './murid-query';
+import { ensureDormitorySchema } from './db/ensure-dormitory';
+import { dormToday } from '$lib/dormitory';
+import { sql } from 'drizzle-orm';
+import { dormGuardianCondition } from './dormitory-membership';
 import { hashPassword } from './auth';
 import { writeAuditLog } from './audit-log';
 import { ensureDataGovernanceSchema } from './db/ensure-data-governance';
 import { ensurePenggunaIdentitySchema } from './db/ensure-pengguna';
 import { defaultPermissionsForType, effectivePermissions } from '../../routes/pengguna/permissions';
-import { resolveUserRole } from '../user-role';
+import { resolveUserRole, employeeSupportsRoles } from '../user-role';
 import {
 	BULK_USER_LIMIT,
 	classifyBulkCandidate,
@@ -46,7 +53,8 @@ export async function buildBulkUserPreview(
 ): Promise<BulkUserPreview> {
 	const resolvedRole = resolveUserRole(role);
 	if (!resolvedRole) throw error(400, 'Role pengguna tidak valid.');
-	const requiresAcademicAssignment = !['tim_dapur', 'tim_keamanan', 'operator'].includes(role);
+	const requiresAcademicAssignment = role === 'user';
+	if (role === 'wali_asrama' || role === 'wali_asuh') await ensureDormitorySchema();
 	const academic = await resolveSekolahAcademicContext(sekolahId, source);
 	const employees = await source.query.tablePegawai.findMany({
 		columns: { id: true, nama: true, jenis: true, status: true },
@@ -73,19 +81,17 @@ export async function buildBulkUserPreview(
 				orderBy: asc(tableMataPelajaran.id)
 			})
 		: [];
-	const students =
-		classIds.length && semesterId
-			? await source.query.tableMurid.findMany({
-					columns: { id: true, kelasId: true, waliAsuhNama: true, waliAsramaNama: true },
-					where: and(
-						eq(tableMurid.sekolahId, sekolahId),
-						eq(tableMurid.semesterId, semesterId),
-						inArray(tableMurid.kelasId, classIds),
-						activeMuridFilter()
-					),
-					orderBy: asc(tableMurid.id)
-				})
-			: [];
+	const students = semesterId
+		? await source.query.tableMurid.findMany({
+				columns: { id: true, kelasId: true, waliAsuhPegawaiId: true },
+				where: and(
+					eq(tableMurid.sekolahId, sekolahId),
+					eq(tableMurid.semesterId, semesterId),
+					activeMuridFilter()
+				),
+				orderBy: asc(tableMurid.id)
+			})
+		: [];
 	const school = await source.query.tableSekolah.findFirst({
 		columns: { kepalaSekolahId: true },
 		where: eq(tableSekolah.id, sekolahId)
@@ -100,24 +106,53 @@ export async function buildBulkUserPreview(
 	}
 	const candidates: BulkUserCandidate[] = [];
 	for (const employee of employees.filter(
-		(row) =>
-			row.status === 'aktif' &&
-			row.jenis === (role === 'user' ? 'guru' : role === 'tim_keamanan' ? 'keamanan' : role)
+		(row) => row.status === 'aktif' && employeeSupportsRoles(row.jenis, [role])
 	)) {
 		const name = normalizedEmployeeName(employee.nama);
 		const ownSubjects = subjects.filter((row) => row.pengampuId === employee.id);
 		const ownClasses = classes.filter((row) => row.waliKelasId === employee.id);
-		const asuh = students.filter((row) => normalizedEmployeeName(row.waliAsuhNama ?? '') === name);
-		const asrama = students.filter(
-			(row) => normalizedEmployeeName(row.waliAsramaNama ?? '') === name
-		);
+		const asuh = students.filter((row) => row.waliAsuhPegawaiId === employee.id);
+		const asrama =
+			semesterId && employee.jenis === 'wali_asrama'
+				? await source.query.tableMurid.findMany({
+						columns: { id: true, kelasId: true },
+						where: and(
+							eq(tableMurid.sekolahId, sekolahId),
+							eq(tableMurid.semesterId, semesterId),
+							activeMuridFilter(),
+							dormGuardianCondition(sekolahId, employee.id)
+						)
+					})
+				: [];
 		const wards = role === 'wali_asuh' ? asuh : role === 'wali_asrama' ? asrama : [];
+		const rooms =
+			role === 'wali_asrama'
+				? await source
+						.select({ nama: tableAsramaKamar.nama, asrama: tableAsrama.nama })
+						.from(tableAsramaPenugasan)
+						.innerJoin(tableAsramaKamar, eq(tableAsramaKamar.id, tableAsramaPenugasan.kamarId))
+						.innerJoin(tableAsrama, eq(tableAsrama.id, tableAsramaKamar.asramaId))
+						.where(
+							and(
+								eq(tableAsramaPenugasan.sekolahId, sekolahId),
+								eq(tableAsramaPenugasan.pegawaiId, employee.id),
+								eq(tableAsramaKamar.aktif, 1),
+								eq(tableAsrama.aktif, 1),
+								sql`${tableAsramaPenugasan.mulai} <= ${dormToday()}`,
+								sql`(${tableAsramaPenugasan.selesai} IS NULL OR ${tableAsramaPenugasan.selesai} > ${dormToday()})`
+							)
+						)
+				: [];
 		const assignedClasses = new Set(
 			role === 'user'
-				? [...ownSubjects.map((row) => row.kelasId), ...ownClasses.map((row) => row.id)]
-				: wards.map((row) => row.kelasId)
+				? ownSubjects.map((row) => row.kelasId)
+				: wards.map((row) => row.kelasId).filter((id): id is number => id !== null)
 		);
 		const otherResponsibilities: string[] = [];
+		if (role === 'wali_asrama' && !rooms.length)
+			otherResponsibilities.push('Belum ada penugasan asrama aktif; akses menunggu penugasan.');
+		if (role === 'wali_asuh' && !asuh.length)
+			otherResponsibilities.push('Belum ada anak binaan aktif; akses menunggu penugasan.');
 		if (ownClasses.length)
 			otherResponsibilities.push(`Wali kelas: ${ownClasses.map((row) => row.nama).join(', ')}.`);
 		if (role !== 'user' && ownSubjects.length)
@@ -128,7 +163,7 @@ export async function buildBulkUserPreview(
 			otherResponsibilities.push(`Juga wali asrama ${asrama.length} murid.`);
 		if (school?.kepalaSekolahId === employee.id)
 			otherResponsibilities.push(
-				'Tercatat sebagai kepala sekolah; Jabatan Akses harus diatur terpisah oleh admin.'
+				'Tercatat sebagai kepala sekolah; role Kepala Sekolah dapat ditetapkan oleh admin.'
 			);
 		const accountNames = users
 			.filter((row) => row.pegawaiId === employee.id)
@@ -137,7 +172,7 @@ export async function buildBulkUserPreview(
 			name: employee.nama,
 			accountNames,
 			duplicateName: (nameCounts.get(name) ?? 0) > 1,
-			assignmentCount: role === 'user' ? ownSubjects.length : wards.length,
+			assignmentCount: role === 'user' ? ownSubjects.length + ownClasses.length : wards.length,
 			otherResponsibilities,
 			activeSemester: !!semesterId,
 			requiresAcademicAssignment
@@ -158,6 +193,7 @@ export async function buildBulkUserPreview(
 			kelasIds,
 			mataPelajaranIds: role === 'user' ? ownSubjects.map((row) => row.id) : [],
 			studentIds: role === 'user' ? [] : wards.map((row) => row.id),
+			rooms: [...new Set(rooms.map((row) => `${row.asrama} / ${row.nama}`))],
 			classes: classes.filter((row) => assignedClasses.has(row.id)).map((row) => row.nama),
 			subjects: role === 'user' ? [...new Set(ownSubjects.map((row) => row.nama))] : [],
 			permissions,

@@ -107,6 +107,7 @@ h1 { margin: 0 0 1mm; text-align: center; font-size: 14pt; text-transform: upper
 .report-page .identity td { padding: 0.6mm 1mm; }
 .report-page .data-table { margin: 1mm 0 2.5mm; font-size: 7.5pt; }
 .report-page .data-table th, .report-page .data-table td { padding: 0.9mm 1mm; }
+.report-page .data-table td:nth-child(2), .report-page .data-table td:nth-child(3) { text-align: center; }
 .report-page .section-title { margin: 2mm 0 1mm; }
 .report-page .signatures { margin-top: 3mm; font-size: 8.5pt; }
 .report-page .signature-space { height: 12mm; }
@@ -130,7 +131,7 @@ function signature(
 ) {
 	const headLabel =
 		school.kepalaSekolah.status === 'plt' ? 'Plt. Kepala Sekolah' : 'Kepala Sekolah';
-	return `<table class="signatures"><tr><td>${left?.label ?? ''}</td><td>${value(settings.lokasiPenetapan)}, ${value(settings.tanggalSk)}</td></tr><tr><td></td><td>${headLabel}</td></tr><tr><td class="signature-space"></td><td class="signature-space"></td></tr><tr><td>${left ? `<span class="underline">${value(left.nama)}</span><br>NIP ${value(left.nip)}` : ''}</td><td><span class="underline">${value(school.kepalaSekolah.nama)}</span><br>NIP ${value(school.kepalaSekolah.nip)}</td></tr></table>`;
+	return `<table class="signatures"><tr><td></td><td>${value(settings.lokasiPenetapan)}, ${value(settings.tanggalSk)}</td></tr><tr><td>${left?.label ?? ''}</td><td>${headLabel}</td></tr><tr><td class="signature-space"></td><td class="signature-space"></td></tr><tr><td>${left ? `<span class="underline">${value(left.nama)}</span><br>NIP ${value(left.nip)}` : ''}</td><td><span class="underline">${value(school.kepalaSekolah.nama)}</span><br>NIP ${value(school.kepalaSekolah.nip)}</td></tr></table>`;
 }
 
 function document(html: string) {
@@ -169,7 +170,7 @@ export function renderRaportMartikulasiHTML(input: {
 				const academic = martikulasiAspekAkademik
 					.map((aspect) => {
 						const row = byCode.get(aspect.kode);
-						return `<tr><td>${value(aspect.label)}</td><td>${value(row?.capaianAwal)}</td><td>${value(row?.capaianAkhir)}</td><td>${value(row?.ketuntasan ? completeness[row.ketuntasan] : null)}</td><td>${value(row?.catatan)}</td></tr>`;
+						return `<tr><td>${value(aspect.label)}</td><td>${value(row?.capaianAwal)}</td><td>${value(row?.capaianAkhir)}</td><td>${value(row?.ketuntasan ? completeness[row.ketuntasan] : null)}</td></tr>`;
 					})
 					.join('');
 				const character = martikulasiAspekKarakter
@@ -178,7 +179,7 @@ export function renderRaportMartikulasiHTML(input: {
 							`<tr><td>${value(aspect.label)}</td><td>${value(byCode.get(aspect.kode)?.deskripsiCapaian)}</td></tr>`
 					)
 					.join('');
-				return `<section class="page report-page">${head(school)}<h1 class="accent">Raport Hasil Martikulasi</h1><table class="identity"><tr><td>Nama Murid</td><td>: <strong>${value(student.nama)}</strong></td><td>Jenjang</td><td>: ${value(student.jenjang)}</td></tr><tr><td>Nomor Induk / ID</td><td>: ${value(student.nis)} / ${value(student.nisn)}</td><td>Kelas Martikulasi</td><td>: ${value(student.kelas)}</td></tr><tr><td>Satuan Pendidikan</td><td>: ${value(school.nama)}</td><td>Tahun Ajaran</td><td>: ${value(input.settings.tahunAjaran)}</td></tr></table><div class="section-title">Capaian Akademik</div><table class="data-table"><thead><tr><th style="width:20%">Aspek</th><th style="width:15%">Capaian Awal</th><th style="width:15%">Capaian Akhir</th><th style="width:18%">Ketuntasan</th><th>Catatan</th></tr></thead><tbody>${academic}</tbody></table><div class="section-title">Capaian Karakter, Keagamaan, dan Keasramaan</div><table class="data-table"><thead><tr><th style="width:32%">Aspek</th><th>Deskripsi Capaian</th></tr></thead><tbody>${character}</tbody></table><div class="section-title">Penetapan Level Akhir dan Rekomendasi</div><table class="identity"><tr><td>Level akhir / penempatan</td><td>: <strong>${value(martikulasiLevelLabel(student.levelPenempatan))}</strong></td></tr><tr><td>Rekomendasi tindak lanjut</td><td>: ${value(student.rekomendasi)}</td></tr><tr><td>Catatan</td><td>: ${value(student.catatanUmum)}</td></tr></table>${signature(school, input.settings, student.waliKelas ? { label: 'Wali Kelas / Guru', ...student.waliKelas } : null)}</section>`;
+				return `<section class="page report-page">${head(school)}<h1 class="accent">Raport Hasil Martikulasi</h1><table class="identity"><tr><td>Nama Murid</td><td>: <strong>${value(student.nama)}</strong></td><td>Jenjang</td><td>: ${value(student.jenjang)}</td></tr><tr><td>Nomor Induk / ID</td><td>: ${value(student.nis)} / ${value(student.nisn)}</td><td>Kelas Martikulasi</td><td>: ${value(student.kelas)}</td></tr><tr><td>Satuan Pendidikan</td><td>: ${value(school.nama)}</td><td>Tahun Ajaran</td><td>: ${value(input.settings.tahunAjaran)}</td></tr></table><div class="section-title">Capaian Akademik</div><table class="data-table"><thead><tr><th style="width:30%">Aspek</th><th style="width:22%">Capaian Awal</th><th style="width:22%">Capaian Akhir</th><th style="width:26%">Ketuntasan</th></tr></thead><tbody>${academic}</tbody></table><div class="section-title">Capaian Karakter, Keagamaan, dan Keasramaan</div><table class="data-table" style="width:74%"><thead><tr><th style="width:calc(52% / .74)">Aspek</th><th style="width:calc(22% / .74)">Capaian Akhir</th></tr></thead><tbody>${character}</tbody></table><div class="section-title">Penetapan Level Akhir dan Rekomendasi</div><table class="identity"><tr><td>Level akhir / penempatan</td><td>: <strong>${value(martikulasiLevelLabel(student.levelPenempatan))}</strong></td></tr><tr><td>Rekomendasi tindak lanjut</td><td>: ${value(student.rekomendasi)}</td></tr><tr><td>Catatan</td><td>: ${value(student.catatanUmum)}</td></tr></table>${signature(school, input.settings, { label: 'Wali Kelas', nama: student.waliKelas?.nama ?? '', nip: student.waliKelas?.nip ?? null })}</section>`;
 			})
 			.join('')
 	);

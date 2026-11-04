@@ -4,6 +4,7 @@
 
 	let {
 		deleteModalTitle,
+		action = '?/delete',
 		deleteModalItem,
 		deleteModalIds,
 		deleteModalDisabled,
@@ -11,6 +12,7 @@
 		onClose
 	}: {
 		deleteModalTitle: string;
+		action?: string;
 		deleteModalItem: { id: number; deskripsi: string } | null;
 		deleteModalIds: number[];
 		deleteModalDisabled: boolean;
@@ -47,18 +49,16 @@
 
 			<FormEnhance
 				id="form-delete-tp"
-				action="?/delete"
+				{action}
 				onsuccess={() => {
 					submitting = false;
 					onClose();
 				}}
 				submitStateChange={(value) => (submitting = value)}
 			>
-				{#snippet children()}
-					{#each deleteModalIds as id (id)}
-						<input name="ids" value={id} hidden />
-					{/each}
-				{/snippet}
+				{#each deleteModalIds as id (id)}
+					<input name="ids" value={id} hidden />
+				{/each}
 			</FormEnhance>
 
 			<div class="modal-action mt-6 flex gap-2">

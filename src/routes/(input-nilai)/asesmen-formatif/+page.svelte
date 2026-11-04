@@ -218,7 +218,8 @@
 				name="mapel_id"
 				bind:value={selectedMapelValue}
 				disabled={data.mapelList.length === 0 ||
-					(isRestrictedTeacher(page.data.user) && page.data.user?.mataPelajaranId != null)}
+					(isRestrictedTeacher(page.data.user, page.data.kelasAktif?.id) &&
+						page.data.user?.mataPelajaranId != null)}
 			>
 				{#if data.mapelList.length === 0}
 					<option value="">Belum ada mata pelajaran</option>

@@ -220,7 +220,7 @@ export async function loadDashboardAchievements(
 				columns: [column],
 				records: recordsByDate.get(date) ?? [],
 				permits,
-				students: students.map((student) => ({
+				students: students.filter((student): student is typeof student & { kelasId: number } => student.kelasId !== null).map((student) => ({
 					...student,
 					kelas: classById.get(student.kelasId)!.nama
 				}))
@@ -230,6 +230,7 @@ export async function loadDashboardAchievements(
 				statuses.set(row.id, days);
 			}
 		for (const student of students) {
+			if (student.kelasId === null) continue;
 			const kelas = classById.get(student.kelasId)!;
 			const classHolidays = new Set(holidays);
 			for (const row of calendarRows)

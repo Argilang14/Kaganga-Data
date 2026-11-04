@@ -1,0 +1,94 @@
+.student-workspace {
+	min-width: 0;
+	--student-table-min-width: 54rem;
+	--student-cell-padding: 0.75rem 1rem;
+}
+.student-dorm-workspace {
+	--student-table-min-width: 73.5rem;
+}
+
+.student-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: end;
+	gap: 0.75rem;
+}
+.student-toolbar .student-search {
+	flex: 1 1 16rem;
+	max-width: 28rem;
+}
+.student-toolbar .fieldset {
+	padding-bottom: 0;
+}
+.student-table-scroll {
+	max-width: 100%;
+	overflow-x: auto;
+	overscroll-behavior-inline: contain;
+	border: 1px solid var(--color-base-300);
+	border-radius: var(--app-radius);
+}
+.student-table-scroll:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: -2px;
+}
+.student-table {
+	width: 100%;
+	min-width: var(--student-table-min-width);
+	table-layout: fixed;
+	font-size: 0.875rem;
+}
+.student-table :is(th, td) {
+	padding: var(--student-cell-padding);
+	vertical-align: middle;
+	overflow-wrap: anywhere;
+}
+.student-table thead {
+	background: var(--color-base-200);
+	color: var(--color-base-content);
+}
+.student-table tbody tr {
+	height: 3.5rem;
+}
+.student-table tbody tr:hover {
+	background: color-mix(in oklab, var(--color-base-200) 55%, transparent);
+}
+.student-table .student-number {
+	width: 3.25rem;
+}
+.student-table .student-status {
+	width: 10rem;
+}
+.student-table .student-class {
+	width: 9rem;
+}
+.student-table .student-dorm {
+	width: 12rem;
+}
+.student-table .student-actions {
+	width: 8rem;
+}
+.student-table .student-caregiver {
+	width: 13rem;
+}
+.student-table .student-row-actions {
+	width: 6.5rem;
+}
+.modal .student-dialog {
+	width: min(var(--app-modal-width), calc(100vw - 1rem));
+	max-width: var(--app-modal-width);
+	max-height: min(90dvh, 52rem);
+	padding: 0;
+	overflow: hidden;
+}
+.student-dialog-body {
+	min-height: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: var(--app-modal-padding);
+}
+@media (max-width: 639px) {
+	.student-toolbar > :is(label, button, .student-search) {
+		width: 100%;
+		max-width: none;
+	}
+}

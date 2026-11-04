@@ -1,4 +1,5 @@
-import { hasSchoolWideOperationalAccess } from './access-position.ts';
+import { roleGrants } from './role-policy.ts';
+import { hasRole } from './user-role.ts';
 
 export type ClassMonitoringJenis = 'persiapan' | 'ganjil' | 'genap';
 export type ClassMonitoringState = 'forthcoming' | 'running' | 'ended' | 'present' | 'excused';
@@ -7,6 +8,7 @@ export type ClassMonitoringAbsenceReason = 'sakit' | 'izin';
 export type ClassMonitoringUser =
 	| {
 			type?: string | null;
+			roles?: readonly string[] | null;
 			jabatanAkses?: string | null;
 			permissions?: readonly string[] | null;
 			pegawaiId?: number | null;
@@ -65,8 +67,9 @@ export function classMonitoringCapabilities(user: ClassMonitoringUser) {
 	const permissions = user?.permissions ?? [];
 	const canManage =
 		!!user &&
-		(hasSchoolWideOperationalAccess(user) || permissions.includes('class_monitoring_manage'));
-	const teacherDefault = user?.type === 'user' || user?.type === 'wali_kelas';
+		(roleGrants(user, 'class_monitoring_manage') ||
+			permissions.includes('class_monitoring_manage'));
+	const teacherDefault = hasRole(user, 'user');
 	return {
 		canView:
 			canManage ||

@@ -67,8 +67,15 @@ export async function GET({ locals, url }) {
 			eq(tableMurid.sekolahId, sekolahId),
 			eq(tableMurid.semesterId, academic.activeSemesterId),
 			eq(tableMurid.kelasId, kelasId),
-			activeMuridFilter()
-			, await studentAccessCondition(locals.user, sekolahId)
+			activeMuridFilter(),
+			await studentAccessCondition(
+				locals.user,
+				sekolahId,
+				undefined,
+				selectedKegiatan.length && selectedKegiatan.every((k) => k.kategori === 'makan')
+					? 'makan'
+					: undefined
+			)
 		),
 		orderBy: asc(tableMurid.nama)
 	});

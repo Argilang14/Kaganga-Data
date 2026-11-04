@@ -2,6 +2,7 @@
 	/* eslint-disable svelte/no-navigation-without-resolve -- search param helpers and goto usage */
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
+	import DormEvaluationScope from '$lib/components/keasramaan/DormEvaluationScope.svelte';
 	import BulkFillModal from '$lib/components/catatan-wali/bulk-fill-modal.svelte';
 	import FormEnhance from '$lib/components/form-enhance.svelte';
 	import Icon from '$lib/components/icon.svelte';
@@ -25,16 +26,14 @@
 	const currentPage = $derived.by(() => data.page.currentPage ?? 1);
 	const totalPages = $derived.by(() => Math.max(1, data.page.totalPages ?? 1));
 	const pages = $derived.by(() => Array.from({ length: totalPages }, (_, index) => index + 1));
-	const kelasAktif = $derived(page.data.kelasAktif ?? null);
-	const kelasAktifLabel = $derived.by(() => {
-		if (!kelasAktif) return null;
-		return kelasAktif.fase ? `${kelasAktif.nama} - ${kelasAktif.fase}` : kelasAktif.nama;
-	});
+	const asramaAktifLabel = $derived(data.room ? `${data.room.asrama} / ${data.room.nama}` : null);
 	const editingSaveDisabled = $derived.by(
 		() =>
 			editingRowId === null || editingSubmitting || editingCatatan.trim() === editingOriginal.trim()
 	);
-	const muridIds = $derived.by(() => data.daftarCatatan.map((item) => item.id));
+	const muridIds = $derived.by(() =>
+		data.daftarCatatan.filter((item) => item.canEdit).map((item) => item.id)
+	);
 	const bulkTargetCount = $derived.by(() => muridIds.length);
 	const muridIdsPayload = $derived.by(() => JSON.stringify(muridIds));
 
@@ -49,7 +48,7 @@
 	$effect(() => {
 		if (editingRowId === null) return;
 		const row = data.daftarCatatan.find((item) => item.id === editingRowId);
-		if (!row) {
+		if (!row || !row.canEdit) {
 			cancelEdit();
 		}
 	});
@@ -171,10 +170,12 @@
 			return;
 		}
 		bulkCatatan = '';
+		let actions: { submit: () => void };
 		showModal({
 			title: 'Isi Catatan Wali Asrama Sekaligus',
 			body: BulkFillModal,
 			bodyProps: {
+				action: noteActionUrl('fillAll'),
 				formId: bulkFormId,
 				muridIdsPayload,
 				targetCount: bulkTargetCount,
@@ -182,11 +183,15 @@
 				onCatatanChange: (value: string) => {
 					bulkCatatan = value;
 				},
-				onRequestClose: () => hideModal(),
+				onAction: (value: { submit: () => void }) => {
+					actions = value;
+				},
 				onSuccess: async () => {
 					await handleBulkSuccess();
 				}
 			},
+			onPositive: { label: 'Terapkan', action: () => actions.submit() },
+			onNegative: { label: 'Batal' },
 			dismissible: true,
 			onClose: handleBulkDialogClose
 		});
@@ -200,14 +205,31 @@
 		hideModal();
 		await invalidate('app:catatan-wali-asrama');
 	}
+
+	function noteActionUrl(action: 'save' | 'fillAll') {
+		const params = new URLSearchParams({
+			kamar_id: String(data.room?.id ?? 0),
+			semester_id: String(data.period?.id ?? 0)
+		});
+		if (data.history) params.set('riwayat', '1');
+		return `?/${action}&${params}`;
+	}
 </script>
+
+<DormEvaluationScope
+	rooms={data.rooms}
+	room={data.room}
+	periods={data.periods}
+	period={data.period}
+	history={data.history}
+/>
 
 <div class="card bg-base-100 rounded-lg border border-none p-4 shadow-md">
 	<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 		<div>
 			<h2 class="text-xl font-bold">Rekapitulasi Catatan Wali Asrama</h2>
-			{#if kelasAktifLabel}
-				<p class="text-base-content/80 block text-sm">{kelasAktifLabel}</p>
+			{#if asramaAktifLabel}
+				<p class="text-base-content/80 block text-sm">{asramaAktifLabel}</p>
 			{/if}
 		</div>
 		<button
@@ -264,7 +286,7 @@
 							{#if editingRowId === item.id}
 								<FormEnhance
 									id={formId}
-									action="?/save"
+									action={noteActionUrl('save')}
 									submitStateChange={(value) => (editingSubmitting = value)}
 									onsuccess={() => {
 										void handleSaveSuccess();
@@ -281,8 +303,7 @@
 												bind:value={editingCatatan}
 												placeholder={`Tuliskan catatan wali asrama untuk ${item.nama}`}
 												spellcheck="false"
-												aria-invalid={invalid}
-											></textarea>
+												aria-invalid={invalid}></textarea>
 											<small class="text-base-content/60 text-xs">
 												Kosongkan catatan dan simpan untuk menghapus.
 											</small>
@@ -326,7 +347,7 @@
 										type="button"
 										class="btn btn-sm btn-soft shadow-none"
 										onclick={() => startEdit(item)}
-										disabled={editingRowId !== null}
+										disabled={!item.canEdit || editingRowId !== null}
 									>
 										<Icon name="edit" />
 										Edit
@@ -338,7 +359,9 @@
 				{:else}
 					<tr>
 						<td class="p-7 text-center italic opacity-60" colspan="4"
-							>Belum ada murid pada kelas ini</td
+							>{data.room
+								? 'Belum ada murid pada asrama ini'
+								: 'Pilih asrama untuk menampilkan murid'}</td
 						>
 					</tr>
 				{/each}

@@ -7,6 +7,9 @@ import {
 	tableKetidakhadiranRapor
 } from '$lib/server/db/schema';
 import { waktuToLocalDate } from '$lib/server/absen/utils';
+import { ensureAbsensiSchema } from '$lib/server/db/ensure-absensi';
+import { ensureKetidakhadiranHarianSchema } from '$lib/server/db/ensure-ketidakhadiran-harian';
+import { ensureKetidakhadiranRaporSchema } from '$lib/server/db/ensure-ketidakhadiran-rapor';
 
 function dateStr(year: number, month: number, day: number) {
 	return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -39,6 +42,10 @@ export async function computeRaporAttendance(
 	if (!tanggalMulaiRapor || !tanggalAkhirRapor || !semesterId) {
 		return { sakit: 0, izin: 0, alfa: 0 };
 	}
+
+	await ensureAbsensiSchema();
+	await ensureKetidakhadiranHarianSchema();
+	await ensureKetidakhadiranRaporSchema();
 
 	const presensiSettings = await db.query.tablePresensiSettings.findFirst({
 		where: and(

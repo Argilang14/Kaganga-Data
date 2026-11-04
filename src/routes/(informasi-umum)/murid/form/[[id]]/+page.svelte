@@ -8,14 +8,16 @@
 	// deletion handled elsewhere; removed unused modal/toast imports
 	let { data } = $props();
 	let activeTab = $state(0);
-	const totalTabs = 6;
+	const totalTabs = 5;
 	const formId = $derived(`form-murid-${data.murid?.id ?? 'baru'}`);
 	const saveAction = $derived(
 		data.murid?.id ? `/murid/form/${data.murid.id}?/save` : '/murid/form?/save'
 	);
 	const isLimitedWaliAsramaEdit = $derived.by(() => {
 		const u = page.data.user;
-		return u?.type === 'wali_asrama' && !hasSchoolWideOperationalAccess(u);
+		return (
+			Boolean(data.murid?.id) && u?.type === 'wali_asrama' && !hasSchoolWideOperationalAccess(u)
+		);
 	});
 
 	$effect(() => {
@@ -48,7 +50,12 @@
 	id={formId}
 	action={saveAction}
 	enctype="multipart/form-data"
-	init={data.murid}
+	init={data.murid
+		? {
+				...data.murid,
+				waliAsuhPegawaiId: data.murid.waliAsuhPegawaiId ?? (data.murid.waliAsuhNama ? 'legacy' : '')
+			}
+		: undefined}
 	onsuccess={async ({ data: res }) => {
 		await invalidate('app:murid');
 		// navigate back to detail modal first, then dispatch update event
@@ -88,10 +95,14 @@
 		<p class="mb-6 text-xl font-bold">
 			{data.murid?.id ? 'Formulir Edit Murid Manual' : 'Formulir Tambah Murid Manual'}
 		</p>
+		{#if !data.murid?.id}<p class="mb-4 text-sm">
+				Murid baru disimpan di Murid Pasif. Pilih murid dari halaman Murid Kelas atau Data Murid
+				Asrama untuk menempatkannya.
+			</p>{/if}
 		{#if isLimitedWaliAsramaEdit}
 			<div class="alert alert-info alert-soft mb-4">
 				<Icon name="info" />
-				<span>Wali Asrama hanya dapat mengubah data Wali Asrama dan Wali Asuh.</span>
+				<span>Wali Asrama hanya dapat mengubah penugasan Wali Asuh anak dalam asramanya.</span>
 			</div>
 		{/if}
 		<div class="max-h-[60vh] overflow-y-auto sm:max-h-none sm:overflow-y-visible">
@@ -153,9 +164,9 @@
 									class="select bg-base-200 dark:bg-base-300 dark:border-none"
 									title="Pilih kelas"
 									name="kelasId"
-									required
+									disabled
 								>
-									<option value="" disabled selected> Pilih Kelas </option>
+									<option value="" selected> Belum mendapat kelas </option>
 									{#each data.daftarKelas as kelas (kelas.id)}
 										<option value={kelas.id}>
 											{kelas.nama} &bullet; {kelas.fase}
@@ -442,70 +453,44 @@
 					</fieldset>
 				</div>
 
-				<!-- data Wali Asrama -->
+				<!-- data Wali Asuh -->
 				<input
 					type="radio"
 					bind:group={activeTab}
 					value={4}
 					class="tab"
-					aria-label="Wali Asrama (Opsional)"
-				/>
-				<div class="tab-content bg-base-100 p-4">
-					<div class="flex flex-col gap-2 sm:flex-row">
-						<fieldset class="fieldset flex-1">
-							<legend class="fieldset-legend">Nama Wali Asrama</legend>
-							<input
-								type="text"
-								class="input validator bg-base-200 dark:bg-base-300 w-full dark:border-none"
-								placeholder="Contoh: Ahmad Rahman"
-								name="waliAsramaNama"
-							/>
-						</fieldset>
-						<fieldset class="fieldset flex-1">
-							<legend class="fieldset-legend"
-								>NIP Wali Asrama <span class="text-xs text-gray-500">(Opsional)</span></legend
-							>
-							<input
-								type="text"
-								class="input bg-base-200 dark:bg-base-300 w-full dark:border-none"
-								placeholder="Contoh: NIP 19940505 201803 1 008"
-								name="waliAsramaNip"
-							/>
-						</fieldset>
-					</div>
-				</div>
-
-				<!-- data Wali Asuh -->
-				<input
-					type="radio"
-					bind:group={activeTab}
-					value={5}
-					class="tab"
 					aria-label="Wali Asuh (Opsional)"
 				/>
-				<div class="tab-content bg-base-100 p-4">
-					<div class="flex flex-col gap-2 sm:flex-row">
-						<fieldset class="fieldset flex-1">
-							<legend class="fieldset-legend">Nama Wali Asuh</legend>
-							<input
-								type="text"
-								class="input validator bg-base-200 dark:bg-base-300 w-full dark:border-none"
-								placeholder="Contoh: Budi Santoso"
-								name="waliAsuhNama"
-							/>
-						</fieldset>
-						<fieldset class="fieldset flex-1">
-							<legend class="fieldset-legend"
-								>NIP Wali Asuh <span class="text-xs text-gray-500">(Opsional)</span></legend
-							>
-							<input
-								type="text"
-								class="input bg-base-200 dark:bg-base-300 w-full dark:border-none"
-								placeholder="Contoh: NIP 19940505 201803 1 008"
-								name="waliAsuhNip"
-							/>
-						</fieldset>
-					</div>
+				<div class="tab-content bg-base-100 space-y-4 p-4">
+					<label class="fieldset">
+						<span class="fieldset-legend">Wali asuh</span>
+						<select
+							class="select w-full"
+							name="waliAsuhPegawaiId"
+							value={data.murid?.waliAsuhPegawaiId ?? (data.murid?.waliAsuhNama ? 'legacy' : '')}
+						>
+							{#if data.murid?.waliAsuhNama && !data.murid.waliAsuhPegawaiId}<option value="legacy"
+									>Pertahankan data lama: {data.murid.waliAsuhNama}</option
+								>{/if}<option value="">Belum ditugaskan</option>
+							{#if data.murid?.waliAsuhPegawaiId && !data.caregivers.some((p) => p.id === data.murid?.waliAsuhPegawaiId)}<option
+									value={data.murid.waliAsuhPegawaiId}
+									>{data.murid.waliAsuhNama} · tidak aktif</option
+								>{/if}
+							{#each data.caregivers as caregiver (caregiver.id)}<option value={caregiver.id}
+									>{caregiver.nama}{caregiver.nip ? ' · ' + caregiver.nip : ''}</option
+								>{/each}
+						</select>
+					</label>
+					{#if data.murid?.waliAsuhNama && !data.murid.waliAsuhPegawaiId}<p
+							class="text-base-content/70 text-sm"
+						>
+							Data lama: {data.murid.waliAsuhNama}. Pilih pegawai yang sesuai untuk menghubungkan
+							akun penilai.
+						</p>{/if}
+					<p class="text-base-content/70 text-sm">
+						Wali asuh tetap mengikuti anak saat pindah kelas atau asrama. Wali asrama dikelola
+						melalui Data Asrama.
+					</p>
 				</div>
 			</div>
 		</div>

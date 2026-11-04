@@ -1,6 +1,5 @@
 <script lang="ts">
 	import Icon from '$lib/components/icon.svelte';
-	import { accessPositionLabels, parseAccessPosition } from '$lib/access-position';
 	import { userRoleLabel } from '$lib/user-role';
 
 	let { u, onEdit, onOpenUser, onDelete = undefined } = $props();
@@ -17,11 +16,6 @@
 		if (hours < 24) return `${hours} jam lalu`;
 		return `${Math.floor(hours / 24)} hari lalu`;
 	}
-
-	function positionLabel(value: unknown) {
-		const position = parseAccessPosition(value);
-		return position ? accessPositionLabels[position] : null;
-	}
 </script>
 
 <td>
@@ -31,9 +25,11 @@
 <td>
 	<div class="flex flex-col items-start gap-1">
 		<span>{userRoleLabel(u)}{u.kelasName ? ` - ${u.kelasName}` : ''}</span>
-		{#if u.roles?.length}
+		{#if u.responsibilities?.length}
 			<div class="flex max-w-72 flex-wrap gap-1">
-				{#each u.roles as role}<span class="badge badge-ghost badge-sm">{role}</span>{/each}
+				{#each u.responsibilities as role (role)}<span class="badge badge-ghost badge-sm"
+						>{role}</span
+					>{/each}
 			</div>
 		{/if}
 		{#if u.type === 'wali_kelas'}
@@ -42,13 +38,6 @@
 			>
 		{/if}
 	</div>
-</td>
-<td>
-	{#if positionLabel(u.jabatanAkses)}
-		<span class="badge badge-primary badge-soft badge-sm">{positionLabel(u.jabatanAkses)}</span>
-	{:else}
-		<span class="text-base-content/50">-</span>
-	{/if}
 </td>
 <td>{u.username || '-'}</td>
 <td>
@@ -67,7 +56,9 @@
 	</div>
 </td>
 <td>
-	{#if u.mustChangePassword}
+	{#if u.pegawaiStatus === 'nonaktif'}
+		<span class="badge badge-error badge-sm">Pegawai nonaktif</span>
+	{:else if u.mustChangePassword}
 		<span class="badge badge-warning badge-sm">Wajib diganti</span>
 	{:else}
 		<span class="badge badge-success badge-soft badge-sm">Aktif</span>

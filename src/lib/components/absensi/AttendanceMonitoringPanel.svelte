@@ -4,6 +4,7 @@
 	import Icon from '$lib/components/icon.svelte';
 	import { page } from '$app/state';
 	import { canAttendance } from '$lib/attendance-access';
+	import type { IzinPulangMonitoringRow } from '$lib/server/attendance-monitoring.server';
 
 	type Alert = {
 		key: string;
@@ -42,7 +43,16 @@
 		keberangkatanTerkonfirmasi?: boolean;
 		status: 'sedang_izin' | 'sudah_kembali' | 'terlambat_kembali' | 'dibatalkan';
 		duration: number;
-	};
+	} & Pick<
+		IzinPulangMonitoringRow,
+		| 'pencatat'
+		| 'pencatatKembali'
+		| 'keluarSecurity'
+		| 'kembaliSecurity'
+		| 'petugasKeluarSecurity'
+		| 'petugasKembaliSecurity'
+		| 'perluDiperiksa'
+	>;
 
 	let {
 		alerts,
@@ -300,11 +310,52 @@
 											Kembali {dateLabel(permit.tanggalKembali)}
 										</p>
 									{/if}
-									<p class="text-base-content/70 text-xs">Penjemput: {permit.penjemputNama || 'Belum dilengkapi'} · {permit.penjemputHubungan || 'Hubungan belum dilengkapi'}</p>
+									<p class="text-base-content/70 text-xs">
+										Penjemput: {permit.penjemputNama || 'Belum dilengkapi'} · {permit.penjemputHubungan ||
+											'Hubungan belum dilengkapi'}
+									</p>
+									<p class="text-base-content/65 text-xs">
+										Pencatat izin: {permit.pencatat ?? 'Admin/petugas'}.
+										{permit.status === 'dibatalkan'
+											? 'Izin dibatalkan dan tidak dihitung dalam rekap.'
+											: 'Izin masuk rekap tanpa menunggu scan security.'}
+									</p>
+									{#if permit.status !== 'dibatalkan'}
+										<p class="text-base-content/65 text-xs">
+											Security keluar: {permit.keluarSecurity
+												? new Date(permit.keluarSecurity).toLocaleString('id-ID', {
+														timeZone: 'Asia/Jakarta'
+													})
+												: 'Belum diverifikasi'}{permit.petugasKeluarSecurity
+												? ` · ${permit.petugasKeluarSecurity}`
+												: ''}
+										</p>
+										<p class="text-base-content/65 text-xs">
+											Security kembali: {permit.kembaliSecurity
+												? new Date(permit.kembaliSecurity).toLocaleString('id-ID', {
+														timeZone: 'Asia/Jakarta'
+													})
+												: 'Belum diverifikasi'}{permit.petugasKembaliSecurity
+												? ` · ${permit.petugasKembaliSecurity}`
+												: ''}{permit.pencatatKembali
+												? ` · Pencatat kembali: ${permit.pencatatKembali}`
+												: ''}
+										</p>
+									{/if}
+									{#each permit.perluDiperiksa ?? [] as alasan (alasan)}
+										<p class="text-warning text-xs">{alasan}</p>
+									{/each}
 									{#if !permit.tanggalKembali && ['sedang_izin', 'terlambat_kembali'].includes(permit.status)}
 										<div class="mt-2 flex flex-wrap gap-2">
 											{#if canAttendance(page.data.user, 'izin_pulang') && !permit.keberangkatanTerkonfirmasi}
-												<button type="button" class="btn btn-soft btn-sm min-h-10" onclick={() => { pickupPermit = permit; pickupDialog.showModal(); }}><Icon name="edit" />Ubah Penjemput</button>
+												<button
+													type="button"
+													class="btn btn-soft btn-sm min-h-10"
+													onclick={() => {
+														pickupPermit = permit;
+														pickupDialog.showModal();
+													}}><Icon name="edit" />Ubah Penjemput</button
+												>
 											{/if}
 											<FormEnhance action="?/markIzinReturned" showToast onsuccess={onSuccess}>
 												<input type="hidden" name="id" value={permit.id} />
@@ -511,7 +562,8 @@
 							<input
 								class="input input-bordered w-full"
 								name="penjemputNama"
-								required maxlength="150"
+								required
+								maxlength="150"
 								placeholder="Nama lengkap"
 							/>
 						</label>
@@ -520,7 +572,8 @@
 							<input
 								class="input input-bordered w-full"
 								name="penjemputHubungan"
-								required maxlength="100"
+								required
+								maxlength="100"
 								placeholder="Contoh: Orang tua"
 							/>
 						</label>
@@ -567,21 +620,56 @@
 		<h3 class="text-lg font-semibold">Ubah Penjemput</h3>
 		{#if pickupPermit}
 			{@const selected = pickupPermit}
-			<p class="text-base-content/65 mt-1 text-sm">{pickupPermit.nama} · {pickupPermit.kelasNama}</p>
+			<p class="text-base-content/65 mt-1 text-sm">
+				{pickupPermit.nama} · {pickupPermit.kelasNama}
+			</p>
 			{#key pickupPermit.id}
-				<FormEnhance action="?/updatePenjemput" onsuccess={() => { pickupDialog.close(); onSuccess(); }}>
+				<FormEnhance
+					action="?/updatePenjemput"
+					onsuccess={() => {
+						pickupDialog.close();
+						onSuccess();
+					}}
+				>
 					{#snippet children({ submitting })}
 						<input type="hidden" name="id" value={selected.id} />
 						<input type="hidden" name="revision" value={selected.updatedAt ?? ''} />
 						<div class="my-4 grid gap-4">
-							<label class="grid gap-1 text-sm"><span>Nama penjemput</span><input class="input w-full" name="penjemputNama" value={selected.penjemputNama ?? ''} required maxlength="150" /></label>
-							<label class="grid gap-1 text-sm"><span>Hubungan dengan murid</span><input class="input w-full" name="penjemputHubungan" value={selected.penjemputHubungan ?? ''} required maxlength="100" /></label>
+							<label class="grid gap-1 text-sm"
+								><span>Nama penjemput</span><input
+									class="input w-full"
+									name="penjemputNama"
+									value={selected.penjemputNama ?? ''}
+									required
+									maxlength="150"
+								/></label
+							>
+							<label class="grid gap-1 text-sm"
+								><span>Hubungan dengan murid</span><input
+									class="input w-full"
+									name="penjemputHubungan"
+									value={selected.penjemputHubungan ?? ''}
+									required
+									maxlength="100"
+								/></label
+							>
 						</div>
-						<div class="flex flex-wrap justify-end gap-2"><button class="btn" type="button" disabled={submitting} onclick={() => pickupDialog.close()}>Batal</button><button type="submit" class="btn btn-primary" disabled={submitting}><Icon name="save" />{submitting ? 'Menyimpan...' : 'Simpan'}</button></div>
+						<div class="flex flex-wrap justify-end gap-2">
+							<button
+								class="btn"
+								type="button"
+								disabled={submitting}
+								onclick={() => pickupDialog.close()}>Batal</button
+							><button type="submit" class="btn btn-primary" disabled={submitting}
+								><Icon name="save" />{submitting ? 'Menyimpan...' : 'Simpan'}</button
+							>
+						</div>
 					{/snippet}
 				</FormEnhance>
 			{/key}
 		{/if}
 	</div>
-	<form method="dialog" class="modal-backdrop"><button aria-label="Tutup ubah penjemput">Tutup</button></form>
+	<form method="dialog" class="modal-backdrop">
+		<button aria-label="Tutup ubah penjemput">Tutup</button>
+	</form>
 </dialog>

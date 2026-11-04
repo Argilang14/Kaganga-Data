@@ -4,13 +4,17 @@
 	import CetakBawaan from '$lib/components/cetak/CetakBawaan.svelte';
 	let { data } = $props();
 </script>
+
 <h1 class="mb-4 text-2xl font-bold">Cetak Raport</h1>
-{#key `${page.data.sekolah?.id}-${data.format}`}
+{#key `${page.data.sekolah?.id}-${data.format}-${!!data.dormReport}-${page.url.search}`}
 	{#if data.format === 'sr'}
 		<CetakSR {data} pdfVariant="sr" documentGroup="raport" />
 	{:else if data.format === 'default'}
 		<CetakBawaan {data} />
 	{:else}
-		<div role="alert" class="alert alert-warning">Jenis sekolah belum dikenali. Admin perlu memeriksa jenjang pada Data Sekolah sebelum mencetak raport.</div>
+		<div role="alert" class="alert alert-warning">
+			Jenis sekolah belum dikenali. Admin perlu memeriksa jenjang pada Data Sekolah sebelum mencetak
+			raport.
+		</div>
 	{/if}
 {/key}

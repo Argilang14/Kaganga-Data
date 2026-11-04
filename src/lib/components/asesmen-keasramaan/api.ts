@@ -1,162 +1,72 @@
-/**
- * Download template untuk asesmen keasramaan
- */
-export async function downloadTemplate(
-	keasramaanId: string | number,
-	kelasId: string | number
+async function download(
+	endpoint: string,
+	kamarId: string | number,
+	semesterId: number,
+	evaluation?: string | number
 ): Promise<boolean> {
 	try {
-		const formData = new FormData();
-		formData.append('keasramaanId', String(keasramaanId));
-		formData.append('kelasId', String(kelasId));
-
-		const response = await fetch('/api/asesmen-keasramaan/download-template', {
-			method: 'POST',
-			body: formData
+		const params = new URLSearchParams({
+			kamar_id: String(kamarId),
+			semester_id: String(semesterId)
 		});
-
-		if (!response.ok) {
-			return false;
-		}
-
-		const blob = await response.blob();
-		const url = window.URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-
-		// Extract filename dari Content-Disposition header
-		const contentDisposition = response.headers.get('content-disposition');
-		let filename = `template-asesmen-keasramaan-${new Date().getTime()}.xlsx`;
-		if (contentDisposition) {
-			const match = contentDisposition.match(/filename="?([^";\n]+)"?/i);
-			if (match && match[1]) {
-				filename = match[1];
-			}
-		}
-
-		a.download = filename;
-		document.body.appendChild(a);
-		a.click();
-		window.URL.revokeObjectURL(url);
-		document.body.removeChild(a);
-
+		if (evaluation) params.set('evaluasi_id', String(evaluation));
+		const response = await fetch('/api/asesmen-keasramaan/' + endpoint + '?' + params);
+		if (!response.ok) return false;
+		const url = URL.createObjectURL(await response.blob());
+		const link = document.createElement('a');
+		link.href = url;
+		link.download =
+			response.headers.get('content-disposition')?.match(/filename="([^"\n]+)"/)?.[1] ??
+			'keasramaan.xlsx';
+		document.body.appendChild(link);
+		link.click();
+		link.remove();
+		URL.revokeObjectURL(url);
 		return true;
-	} catch (err) {
-		console.error(err);
+	} catch (cause) {
+		console.error(cause);
 		return false;
 	}
 }
-
-/**
- * Download template massal untuk seluruh nilai keasramaan di kelas aktif
- */
-export async function downloadTemplateMassal(kelasId: string | number): Promise<boolean> {
-	try {
-		const formData = new FormData();
-		formData.append('kelasId', String(kelasId));
-
-		const response = await fetch('/api/asesmen-keasramaan/download-template-massal', {
-			method: 'POST',
-			body: formData
-		});
-
-		if (!response.ok) {
-			return false;
-		}
-
-		const blob = await response.blob();
-		const url = window.URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-
-		const contentDisposition = response.headers.get('content-disposition');
-		let filename = `template-keasramaan-massal-${new Date().getTime()}.xlsx`;
-		if (contentDisposition) {
-			const match = contentDisposition.match(/filename="?([^";\n]+)"?/i);
-			if (match && match[1]) {
-				filename = match[1];
-			}
-		}
-
-		a.download = filename;
-		document.body.appendChild(a);
-		a.click();
-		window.URL.revokeObjectURL(url);
-		document.body.removeChild(a);
-
-		return true;
-	} catch (err) {
-		console.error(err);
-		return false;
-	}
-}
-
-/**
- * Import nilai dari file Excel
- */
-export async function importNilai(
+async function upload(
+	endpoint: string,
 	file: File,
-	keasramaanId: string | number,
-	kelasId: string | number
+	kamarId: string | number,
+	semesterId: number,
+	evaluation?: string | number
 ): Promise<{ success: boolean; message?: string }> {
-	if (!file.name.toLowerCase().endsWith('.xlsx')) {
+	if (!file.name.toLowerCase().endsWith('.xlsx'))
 		return { success: false, message: 'Hanya file .xlsx yang didukung' };
-	}
-
 	try {
-		const formData = new FormData();
-		formData.append('keasramaanId', String(keasramaanId));
-		formData.append('kelasId', String(kelasId));
-		formData.append('file', file);
-
-		const response = await fetch('/api/asesmen-keasramaan/import', {
+		const form = new FormData();
+		form.set('file', file);
+		form.set('kamar_id', String(kamarId));
+		form.set('semester_id', String(semesterId));
+		if (evaluation) form.set('evaluasi_id', String(evaluation));
+		const response = await fetch('/api/asesmen-keasramaan/' + endpoint, {
 			method: 'POST',
-			body: formData
+			headers: { accept: 'application/json' },
+			body: form
 		});
-
 		const result = await response.json();
-
-		if (!response.ok) {
-			return { success: false, message: result.message ?? 'Gagal mengimport file' };
-		}
-
-		return { success: true, message: result.message };
-	} catch (err) {
-		console.error(err);
-		return { success: false, message: 'Terjadi kesalahan saat import' };
+		return { success: response.ok, message: result.fail ?? result.message };
+	} catch (cause) {
+		console.error(cause);
+		return { success: false, message: 'Berkas belum diimpor. Coba lagi.' };
 	}
 }
-
-/**
- * Import nilai massal dari format Excel Sekolah Rakyat/Zulaifa
- */
-export async function importNilaiMassal(
+export const downloadTemplate = (
+	evaluation: string | number,
+	kamarId: string | number,
+	semesterId: number
+) => download('download-template', kamarId, semesterId, evaluation);
+export const downloadTemplateMassal = (kamarId: string | number, semesterId: number) =>
+	download('download-template-massal', kamarId, semesterId);
+export const importNilai = (
 	file: File,
-	kelasId: string | number
-): Promise<{ success: boolean; message?: string }> {
-	if (!file.name.toLowerCase().endsWith('.xlsx')) {
-		return { success: false, message: 'Hanya file .xlsx yang didukung' };
-	}
-
-	try {
-		const formData = new FormData();
-		formData.append('kelasId', String(kelasId));
-		formData.append('file', file);
-
-		const response = await fetch('/api/asesmen-keasramaan/import-massal', {
-			method: 'POST',
-			body: formData
-		});
-
-		const result = await response.json();
-
-		if (!response.ok) {
-			return { success: false, message: result.message ?? 'Gagal mengimport file massal' };
-		}
-
-		return { success: true, message: result.message };
-	} catch (err) {
-		console.error(err);
-		return { success: false, message: 'Terjadi kesalahan saat import massal' };
-	}
-}
+	evaluation: string | number,
+	kamarId: string | number,
+	semesterId: number
+) => upload('import', file, kamarId, semesterId, evaluation);
+export const importNilaiMassal = (file: File, kamarId: string | number, semesterId: number) =>
+	upload('import-massal', file, kamarId, semesterId);

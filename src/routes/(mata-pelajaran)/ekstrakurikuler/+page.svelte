@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { schoolWideAcademic } from '$lib/user-role';
 	/* eslint-disable svelte/no-navigation-without-resolve -- page uses links for per-item navigation */
 	import { invalidate } from '$app/navigation';
 	import { page } from '$app/state';
@@ -50,7 +51,7 @@
 	// Restrict editing for wali_asuh and user (guru mapel)
 	const canEdit = $derived.by(() => {
 		const u = page.data.user as { type?: string } | null | undefined;
-		return u?.type !== 'wali_asuh' && u?.type !== 'user';
+		return schoolWideAcademic(page.data.user) || (u?.type !== 'wali_asuh' && u?.type !== 'user');
 	});
 	const addSaveDisabled = $derived.by(
 		() => addSubmitting || !addNamaInput.trim() || !data.kelasId || !data.tableReady

@@ -6,6 +6,7 @@ import path from 'node:path';
 import db from './db';
 import {
 	tableMuridRiwayatKelas,
+	tableKelas,
 	tableMurid,
 	tableMuridLifecycle,
 	tableMataPelajaran,
@@ -40,6 +41,8 @@ import {
 import { martikulasiArchiveSource, martikulasiArchivePayload } from './report-archive-martikulasi';
 import { renderRaportMartikulasiHTML } from './pdf/templates/martikulasi';
 import { renderPDF } from './pdf/pagedpdf';
+import { evaluationRows } from './dorm-evaluation';
+import { ensureDormEvaluationSchema } from './db/ensure-dorm-evaluation';
 import {
 	verifiedReportMetadata,
 	reportRevisionReason,
@@ -77,6 +80,131 @@ export function requireArchiveAction(
 	if (!canArchiveAction(locals, action))
 		throw error(403, 'Izin persetujuan arsip rapor belum diberikan kepada akun ini.');
 }
+
+async function archiveDormIdentity(locals: App.Locals, id: number) {
+	const history = await db.query.tableMuridRiwayatKelas.findFirst({
+		where: and(
+			eq(tableMuridRiwayatKelas.id, id),
+			eq(tableMuridRiwayatKelas.sekolahId, locals.sekolah!.id)
+		)
+	});
+	if (!history?.muridId || !history.identityKey.startsWith('uid:'))
+		error(409, 'Identitas riwayat rapor belum dapat dipastikan.');
+	if (
+		!(await assertStudentAccess(
+			locals.user,
+			locals.sekolah!.id,
+			history.muridId,
+			false,
+			'assigned'
+		))
+	)
+		error(403, 'Riwayat berada di luar penugasan akun ini.');
+	await assertMuridIdentityConsistent(
+		db,
+		locals.sekolah!.id,
+		history.identityKey.slice(4),
+		history.muridId
+	);
+	return history;
+}
+
+async function dormHistoryInfo(locals: App.Locals, id: number, live: boolean) {
+	await ensureDormEvaluationSchema();
+	const history = await db.query.tableMuridRiwayatKelas.findFirst({
+		where: and(
+			eq(tableMuridRiwayatKelas.id, id),
+			eq(tableMuridRiwayatKelas.sekolahId, locals.sekolah!.id)
+		)
+	});
+	if (!history?.muridId || !history.identityKey.startsWith('uid:')) return null;
+	const uid = history.identityKey.slice(4);
+	const placements = await evaluationRows<{
+		id: number;
+		murid_id: number;
+		kamar_id: number;
+		nama: string;
+	}>(
+		`SELECT DISTINCT p.id,m.id murid_id,p.kamar_id,g.nama||' / '||k.nama nama FROM asrama_penempatan p
+	 JOIN asrama_kamar k ON k.id=p.kamar_id JOIN asrama g ON g.id=k.asrama_id
+	 JOIN murid_identity_link mi ON mi.identity_uid=p.identity_uid AND mi.sekolah_id=p.sekolah_id JOIN murid m ON m.id=mi.murid_id
+	 JOIN asrama_evaluasi_nilai n ON n.penempatan_id=p.id JOIN asrama_evaluasi_tujuan t ON t.id=n.tujuan_id JOIN asrama_evaluasi e ON e.id=t.evaluasi_id
+	 WHERE p.sekolah_id=? AND p.identity_uid=? AND e.semester_id=? AND m.semester_id=e.semester_id`,
+		[locals.sekolah!.id, uid, history.semesterId]
+	);
+	if (!placements.length) return null;
+	if (placements.length > 1)
+		error(
+			409,
+			'Anak memiliki nilai pada beberapa penempatan asrama. Buka Rekap Nilai Keasramaan dan pilih riwayat asrama yang akan dicetak.'
+		);
+	const placement = placements[0];
+	if (
+		!(await assertStudentAccess(
+			locals.user,
+			locals.sekolah!.id,
+			placement.murid_id,
+			false,
+			'assigned'
+		))
+	)
+		error(403, 'Rapor berada di luar penugasan akun ini.');
+	await assertMuridIdentityConsistent(db, locals.sekolah!.id, uid, placement.murid_id);
+	const url = new URL(
+		`http://localhost/cetak/keasramaan?murid_id=${placement.murid_id}&penempatan_id=${placement.id}&semester_id=${history.semesterId}`
+	);
+	const payload = await getKeasramaanPreviewPayload({ locals, url });
+	if (!payload) error(404, 'Data rapor asrama tidak tersedia.');
+	const data = payload.keasramaanData;
+	const semester = await db.query.tableSemester.findFirst({
+		where: (t, { eq }) => eq(t.id, history.semesterId!)
+	});
+	const [coverage] = await evaluationRows<{ expected: number; filled: number }>(
+		`SELECT COUNT(t.id) expected,COUNT(n.id) filled FROM asrama_evaluasi_tujuan t JOIN asrama_evaluasi e ON e.id=t.evaluasi_id LEFT JOIN asrama_evaluasi_nilai n ON n.tujuan_id=t.id AND n.penempatan_id=? WHERE e.kamar_id=? AND e.semester_id=?`,
+		[placement.id, placement.kamar_id, history.semesterId]
+	);
+	const versions = await reportVersions(locals.sekolah!.id, id, 'asrama', 'ras');
+	const latest = versions.at(-1);
+	const snapshot = latest && !live ? JSON.parse(latest.snapshotJson) : null;
+	return {
+		historyId: id,
+		studentId: placement.murid_id,
+		uid,
+		studentName: history.namaSnapshot,
+		kind: 'asrama' as const,
+		period: 'ras' as const,
+		year: data.periode.tahunAjaran,
+		semester: data.periode.semester,
+		className: placement.nama,
+		dormPlacementId: placement.id,
+		dormSemesterId: history.semesterId,
+		archived: latest ? publicReportVersion(latest) : null,
+		versions: versions.map(publicReportVersion),
+		canFinalize: canArchiveAction(locals, 'finalisasi'),
+		canRevise: canArchiveAction(locals, 'finalisasi') && canArchiveAction(locals, 'revisi'),
+		availableKinds: archiveKinds.filter((k) =>
+			isAuthorizedUser([archivePrintPermission(k)], locals.user)
+		),
+		coverage:
+			snapshot?.coverage ?? valueCoverage(coverage.expected, coverage.filled, coverage.filled),
+		metadata: (snapshot?.metadata ?? {
+			schoolName: data.sekolah.nama,
+			npsn: '',
+			address: data.sekolah.alamat,
+			principalName: data.kepalaSekolah?.nama ?? '',
+			principalNip: data.kepalaSekolah?.nip ?? '',
+			principalStatus: locals.sekolah!.statusKepalaSekolah ?? 'definitif',
+			teacherName: data.waliAsrama?.nama ?? '',
+			teacherNip: data.waliAsrama?.nip ?? '',
+			caregiverName: data.waliAsuh?.nama ?? '',
+			caregiverNip: data.waliAsuh?.nip ?? '',
+			place: data.ttd.tempat,
+			date: semester?.tanggalBagiRaport ?? ''
+		}) as ReportMetadata,
+		metadataWarning:
+			'Rapor memakai penempatan asrama dan semester tersimpan. Verifikasi identitas dan penandatangan sebelum finalisasi.'
+	};
+}
 async function historySource(locals: App.Locals, id: number) {
 	const school = locals.sekolah!.id;
 	const history = await db.query.tableMuridRiwayatKelas.findFirst({
@@ -101,15 +229,31 @@ async function historySource(locals: App.Locals, id: number) {
 	});
 	if (lifecycle?.needsIdentityReview)
 		throw error(409, 'Identitas murid masih menunggu pemeriksaan.');
-	const student = await db.query.tableMurid.findFirst({
+	const sourceStudent = await db.query.tableMurid.findFirst({
 		where: and(eq(tableMurid.id, history.muridId), eq(tableMurid.sekolahId, school)),
 		with: {
 			kelas: { with: { semester: true, tahunAjaran: true, waliKelas: true, waliAsrama: true } },
 			semester: true
 		}
 	});
+
+	// A passive student has no current class; report context stays on the saved period.
+	const historicalClass =
+		sourceStudent?.kelas ??
+		(history.kelasId
+			? await db.query.tableKelas.findFirst({
+					where: and(eq(tableKelas.id, history.kelasId), eq(tableKelas.sekolahId, school)),
+					with: { semester: true, tahunAjaran: true, waliKelas: true, waliAsrama: true }
+				})
+			: null);
+	const student = sourceStudent && {
+		...sourceStudent,
+		kelasId: historicalClass?.id ?? null,
+		kelas: historicalClass
+	};
 	if (
 		!student?.kelas ||
+		!student.kelasId ||
 		!student.semester ||
 		!student.kelas.tahunAjaran ||
 		student.kelas.sekolahId !== school ||
@@ -124,7 +268,7 @@ async function historySource(locals: App.Locals, id: number) {
 			409,
 			'Kelas, semester, dan riwayat tidak cocok. Rapor tidak diambil dari periode lain.'
 		);
-	return { history, student, uid };
+	return { history, student: { ...student, kelasId: student.kelasId, kelas: student.kelas }, uid };
 }
 export async function historicalReportInfo(
 	locals: App.Locals,
@@ -135,11 +279,48 @@ export async function historicalReportInfo(
 ) {
 	requireArchiveAccess(locals, kind);
 	await ensureReportArchiveSchema();
+	if (kind === 'asrama' && !live) {
+		const versions = await reportVersions(locals.sekolah!.id, id, kind, period);
+		const latest = versions.at(-1);
+		if (latest) {
+			const history = await archiveDormIdentity(locals, id);
+			const snapshot = JSON.parse(latest.snapshotJson);
+			return {
+				historyId: id,
+				studentId: history.muridId!,
+				uid: history.identityKey.slice(4),
+				studentName: history.namaSnapshot,
+				kind,
+				period,
+				year: history.tahunAjaranSnapshot,
+				semester: history.semesterSnapshot,
+				className: snapshot.data?.rombel?.nama ?? history.kelasSnapshot,
+				dormPlacementId: undefined as number | undefined,
+				dormSemesterId: history.semesterId,
+				archived: publicReportVersion(latest),
+				versions: versions.map(publicReportVersion),
+				canFinalize: canArchiveAction(locals, 'finalisasi'),
+				canRevise: canArchiveAction(locals, 'finalisasi') && canArchiveAction(locals, 'revisi'),
+				availableKinds: archiveKinds.filter((k) =>
+					isAuthorizedUser([archivePrintPermission(k)], locals.user)
+				),
+				coverage: snapshot.coverage ?? valueCoverage(0, 0, 0),
+				metadata: snapshot.metadata as ReportMetadata,
+				metadataWarning: 'Dokumen berasal dari arsip final tersimpan.'
+			};
+		}
+	}
+	if (kind === 'asrama') {
+		const dormInfo = await dormHistoryInfo(locals, id, live);
+		if (dormInfo) return dormInfo;
+	}
 	const context = await historySource(locals, id);
 	const { student, history, uid } = context;
 	const versions = await reportVersions(locals.sekolah!.id, id, kind, period);
 	const latest = versions.at(-1);
 	const baseInfo = {
+		dormPlacementId: undefined as number | undefined,
+		dormSemesterId: undefined as number | null | undefined,
 		historyId: id,
 		studentId: student.id,
 		uid,
@@ -355,6 +536,12 @@ async function capturedReport(
 	const url = new URL('http://localhost/cetak');
 	url.searchParams.set('murid_id', String(info.studentId));
 	url.searchParams.set('rapor_periode', period);
+	if (kind === 'asrama') {
+		if (info.dormPlacementId) {
+			url.searchParams.set('penempatan_id', String(info.dormPlacementId));
+			url.searchParams.set('semester_id', String(info.dormSemesterId));
+		} else url.searchParams.set('sumber', 'kelas');
+	}
 	const data =
 		kind === 'sekolah'
 			? (await getRaporPreviewPayload({ locals, url })).raporData
@@ -558,7 +745,8 @@ export async function archivedReportPdf(
 	versionId?: string | null
 ) {
 	requireArchiveAccess(locals, kind);
-	await historySource(locals, id);
+	if (kind === 'asrama') await archiveDormIdentity(locals, id);
+	else await historySource(locals, id);
 	await ensureReportArchiveSchema();
 	const versions = await reportVersions(locals.sekolah!.id, id, kind, period);
 	const row = versionId ? versions.find((v) => v.id === versionId) : versions.at(-1);

@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
-	import { page } from '$app/state';
+	/* eslint-disable svelte/no-navigation-without-resolve -- server builds return URL with dormitory context */
 	import Icon from '$lib/components/icon.svelte';
 
 	type MatevDetail = {
@@ -13,22 +12,13 @@
 		totalTujuan: number;
 	};
 
-	type PageData = {
-		status: 'empty' | 'not-found' | 'ready';
-		murid: { id: number; nama: string } | null;
-		daftarNilai: MatevDetail[];
-		ringkasan: { rataRata: number | null; matevDinilai: number; totalMatev: number };
-		tertinggi: MatevDetail[];
-		terendah: MatevDetail[];
-	};
+	type PageData = Awaited<
+		ReturnType<typeof import('$lib/server/dorm-evaluation-pages').loadDormRecapDetailPage>
+	>;
 
 	let { data }: { data: PageData } = $props();
 
-	const kelasAktif = $derived(page.data.kelasAktif ?? null);
-	const kelasAktifLabel = $derived.by(() => {
-		if (!kelasAktif) return null;
-		return kelasAktif.fase ? `${kelasAktif.nama} - ${kelasAktif.fase}` : kelasAktif.nama;
-	});
+	const asramaAktifLabel = $derived(data.room ? `${data.room.asrama} / ${data.room.nama}` : null);
 	const hasNilai = $derived(data.status === 'ready' && data.ringkasan.totalMatev > 0);
 
 	function formatScore(value: number | null) {
@@ -56,7 +46,7 @@
 
 <div class="card bg-base-100 rounded-lg border border-none p-4 shadow-md">
 	<div class="mb-2 flex flex-col gap-2 sm:flex-row">
-		<a href={resolve('/rekap-nilai-asrama')} class="btn btn-soft shadow-none">
+		<a href={data.backUrl} class="btn btn-soft shadow-none">
 			<Icon name="left" />
 			Kembali
 		</a>
@@ -67,8 +57,8 @@
 			<div>
 				<h2 class="text-xl font-bold">Detail Rekap Nilai Asrama</h2>
 				<p class="text-base-content/80">{data.murid.nama}</p>
-				{#if kelasAktifLabel}
-					<p class="text-base-content/60 text-sm">Kelas {kelasAktifLabel}</p>
+				{#if asramaAktifLabel}
+					<p class="text-base-content/60 text-sm">Asrama {asramaAktifLabel}</p>
 				{/if}
 			</div>
 			<div class="divider sm:divider-horizontal"></div>
@@ -147,17 +137,10 @@
 		<div class="alert alert-soft alert-warning mt-4 flex items-start gap-3">
 			<Icon name="warning" class="text-xl" />
 			<span>
-				{#if data.status === 'not-found'}
-					<p class="font-semibold">Murid tidak ditemukan.</p>
-					<p class="text-base-content/70 text-sm">
-						Pastikan Anda memilih murid dari daftar rekap nilai asrama yang sama.
-					</p>
-				{:else}
-					<p class="font-semibold">Pilih murid terlebih dahulu.</p>
-					<p class="text-base-content/70 text-sm">
-						Gunakan tombol lihat pada halaman Rekap Nilai Asrama untuk membuka rincian.
-					</p>
-				{/if}
+				<p class="font-semibold">Pilih murid terlebih dahulu.</p>
+				<p class="text-base-content/70 text-sm">
+					Gunakan tombol lihat pada halaman Rekap Nilai Asrama untuk membuka rincian.
+				</p>
 			</span>
 		</div>
 	{/if}

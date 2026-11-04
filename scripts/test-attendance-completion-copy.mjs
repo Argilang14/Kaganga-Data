@@ -320,7 +320,13 @@ try {
 	assert.match(repeat.body.results[0].message, /QA guru/);
 	assert.deepEqual(await row('SELECT * FROM absensi_kegiatan WHERE id=?', [old.id]), old);
 	pass('Percobaan menimpa menampilkan petugas pertama tanpa mengubah catatan');
-	assert.equal((await save([entry(5, 'pulang')])).body.results[0].code, 'failed');
+	assert.equal((await save([entry(5, 'pulang')])).body.results[0].code, 'saved');
+	assert.equal((await get()).totals.belum, 3);
+	// Reset this copy-only fixture for the remaining popup scenarios.
+	await db.execute({
+		sql: 'DELETE FROM absensi_kegiatan WHERE murid_id=? AND kegiatan_id=?',
+		args: [students[5], activity]
+	});
 	assert.equal((await get()).totals.belum, 4);
 	const yesterdayParams = new URLSearchParams(params);
 	yesterdayParams.set('tanggal', yesterday);
@@ -328,7 +334,7 @@ try {
 	assert.ok(
 		oldDate.status === 200 ? oldDate.body.results[0].code === 'forbidden' : oldDate.status === 403
 	);
-	pass('Pulang tanpa izin dan pencatatan tanggal lama tidak lolos');
+	pass('Pulang manual tersimpan tanpa izin resmi; pencatatan tanggal lama tetap dibatasi');
 	const all = new URLSearchParams(params);
 	all.set('cakupan', 'semua');
 	all.delete('kelas_id');

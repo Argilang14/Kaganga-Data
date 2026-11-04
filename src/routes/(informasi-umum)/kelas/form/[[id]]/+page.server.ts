@@ -145,7 +145,7 @@ export async function load({ params, locals }) {
 	const statusFilter = kelas?.waliKelasId
 		? or(eq(tablePegawai.status, 'aktif'), eq(tablePegawai.id, kelas.waliKelasId))
 		: eq(tablePegawai.status, 'aktif');
-	const pegawaiFilter = and(eq(tablePegawai.sekolahId, sekolahId), statusFilter);
+	const pegawaiFilter = and(eq(tablePegawai.sekolahId, sekolahId), eq(tablePegawai.jenis, 'guru'), statusFilter);
 	const pegawaiOptions = await db.query.tablePegawai.findMany({
 		columns: { id: true, nama: true, nip: true, jenis: true, status: true },
 		where: pegawaiFilter,
@@ -238,13 +238,13 @@ export const actions = {
 
 		if (waliKelasId) {
 			const pegawai = await db.query.tablePegawai.findFirst({
-				columns: { id: true, status: true },
+				columns: { id: true, status: true, jenis: true },
 				where: and(eq(tablePegawai.id, waliKelasId), eq(tablePegawai.sekolahId, sekolahId))
 			});
 			const isCurrentWali = existingKelas?.waliKelasId === waliKelasId;
-			if (!pegawai || (pegawai.status !== 'aktif' && !isCurrentWali)) {
+			if (!pegawai || pegawai.jenis !== 'guru' || (pegawai.status !== 'aktif' && !isCurrentWali)) {
 				return fail(400, {
-					fail: `Pilih wali kelas aktif dari Data Pegawai sekolah ini.`
+					fail: `Pilih pegawai berjenis Guru dari Data Pegawai sekolah ini.`
 				});
 			}
 		}

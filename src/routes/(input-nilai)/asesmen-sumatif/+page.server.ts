@@ -1,3 +1,6 @@
+import { getAksesMapelUser } from '$lib/server/mapel-access';
+import { canAccessExportClass } from '$lib/server/class-export-access';
+import { error } from '@sveltejs/kit';
 import db from '$lib/server/db';
 import { ensureAsesmenSumatifSchema } from '$lib/server/db/ensure-asesmen-sumatif';
 import {
@@ -181,6 +184,19 @@ export async function load({ parent, url, depends, locals }) {
 		orderBy: asc(tableMataPelajaran.nama)
 	});
 
+	if (
+		!user ||
+		!locals.sekolah ||
+		!(await canAccessExportClass(user, locals.sekolah.id, kelasAktif.id))
+	)
+		error(403, 'Kelas di luar penugasan.');
+	if (isRestrictedTeacher(user, kelasAktif.id) && user) {
+		const access = await getAksesMapelUser(user, kelasAktif.id);
+		mapelRecords = mapelRecords.filter(
+			(m) => access.ids.has(m.id) || access.names.has(normalizeText(m.nama))
+		);
+	}
+
 	// Restrict for 'user' accounts assigned to mata pelajaran.
 	// First check join table auth_user_mata_pelajaran for multi-mapel support,
 	// then fallback to legacy mataPelajaranId field if join table is empty.
@@ -189,7 +205,7 @@ export async function load({ parent, url, depends, locals }) {
 		{ id?: number; type?: string; mataPelajaranId?: number } | undefined;
 	const assignedMapelIds = new Set<number>();
 
-	if (maybeUser && isRestrictedTeacher(maybeUser) && maybeUser.id) {
+	if (maybeUser && isRestrictedTeacher(maybeUser, kelasAktif.id) && maybeUser.id) {
 		try {
 			// Try to fetch from join table (multi-mapel)
 			const multiMapels = await db.query.tableAuthUserMataPelajaran.findMany({
@@ -302,7 +318,7 @@ export async function load({ parent, url, depends, locals }) {
 	// assignedIsAgamaVariant is set if any of the assigned mapel is agama variant.
 	let assignedLocalMapelId: number | null = null;
 	let assignedIsAgamaVariant = false;
-	if (maybeUser && isRestrictedTeacher(maybeUser)) {
+	if (maybeUser && isRestrictedTeacher(maybeUser, kelasAktif.id)) {
 		// Check multi-mapel first
 		if (assignedMapelIds.size > 0) {
 			// Pick first assigned mapel from the filtered list
@@ -342,7 +358,7 @@ export async function load({ parent, url, depends, locals }) {
 	// Derive human readable agama labels for the assigned agama-variant(s).
 	// Support both multi-mapel (join table) and legacy single-mapel.
 	const allowedAgamaVariants = new Set<string>();
-	if (maybeUser && isRestrictedTeacher(maybeUser) && maybeUser.id) {
+	if (maybeUser && isRestrictedTeacher(maybeUser, kelasAktif.id) && maybeUser.id) {
 		try {
 			// First try multi-mapel from join table
 			const multiMapels = await db.query.tableAuthUserMataPelajaran.findMany({
@@ -648,7 +664,7 @@ export async function load({ parent, url, depends, locals }) {
 			: null;
 
 		const canAccess = (() => {
-			if (!isRestrictedTeacher(maybeUser)) return true;
+			if (!isRestrictedTeacher(maybeUser, kelasAktif.id)) return true;
 
 			// If agama is selected and user has assigned agama variants, restrict by agama
 			if (isAgamaSelected && allowedAgamaVariants.size > 0) {

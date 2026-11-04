@@ -1,4 +1,5 @@
-import { hasSchoolWideOperationalAccess } from './access-position.ts';
+import { hasRole } from './user-role.ts';
+import { hasSchoolWideAttendanceAccess } from './attendance-access.ts';
 import { canAttendance, canAttendActivity, type AttendanceUser } from './attendance-access.ts';
 import {
 	canonicalAttendanceActivityCode,
@@ -81,10 +82,10 @@ export function canScanModeActivity(
 	tanggal: string
 ) {
 	if (!canAttendance(user, 'scan') || !belongsToMode(activity, mode)) return false;
-	if (!hasSchoolWideOperationalAccess(user)) {
-		if (mode === 'sekolah' && !['user', 'wali_kelas'].includes(user?.type ?? '')) return false;
-		if (mode === 'asrama' && !['wali_asuh', 'wali_asrama'].includes(user?.type ?? '')) return false;
-		if (mode === 'makan' && user?.type !== 'tim_dapur') return false;
+	if (!hasSchoolWideAttendanceAccess(user)) {
+		if (mode === 'sekolah' && !hasRole(user, 'user')) return false;
+		if (mode === 'asrama' && !hasRole(user, 'wali_asuh', 'wali_asrama')) return false;
+		if (mode === 'makan' && !hasRole(user, 'tim_dapur')) return false;
 	}
 	return canAttendActivity(user, activity.aksesEdit, activity.kategori, {
 		kode: activity.kode,

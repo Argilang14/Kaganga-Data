@@ -16,12 +16,12 @@
 	function handleNilaiClick(muridId: number) {
 		if (disabled) return;
 		const m = muridList.find((m) => m.id === muridId);
-		if (!m || !m.isAsuhanku) return;
+		if (!m || (!m.isAsuhanku && !m.canView)) return;
 		onNilaiClick?.(muridId);
 	}
 
 	function isDisabled(murid: MuridRow) {
-		return disabled || !murid.isAsuhanku;
+		return disabled || (!murid.isAsuhanku && !murid.canView);
 	}
 </script>
 
@@ -53,7 +53,7 @@
 							aria-disabled={isDisabled(murid)}
 						>
 							<Icon name="edit" />
-							Nilai
+							{murid.isAsuhanku ? 'Nilai' : 'Lihat'}
 						</button>
 					</td>
 					<td class="align-top">

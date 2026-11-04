@@ -1,13 +1,14 @@
 import db from '$lib/server/db';
 import { tableKelas } from '$lib/server/db/schema';
-import { canLegacyWaliKelasAccess } from '$lib/server/legacy-wali-kelas';
+import { getLegacyWaliKelasIds } from '$lib/server/legacy-wali-kelas';
 import { and, eq } from 'drizzle-orm';
-import { hasSchoolWideOperationalAccess } from '$lib/access-position';
+import { isFullAccess, hasRole } from '$lib/user-role';
 
 type ClassManager =
 	| {
 			id?: number;
 			type?: string;
+			roles?: readonly string[] | null;
 			sekolahId?: number | null;
 			pegawaiId?: number | null;
 			kelasId?: number | null;
@@ -24,6 +25,7 @@ export async function canManageKelas(user: ClassManager, sekolahId: number, kela
 		where: and(eq(tableKelas.id, kelasId), eq(tableKelas.sekolahId, sekolahId))
 	});
 	if (!kelas || (user.sekolahId && user.sekolahId !== sekolahId)) return false;
-	if (hasSchoolWideOperationalAccess(user)) return true;
-	return user.type === 'wali_kelas' && canLegacyWaliKelasAccess(user, sekolahId, kelasId);
+	if (isFullAccess(user) || hasRole(user, 'operator', 'waka_kurikulum', 'waka_kesiswaan'))
+		return true;
+	return (await getLegacyWaliKelasIds(user, sekolahId)).includes(kelasId);
 }

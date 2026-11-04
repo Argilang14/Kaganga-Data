@@ -1,4 +1,7 @@
 import { ensureDefaultAdmin } from '$lib/server/auth';
+import db, { databaseUrl } from './index';
+import path from 'node:path';
+import { migrateUnassignedMurid } from './murid-unassigned';
 import { ensureCoreSchema } from './ensure-core-schema';
 import { resetEnsuredSchemas } from './ensure-helper';
 import { ensureJadwalBellSchema } from './ensure-jadwal-bell';
@@ -17,6 +20,7 @@ import { ensureDapodikSchema } from './ensure-dapodik';
 import { ensureAccountSettingsSchema } from './ensure-account-settings';
 import { ensureDataGovernanceSchema } from './ensure-data-governance';
 import { ensureDormitorySchema } from './ensure-dormitory';
+import { ensureDormEvaluationSchema } from './ensure-dorm-evaluation';
 import { ensureMuridProfileSchema } from './ensure-murid-profile';
 import { ensureDocumentManagementSchema } from './ensure-document-management';
 import { ensureInventarisPengumumanSchema } from './ensure-inventaris-pengumuman';
@@ -33,12 +37,17 @@ let startupPromise: Promise<void> | null = null;
 
 async function applyStartupEnsures() {
 	await ensureCoreSchema();
+	await migrateUnassignedMurid(
+		db.$client,
+		databaseUrl.startsWith('file:') ? path.resolve(databaseUrl.slice(5)) : undefined
+	);
 	await ensureEducationUnitsSchema();
 	await ensureAbsensiDigitalSchema();
 	await ensureAbsenceMonitoringSchema();
 	await ensureAttendanceIllnessSchema();
 	await ensureDataGovernanceSchema();
 	await ensureDormitorySchema();
+	await ensureDormEvaluationSchema();
 	await ensureMuridProfileSchema();
 	await ensureDocumentManagementSchema();
 	await ensureInventarisPengumumanSchema();

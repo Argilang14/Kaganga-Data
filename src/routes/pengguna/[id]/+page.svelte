@@ -4,16 +4,13 @@
 	import Icon from '$lib/components/icon.svelte';
 	import { showModal } from '$lib/components/global-modal.svelte';
 	import Authority from '../authority.svelte';
-	import { groupedUserPermissions, basicAttendancePermissionsForType } from '../permissions';
+	import { groupedUserPermissions, permissionAppliesToUser } from '../permissions';
 	import ResetPermissionsBody from './reset-permissions-body.svelte';
-	import { accessPositionLabels, parseAccessPosition } from '$lib/access-position';
-	import { roleMenuPermissions } from '$lib/role-menu-access';
-	import { userRoleLabel } from '$lib/user-role';
+	import { userRoleLabel, isFullAccess } from '$lib/user-role';
 
 	let { data } = $props();
 	let user = $derived(data.userDetail);
-	let position = $derived(parseAccessPosition(user.jabatanAkses));
-	let positionPermissions = $derived(new Set(user.positionPermissions ?? []));
+	let positionPermissions = $derived(new Set(user.automaticPermissions ?? []));
 
 	function handleSaveSuccess({ data: successData }: { data?: Record<string, unknown> }) {
 		if (successData && Array.isArray(successData.permissions)) {
@@ -50,59 +47,48 @@
 			<p class="text-base-content/70 text-sm">Atur hak akses khusus untuk pengguna ini.</p>
 		</div>
 		<span class="badge badge-soft badge-info sm:ml-auto">{userRoleLabel(user)}</span>
-		{#if position}
-			<span class="badge badge-primary badge-soft">{accessPositionLabels[position]}</span>
-		{/if}
 	</header>
-	{#if position}
-		<div class="alert mb-4 text-sm">
-			<Icon name="info" />
-			<span
-				>Jabatan akses memberi izin operasional sekolah secara otomatis. Pengaturan sistem tetap
-				khusus admin.</span
-			>
-		</div>
-	{/if}
 
 	<FormEnhance id="set-permissions-form" action="?/set_permissions" onsuccess={handleSaveSuccess}>
-		{#snippet children()}
-			<div class="overflow-x-auto">
-				<table class="table w-full">
-					<thead
-						><tr class="bg-base-300"
-							><th class="w-[90%]">Izin</th><th class="text-center">Aktif</th></tr
-						></thead
-					>
-					<tbody>
-						{#each Object.entries(groupedUserPermissions) as [group, permission] (group)}
-							<tr><td colspan="2" class="font-bold">{permission.description}</td></tr>
-							{#each permission.values as [name, description] (name)}
-								{@const key = `${group}_${name}` as UserPermission}
-								{@const isAdmin = user.type === 'admin'}
-								{@const fromPosition =
-									positionPermissions.has(key) ||
-									basicAttendancePermissionsForType(user.type).includes(key) ||
-									roleMenuPermissions(user.type).includes(key)}
-								<tr>
-									<td class="pl-8 text-sm">{description}</td>
-									<td class="text-center">
-										<input
-											type="checkbox"
-											class="toggle toggle-sm toggle-primary"
-											name={key}
-											value="true"
-											checked={isAdmin || user.permissions.includes(key)}
-											disabled={isAdmin || fromPosition}
-										/>
-										{#if fromPosition}<span class="ml-2 text-xs opacity-60">Otomatis</span>{/if}
-									</td>
-								</tr>
-							{/each}
+		<div class="overflow-x-auto">
+			<table class="table w-full">
+				<thead
+					><tr class="bg-base-300"
+						><th class="w-[90%]">Izin</th><th class="text-center">Aktif</th></tr
+					></thead
+				>
+				<tbody>
+					{#each Object.entries(groupedUserPermissions) as [group, permission] (group)}
+						<tr><td colspan="2" class="font-bold">{permission.description}</td></tr>
+						{#each permission.values as [name, description] (name)}
+							{@const key = `${group}_${name}` as UserPermission}
+							{@const isAdmin = isFullAccess(user)}
+							{@const fromPosition = positionPermissions.has(key)}
+							<tr>
+								<td class="pl-8 text-sm">{description}</td>
+								<td class="text-center">
+									<input
+										type="checkbox"
+										class="toggle toggle-sm toggle-primary"
+										name={key}
+										value="true"
+										checked={isAdmin || user.permissions.includes(key)}
+										disabled={isAdmin || fromPosition || !permissionAppliesToUser(user, key)}
+										title={!permissionAppliesToUser(user, key)
+											? 'Tidak berlaku untuk peran akun ini.'
+											: undefined}
+									/>
+									{#if fromPosition}<span class="ml-2 text-xs opacity-60">Otomatis</span
+										>{:else if !permissionAppliesToUser(user, key)}<span
+											class="ml-2 text-xs opacity-60">Tidak berlaku</span
+										>{/if}
+								</td>
+							</tr>
 						{/each}
-					</tbody>
-				</table>
-			</div>
-		{/snippet}
+					{/each}
+				</tbody>
+			</table>
+		</div>
 	</FormEnhance>
 
 	<FormEnhance
@@ -111,7 +97,7 @@
 		onsuccess={handleSaveSuccess}
 		class="hidden"
 	>
-		{#snippet children()}<button type="submit">Reset</button>{/snippet}
+		<button type="submit">Reset</button>
 	</FormEnhance>
 
 	<footer
@@ -120,7 +106,7 @@
 		<a href="/pengguna" class="btn btn-soft shadow-none"><Icon name="left" /> Kembali</a>
 		<Authority permissions={['user_set_permissions']}>
 			<div class="flex flex-wrap justify-end gap-2">
-				{#if user.type !== 'admin'}
+				{#if !isFullAccess(user)}
 					<button
 						type="button"
 						class="btn btn-warning btn-soft shadow-none"

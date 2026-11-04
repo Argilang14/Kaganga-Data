@@ -1,4 +1,8 @@
+import { schoolWideAcademic } from '$lib/user-role';
 import db from '$lib/server/db';
+import { getLegacyWaliKelasIds } from './legacy-wali-kelas';
+import { error } from '@sveltejs/kit';
+import { isHomeroomTeacher } from '$lib/homeroom-access';
 import { resolveSekolahAcademicContext, type AcademicContext } from '$lib/server/db/academic';
 import { tableMurid, tablePegawai, tableAuthUserKelas, tableKelas } from '$lib/server/db/schema';
 import { and, asc, eq, inArray } from 'drizzle-orm';
@@ -37,6 +41,7 @@ type MuridColumn = {
 	nis: true;
 	nisn: true;
 	waliAsuhNama: true;
+	waliAsuhPegawaiId: true;
 };
 
 /**
@@ -55,7 +60,7 @@ export async function getKelasContextForUser(
 	if (!Number.isInteger(muridId)) return { hasAccess: false };
 
 	const student = await db.query.tableMurid.findFirst({
-		columns: { id: true, kelasId: true, waliAsuhNama: true },
+		columns: { id: true, kelasId: true, waliAsuhNama: true, waliAsuhPegawaiId: true },
 		where: and(eq(tableMurid.id, muridId), eq(tableMurid.sekolahId, sekolahId))
 	});
 	if (!student) return { hasAccess: false };
@@ -70,6 +75,12 @@ export async function getKelasContextForUser(
 	const kelasId = student.kelasId;
 
 	if (hasSchoolWideOperationalAccess(user)) return { hasAccess: true };
+	if (!kelasId) return { hasAccess: false };
+	if (
+		isHomeroomTeacher(locals.user) &&
+		(await getLegacyWaliKelasIds(locals.user, sekolahId)).includes(kelasId)
+	)
+		return { hasAccess: true };
 	if (user.type === 'wali_kelas' && user.pegawaiId) {
 		const kelasRow = await db.query.tableKelas.findFirst({
 			columns: { id: true, waliKelasId: true },
@@ -82,11 +93,7 @@ export async function getKelasContextForUser(
 			columns: { nama: true },
 			where: eq(tablePegawai.id, user.pegawaiId)
 		});
-		if (
-			peg?.nama &&
-			student.waliAsuhNama &&
-			student.waliAsuhNama.toLowerCase() === peg.nama.toLowerCase()
-		) {
+		if (peg?.nama && student.waliAsuhPegawaiId === user.pegawaiId) {
 			return { hasAccess: true };
 		}
 	}
@@ -120,6 +127,20 @@ export async function getKelasContextForUser(
 	return { hasAccess: false };
 }
 
+export async function assertHomeroomDocumentAccess(locals: App.Locals, muridId: number) {
+	const { user, sekolah } = locals;
+	if (!user || !isHomeroomTeacher(user) || schoolWideAcademic(user)) return;
+	const student = await db.query.tableMurid.findFirst({
+		columns: { kelasId: true },
+		where: and(eq(tableMurid.id, muridId), eq(tableMurid.sekolahId, sekolah?.id ?? -1))
+	});
+	if (
+		!student?.kelasId ||
+		!(await getLegacyWaliKelasIds(user, sekolah?.id ?? -1)).includes(student.kelasId)
+	)
+		error(403, 'Dokumen murid berada di luar kelas binaan Anda.');
+}
+
 export async function fetchMuridList(
 	sekolahId: number | null,
 	kelasId: string | null,
@@ -132,6 +153,7 @@ export async function fetchMuridList(
 			nis: string | null;
 			nisn: string | null;
 			waliAsuhNama: string | null;
+			waliAsuhPegawaiId: number | null;
 		}>;
 	const filter = and(
 		eq(tableMurid.sekolahId, sekolahId),
@@ -144,7 +166,8 @@ export async function fetchMuridList(
 			nama: true,
 			nis: true,
 			nisn: true,
-			waliAsuhNama: true
+			waliAsuhNama: true,
+			waliAsuhPegawaiId: true
 		} satisfies MuridColumn,
 		where: filter,
 		orderBy: asc(tableMurid.nama)

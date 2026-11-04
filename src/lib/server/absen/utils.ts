@@ -1,10 +1,12 @@
-import { hasSchoolWideOperationalAccess } from '../../access-position.ts';
+import { hasSchoolWideAttendanceStudentAccess } from '../../attendance-access.ts';
+import { isHomeroomTeacher } from '../../homeroom-access.ts';
 
 export async function canUserEditAbsen(
 	user: NonNullable<App.Locals['user']>,
 	_sekolahId: number
 ): Promise<boolean> {
-	if (hasSchoolWideOperationalAccess(user) || user.type === 'wali_kelas') return true;
+	if (hasSchoolWideAttendanceStudentAccess(user, _sekolahId) || isHomeroomTeacher(user))
+		return true;
 	return user.permissions?.includes('administrasi_absensi') === true;
 }
 

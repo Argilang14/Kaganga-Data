@@ -64,15 +64,6 @@ export const POST: RequestHandler = async ({ locals, request, url }) => {
 			results.push({ muridId: entry.muridId, code: 'forbidden', message: student.reason });
 			continue;
 		}
-		if (entry.status === 'pulang') {
-			results.push({
-				muridId: entry.muridId,
-				code: 'failed',
-				message:
-					'Belum ada izin pulang yang berlaku untuk kegiatan ini. Periksa catatan izin pulang dan konfirmasi keamanan; popup tidak menerbitkan izin.'
-			});
-			continue;
-		}
 		try {
 			const saved = await saveAttendance({
 				locals,

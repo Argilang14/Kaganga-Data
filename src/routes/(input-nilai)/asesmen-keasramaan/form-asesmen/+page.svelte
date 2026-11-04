@@ -1,6 +1,7 @@
 <script lang="ts">
 	/* eslint-disable svelte/no-navigation-without-resolve -- form links use static hrefs intentionally */
 	import FormEnhance from '$lib/components/form-enhance.svelte';
+	import { flatten, populateForm } from '$lib/utils';
 	import Icon from '$lib/components/icon.svelte';
 	import NilaiIndikatorCard from '$lib/components/asesmen-keasramaan/nilai-indikator-card.svelte';
 	import type { EkstrakurikulerNilaiKategori } from '$lib/ekstrakurikuler';
@@ -19,17 +20,11 @@
 		indikatorDeskripsi: string;
 	};
 
-	type PageData = {
-		murid: { id: number; nama: string };
-		keasramaan: { id: number; nama: string };
-		tujuan: TujuanWithIndikator[];
-		nilaiByTujuan: Record<number, EkstrakurikulerNilaiKategori>;
-		kategoriOptions: Array<{ value: EkstrakurikulerNilaiKategori; label: string }>;
-		indikators: Array<{ id: number; nama: string }>;
-		backUrl: string;
-	};
-
-	let { data }: { data: PageData } = $props();
+	let {
+		data
+	}: {
+		data: Awaited<ReturnType<typeof import('$lib/server/dorm-evaluation-pages').loadDormGradePage>>;
+	} = $props();
 
 	// State untuk tracking nilai per TP
 	let nilaiByTujuanState = $state<Record<number, EkstrakurikulerNilaiKategori>>(
@@ -115,8 +110,16 @@
 </script>
 
 <div class="card bg-base-100 rounded-lg border border-none p-4 shadow-md">
-	<FormEnhance action="?/save" init={initValue} id="form-asesmen-keasramaan">
+	<FormEnhance
+		action="?/save"
+		init={initValue}
+		id="form-asesmen-keasramaan"
+		onsuccess={({ form }) => populateForm(form, flatten({ nilai: nilaiByTujuanState }))}
+	>
 		{#snippet children({ submitting, invalid })}
+			<input type="hidden" name="kamar_id" value={data.room?.id ?? 0} />
+			<input type="hidden" name="semester_id" value={data.period?.id ?? 0} />
+			<input type="hidden" name="penempatan_id" value={data.murid.penempatan_id} />
 			<input type="hidden" name="muridId" value={data.murid.id} />
 			<input type="hidden" name="keasramaanId" value={data.keasramaan.id} />
 
@@ -128,7 +131,7 @@
 				<button
 					type="submit"
 					class="btn btn-primary shadow-none"
-					disabled={!hasTujuan || invalid || submitting}
+					disabled={!data.canGrade || !hasTujuan || invalid || submitting}
 				>
 					{#if submitting}
 						<span class="loading loading-spinner"></span>
@@ -185,6 +188,7 @@
 												<td class="overflow-hidden align-top">
 													<select
 														class="select bg-base-200 dark:bg-base-300 w-full truncate dark:border-none"
+														disabled={!data.canGrade}
 														name={`nilai.${tujuan.id}`}
 														value={nilaiByTujuanState[tujuan.id] || ''}
 														onchange={(e) =>

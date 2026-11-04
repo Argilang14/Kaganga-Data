@@ -1,8 +1,13 @@
+import { schoolWideAcademic, type RoleUser } from '$lib/user-role';
 import db from '$lib/server/db';
-import { tableAuthUserMataPelajaran, tableMataPelajaran } from '$lib/server/db/schema';
+import {
+	tableAuthUserMataPelajaran,
+	tableAuthUserKelas,
+	tableAuthUser,
+	tableMataPelajaran
+} from '$lib/server/db/schema';
 import { agamaMapelNames, agamaParentName, pksMapelNames, pksParentName } from '$lib/statics';
 import { and, eq, inArray, or, type SQL } from 'drizzle-orm';
-import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 
 // Pusat cek akses mapel untuk akun tipe "user" (guru mapel).
 // Aturan:
@@ -18,13 +23,22 @@ import { hasSchoolWideOperationalAccess } from '$lib/access-position';
  *  - tipe 'wali_kelas' → filter di kelas BUKAN miliknya, bebas di kelasnya sendiri. */
 export function needsMapelFilter(
 	user:
-		| { type?: string; id?: number; jabatanAkses?: string | null; kelasId?: number | null; ownKelasIds?: number[] | null }
+		| {
+				type?: string;
+				id?: number;
+				jabatanAkses?: string | null;
+				kelasId?: number | null;
+				roles?: readonly string[] | null;
+				waliKelasIds?: readonly number[];
+				ownKelasIds?: number[] | null;
+		  }
 		| null
 		| undefined,
 	selectedKelasId: number | null | undefined
 ): boolean {
 	if (!user?.id) return false;
-	if (hasSchoolWideOperationalAccess(user)) return false;
+	if (schoolWideAcademic(user)) return false;
+	if (selectedKelasId && user.waliKelasIds?.includes(selectedKelasId)) return false;
 	if (user.type === 'user') return true;
 	if (user.type === 'wali_kelas' && selectedKelasId != null) {
 		const ownIds = user.ownKelasIds?.length ? user.ownKelasIds : [user.kelasId];
@@ -80,8 +94,47 @@ export async function getAksesMapelUser(
 
 	const intiRows = await db.query.tableMataPelajaran.findMany({
 		columns: { id: true, kelasId: true, nama: true, dapodikPembelajaranId: true },
+		with: { kelas: { columns: { nama: true, tahunAjaranId: true, semesterId: true } } },
 		where: inArray(tableMataPelajaran.id, Array.from(ids))
 	});
+
+	if (targetKelasId) {
+		const target = await db.query.tableKelas.findFirst({
+			where: (k, { eq }) => eq(k.id, targetKelasId),
+			columns: { id: true, sekolahId: true, nama: true, tahunAjaranId: true, semesterId: true }
+		});
+		const account = await db.query.tableAuthUser.findFirst({
+			where: eq(tableAuthUser.id, user.id),
+			columns: { sekolahId: true, kelasId: true }
+		});
+		const links = await db.query.tableAuthUserKelas.findMany({
+			where: eq(tableAuthUserKelas.authUserId, user.id),
+			columns: { kelasId: true }
+		});
+		const classIds = [
+			...links.map((row) => row.kelasId),
+			...(account?.kelasId ? [account.kelasId] : [])
+		];
+		const assignedClasses = classIds.length
+			? await db.query.tableKelas.findMany({
+					where: (k, { inArray }) => inArray(k.id, classIds),
+					columns: { id: true, sekolahId: true, nama: true, tahunAjaranId: true, semesterId: true }
+				})
+			: [];
+		const matches =
+			target &&
+			target.sekolahId === account?.sekolahId &&
+			assignedClasses.some(
+				(row) =>
+					row.sekolahId === target.sekolahId &&
+					(row.id === target.id ||
+						(row.nama === target.nama &&
+							row.tahunAjaranId === target.tahunAjaranId &&
+							row.semesterId !== target.semesterId &&
+							!assignedClasses.some((current) => current.semesterId === target.semesterId)))
+			);
+		if (!matches) return { ids: new Set(), names: new Set(), rawNames: new Set() };
+	}
 
 	const names = new Set<string>();
 	const rawNames = new Set<string>();
@@ -120,9 +173,19 @@ export async function getAksesMapelUser(
 }
 
 export async function bolehAksesMapel(
-	user: { id: number; mataPelajaranId?: number | null },
+	user: NonNullable<RoleUser> & {
+		id: number;
+		mataPelajaranId?: number | null;
+		waliKelasIds?: readonly number[];
+	},
 	mapel: Pick<MapelInti, 'id' | 'nama'>
 ): Promise<boolean> {
-	const akses = await getAksesMapelUser(user);
+	const target = await db.query.tableMataPelajaran.findFirst({
+		where: (m, { eq }) => eq(m.id, mapel.id),
+		columns: { kelasId: true }
+	});
+	if (!target) return false;
+	if (schoolWideAcademic(user) || user.waliKelasIds?.includes(target.kelasId)) return true;
+	const akses = await getAksesMapelUser(user, target.kelasId);
 	return akses.ids.has(mapel.id) || akses.names.has(norm(mapel.nama));
 }

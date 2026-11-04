@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { deserialize } from '$app/forms';
 	import Icon from '$lib/components/icon.svelte';
 	import { toast } from '$lib/components/toast.svelte';
 
@@ -32,12 +33,15 @@
 				body: formData
 			});
 
-			const result = await response.json();
+			const outcome = deserialize(await response.text());
+			const result = (
+				outcome.type === 'success' || outcome.type === 'failure' ? outcome.data : null
+			) as { fail?: string; message?: string } | null;
 
 			if (!response.ok) {
-				toast(result.fail || 'Gagal menghapus', 'error');
+				toast(result?.fail || 'Gagal menghapus', 'error');
 			} else {
-				toast(result.message || 'Berhasil dihapus', 'success');
+				toast(result?.message || 'Berhasil dihapus', 'success');
 				onSuccess();
 			}
 		} catch (error) {

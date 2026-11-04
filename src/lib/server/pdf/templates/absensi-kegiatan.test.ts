@@ -11,9 +11,9 @@ test('template rekap absensi memuat bagian penting dan mengamankan data dinamis'
 	for (const value of [
 		'row.nis',
 		'row.nama',
-		'row.kegiatan',
 		'row.indikator',
 		'row.periode',
+		'row.akumulasi',
 		'row.status',
 		'row.catatan',
 		'row.alasan'
@@ -22,4 +22,7 @@ test('template rekap absensi memuat bagian penting dan mengamankan data dinamis'
 	}
 	assert.match(source, /replaceAll\('<', '&lt;'\)/);
 	assert.match(source, /replaceAll\('>', '&gt;'\)/);
+	assert.match(source, /<th>Akumulasi<\/th>/);
+	assert.doesNotMatch(source, /RINCIAN HARIAN DAN KEGIATAN|detailRows/);
+	assert.doesNotMatch(source, /<small>| \(kegiatan\)/);
 });

@@ -70,7 +70,7 @@ export async function projectIllnessAttendance(options: {
 			)
 			.map((row) => [`${row.muridId}:${row.kegiatanId}:${row.tanggal}`, row])
 	);
-	for (const student of students)
+	for (const student of students.filter((student): student is typeof student & { kelasId: number } => student.kelasId !== null))
 		for (const tanggal of options.dates) {
 			const period = latestIllness(periods, student.id, tanggal);
 			if (!period) continue;

@@ -9,7 +9,7 @@ import {
 	hasSchoolWideAttendanceStudentAccess,
 	hasSchoolWideAttendanceSummaryAccess
 } from '$lib/attendance-access';
-import { hasSchoolWideOperationalAccess } from '$lib/access-position';
+import { hasSchoolWideAttendanceAccess } from '$lib/attendance-access';
 import {
 	buildAttendanceSummary,
 	inferSummaryLevel,
@@ -62,7 +62,7 @@ export async function loadSummaryOptions(locals: App.Locals, date = todayLocalDa
 	);
 	const allStudents =
 		schoolWideSummary ||
-		hasSchoolWideOperationalAccess(user) ||
+		hasSchoolWideAttendanceAccess(user) ||
 		hasSchoolWideAttendanceStudentAccess(user, sekolah.id);
 	return {
 		semesterId: academic.activeSemesterId,
@@ -113,22 +113,33 @@ export async function loadAttendanceSummary(locals: App.Locals, params: URLSearc
 	}
 	if (!classes.length) throw error(400, 'Tidak ada kelas pada cakupan yang dipilih.');
 	const schoolId = locals.sekolah!.id;
-	const students = await db.query.tableMurid.findMany({
-		columns: { id: true, nama: true, kelasId: true },
-		where: and(
-			eq(tableMurid.sekolahId, schoolId),
-			eq(tableMurid.semesterId, options.semesterId),
-			inArray(
-				tableMurid.kelasId,
-				classes.map((item) => item.id)
+	const students = await db.query.tableMurid
+		.findMany({
+			columns: { id: true, nama: true, kelasId: true },
+			where: and(
+				eq(tableMurid.sekolahId, schoolId),
+				eq(tableMurid.semesterId, options.semesterId),
+				inArray(
+					tableMurid.kelasId,
+					classes.map((item) => item.id)
+				),
+				activeMuridFilter(),
+				options.schoolWideSummary
+					? undefined
+					: await studentAccessCondition(
+							locals.user,
+							schoolId,
+							options.semesterId,
+							activity.kategori
+						)
 			),
-			activeMuridFilter(),
-			options.schoolWideSummary
-				? undefined
-				: await studentAccessCondition(locals.user, schoolId, options.semesterId)
-		),
-		orderBy: asc(tableMurid.nama)
-	});
+			orderBy: asc(tableMurid.nama)
+		})
+		.then((students) =>
+			students.filter(
+				(student): student is typeof student & { kelasId: number } => student.kelasId !== null
+			)
+		);
 	const studentIds = students.map((item) => item.id);
 	const recordedAttendance = studentIds.length
 		? await db.query.tableAbsensiKegiatan.findMany({
@@ -145,9 +156,15 @@ export async function loadAttendanceSummary(locals: App.Locals, params: URLSearc
 				)
 			})
 		: [];
-	const attendance = await projectIllnessAttendance({ schoolId, semesterId: options.semesterId,
-		studentIds, dates: [tanggal], activities: [activity], rows: recordedAttendance });
-	// An actual permit is required for (p); a normal departure is not an absence.
+	const attendance = await projectIllnessAttendance({
+		schoolId,
+		semesterId: options.semesterId,
+		studentIds,
+		dates: [tanggal],
+		activities: [activity],
+		rows: recordedAttendance
+	});
+	// Official permits supplement explicit attendance, including manual Pulang records.
 	const permits = studentIds.length
 		? await db.query.tableIzinPulangMurid.findMany({
 				columns: {
@@ -250,7 +267,12 @@ export async function loadAttendanceSummary(locals: App.Locals, params: URLSearc
 			? await db.query.tableMurid.findMany({
 					columns: { id: true },
 					where: and(
-						await studentAccessCondition(locals.user, schoolId, options.semesterId),
+						await studentAccessCondition(
+							locals.user,
+							schoolId,
+							options.semesterId,
+							activity.kategori
+						),
 						activeMuridFilter(),
 						inArray(tableMurid.id, studentIds)
 					)

@@ -6,9 +6,10 @@
 
 	interface Props {
 		onSuccess?: () => void;
+		action?: string;
 	}
 
-	let { onSuccess }: Props = $props();
+	let { onSuccess, action = '?/import_matev' }: Props = $props();
 
 	const fileInputId = 'import-matev-file';
 	let fileInput: HTMLInputElement | null = null;
@@ -98,7 +99,7 @@
 	</div>
 
 	<FormEnhance
-		action="?/import_matev"
+		{action}
 		enctype="multipart/form-data"
 		showToast={true}
 		onsuccess={async ({ form }) => {

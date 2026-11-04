@@ -149,7 +149,7 @@
 		if (row.role === 'tim_keamanan') return 'Scan perjalanan berdasarkan izin pulang';
 		return row.role === 'user'
 			? `${row.classes.join(', ') || '-'}; ${row.subjects.join(', ') || 'Belum ada mapel'}`
-			: `${row.studentIds.length} murid; ${row.classes.join(', ') || '-'}`;
+			: `${row.studentIds.length} murid; ${row.role === 'wali_asrama' ? row.rooms?.join(', ') || 'Belum ada asrama' : 'Anak binaan'}`;
 	}
 	async function create() {
 		if (!confirmed || !canContinue) return;

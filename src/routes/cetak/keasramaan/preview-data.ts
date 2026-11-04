@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 import { asc, and, eq } from 'drizzle-orm';
 import db from '$lib/server/db';
-import { getStudentEducationIdentity } from '$lib/server/education-units';
+import { getClassEducationIdentity } from '$lib/server/education-units';
 import {
 	tableAsesmenKeasramaan,
 	tableKeasramaan,
@@ -25,6 +25,9 @@ import {
 } from '$lib/server/pdf/preview-utils';
 import { parseTPMode } from '$lib/rapor-params';
 import { computeRaporAttendance } from '$lib/server/pdf/attendance-utils';
+import { dormEvaluationContext, evaluationRows } from '$lib/server/dorm-evaluation';
+import { ensureDormEvaluationSchema } from '$lib/server/db/ensure-dorm-evaluation';
+import { canAccessExportClass } from '$lib/server/class-export-access';
 
 export type KeasramaanContext = {
 	locals: App.Locals;
@@ -169,7 +172,7 @@ function buildKeasramaanFullDescMode(
 export type KeasramaanRow = {
 	no: number;
 	indikator: string;
-	predikat: PredikatKey;
+	predikat: PredikatKey | '';
 	deskripsi: string;
 	kategoriHeader?: string; // untuk grouping header
 };
@@ -189,6 +192,7 @@ export type KeasramaanPrintData = {
 	rombel: {
 		nama: string;
 		fase: string;
+		label?: string;
 	};
 	periode: {
 		tahunAjaran: string;
@@ -208,9 +212,146 @@ export type KeasramaanPrintData = {
 		alfa: number;
 	};
 	keasramaanRows: KeasramaanRow[];
+	catatanWaliAsrama?: string;
 };
 
+async function placementReport(locals: App.Locals, url: URL, studentId: number) {
+	const placementId = optionalInteger('penempatan_id', url.searchParams.get('penempatan_id'));
+	const semesterId = optionalInteger('semester_id', url.searchParams.get('semester_id'));
+	const [placement] = await evaluationRows<{ id: number; kamar_id: number; semester_id: number }>(
+		`SELECT p.id,p.kamar_id,m.semester_id
+	 FROM asrama_penempatan p JOIN murid_identity_link mi ON mi.identity_uid=p.identity_uid AND mi.sekolah_id=p.sekolah_id
+	 JOIN murid m ON m.id=mi.murid_id WHERE m.id=? AND p.sekolah_id=? AND (? IS NULL OR p.id=?)
+	 AND (? IS NULL OR m.semester_id=?) ORDER BY (p.selesai IS NULL) DESC,p.mulai DESC,p.id DESC LIMIT 1`,
+		[
+			studentId,
+			locals.sekolah!.id,
+			placementId ?? null,
+			placementId ?? null,
+			semesterId ?? null,
+			semesterId ?? null
+		]
+	);
+	if (!placement) error(404, 'Penempatan asrama murid tidak ditemukan pada periode ini.');
+	const scoped = new URL(url);
+	scoped.searchParams.set('kamar_id', String(placement.kamar_id));
+	scoped.searchParams.set('semester_id', String(placement.semester_id));
+	scoped.searchParams.set('riwayat', '1');
+	const ctx = await dormEvaluationContext({
+		locals,
+		url: scoped,
+		cookies: { get: () => undefined } as never
+	});
+	const selected = ctx.students.find((s) => s.penempatan_id === placement.id && s.id === studentId);
+	if (!selected || !ctx.room || !ctx.period)
+		error(403, 'Murid berada di luar asrama, periode, atau anak binaan akun ini.');
+	const pupil = await db.query.tableMurid.findFirst({ where: eq(tableMurid.id, selected.id) });
+	const period = await db.query.tableSemester.findFirst({
+		where: (t, { eq }) => eq(t.id, ctx.period!.id)
+	});
+	if (!pupil || !period) error(404, 'Data murid atau periode tidak ditemukan.');
+	const rows: KeasramaanRow[] = [];
+	const mode = parseTPMode(url.searchParams.get('full_tp'));
+	for (const [index, evaluation] of ctx.evaluations.entries()) {
+		rows.push({
+			no: 0,
+			indikator: evaluation.nama,
+			predikat: 'cukup',
+			deskripsi: '',
+			kategoriHeader: `${String.fromCharCode(65 + index)}. ${evaluation.nama}`
+		});
+		const indicators = [
+			...new Set(ctx.goals.filter((t) => t.evaluasi_id === evaluation.id).map((t) => t.indikator))
+		];
+		for (const [i, indicator] of indicators.entries()) {
+			const values = ctx.goals
+				.filter((t) => t.evaluasi_id === evaluation.id && t.indikator === indicator)
+				.flatMap((t) => {
+					const grade = ctx.grades.find(
+						(n) => n.penempatan_id === placement.id && n.tujuan_id === t.id
+					);
+					return grade
+						? [
+								{
+									nilai: kategoriToRubrikValue(grade.kategori),
+									deskripsi: t.deskripsi,
+									predikat: grade.kategori
+								}
+							]
+						: [];
+				});
+			const average = hitungNilaiIndikator(values.map((v) => v.nilai));
+			const predikat = ({ A: 'sangat-baik', B: 'baik', C: 'cukup', D: 'perlu-bimbingan' } as const)[
+				nilaiAngkaToHuruf(average) as 'A' | 'B' | 'C' | 'D'
+			];
+			const grouped: Record<PredikatKey, string[]> = {
+				'sangat-baik': [],
+				baik: [],
+				cukup: [],
+				'perlu-bimbingan': []
+			};
+			for (const v of values) grouped[v.predikat].push(v.deskripsi);
+			rows.push({
+				no: i + 1,
+				indikator: indicator,
+				predikat: values.length ? (predikat ?? 'cukup') : '',
+				deskripsi: values.length
+					? mode === 'compact'
+						? buildKeasramaanCompactMode(pupil.nama, values)
+						: buildKeasramaanFullDescMode(pupil.nama, grouped)
+					: 'Belum dinilai.'
+			});
+		}
+	}
+	const signatureDate = ctx.period.aktif
+		? new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
+		: ctx.period.selesai;
+	const [guardian] = await evaluationRows<{ nama: string; nip: string }>(
+		`SELECT w.nama_snapshot nama,e.nip FROM asrama_penugasan w JOIN pegawai e ON e.id=w.pegawai_id WHERE w.kamar_id=? AND w.peran='utama' AND w.mulai<=? AND (w.selesai IS NULL OR w.selesai>?) ORDER BY w.mulai DESC LIMIT 1`,
+		[placement.kamar_id, signatureDate, signatureDate]
+	);
+	const [caregiver] = await evaluationRows<{ nama: string; nip: string }>(
+		`SELECT n.wali_asuh_nama_snapshot nama,n.wali_asuh_nip_snapshot nip FROM asrama_evaluasi_nilai n JOIN asrama_evaluasi_tujuan t ON t.id=n.tujuan_id JOIN asrama_evaluasi e ON e.id=t.evaluasi_id WHERE n.penempatan_id=? AND e.semester_id=? AND n.wali_asuh_nama_snapshot IS NOT NULL ORDER BY n.updated_at DESC,n.id DESC LIMIT 1`,
+		[placement.id, ctx.period.id]
+	);
+	const [note] = await evaluationRows<{ catatan: string }>(
+		'SELECT catatan FROM asrama_evaluasi_catatan WHERE penempatan_id=? AND semester_id=?',
+		[placement.id, ctx.period.id]
+	);
+	const school = locals.sekolah!;
+	const data: KeasramaanPrintData = {
+		sekolah: {
+			nama: school.nama,
+			alamat: composeAlamat(school),
+			logoUrl: await getLogoSrc(school.id),
+			jenjangVariant: school.jenjangVariant ?? null
+		},
+		murid: { nama: pupil.nama, nis: pupil.nis, nisn: pupil.nisn },
+		rombel: {
+			nama:
+				ctx.room.asrama === ctx.room.nama ? ctx.room.nama : `${ctx.room.asrama} / ${ctx.room.nama}`,
+			fase: '',
+			label: 'Asrama'
+		},
+		periode: { tahunAjaran: ctx.period.tahun, semester: ctx.period.nama },
+		waliAsrama: guardian ?? null,
+		waliKelas: null,
+		waliAsuh:
+			caregiver ??
+			(pupil.waliAsuhNama ? { nama: pupil.waliAsuhNama, nip: pupil.waliAsuhNip ?? '' } : null),
+		kepalaSekolah: school.kepalaSekolah
+			? { nama: school.kepalaSekolah.nama, nip: school.kepalaSekolah.nip ?? '' }
+			: null,
+		ttd: { tempat: fallbackTempat(school), tanggal: formatTanggal(period.tanggalBagiRaport) },
+		kehadiran: await computeRaporAttendance(school.id, period.tahunAjaranId, pupil.id, period),
+		keasramaanRows: rows,
+		catatanWaliAsrama: note?.catatan ?? ''
+	};
+	return { meta: { title: `Rapor Keasramaan - ${pupil.nama}` }, keasramaanData: data };
+}
+
 export async function getKeasramaanPreviewPayload({ locals, url }: KeasramaanContext) {
+	await ensureDormEvaluationSchema();
 	const sekolah = locals.sekolah;
 	if (!sekolah?.id) {
 		throw error(404, 'Sekolah tidak ditemukan.');
@@ -224,13 +365,15 @@ export async function getKeasramaanPreviewPayload({ locals, url }: KeasramaanCon
 	if (!muridId) {
 		return null;
 	}
+	if (
+		url.searchParams.has('penempatan_id') ||
+		url.searchParams.has('kamar_id') ||
+		(!kelasId && url.searchParams.get('sumber') !== 'kelas')
+	)
+		return placementReport(locals, url, muridId);
 
 	const murid = await db.query.tableMurid.findFirst({
-		where: and(
-			eq(tableMurid.id, muridId),
-			eq(tableMurid.sekolahId, sekolah.id),
-			kelasId ? eq(tableMurid.kelasId, kelasId) : undefined
-		),
+		where: and(eq(tableMurid.id, muridId), eq(tableMurid.sekolahId, sekolah.id)),
 		with: {
 			kelas: {
 				with: {
@@ -249,30 +392,56 @@ export async function getKeasramaanPreviewPayload({ locals, url }: KeasramaanCon
 
 	// Wali_asuh: only allow viewing their own students
 	const userWithType = locals.user as { type?: string; pegawaiId?: number } | null;
-	if (userWithType?.type === 'wali_asuh' && userWithType.pegawaiId && !hasSchoolWideOperationalAccess(locals.user)) {
+	if (
+		userWithType?.type === 'wali_asuh' &&
+		userWithType.pegawaiId &&
+		!hasSchoolWideOperationalAccess(locals.user)
+	) {
 		const peg = await db.query.tablePegawai.findFirst({
 			columns: { nama: true },
 			where: eq(tablePegawai.id, userWithType.pegawaiId)
 		});
-		const pegNama = peg?.nama?.trim().toLowerCase();
-		const muridWali = murid.waliAsuhNama;
-		if (!pegNama || (muridWali?.trim().toLowerCase() ?? '') !== pegNama) {
+		if (!peg || murid.waliAsuhPegawaiId !== userWithType.pegawaiId) {
 			throw error(403, 'Anda hanya dapat mencetak rapor keasramaan murid asuhan sendiri');
 		}
 	}
 
-	if (kelasId && murid.kelasId !== kelasId) {
-		throw error(400, 'Murid tidak terdaftar pada kelas yang diminta.');
+	let legacyClassId = kelasId ?? murid.kelasId;
+	if (!legacyClassId) {
+		const candidates = await evaluationRows<{ kelas_id: number }>(
+			`SELECT DISTINCT e.kelas_id FROM asesmen_keasramaan n JOIN keasramaan e ON e.id=n.keasramaan_id JOIN kelas k ON k.id=e.kelas_id WHERE n.murid_id=? AND k.sekolah_id=? AND k.semester_id=?`,
+			[murid.id, sekolah.id, murid.semesterId]
+		);
+		if (candidates.length !== 1) error(409, 'Pilih kelas asal pada riwayat rapor murid.');
+		legacyClassId = candidates[0].kelas_id;
 	}
-
-	const kelasData = murid.kelas;
-	if (!kelasData) {
-		throw error(404, 'Data kelas tidak ditemukan.');
+	const kelasData = await db.query.tableKelas.findFirst({
+		where: (k, { and, eq }) =>
+			and(
+				eq(k.id, legacyClassId!),
+				eq(k.sekolahId, sekolah.id),
+				eq(k.semesterId, murid.semesterId)
+			),
+		with: { waliKelas: true, waliAsrama: true, tahunAjaran: true, semester: true }
+	});
+	if (!kelasData || !(await canAccessExportClass(locals.user, sekolah.id, kelasData.id)))
+		error(403, 'Kelas rapor lama berada di luar periode atau penugasan.');
+	if (murid.kelasId !== kelasData.id) {
+		const history = await db.query.tableMuridRiwayatKelas.findFirst({
+			where: (h, { and, eq }) =>
+				and(
+					eq(h.sekolahId, sekolah.id),
+					eq(h.muridId, murid.id),
+					eq(h.kelasId, kelasData.id),
+					eq(h.semesterId, murid.semesterId)
+				)
+		});
+		if (!history) error(409, 'Riwayat kelas asal belum dapat dipastikan.');
 	}
 
 	// Fetch all keasramaan evaluations for this class
 	const keasramaanList = await db.query.tableKeasramaan.findMany({
-		where: eq(tableKeasramaan.kelasId, murid.kelasId),
+		where: eq(tableKeasramaan.kelasId, kelasData.id),
 		with: {
 			indikator: {
 				orderBy: asc(tableKeasramaanIndikator.id),
@@ -469,7 +638,7 @@ export async function getKeasramaanPreviewPayload({ locals, url }: KeasramaanCon
 
 	const keasramaanData: KeasramaanPrintData = {
 		sekolah: {
-			nama: (await getStudentEducationIdentity(sekolah.id, murid.id)).nama,
+			nama: (await getClassEducationIdentity(sekolah.id, kelasData.id)).nama,
 			alamat: composeAlamat(sekolah),
 			logoUrl: logoSrc,
 			jenjangVariant: sekolah.jenjangVariant ?? null

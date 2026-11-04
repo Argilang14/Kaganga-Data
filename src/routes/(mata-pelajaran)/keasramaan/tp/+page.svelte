@@ -9,22 +9,16 @@
 	let {
 		data
 	}: {
-		data: {
-			indikator: {
-				id: number;
-				deskripsi: string;
-				keasramaan: {
-					id: number;
-					nama: string;
-				};
-			};
-			tujuan: Array<{
-				id: number;
-				deskripsi: string;
-			}>;
-			tujuanTableReady: boolean;
-		};
+		data: Awaited<ReturnType<typeof import('$lib/server/dorm-evaluation-pages').loadDormGoalsPage>>;
 	} = $props();
+	const contextQuery = $derived(
+		new URLSearchParams({
+			kamar_id: String(data.room?.id ?? 0),
+			semester_id: String(data.period?.id ?? 0),
+			...(data.history ? { riwayat: '1' } : {})
+		}).toString()
+	);
+	const actionUrl = (name: string) => `?/${name}&${contextQuery}`;
 
 	let selectedIds = $state<number[]>([]);
 	let selectAllCheckbox = $state<HTMLInputElement | null>(null);
@@ -40,7 +34,7 @@
 
 	const totalData = $derived.by(() => data.tujuan.length);
 	const anySelected = $derived.by(() => selectedIds.length > 0);
-	const canManage = $derived.by(() => data.tujuanTableReady);
+	const canManage = $derived.by(() => data.tujuanTableReady && data.canMaster);
 	// formOpen removed (unused)
 	const isCreateMode = $derived.by(() => formState?.mode === 'create');
 	const isEditMode = $derived.by(() => formState?.mode === 'edit');
@@ -200,6 +194,7 @@
 			<tbody>
 				{#if isCreateMode}
 					<TujuanPembelajaranCreateRow
+						action={actionUrl('create')}
 						indikatorId={data.indikator.id}
 						{canManage}
 						onSuccess={handleCreateSuccess}
@@ -211,6 +206,7 @@
 						{@const rowNumber = index + 1 + (isCreateMode ? 1 : 0)}
 						{#if isEditMode && editingItemId === item.id}
 							<TujuanPembelajaranEditRow
+								action={actionUrl('update')}
 								{item}
 								indikatorId={data.indikator.id}
 								{deskripsiInput}
@@ -271,6 +267,7 @@
 </div>
 
 <TujuanPembelajaranDeleteModal
+	action={actionUrl('delete')}
 	{deleteModalTitle}
 	{deleteModalItem}
 	{deleteModalIds}

@@ -1,18 +1,15 @@
+import { schoolWideAcademic, hasRole } from '$lib/user-role';
+import { accessibleClassIds } from '$lib/server/student-access';
 import db from '$lib/server/db';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
-import {
-	tableKelas,
-	tableMurid,
-	tablePegawai,
-	tableAuthUserKelas,
-	tableAuthUserMataPelajaran
-} from '$lib/server/db/schema';
+import { tableKelas, tablePegawai, tableAuthUserMataPelajaran } from '$lib/server/db/schema';
 import { cookieNames, findTitleByPath } from '$lib/utils.js';
 import { redirect } from '@sveltejs/kit';
 import type { LayoutServerLoad } from './$types';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
+import { isHomeroomPage, isHomeroomTeacher } from '$lib/homeroom-access';
 import { getLegacyWaliKelasIds, isLegacyWaliKelas } from '$lib/server/legacy-wali-kelas';
-import { getAssignmentSummaries, guardianStudentCondition } from '$lib/server/assignment-summary';
+import { getAssignmentSummaries } from '$lib/server/assignment-summary';
 import { dormView, dormCookie } from '$lib/server/dormitory-access';
 import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 
@@ -26,155 +23,47 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 	const user = locals.user ?? null;
 	const academicContext = sekolah?.id ? await resolveSekolahAcademicContext(sekolah.id) : null;
 
-	// Query daftarKelas: for wali_kelas, get ALL kelas they manage (not just active semester)
-	// For user type (guru), get kelas from tableAuthUserKelas join table
-	// For other users, get kelas from active semester only
 	let daftarKelas: Array<{
 		id: number;
 		nama: string;
 		fase: string | null;
 		waliKelas: { id: number; nama: string } | null;
 	}> = [];
-	if (sekolah?.id) {
-		const userWithType = user as {
-			type?: string;
-			id?: number;
-			pegawaiId?: number;
-			jabatanAkses?: string | null;
-		} | null;
-		if (isLegacyWaliKelas(userWithType) && !hasSchoolWideOperationalAccess(user)) {
-			const legacyKelasIds = await getLegacyWaliKelasIds(
-				userWithType,
-				sekolah.id,
-				academicContext?.activeSemesterId
-			);
-			if (legacyKelasIds.length) {
-				daftarKelas = await db.query.tableKelas.findMany({
-					columns: { id: true, nama: true, fase: true },
-					with: { waliKelas: { columns: { id: true, nama: true } } },
-					where: and(inArray(tableKelas.id, legacyKelasIds), eq(tableKelas.sekolahId, sekolah.id)),
-					orderBy: asc(tableKelas.nama)
-				});
-			}
-		} else if (
-			(userWithType?.type === 'wali_asuh' || userWithType?.type === 'wali_asrama') &&
-			!hasSchoolWideOperationalAccess(user)
-		) {
-			const pegawai = await db.query.tablePegawai.findFirst({
-				columns: { nama: true },
-				where: and(
-					eq(tablePegawai.id, userWithType.pegawaiId ?? -1),
-					eq(tablePegawai.sekolahId, sekolah.id)
-				)
-			});
-			if (pegawai?.nama) {
-				const rows = await db
-					.selectDistinct({ kelasId: tableMurid.kelasId })
-					.from(tableMurid)
-					.where(
-						and(
-							eq(tableMurid.sekolahId, sekolah.id),
-							await guardianStudentCondition(user, sekolah.id)
+	if (sekolah && user) {
+		const ids =
+			isHomeroomPage(url.pathname) && isHomeroomTeacher(user) && !schoolWideAcademic(user)
+				? await getLegacyWaliKelasIds(user, sekolah.id, academicContext?.activeSemesterId)
+				: await accessibleClassIds(
+						user,
+						sekolah.id,
+						academicContext?.activeSemesterId,
+						/^\/(intrakurikuler|asesmen-formatif|asesmen-sumatif|jurnal-mengajar|rpm)(\/|$)/.test(
+							url.pathname
 						)
+							? 'academic'
+							: /^\/administrasi\/absensi(?:\/|$)/.test(url.pathname)
+								? 'attendance'
+								: 'assigned'
 					);
-				const kelasIds = rows.map((row) => row.kelasId);
-				if (kelasIds.length) {
-					daftarKelas = await db.query.tableKelas.findMany({
-						columns: { id: true, nama: true, fase: true },
-						with: { waliKelas: { columns: { id: true, nama: true } } },
-						where: and(
-							inArray(tableKelas.id, kelasIds),
-							eq(tableKelas.sekolahId, sekolah.id),
-							academicContext?.activeSemesterId
-								? eq(tableKelas.semesterId, academicContext.activeSemesterId)
-								: undefined
-						),
-						orderBy: asc(tableKelas.nama)
-					});
-				}
-			}
-		} else if (
-			userWithType?.type === 'user' &&
-			userWithType.id &&
-			!hasSchoolWideOperationalAccess(userWithType)
-		) {
-			const allowedKelasRecords = await db.query.tableAuthUserKelas.findMany({
-				columns: { kelasId: true },
-				where: eq(tableAuthUserKelas.authUserId, userWithType.id)
-			});
-
-			const allowedKelasIds = [
-				...new Set([
-					...allowedKelasRecords.map((r) => r.kelasId),
-					...(user?.kelasId ? [user.kelasId] : [])
-				])
-			];
-			if (allowedKelasIds.length > 0) {
-				if (academicContext?.activeSemesterId) {
-					// Prefer explicit assignments in the active semester
-					daftarKelas = await db.query.tableKelas.findMany({
-						columns: { id: true, nama: true, fase: true },
-						with: { waliKelas: { columns: { id: true, nama: true } } },
-						where: and(
-							inArray(tableKelas.id, allowedKelasIds),
-							eq(tableKelas.sekolahId, sekolah.id),
-							eq(tableKelas.semesterId, academicContext.activeSemesterId)
-						),
-						orderBy: asc(tableKelas.nama)
-					});
-					// If no explicit matches, resolve assigned kelas names to active semester
-					if (!daftarKelas.length) {
-						const assignedKelas = await db.query.tableKelas.findMany({
-							columns: { nama: true },
-							where: and(
-								inArray(tableKelas.id, allowedKelasIds),
-								eq(tableKelas.sekolahId, sekolah.id),
-								academicContext.activeTahunAjaranId
-									? eq(tableKelas.tahunAjaranId, academicContext.activeTahunAjaranId)
-									: undefined
-							)
-						});
-						const namaSet = new Set(assignedKelas.map((k) => k.nama));
-						daftarKelas = await db.query.tableKelas.findMany({
-							columns: { id: true, nama: true, fase: true },
-							with: { waliKelas: { columns: { id: true, nama: true } } },
-							where: and(
-								inArray(tableKelas.nama, Array.from(namaSet)),
-								eq(tableKelas.semesterId, academicContext.activeSemesterId),
-								eq(tableKelas.sekolahId, sekolah.id)
-							),
-							orderBy: asc(tableKelas.nama)
-						});
-					}
-				} else {
-					daftarKelas = await db.query.tableKelas.findMany({
-						columns: { id: true, nama: true, fase: true },
-						with: { waliKelas: { columns: { id: true, nama: true } } },
-						where: and(
-							inArray(tableKelas.id, allowedKelasIds),
-							eq(tableKelas.sekolahId, sekolah.id)
-						),
-						orderBy: asc(tableKelas.nama)
-					});
-				}
-			}
-		} else {
-			// Admin/other: get kelas from active semester only
+		if (ids.length)
 			daftarKelas = await db.query.tableKelas.findMany({
 				columns: { id: true, nama: true, fase: true },
 				with: { waliKelas: { columns: { id: true, nama: true } } },
-				where: academicContext?.activeSemesterId
-					? and(
-							eq(tableKelas.sekolahId, sekolah.id),
-							eq(tableKelas.semesterId, academicContext.activeSemesterId)
-						)
-					: eq(tableKelas.sekolahId, sekolah.id),
+				where: inArray(tableKelas.id, ids),
 				orderBy: asc(tableKelas.nama)
 			});
-		}
 	}
 
 	const kelasIdParam = url.searchParams.get('kelas_id');
+	if (
+		user?.type === 'user' &&
+		isHomeroomTeacher(user) &&
+		isHomeroomPage(url.pathname) &&
+		!schoolWideAcademic(user) &&
+		kelasIdParam !== null &&
+		!daftarKelas.some((row) => row.id === Number(kelasIdParam))
+	)
+		throw redirect(303, '/forbidden?required=kelas_id');
 	const kelasCookie = cookies.get(cookieNames.ACTIVE_KELAS_ID);
 
 	let kelasAktif: (typeof daftarKelas)[number] | null = null;
@@ -240,12 +129,12 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 		// - Other account types retain full access
 		const userType = (user as { type?: string }).type;
 		const canManageMapel =
-			hasSchoolWideOperationalAccess(user) ||
-			(userType !== 'wali_asuh' && userType !== 'wali_asrama' && userType !== 'tim_keamanan');
-		const canEditUrutan =
-			hasSchoolWideOperationalAccess(user) ||
-			userType === 'kepala_sekolah' ||
-			userType === 'wali_kelas';
+			schoolWideAcademic(user) ||
+			(hasRole(user, 'user') &&
+				userType !== 'wali_asuh' &&
+				userType !== 'wali_asrama' &&
+				userType !== 'tim_keamanan');
+		const canEditUrutan = schoolWideAcademic(user) || isHomeroomTeacher(user);
 		const canAddImportMapel = canEditUrutan;
 
 		if (user.pegawaiId) {
@@ -282,10 +171,19 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 	}
 
 	// Set cookies AFTER all async operations are complete
-	const dorm = await dormView(locals, url.searchParams, cookies,
-		url.pathname === '/administrasi/absensi/monitoring');
+	const dorm = await dormView(
+		locals,
+		url.searchParams,
+		cookies,
+		url.pathname === '/administrasi/absensi/monitoring'
+	);
 	if (url.searchParams.has('kamar_id')) {
-		cookies.set(dormCookie, String(dorm.room?.id ?? 0), { path:'/', secure:locals.requestIsSecure ?? false, httpOnly:true, sameSite:'lax' });
+		cookies.set(dormCookie, String(dorm.room?.id ?? 0), {
+			path: '/',
+			secure: locals.requestIsSecure ?? false,
+			httpOnly: true,
+			sameSite: 'lax'
+		});
 	}
 	const secure = locals.requestIsSecure ?? false;
 	if (kelasAktif) {

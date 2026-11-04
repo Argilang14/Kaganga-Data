@@ -6,19 +6,13 @@ import {
 	hasClassExportAccess
 } from './export-access.ts';
 
-test('whole database backup is restricted to administrators', () => {
+test('whole database backup requires full access', () => {
 	assert.equal(canDownloadDatabaseBackup({ type: 'admin' }), true);
-	for (const type of [
-		'kepala_sekolah',
-		'user',
-		'wali_kelas',
-		'wali_asuh',
-		'wali_asrama',
-		'unknown'
-	]) {
+	for (const type of ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'unknown']) {
 		assert.equal(canDownloadDatabaseBackup({ type, permissions: ['dashboard_manage'] }), false);
 	}
-	assert.equal(canDownloadDatabaseBackup({ type: 'user', jabatanAkses: 'kepala_sekolah' }), false);
+	assert.equal(canDownloadDatabaseBackup({ type: 'kepala_sekolah' }), true);
+	assert.equal(canDownloadDatabaseBackup({ type: 'user', jabatanAkses: 'kepala_sekolah' }), true);
 	assert.equal(canDownloadDatabaseBackup(null), false);
 });
 
@@ -84,7 +78,7 @@ test('non-admin roles require their own school and assignments', () => {
 			classSchoolId: 1,
 			assigned: false
 		}),
-		false
+		true
 	);
 	assert.equal(
 		hasClassExportAccess({

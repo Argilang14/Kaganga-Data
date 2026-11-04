@@ -509,12 +509,12 @@ try {
 		})
 	).rows[0];
 	assert.ok(lifecycle);
-	await post('/murid/arsip?/previewPromotion', { lifecycleIds: lifecycle.id, targetClassId }, 400);
+	await post('/murid/semua?view=arsip&/previewPromotion', { lifecycleIds: lifecycle.id, targetClassId }, 400);
 	await db.execute({
 		sql: 'INSERT INTO kelas_satuan_pendidikan(kelas_id,satuan_id,nama_snapshot,npsn_snapshot,created_at) VALUES(?,?,?,?,?)',
 		args: [targetClassId, unitsByLevel.get('smp').id, official[1].nama, official[1].npsn, now]
 	});
-	await post('/murid/arsip?/promote', {
+	await post('/murid/semua?view=arsip&/promote', {
 		lifecycleIds: lifecycle.id,
 		targetClassId,
 		confirmed: 'true'

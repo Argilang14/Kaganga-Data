@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.3.2 - 2026-11-04
+
+- Menggabungkan status dan riwayat murid melalui Semua Murid, menyediakan Murid Pasif untuk penempatan kelas/asrama, serta menambahkan Wali Asuh dan aksi pada daftar murid asrama.
+- Memisahkan penilaian keasramaan dari kelas akademik berdasarkan penempatan asrama, semester, dan anak binaan Wali Asuh.
+- Menggabungkan Jabatan Akses ke role akun serta membatasi akses wali kelas dan guru mapel sesuai penugasan.
+- Memperbaiki rekap bulanan izin, sakit, alfa, kepulangan, dan murid belum tercatat, serta pencatatan Pulang manual dari dialog scan.
+- Menyesuaikan kolom capaian dan tanda tangan PDF Martikulasi serta mempertahankan model UI dan rapor asrama yang telah disepakati.
+- Panduan pembaruan dan batasan tersedia pada [catatan rilis v2.3.2](docs/releases/v2.3.2.md).
+
 ## 2.2.8 - 2026-10-25
 
 ### Fitur dan perbaikan

@@ -46,7 +46,7 @@ try {
 	const admin = await row("SELECT * FROM auth_user WHERE type='admin' LIMIT 1");
 	const accounts = {};
 	for (const [name, type] of [['admin', 'admin'], ['security', 'tim_keamanan'], ['guru', 'user'], ['guru2', 'user'], ['dapur', 'tim_dapur'], ['wali', 'wali_asrama']]) {
-		const staffId = ['guru', 'guru2', 'wali'].includes(name) ? await insert('pegawai', clone(employee, { nama: `QA ${name === 'guru' ? 'Guru A' : name === 'guru2' ? 'Guru B' : 'Wali Asrama'}`, jenis: type === 'user' ? 'guru' : 'wali_asrama', status: 'aktif', nip: `QA-TRAVEL-${name}`, kode_pegawai: `QA-TRAVEL-${name}`, nik: null, nuptk: null, nomor_induk_pppk: null, dapodik_ptk_id: null, foto: null })) : name === 'security' ? employeeId : null;
+		const staffId = ['guru', 'guru2', 'wali', 'dapur'].includes(name) ? await insert('pegawai', clone(employee, { nama: `QA ${name === 'guru' ? 'Guru A' : name === 'guru2' ? 'Guru B' : name === 'dapur' ? 'Dapur' : 'Wali Asrama'}`, jenis: type === 'user' ? 'guru' : type === 'tim_dapur' ? 'tim_dapur' : 'wali_asrama', status: 'aktif', nip: `QA-TRAVEL-${name}`, kode_pegawai: `QA-TRAVEL-${name}`, nik: null, nuptk: null, nomor_induk_pppk: null, dapodik_ptk_id: null, foto: null })) : name === 'security' ? employeeId : null;
 		const id = await insert('auth_user', clone(admin, { username: `qa-travel-${name}`, username_normalized: `qa-travel-${name}`, type, sekolah_id: school, jabatan_akses: null, pegawai_id: staffId, kelas_id: type === 'user' ? classId : null, mata_pelajaran_id: null, permissions: '[]', must_change_password: 0 }));
 		const token = randomBytes(32).toString('base64url');
 		await insert('auth_session', { user_id: id, token_hash: createHash('sha256').update(token).digest('hex'), expires_at: new Date(Date.now() + 1800000).toISOString(), created_at: now, updated_at: now });
@@ -70,7 +70,7 @@ try {
 	const journeyBaseline = await count('perjalanan_murid', '1=1');
 	const api = async (body, name = 'security', route = '/api/administrasi/absensi/scan/perjalanan') => {
 		const response = await fetch(base + route, { method: 'POST', headers: { cookie: accounts[name].cookie, origin: base, 'content-type': 'application/json' }, body: JSON.stringify(body), redirect: 'manual' });
-		return { status: response.status, body: await response.json().catch(() => ({})) };
+		return { status: response.status, location: response.headers.get('location'), body: await response.json().catch(() => ({})) };
 	};
 	const permitAction = async (action, values) => {
 		const form = new FormData();
@@ -215,8 +215,12 @@ try {
 	assert.equal((await confirm(4, rotateV)).status, 404);
 	assert.equal(await count('perjalanan_murid', 'izin_id=?', [rotatePermit]), 0);
 	await db.execute({ sql: "UPDATE pegawai SET status='nonaktif' WHERE id=?", args: [employeeId] });
-	assert.equal((await preview(5)).status, 403);
+	const inactive = await preview(5);
+	assert.equal(inactive.status, 303);
+	assert.equal(inactive.location, '/login');
 	await db.execute({ sql: "UPDATE pegawai SET status='aktif' WHERE id=?", args: [employeeId] });
+	// Deactivating an employee revokes their session; reactivation requires a fresh session.
+	await insert('auth_session', { user_id: accounts.security.id, token_hash: createHash('sha256').update(accounts.security.token).digest('hex'), expires_at: new Date(Date.now() + 1800000).toISOString(), created_at: now, updated_at: now });
 	pass('QR dicabut saat konfirmasi dan pegawai keamanan nonaktif ditolak');
 	const uiPermit = await permit(5);
 	assert.equal((await preview(5)).status, 200);

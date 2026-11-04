@@ -56,7 +56,7 @@ type BiodataSRData = {
 type KeasramaanSRData = {
 	sekolah: { nama: string; alamat?: string | null; logoUrl?: string | null };
 	murid: { nama: string; nis?: string | null; nisn?: string | null };
-	rombel?: { nama?: string | null; fase?: string | null };
+	rombel?: { nama?: string | null; fase?: string | null; label?: string };
 	periode: { tahunAjaran: string; semester: string };
 	waliAsrama?: { nama?: string | null; nip?: string | null } | null;
 	waliAsuh?: { nama?: string | null; nip?: string | null } | null;
@@ -1578,6 +1578,7 @@ ${bgLogoSrc ? `<img src="${bgLogoSrc}" alt="" class="watermark">` : ''}
 ${renderSRAcademicHeader(headerData)}
 
 <div class="sr-keasrama-title">LAPORAN KEGIATAN KEASRAMAAN</div>
+${data.rombel?.label === 'Asrama' ? `<p>Asrama: ${formatValue(data.rombel.nama)}</p>` : ''}
 
 <table class="sr-keasrama-table">
 	<colgroup>

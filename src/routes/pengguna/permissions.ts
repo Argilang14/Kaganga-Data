@@ -1,11 +1,17 @@
+import { getUserRoles, hasRole, isFullAccess, type RoleUser } from '../../lib/user-role.ts';
+import { roleGrants, rolePermissionList } from '../../lib/role-policy.ts';
+import { isHomeroomTeacher } from '../../lib/homeroom-access.ts';
 import { parseAccessPosition, type AccessPosition } from '../../lib/access-position.ts';
-import { roleMenuPermissions } from '../../lib/role-menu-access.ts';
 import { studentProfilePermissions } from '../../lib/murid-profile.ts';
 
 export const groupedUserPermissions = {
 	asrama: {
-		values: [['lihat', 'Lihat Data Asrama sesuai penugasan'], ['manage', 'Kelola gedung dan kamar asrama'],
-			['penempatan', 'Kelola penempatan dan mutasi penghuni'], ['penugasan', 'Kelola penugasan wali asrama']],
+		values: [
+			['lihat', 'Lihat Data Asrama sesuai penugasan'],
+			['manage', 'Kelola gedung dan kamar asrama'],
+			['penempatan', 'Kelola penempatan dan mutasi penghuni'],
+			['penugasan', 'Kelola penugasan wali asrama']
+		],
 		description: 'Data Asrama'
 	},
 	menu: {
@@ -22,10 +28,15 @@ export const groupedUserPermissions = {
 			['martikulasi', 'Akses Martikulasi'],
 			['pertumbuhan', 'Akses Riwayat Pertumbuhan'],
 			['absensi_harian', 'Akses Absensi Harian']
-		], description: 'Akses Menu Tambahan (cakupan penugasan tetap berlaku)'
+		],
+		description: 'Akses Menu Tambahan (cakupan penugasan tetap berlaku)'
 	},
 	cetak: {
-		values: [['dokumen', 'Akses Cetak Dokumen'], ['akademik', 'Cetak Raport Akademik'], ['keasramaan', 'Cetak Raport Keasramaan']],
+		values: [
+			['dokumen', 'Akses Cetak Dokumen'],
+			['akademik', 'Cetak Raport Akademik'],
+			['keasramaan', 'Cetak Raport Keasramaan']
+		],
 		description: 'Akses Cetak'
 	},
 	user: {
@@ -122,11 +133,16 @@ export const groupedUserPermissions = {
 		description: 'Data Kelas'
 	},
 	murid: {
-		values: [['arsip', 'Kelola Arsip Murid, Alumni, dan Kenaikan Kelas']],
-		description: 'Arsip Murid dan Alumni'
+		values: [['arsip', 'Kelola Status, Riwayat, dan Kenaikan Kelas di Semua Murid']],
+		description: 'Status dan Riwayat Murid'
 	},
 	rapor_arsip: {
-		values: [['lihat','Lihat Riwayat Rapor Sesuai Penugasan'],['finalisasi','Finalisasi Rapor Setelah Pemeriksaan'],['revisi','Terbitkan Revisi Rapor Final'],['massal','Finalisasi Rapor Massal per Kelas']],
+		values: [
+			['lihat', 'Lihat Riwayat Rapor Sesuai Penugasan'],
+			['finalisasi', 'Finalisasi Rapor Setelah Pemeriksaan'],
+			['revisi', 'Terbitkan Revisi Rapor Final'],
+			['massal', 'Finalisasi Rapor Massal per Kelas']
+		],
 		description: 'Arsip Rapor - Finalisasi dan Revisi Memerlukan Persetujuan Khusus'
 	},
 	murid_profil: {
@@ -176,16 +192,16 @@ export const groupedUserPermissions = {
 		description: 'Absensi - Izin Tindakan, Tetap Mengikuti Penugasan'
 	},
 	mata_pelajaran: {
-		values: [['keasramaan', 'Ekspor Mata Evaluasi Keasramaan pada Kelas Ditugaskan']],
+		values: [['keasramaan', 'Ekspor Mata Evaluasi Keasramaan pada Asrama Ditugaskan']],
 		description: 'Ekspor Keasramaan'
 	},
 	keasramaan: {
 		values: [
-			['lihat', 'Lihat Menu dan Rekap Keasramaan'],
+			['lihat', 'Lihat Data Keasramaan sesuai Penugasan'],
 			['manage', 'Kelola Mata Evaluasi dan Catatan Keasramaan'],
 			['input', 'Input Nilai Keasramaan']
 		],
-		description: 'Keasramaan - Pengecualian Akses Sesuai Penugasan'
+		description: 'Keasramaan - Hak Akses Sesuai Peran dan Penugasan'
 	},
 	surat: {
 		values: [
@@ -248,51 +264,86 @@ export const systemOnlyPermissions = new Set<UserPermission>([
 	'operasional_lihat'
 ]);
 
-const operatorExcludedPermissions = new Set<UserPermission>([
-	'surat_persetujuan',
-	'persetujuan_periksa',
-	'persetujuan_setujui',
-	'persetujuan_terbitkan',
-	'komunikasi_approve'
-]);
-
 export function permissionsForAccessPosition(position?: AccessPosition | null): UserPermission[] {
-	const resolvedPosition = parseAccessPosition(position);
-	if (!resolvedPosition) return [];
-	if (resolvedPosition === 'waka_humas') return userPermissions.filter((permission) =>
-		permission.startsWith('absensi_') || permission.startsWith('class_monitoring_') || permission.startsWith('surat_') || permission.startsWith('persetujuan_') || permission.startsWith('berkas_') || ['administrasi_absensi', 'administrasi_presensi_pegawai', 'administrasi_buku_tamu', 'menu_absensi_harian'].includes(permission));
-	return userPermissions.filter(
-		(permission) =>
-			!systemOnlyPermissions.has(permission) &&
-			!['rapor_arsip_finalisasi','rapor_arsip_revisi','rapor_arsip_massal'].includes(permission) &&
-			!studentProfilePermissions.some((privatePermission) => privatePermission === permission) &&
-			(resolvedPosition !== 'operator' || !operatorExcludedPermissions.has(permission))
+	const resolved = parseAccessPosition(position);
+	return resolved ? rolePermissionList({ roles: [resolved] }, userPermissions) : [];
+}
+export function basicAttendancePermissionsForType(type?: string | null): UserPermission[] {
+	return rolePermissionList({ type }, userPermissions).filter((permission) =>
+		permission.startsWith('absensi_')
 	);
 }
-
-export function basicAttendancePermissionsForType(type?: string | null): UserPermission[] {
-	if (type === 'tim_keamanan') return ['absensi_scan', 'absensi_perjalanan'];
-	return ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'tim_dapur'].includes(type ?? '')
-		? ['absensi_lihat', 'absensi_scan', 'absensi_input', 'absensi_koreksi', 'absensi_export']
-		: [];
+export function permissionAppliesToUser(
+	user: NonNullable<RoleUser> & { waliKelasIds?: readonly number[] },
+	permission: string
+) {
+	if (isFullAccess(user)) return true;
+	if (systemOnlyPermissions.has(permission as UserPermission)) return false;
+	if (roleGrants(user, permission)) return true;
+	if (isHomeroomTeacher(user) && ['rapor_manage', 'cetak_akademik'].includes(permission))
+		return true;
+	const roles = getUserRoles(user);
+	if (
+		permission.startsWith('keasramaan_') ||
+		[
+			'mata_pelajaran_keasramaan',
+			'menu_catatan_asrama',
+			'menu_rekap_asrama',
+			'cetak_keasramaan'
+		].includes(permission)
+	)
+		return false;
+	if (
+		[
+			'rapor_arsip_finalisasi',
+			'rapor_arsip_revisi',
+			'rapor_arsip_massal',
+			...studentProfilePermissions
+		].includes(permission as never)
+	)
+		return roles.some((role) =>
+			[
+				'user',
+				'wali_asuh',
+				'wali_asrama',
+				'waka_kurikulum',
+				'waka_kesiswaan',
+				'waka_keasramaan',
+				'operator'
+			].includes(role)
+		);
+	if (hasRole(user, 'user') && permission.startsWith('class_monitoring_')) return true;
+	if (hasRole(user, 'user', 'wali_asuh', 'wali_asrama'))
+		return (
+			permission === 'kelas_pindah' ||
+			permission === 'kurikulum_rpm' ||
+			permission.startsWith('absensi_')
+		);
+	return false;
 }
-
 export function effectivePermissions(
-	user?: {
-		type?: string | null;
-		permissions?: readonly UserPermission[] | null;
-		jabatanAkses?: AccessPosition | null;
-	} | null
+	user?:
+		| (NonNullable<RoleUser> & {
+				permissions?: readonly UserPermission[] | null;
+				waliKelasIds?: readonly number[];
+		  })
+		| null
 ): UserPermission[] {
 	if (!user) return [];
-	if (user.type === 'admin') return [...userPermissions];
-	const position = parseAccessPosition(user.jabatanAkses);
-	const positionPermissions = permissionsForAccessPosition(position);
+	const automatic = rolePermissionList(user, userPermissions);
 	const stored = (user.permissions ?? []).filter(
-		(permission) => !position || !systemOnlyPermissions.has(permission)
+		(permission) =>
+			userPermissions.includes(permission) && permissionAppliesToUser(user, permission)
 	);
-	const basic = basicAttendancePermissionsForType(user.type);
-	return [...new Set([...positionPermissions, ...basic, ...roleMenuPermissions(user.type) as UserPermission[], ...stored])];
+	return [
+		...new Set([
+			...automatic,
+			...stored,
+			...(isHomeroomTeacher(user)
+				? ['rapor_manage' as UserPermission, 'cetak_akademik' as UserPermission]
+				: [])
+		])
+	];
 }
 
 export function defaultPermissionsForType(
@@ -308,12 +359,16 @@ export function defaultPermissionsForType(
 export function isAuthorizedUser(
 	allowedPermissions: UserPermission[],
 	// include 'type' so we can treat admins as authorized
-	user?: Pick<AuthUser, 'permissions' | 'type'> & { jabatanAkses?: AuthUser['jabatanAkses'] }
+	user?: Pick<AuthUser, 'permissions' | 'type'> & {
+		jabatanAkses?: AuthUser['jabatanAkses'];
+		roles?: readonly string[] | null;
+		waliKelasIds?: readonly number[];
+	}
 ) {
 	if (!user) return false;
 	// Admins are authorized for everything by policy
 	// wali_kelas and wali_asuh are NOT admins and must check permissions
-	if ('type' in user && user.type === 'admin') return true;
+	if (isFullAccess(user)) return true;
 	const granted = effectivePermissions(user);
 	return allowedPermissions.some((permission) => granted.includes(permission));
 }

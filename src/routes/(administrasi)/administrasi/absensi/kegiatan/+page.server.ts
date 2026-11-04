@@ -96,7 +96,7 @@ export async function load({ locals, url }) {
 			eq(tableMurid.semesterId, academic.activeSemesterId),
 			eq(tableMurid.kelasId, kelasId),
 			activeMuridFilter(),
-			await studentAccessCondition(locals.user, sekolahId)
+			await studentAccessCondition(locals.user, sekolahId, undefined, selectedKegiatan?.kategori)
 		),
 		orderBy: asc(tableMurid.nama)
 	});
@@ -124,13 +124,24 @@ export async function load({ locals, url }) {
 			})
 		: [];
 
-	const absensiRows = await projectPermitAttendance({ schoolId: sekolahId, semesterId: academic.activeSemesterId,
-		studentIds: muridIds, dates: [tanggal], activities: selectedKegiatan ? [selectedKegiatan] : [], rows: recordedRows });
+	const absensiRows = await projectPermitAttendance({
+		schoolId: sekolahId,
+		semesterId: academic.activeSemesterId,
+		studentIds: muridIds,
+		dates: [tanggal],
+		activities: selectedKegiatan ? [selectedKegiatan] : [],
+		rows: recordedRows
+	});
 	const absensiByMurid = new Map<number, AbsensiKegiatanRow>();
 	for (const row of absensiRows) absensiByMurid.set(row.muridId, row);
 
 	const summary = emptySummary();
-	const illnesses = await loadAttendanceIllness(sekolahId, academic.activeSemesterId, muridIds, tanggal);
+	const illnesses = await loadAttendanceIllness(
+		sekolahId,
+		academic.activeSemesterId,
+		muridIds,
+		tanggal
+	);
 	const rows = muridList.map((murid, index) => {
 		const absensi = absensiByMurid.get(murid.id) ?? null;
 		if (absensi) summary[absensi.status] += 1;
@@ -219,7 +230,7 @@ export const actions = {
 				eq(tableMurid.semesterId, semesterId),
 				eq(tableMurid.kelasId, kelasId),
 				activeMuridFilter(),
-				await studentAccessCondition(locals.user, sekolahId)
+				await studentAccessCondition(locals.user, sekolahId, undefined, kegiatan.kategori)
 			)
 		});
 		if (!murid) return fail(404, { fail: 'Siswa tidak ditemukan di sekolah aktif.' });
@@ -345,7 +356,7 @@ export const actions = {
 				eq(tableMurid.semesterId, semesterId),
 				eq(tableMurid.kelasId, kelasId),
 				activeMuridFilter(),
-				await studentAccessCondition(locals.user, sekolahId)
+				await studentAccessCondition(locals.user, sekolahId, undefined, kegiatan.kategori)
 			)
 		});
 		const muridIds = muridList.map((murid) => murid.id);

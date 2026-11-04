@@ -31,7 +31,7 @@ export async function assertKeasramaanTargets(user: App.Locals['user'], sekolahI
 			if (!Number.isSafeInteger(id) || id <= 0) throw error(400, 'ID murid tidak valid.');
 			const murid = await db.query.tableMurid.findFirst({ columns: { kelasId: true },
 				where: and(eq(tableMurid.id, id), eq(tableMurid.sekolahId, sekolahId), await guardianStudentCondition(user, sekolahId)) });
-			if (!murid || !(await canAccessExportClass(user, sekolahId, murid.kelasId))) throw error(403, 'Murid di luar penugasan.');
+			if (!murid?.kelasId || !(await canAccessExportClass(user, sekolahId, murid.kelasId))) throw error(403, 'Murid di luar penugasan.');
 		}
 	}
 	const bulk = values.get('muridIds');
@@ -45,7 +45,7 @@ export async function assertKeasramaanTargets(user: App.Locals['user'], sekolahI
 			where: and(inArray(tableMurid.id, ids), eq(tableMurid.sekolahId, sekolahId), await guardianStudentCondition(user, sekolahId)) });
 		if (rows.length !== ids.length) throw error(403, 'Daftar berisi murid di luar penugasan.');
 		for (const kelasId of new Set(rows.map(row => row.kelasId))) {
-			if (!(await canAccessExportClass(user, sekolahId, kelasId))) throw error(403, 'Kelas di luar penugasan.');
+			if (!kelasId || !(await canAccessExportClass(user, sekolahId, kelasId))) throw error(403, 'Kelas di luar penugasan.');
 		}
 	}
 }

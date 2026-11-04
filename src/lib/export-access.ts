@@ -1,14 +1,15 @@
-import { parseAccessPosition } from './access-position.ts';
+import { isFullAccess, hasRole } from './user-role.ts';
 
 export type ExportUser = {
 	type?: string;
+	roles?: readonly string[] | null;
 	jabatanAkses?: string | null;
 	sekolahId?: number | null;
 	permissions?: readonly string[] | null;
 };
 
 export function canDownloadDatabaseBackup(user?: ExportUser | null) {
-	return user?.type === 'admin';
+	return isFullAccess(user);
 }
 
 export function canExportClassData(
@@ -37,7 +38,17 @@ export function hasClassExportAccess(input: {
 		return false;
 	if (user.type === 'admin') return true;
 	if (user.sekolahId !== sekolahId) return false;
-	if (parseAccessPosition(user.jabatanAkses)) return true;
+	if (
+		hasRole(
+			user,
+			'operator',
+			'kepala_sekolah',
+			'waka_kurikulum',
+			'waka_kesiswaan',
+			'waka_keasramaan'
+		)
+	)
+		return true;
 	if (user.type === 'tim_dapur') return true;
-	return ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama'].includes(user.type ?? '') && assigned;
+	return hasRole(user, 'user', 'wali_asuh', 'wali_asrama') && assigned;
 }

@@ -83,8 +83,7 @@ export async function POST({ request, locals }) {
 		return json(
 			{
 				ok: false,
-				message:
-					'Gunakan mode Absensi Pulang. Tim Keamanan tidak dapat mencatat absensi kegiatan.'
+				message: 'Gunakan mode Absensi Pulang. Tim Keamanan tidak dapat mencatat absensi kegiatan.'
 			},
 			{ status: 403 }
 		);
@@ -196,9 +195,34 @@ export async function POST({ request, locals }) {
 			{ status: 404 }
 		);
 	}
+	if (!qr.murid.kelasId)
+		return json(
+			{
+				ok: false,
+				code: 'class_required',
+				message: 'Tempatkan murid ke kelas sebelum mencatat absensi.'
+			},
+			{ status: 409 }
+		);
+	const kegiatan =
+		mode === 'kegiatan'
+			? await db.query.tableKegiatanAbsensi.findFirst({
+					where: and(
+						eq(tableKegiatanAbsensi.id, kegiatanId),
+						eq(tableKegiatanAbsensi.sekolahId, sekolahId),
+						eq(tableKegiatanAbsensi.aktif, true)
+					)
+				})
+			: undefined;
 	const academic = await resolveSekolahAcademicContext(sekolahId);
 	if (
-		!(await assertStudentAccess(locals.user, sekolahId, qr.murid.id, true)) ||
+		!(await assertStudentAccess(
+			locals.user,
+			sekolahId,
+			qr.murid.id,
+			true,
+			kegiatan?.kategori ?? 'sekolah'
+		)) ||
 		academic.activeSemesterId !== qr.murid.semesterId
 	) {
 		return json(
@@ -222,13 +246,6 @@ export async function POST({ request, locals }) {
 		);
 	}
 	if (mode === 'kegiatan') {
-		const kegiatan = await db.query.tableKegiatanAbsensi.findFirst({
-			where: and(
-				eq(tableKegiatanAbsensi.id, kegiatanId),
-				eq(tableKegiatanAbsensi.sekolahId, sekolahId),
-				eq(tableKegiatanAbsensi.aktif, true)
-			)
-		});
 		if (!kegiatan) {
 			return json(
 				{ ok: false, code: 'invalid_activity', message: 'Kegiatan tidak ditemukan.' },
@@ -266,7 +283,11 @@ export async function POST({ request, locals }) {
 			)
 		});
 
-		if (existing && ((existing.status !== 'sakit' && existing.metode !== 'auto') || kegiatan.kode !== 'apel_berangkat')) {
+		if (
+			existing &&
+			((existing.status !== 'sakit' && existing.metode !== 'auto') ||
+				kegiatan.kode !== 'apel_berangkat')
+		) {
 			return json({
 				...(await receipt(existing, true, sekolahId)),
 				kegiatan: { id: kegiatan.id, nama: kegiatan.nama },

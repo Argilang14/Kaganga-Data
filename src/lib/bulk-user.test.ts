@@ -8,9 +8,9 @@ import {
 } from './bulk-user.ts';
 
 test('bulk role accepts teacher, guardians, kitchen team and operator', () => {
-	for (const role of ['user', 'wali_asuh', 'wali_asrama', 'tim_dapur', 'tim_keamanan', 'operator'])
+	for (const role of ['user', 'wali_asuh', 'wali_asrama', 'tim_dapur', 'tim_keamanan', 'operator','kepala_sekolah','waka_kurikulum','waka_keasramaan','waka_humas'])
 		assert.equal(parseBulkUserRole(role), role);
-	for (const role of ['admin', 'kepala_sekolah', 'wali_kelas', '', undefined])
+	for (const role of ['admin', 'wali_kelas', '', undefined])
 		assert.equal(parseBulkUserRole(role), null);
 });
 test('bulk username collisions and diacritics remain deterministic', () => {

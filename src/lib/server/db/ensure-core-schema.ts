@@ -129,7 +129,7 @@ export async function ensureCoreSchema() {
 		)`,
 		`CREATE TABLE IF NOT EXISTS mata_pelajaran (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			kelas_id INTEGER NOT NULL REFERENCES kelas(id),
+			kelas_id INTEGER REFERENCES kelas(id),
 			nama TEXT NOT NULL,
 			kode TEXT,
 			kkm INTEGER NOT NULL DEFAULT 0,

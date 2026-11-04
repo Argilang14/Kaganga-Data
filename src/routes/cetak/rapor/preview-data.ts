@@ -1,3 +1,4 @@
+import { assertHomeroomDocumentAccess } from '$lib/server/route-utils';
 import { error } from '@sveltejs/kit';
 import { asc, and, eq } from 'drizzle-orm';
 import db from '$lib/server/db';
@@ -150,6 +151,7 @@ export async function getRaporPreviewPayload({ locals, url }: RaporContext) {
 	await ensureCatatanWaliSchema();
 
 	const muridId = requireInteger('murid_id', url.searchParams.get('murid_id'));
+	await assertHomeroomDocumentAccess(locals, muridId);
 	const kelasId = optionalInteger('kelas_id', url.searchParams.get('kelas_id'));
 
 	const murid = await db.query.tableMurid.findFirst({
@@ -252,7 +254,7 @@ export async function getRaporPreviewPayload({ locals, url }: RaporContext) {
 			]
 		}),
 		db.query.tableEkstrakurikuler.findMany({
-			where: eq(tableEkstrakurikuler.kelasId, murid.kelasId),
+			where: eq(tableEkstrakurikuler.kelasId, murid.kelasId ?? -1),
 			orderBy: [asc(tableEkstrakurikuler.nama)]
 		}),
 		db.query.tableMuridEkstrakurikuler.findMany({

@@ -5,6 +5,7 @@
 
 	let {
 		item,
+		action = '?/update',
 		indikatorId,
 		deskripsiInput,
 		canManage,
@@ -12,6 +13,7 @@
 		onCancel
 	}: {
 		item: { id: number };
+		action?: string;
 		indikatorId: number;
 		deskripsiInput: string;
 		canManage: boolean;
@@ -35,7 +37,7 @@
 	<td class="align-top">
 		<FormEnhance
 			id={`tp-keasramaan-edit-${item.id}`}
-			action="?/update"
+			{action}
 			onsuccess={() => {
 				localDeskripsi = '';
 				submitting = false;

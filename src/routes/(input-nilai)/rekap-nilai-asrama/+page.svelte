@@ -2,42 +2,16 @@
 	/* eslint-disable svelte/no-navigation-without-resolve -- URLSearchParams helpers and page navigation */
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import DormEvaluationScope from '$lib/components/keasramaan/DormEvaluationScope.svelte';
 	import AsramaLegerDownload from '$lib/components/AsramaLegerDownload.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import SvelteURLSearchParams from '$lib/svelte-helpers/url-search-params';
 	import { searchQueryMarker } from '$lib/utils';
 	import { onDestroy } from 'svelte';
 
-	type MatevScore = {
-		id: number;
-		nama: string;
-		score: number | null;
-	};
-
-	type Row = {
-		id: number;
-		nama: string;
-		peringkat: number;
-		nilaiRataRata: number | null;
-		jumlahMatevDinilai: number;
-		totalMatev: number;
-		matevScores: MatevScore[];
-		detailHref: string;
-	};
-
-	type PageData = {
-		kelasLabel: string | null;
-		sekolahNama: string;
-		matevList: Array<{ id: number; nama: string }>;
-		daftarNilai: Row[];
-		legerRows: Row[];
-		summary: { totalMurid: number; totalMuridDinilai: number; totalMatev: number };
-		page: {
-			search: string | null;
-			currentPage: number;
-			totalPages: number;
-		};
-	};
+	type PageData = Awaited<
+		ReturnType<typeof import('$lib/server/dorm-evaluation-pages').loadDormRecapPage>
+	>;
 
 	let { data }: { data: PageData } = $props();
 	let searchTerm = $state('');
@@ -48,12 +22,7 @@
 	const currentPage = $derived(data.page.currentPage ?? 1);
 	const totalPages = $derived(Math.max(1, data.page.totalPages ?? 1));
 	const pages = $derived.by(() => Array.from({ length: totalPages }, (_, index) => index + 1));
-	const kelasAktif = $derived(page.data.kelasAktif ?? null);
-	const kelasLabel = $derived.by(() => {
-		if (data.kelasLabel) return data.kelasLabel;
-		if (!kelasAktif) return null;
-		return kelasAktif.fase ? `${kelasAktif.nama} - ${kelasAktif.fase}` : kelasAktif.nama;
-	});
+	const asramaLabel = $derived(data.room ? `${data.room.asrama} / ${data.room.nama}` : null);
 
 	$effect(() => {
 		if (searchTimer) return;
@@ -130,10 +99,18 @@
 	});
 </script>
 
-{#if !kelasAktif}
+<DormEvaluationScope
+	rooms={data.rooms}
+	room={data.room}
+	periods={data.periods}
+	period={data.period}
+	history={data.history}
+/>
+
+{#if !data.room}
 	<div class="alert alert-warning alert-soft mb-6 flex items-center gap-3">
 		<Icon name="warning" />
-		<span>Pilih kelas aktif di bagian atas sebelum melihat rekap nilai asrama.</span>
+		<span>Pilih asrama di bagian atas sebelum melihat rekap nilai asrama.</span>
 	</div>
 {/if}
 
@@ -141,19 +118,19 @@
 	<div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
 		<div>
 			<h2 class="text-xl font-bold">Rekapitulasi Nilai Asrama</h2>
-			{#if kelasLabel}
-				<p class="text-base-content/80 block text-sm">{kelasLabel}</p>
+			{#if asramaLabel}
+				<p class="text-base-content/80 block text-sm">{asramaLabel}</p>
 			{/if}
 		</div>
 		<AsramaLegerDownload
 			rows={data.legerRows}
 			matevList={data.matevList}
 			sekolahNama={data.sekolahNama}
-			kelasLabel={kelasLabel ?? ''}
+			kelasLabel={`${asramaLabel ?? ''} · ${data.period?.nama ?? ''} ${data.period?.tahun ?? ''}`}
 		/>
 	</div>
 
-	<div class="stats dark:bg-base-200 shadow-md">
+	<div class="stats max-w-full dark:bg-base-200 shadow-md">
 		<div class="stat">
 			<div class="stat-title">Jumlah Murid</div>
 			<div class="stat-value text-lg">{data.summary.totalMurid}</div>

@@ -1,7 +1,8 @@
 <script lang="ts">
+	import DormEvaluationScope from '$lib/components/keasramaan/DormEvaluationScope.svelte';
+	import { resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
-	import { page } from '$app/state';
-	import { canAccessArea } from '$lib/menu-access';
+
 	import Icon from '$lib/components/icon.svelte';
 	import { showModal } from '$lib/components/global-modal.svelte';
 	import ImportMatevDialog from '$lib/components/keasramaan/import-matev-dialog.svelte';
@@ -16,36 +17,33 @@
 		}>;
 	}
 
-	let { data } = $props<{ data: Record<string, unknown> }>();
+	let { data } = $props<{
+		data: Awaited<
+			ReturnType<typeof import('$lib/server/dorm-evaluation-pages').loadDormMasterPage>
+		>;
+	}>();
 
 	const mataEvaluasi = $derived((data.mataEvaluasi as MataEvaluasi[]) ?? []);
 	const tableReady = $derived((data.tableReady as boolean) ?? true);
-	const kelasAktif = $derived(
-		data.kelasAktif as { id: number; nama: string; fase?: string } | null
+	const asramaLabel = $derived(data.room ? `${data.room.asrama} / ${data.room.nama}` : '-');
+	const canEdit = $derived(data.canMaster);
+	const contextQuery = $derived(
+		new URLSearchParams({
+			kamar_id: String(data.room?.id ?? 0),
+			semester_id: String(data.period?.id ?? 0),
+			...(data.history ? { riwayat: '1' } : {})
+		}).toString()
 	);
 
-	const kelasLabel = $derived(
-		kelasAktif
-			? kelasAktif.fase
-				? `${kelasAktif.nama} - ${kelasAktif.fase}`
-				: kelasAktif.nama
-			: '-'
-	);
-
-	const canEdit = $derived(canAccessArea(page.data.user, 'keasramaan', 'manage'));
-
-	// eslint-disable-next-line svelte/no-navigation-without-resolve
 	const navigateToMatEval = () => {
 		if (!canEdit) return;
-		goto('/keasramaan/mata-evaluasi');
+		goto(resolve(`/keasramaan/mata-evaluasi?${contextQuery}`));
 	};
 
 	const handleExport = async () => {
 		if (!canEdit) return;
 		try {
-			const response = await fetch('/api/keasramaan/export', {
-				method: 'POST'
-			});
+			const response = await fetch(`/api/keasramaan/export?${contextQuery}`);
 
 			if (!response.ok) {
 				const errorData = await response.json();
@@ -93,7 +91,7 @@
 		<!-- Judul -->
 		<div>
 			<h2 class="text-xl font-bold">Daftar Nilai Keasramaan</h2>
-			<p class="text-base-content/70 text-sm">Kelas aktif: {kelasLabel}</p>
+			<p class="text-base-content/70 text-sm">Asrama aktif: {asramaLabel}</p>
 		</div>
 		<!-- Tombol untuk mengelola mata evaluasi -->
 		<div class="flex flex-row max-sm:w-full">
@@ -132,6 +130,7 @@
 								showModal({
 									title: 'Impor Matev',
 									body: ImportMatevDialog,
+									bodyProps: { action: `?/import_matev&${contextQuery}` },
 									dismissible: true
 								})}
 						>
@@ -165,6 +164,37 @@
 		</div>
 	{/if}
 
+	<div class="mt-4">
+		<DormEvaluationScope
+			rooms={data.rooms}
+			room={data.room}
+			periods={data.periods}
+			period={data.period}
+			history={data.history}
+		/>
+	</div>
 	<!-- Daftar Mata Evaluasi dengan Tabel Individual -->
-	<MataEvaluasiDisplay {mataEvaluasi} {tableReady} {canEdit} />
+	<MataEvaluasiDisplay {mataEvaluasi} {tableReady} {canEdit} {contextQuery} />
+	{#if data.wide && data.legacy.length && data.canMaster}<details class="mt-6">
+			<summary class="cursor-pointer text-sm">Salin susunan dari kelas lama</summary>
+			<form
+				method="POST"
+				action={`?/copy_legacy&${contextQuery}`}
+				class="mt-2 flex flex-col gap-2 sm:flex-row"
+			>
+				<input type="hidden" name="operation" value="copy-legacy" /><input
+					type="hidden"
+					name="kamar_id"
+					value={data.room?.id ?? 0}
+				/><input type="hidden" name="semester_id" value={data.period?.id ?? 0} /><select
+					class="select w-full sm:flex-1"
+					name="sumber_lama_id"
+					aria-label="Mata evaluasi kelas lama"
+					>{#each data.legacy as item (item.id)}<option value={item.id}
+							>{item.kelas} · {item.periode} · {item.nama}</option
+						>{/each}</select
+				><button class="btn btn-soft" type="submit">Salin susunan</button>
+			</form>
+			<p class="mt-2 text-sm opacity-70">Nilai lama tetap tersimpan pada riwayat kelas.</p>
+		</details>{/if}
 </div>

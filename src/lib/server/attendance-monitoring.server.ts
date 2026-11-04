@@ -11,6 +11,8 @@ import { illnessCovers, illnessNeedsReview, latestIllness } from '$lib/attendanc
 import { studentAccessCondition } from './attendance-student-access';
 import { ensureAbsenceMonitoringSchema } from '$lib/server/db/ensure-absence-monitoring';
 import { permitCoversMonitoring } from '$lib/attendance-monitoring';
+import { attendanceStaffName } from './attendance-staff';
+import { permitReviewReasons } from './attendance-permit-recap';
 import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
 import {
 	tableAbsensiKegiatan,
@@ -70,6 +72,13 @@ export type IzinPulangMonitoringRow = {
 	keberangkatanTerkonfirmasi: boolean;
 	status: IzinPulangStatus;
 	duration: number;
+	pencatat?: string;
+	pencatatKembali?: string | null;
+	keluarSecurity?: string | null;
+	kembaliSecurity?: string | null;
+	petugasKeluarSecurity?: string | null;
+	petugasKembaliSecurity?: string | null;
+	perluDiperiksa?: string[];
 };
 
 function shiftDate(value: string, days: number) {
@@ -104,11 +113,7 @@ function parseConfiguredHolidays(value: string | null | undefined, target: Set<s
 	}
 }
 
-function alertKey(
-	type: AttendanceAlertType,
-	muridId: number,
-	periodeMulai: string
-) {
+function alertKey(type: AttendanceAlertType, muridId: number, periodeMulai: string) {
 	return `${type}:${muridId}:${periodeMulai}`;
 }
 
@@ -127,14 +132,14 @@ export async function loadAttendanceMonitoring(params: {
 	}
 
 	const rangeStart = shiftDate(params.today, -(params.lookbackDays ?? 45));
-	const [students, attendanceRows, calendarRows, settings, izinRows, followUps] =
-		await Promise.all([
+	const [students, attendanceRows, calendarRows, settings, izinRows, followUps] = await Promise.all(
+		[
 			db
 				.select({
 					id: tableMurid.id,
 					nama: tableMurid.nama,
 					nis: tableMurid.nis,
-					kelasId: tableMurid.kelasId,
+					kelasId: tableKelas.id,
 					kelasNama: tableKelas.nama
 				})
 				.from(tableMurid)
@@ -191,7 +196,8 @@ export async function loadAttendanceMonitoring(params: {
 			db.query.tableTindakLanjutAbsensi.findMany({
 				where: eq(tableTindakLanjutAbsensi.sekolahId, params.sekolahId)
 			})
-		]);
+		]
+	);
 
 	const holidayDates = new Set<string>();
 	for (const row of calendarRows) addRange(holidayDates, row.tanggalMulai, row.tanggalSelesai);
@@ -204,19 +210,42 @@ export async function loadAttendanceMonitoring(params: {
 		holidayDates
 	});
 	const schoolDayIndex = new Map(schoolDays.map((date, index) => [date, index]));
-	const illnesses = await loadAttendanceIllness(params.sekolahId, params.semesterId, students.map((student) => student.id), params.today);
-	const effective = attendanceRows.filter((row) => row.metode !== 'auto' ||
-		(!illnessNeedsReview(latestIllness(illnesses, row.muridId, row.tanggal), row.tanggal) &&
-		!izinRows.some((permit) => permit.status !== 'dibatalkan' && permit.muridId === row.muridId &&
-			permitCoversMonitoring(row.tanggal, row.kegiatan?.jamMulai ?? null, permit))));
+	const illnesses = await loadAttendanceIllness(
+		params.sekolahId,
+		params.semesterId,
+		students.map((student) => student.id),
+		params.today
+	);
+	const effective = attendanceRows.filter(
+		(row) =>
+			row.metode !== 'auto' ||
+			(!illnessNeedsReview(latestIllness(illnesses, row.muridId, row.tanggal), row.tanggal) &&
+				!izinRows.some(
+					(permit) =>
+						permit.status !== 'dibatalkan' &&
+						permit.muridId === row.muridId &&
+						permitCoversMonitoring(row.tanggal, row.kegiatan?.jamMulai ?? null, permit)
+				))
+	);
 	const dailyRows = collapseActivityAttendanceByDay(effective);
 	const recordedDays = new Set(dailyRows.map((row) => `${row.muridId}:${row.tanggal}`));
-	for (const student of students) for (const tanggal of schoolDays) {
-		const period = latestIllness(illnesses, student.id, tanggal);
-		if (!period || !illnessCovers(period, tanggal) || recordedDays.has(`${student.id}:${tanggal}`) ||
-			izinRows.some((permit) => permit.status !== 'dibatalkan' && permit.muridId === student.id && permitCoversMonitoring(tanggal, null, permit))) continue;
-		dailyRows.push({ muridId: student.id, tanggal, status: 'sakit', sourceCount: 1 });
-	}
+	for (const student of students)
+		for (const tanggal of schoolDays) {
+			const period = latestIllness(illnesses, student.id, tanggal);
+			if (
+				!period ||
+				!illnessCovers(period, tanggal) ||
+				recordedDays.has(`${student.id}:${tanggal}`) ||
+				izinRows.some(
+					(permit) =>
+						permit.status !== 'dibatalkan' &&
+						permit.muridId === student.id &&
+						permitCoversMonitoring(tanggal, null, permit)
+				)
+			)
+				continue;
+			dailyRows.push({ muridId: student.id, tanggal, status: 'sakit', sourceCount: 1 });
+		}
 	const dailyByStudent = new Map<number, Map<string, (typeof dailyRows)[number]['status']>>();
 	for (const row of dailyRows) {
 		const entries = dailyByStudent.get(row.muridId) ?? new Map();
@@ -224,10 +253,7 @@ export async function loadAttendanceMonitoring(params: {
 		dailyByStudent.set(row.muridId, entries);
 	}
 	const followUpByKey = new Map(
-		followUps.map((item) => [
-			alertKey(item.jenis, item.muridId ?? 0, item.periodeMulai),
-			item
-		])
+		followUps.map((item) => [alertKey(item.jenis, item.muridId ?? 0, item.periodeMulai), item])
 	);
 	const alerts: AttendanceAlert[] = [];
 
@@ -311,8 +337,28 @@ export async function loadAttendanceMonitoring(params: {
 		}
 	}
 
-	const visibleStudentIds = new Set(students.map(student => student.id));
-	const izinPulang = izinRows.filter(row => !params.user || (row.muridId != null && visibleStudentIds.has(row.muridId))).map((row) => {
+	const visibleStudentIds = new Set(students.map((student) => student.id));
+	const visiblePermits = izinRows.filter(
+		(row) => !params.user || (row.muridId != null && visibleStudentIds.has(row.muridId))
+	);
+	const staffIds = [
+		...new Set(
+			visiblePermits
+				.flatMap((row) => [
+					row.petugasKeluarUserId,
+					row.petugasKembaliUserId,
+					row.perjalanan?.keluarOleh,
+					row.perjalanan?.kembaliOleh
+				])
+				.filter((id): id is number => id != null)
+		)
+	];
+	const staffNames = new Map(
+		await Promise.all(
+			staffIds.map(async (id) => [id, await attendanceStaffName(id, params.sekolahId)] as const)
+		)
+	);
+	const izinPulang = visiblePermits.map((row) => {
 		const status = effectiveIzinPulangStatus(row, params.today);
 		const startIndex = schoolDayIndex.get(row.tanggalKeluar);
 		const endDate = row.tanggalKembali ?? params.today;
@@ -339,6 +385,15 @@ export async function loadAttendanceMonitoring(params: {
 			penjemputHubungan: row.penjemputHubungan,
 			updatedAt: row.updatedAt,
 			keberangkatanTerkonfirmasi: !!row.perjalanan?.keluarPada,
+			pencatat: staffNames.get(row.petugasKeluarUserId ?? 0) ?? 'Admin/petugas',
+			pencatatKembali: row.tanggalKembali
+				? (staffNames.get(row.petugasKembaliUserId ?? 0) ?? 'Admin/petugas')
+				: null,
+			keluarSecurity: row.perjalanan?.keluarPada ?? null,
+			kembaliSecurity: row.perjalanan?.kembaliPada ?? null,
+			petugasKeluarSecurity: staffNames.get(row.perjalanan?.keluarOleh ?? 0) ?? null,
+			petugasKembaliSecurity: staffNames.get(row.perjalanan?.kembaliOleh ?? 0) ?? null,
+			perluDiperiksa: row.status === 'dibatalkan' ? [] : permitReviewReasons(row, params.today),
 			status,
 			duration
 		};

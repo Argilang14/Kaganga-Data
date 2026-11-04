@@ -5,15 +5,14 @@ import { error } from '@sveltejs/kit';
 import { and, eq, sql } from 'drizzle-orm';
 import {
 	defaultPermissionsForType,
-	basicAttendancePermissionsForType,
 	effectivePermissions,
 	permissionsForAccessPosition,
-	systemOnlyPermissions,
+	permissionAppliesToUser,
 	userPermissions
 } from '../permissions';
 import { authority } from '../utils.server.js';
 import { writeAuditLog } from '$lib/server/audit-log';
-import { roleMenuPermissions } from '$lib/role-menu-access';
+import { getLegacyWaliKelasIds } from '$lib/server/legacy-wali-kelas';
 
 const u = tableAuthUser;
 
@@ -28,19 +27,25 @@ export async function load({ params, locals }) {
 			username: u.username,
 			type: u.type,
 			jabatanAkses: u.jabatanAkses,
+			roles: u.roles,
+			pegawaiId: u.pegawaiId,
+			sekolahId: u.sekolahId,
 			permissions: u.permissions,
 			createdAt: u.createdAt
 		})
 		.from(u)
 		.where(and(eq(u.id, +params.id), eq(u.sekolahId, locals.sekolah.id)));
 	if (!userDetail) error(404, 'Data pengguna tidak ditemukan');
+	const waliKelasIds = await getLegacyWaliKelasIds(userDetail, locals.sekolah.id);
 
 	return {
 		meta: { title: 'Pengaturan Izin Pengguna' },
 		userDetail: {
 			...userDetail,
+			waliKelasIds,
+			automaticPermissions: effectivePermissions({ ...userDetail, waliKelasIds, permissions: [] }),
 			storedPermissions: userDetail.permissions,
-			permissions: effectivePermissions(userDetail),
+			permissions: effectivePermissions({ ...userDetail, waliKelasIds }),
 			positionPermissions: permissionsForAccessPosition(userDetail.jabatanAkses)
 		}
 	};
@@ -54,20 +59,25 @@ export const actions = {
 
 		const submitted = new Set(Array.from((await request.formData()).keys()));
 		const [target] = await db
-			.select({ id: u.id, username: u.username, type: u.type, jabatanAkses: u.jabatanAkses })
+			.select({
+				id: u.id,
+				username: u.username,
+				type: u.type,
+				jabatanAkses: u.jabatanAkses,
+				roles: u.roles,
+				pegawaiId: u.pegawaiId,
+				sekolahId: u.sekolahId
+			})
 			.from(u)
 			.where(and(eq(u.id, +params.id), eq(u.sekolahId, locals.sekolah.id)));
 		if (!target) error(404, 'Data pengguna tidak ditemukan');
-		const baseline = new Set([
-			...permissionsForAccessPosition(target.jabatanAkses),
-			...roleMenuPermissions(target.type),
-			...basicAttendancePermissionsForType(target.type)
-		]);
+		const waliKelasIds = await getLegacyWaliKelasIds(target, locals.sekolah.id);
+		const baseline = new Set(effectivePermissions({ ...target, waliKelasIds, permissions: [] }));
 		const permissions = userPermissions.filter(
 			(permission) =>
 				submitted.has(permission) &&
 				!baseline.has(permission) &&
-				(!target.jabatanAkses || !systemOnlyPermissions.has(permission))
+				permissionAppliesToUser(target, permission)
 		);
 		const [updated] = await db
 			.update(u)
@@ -76,7 +86,7 @@ export const actions = {
 			.returning({ id: u.id });
 		if (!updated) error(404, 'Data pengguna tidak ditemukan');
 		await db.delete(tableAuthSession).where(eq(tableAuthSession.userId, target.id));
-		const effective = effectivePermissions({ ...target, permissions });
+		const effective = effectivePermissions({ ...target, waliKelasIds, permissions });
 		await writeAuditLog({
 			locals,
 			request,
@@ -94,7 +104,15 @@ export const actions = {
 		if (!locals.sekolah?.id) error(400, 'Sekolah aktif tidak ditemukan');
 
 		const [target] = await db
-			.select({ id: u.id, username: u.username, type: u.type, jabatanAkses: u.jabatanAkses })
+			.select({
+				id: u.id,
+				username: u.username,
+				type: u.type,
+				jabatanAkses: u.jabatanAkses,
+				roles: u.roles,
+				pegawaiId: u.pegawaiId,
+				sekolahId: u.sekolahId
+			})
 			.from(u)
 			.where(and(eq(u.id, +params.id), eq(u.sekolahId, locals.sekolah.id)));
 		if (!target) error(404, 'Data pengguna tidak ditemukan');
@@ -120,7 +138,11 @@ export const actions = {
 		}).catch((auditError) => console.error('Failed to audit permission reset', auditError));
 		return {
 			message: `Izin pengguna direset ke default (${target.type.replaceAll('_', ' ')})`,
-			permissions: effectivePermissions({ ...target, permissions })
+			permissions: effectivePermissions({
+				...target,
+				permissions,
+				waliKelasIds: await getLegacyWaliKelasIds(target, locals.sekolah.id)
+			})
 		};
 	}
 };

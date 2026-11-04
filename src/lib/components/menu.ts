@@ -1,5 +1,3 @@
-import { dormSections } from '../dormitory.ts';
-
 export const appMenuItems: MenuItem[] = [
 	{
 		title: 'Informasi Umum',
@@ -22,22 +20,29 @@ export const appMenuItems: MenuItem[] = [
 				path: '/kelas'
 			},
 			{
-				title: 'Data Murid',
-				path: '/murid'
+				title: 'Peserta Didik',
+				subMenu: [
+					{
+						title: 'Semua Murid',
+						path: '/murid/semua',
+						tags: ['arsip', 'alumni', 'kelulusan', 'pindah', 'keluar']
+					},
+					{ title: 'Murid Kelas', path: '/murid' },
+					{ title: 'Data Murid Asrama', path: '/murid/asrama' },
+					{ title: 'Murid Pasif', path: '/murid/pasif' }
+				]
 			},
-			{ title: 'Data Asrama', permission: 'asrama_lihat', tags: ['kamar', 'penghuni', 'wali asrama', 'mutasi asrama'],
-				subMenu:dormSections.map(section=>({title:section.menu,path:`/asrama/${section.slug}`})) },
-			{
-				title: 'Arsip Murid & Alumni',
-				path: '/murid/arsip',
-				permission: 'murid_arsip',
-				tags: ['alumni', 'kelulusan', 'kenaikan kelas', 'pindah', 'keluar']
-			},
+			{ title: 'Data Asrama', path: '/asrama', permission: 'asrama_lihat', tags: ['wali asrama'] },
 			{
 				title: 'Riwayat Pertumbuhan',
 				path: '/riwayat-pertumbuhan'
 			},
-			{title:'Riwayat Rapor',path:'/murid/arsip/rapor',permission:'rapor_arsip_lihat',tags:['rapor final','arsip pendidikan','revisi rapor']}
+			{
+				title: 'Riwayat Rapor',
+				path: '/murid/arsip/rapor',
+				permission: 'rapor_arsip_lihat',
+				tags: ['rapor final', 'arsip pendidikan', 'revisi rapor']
+			}
 		]
 	},
 	{

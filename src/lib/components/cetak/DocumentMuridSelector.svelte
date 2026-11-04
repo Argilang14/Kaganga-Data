@@ -156,7 +156,10 @@
 	);
 	const paginatedPiagam = $derived(
 		showPiagamTable
-			? (currentItems as PiagamRankingOption[]).slice((currentPage - 1) * PER_PAGE, currentPage * PER_PAGE)
+			? (currentItems as PiagamRankingOption[]).slice(
+					(currentPage - 1) * PER_PAGE,
+					currentPage * PER_PAGE
+				)
 			: []
 	);
 
@@ -172,12 +175,9 @@
 	}
 
 	const showMuridTable = $derived(
-		!isJurnalMengajar
-		&& selectedDocument
-		&& (
-			(isPiagamSelected && hasPiagamRankingOptions)
-			|| (showTable && hasMurid)
-		)
+		!isJurnalMengajar &&
+			selectedDocument &&
+			((isPiagamSelected && hasPiagamRankingOptions) || (showTable && hasMurid))
 	);
 </script>
 
@@ -320,7 +320,11 @@
 		{#if currentItems.length === 0}
 			<div class="alert alert-soft alert-info mt-2">
 				<Icon name="info" />
-				<span>{isPiagamSelected ? 'Tidak ada peringkat piagam yang cocok dengan pencarian.' : 'Tidak ada murid yang cocok dengan pencarian.'}</span>
+				<span
+					>{isPiagamSelected
+						? 'Tidak ada peringkat piagam yang cocok dengan pencarian.'
+						: 'Tidak ada murid yang cocok dengan pencarian.'}</span
+				>
 			</div>
 		{:else}
 			<div
@@ -349,7 +353,14 @@
 									<td>{(currentPage - 1) * PER_PAGE + i + 1}</td>
 									<td>{item.peringkat}</td>
 									<td>{@html searchQueryMarker(searchTerm || null, item.nama)}</td>
-									<td>{item.nilaiRataRata != null ? item.nilaiRataRata.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</td>
+									<td
+										>{item.nilaiRataRata != null
+											? item.nilaiRataRata.toLocaleString('id-ID', {
+													minimumFractionDigits: 2,
+													maximumFractionDigits: 2
+												})
+											: '-'}</td
+									>
 									<td class="text-center">
 										<button
 											type="button"
@@ -416,7 +427,11 @@
 	{:else if !hasMurid && !isPiagamSelected}
 		<div class="alert alert-soft alert-warning">
 			<Icon name="alert" />
-			<span>Belum ada murid di kelas ini. Tambahkan murid terlebih dahulu.</span>
+			<span
+				>{selectedDocument === 'keasramaan'
+					? 'Belum ada murid di asrama terpilih. Pilih asrama melalui menu di atas atau periksa penempatan murid.'
+					: 'Belum ada murid di kelas ini. Tambahkan murid terlebih dahulu.'}</span
+			>
 		</div>
 	{:else if isPiagamSelected && !hasPiagamRankingOptions}
 		<div class="alert alert-soft alert-warning">

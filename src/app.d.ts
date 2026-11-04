@@ -25,13 +25,14 @@ declare global {
 				| 'username'
 				| 'permissions'
 				| 'jabatanAkses'
+                | 'roles'
 				| 'type'
 				| 'kelasId'
 				| 'pegawaiId'
 				| 'mataPelajaranId'
 				| 'sekolahId'
 				| 'mustChangePassword'
-			>;
+			> & { waliKelasIds?: number[] };
 			session?: (Pick<AuthSession, 'id' | 'expiresAt'> & { tokenHash?: string }) | undefined;
 			requestIsSecure?: boolean;
 		}
@@ -68,12 +69,13 @@ declare global {
 				| 'username'
 				| 'permissions'
 				| 'jabatanAkses'
+                | 'roles'
 				| 'type'
 				| 'kelasId'
 				| 'pegawaiId'
 				| 'mataPelajaranId'
 				| 'sekolahId'
-			>;
+			> & { waliKelasIds?: number[] };
 		}
 		interface PageState {
 			modal: {

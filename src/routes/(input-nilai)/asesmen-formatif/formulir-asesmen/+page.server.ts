@@ -1,16 +1,15 @@
+import { assertAcademicAssessmentAccess } from '$lib/server/academic-assessment-access';
 import db from '$lib/server/db';
 import {
 	tableAsesmenFormatif,
 	tableMataPelajaran,
 	tableMurid,
-	tableTujuanPembelajaran,
-	tableAuthUserMataPelajaran
+	tableTujuanPembelajaran
 } from '$lib/server/db/schema';
 import { ensureAsesmenFormatifSchema } from '$lib/server/db/ensure-asesmen-formatif';
 import { unflattenFormData } from '$lib/utils';
-import { fail, error, redirect } from '@sveltejs/kit';
+import { fail, error } from '@sveltejs/kit';
 import { and, asc, eq, inArray } from 'drizzle-orm';
-import { authority } from '../../../pengguna/utils.server';
 
 const DEFAULT_LINGKUP = 'Tanpa lingkup materi';
 
@@ -49,38 +48,7 @@ export async function load({ url, locals, depends }) {
 		throw error(404, 'Mata pelajaran tidak ditemukan untuk murid ini.');
 	}
 
-	// Permission check: Allow admin, wali_kelas, wali_asuh, and user (guru mapel) assigned to this subject
-	const userType = (locals.user as { type?: string } | null)?.type;
-	if (userType !== 'admin' && userType !== 'wali_kelas' && userType !== 'wali_asuh') {
-		if (userType === 'user' && locals.user?.id) {
-			const userId = locals.user.id;
-			const assignedMapels = await db.query.tableAuthUserMataPelajaran.findMany({
-				columns: { mataPelajaranId: true },
-				where: eq(tableAuthUserMataPelajaran.authUserId, userId)
-			});
-			const assignedIds = new Set(assignedMapels.map((m) => m.mataPelajaranId));
-			const legacyId = (locals.user as { mataPelajaranId?: number | null }).mataPelajaranId;
-			if (legacyId) assignedIds.add(legacyId);
-
-			// Check by ID first, then by name (cross-semester resolution)
-			const accessById = assignedIds.has(mapel.id);
-			if (!accessById) {
-				const assignedMapelRecords = await db.query.tableMataPelajaran.findMany({
-					columns: { nama: true },
-					where: inArray(tableMataPelajaran.id, Array.from(assignedIds))
-				});
-				const allowedNames = new Set(
-					assignedMapelRecords.map((m) => m.nama?.trim().toLowerCase() ?? '')
-				);
-				const mapelNorm = mapel.nama?.trim().toLowerCase() ?? '';
-				if (!allowedNames.has(mapelNorm)) {
-					throw redirect(303, '/forbidden?required=mapel_id');
-				}
-			}
-		} else {
-			authority('rapor_manage');
-		}
-	}
+	await assertAcademicAssessmentAccess(locals, murid.id, murid.kelasId, mapel.id);
 
 	await ensureAsesmenFormatifSchema();
 
@@ -166,38 +134,7 @@ export const actions = {
 			return fail(404, { fail: 'Mata pelajaran tidak ditemukan.' });
 		}
 
-		// Permission check: Allow admin, wali_kelas, wali_asuh, and user (guru mapel) assigned to this subject
-		const saveUserType = (locals.user as { type?: string } | null)?.type;
-		if (saveUserType !== 'admin' && saveUserType !== 'wali_kelas' && saveUserType !== 'wali_asuh') {
-			if (saveUserType === 'user' && locals.user?.id) {
-				const saveUserId = locals.user.id;
-				const saveAssigned = await db.query.tableAuthUserMataPelajaran.findMany({
-					columns: { mataPelajaranId: true },
-					where: eq(tableAuthUserMataPelajaran.authUserId, saveUserId)
-				});
-				const saveAssignedIds = new Set(saveAssigned.map((m) => m.mataPelajaranId));
-				const saveLegacyId = (locals.user as { mataPelajaranId?: number | null }).mataPelajaranId;
-				if (saveLegacyId) saveAssignedIds.add(saveLegacyId);
-
-				// Check by ID first, then by name (cross-semester resolution)
-				const saveAccessById = saveAssignedIds.has(mapel.id);
-				if (!saveAccessById) {
-					const saveAssignedMapels = await db.query.tableMataPelajaran.findMany({
-						columns: { nama: true },
-						where: inArray(tableMataPelajaran.id, Array.from(saveAssignedIds))
-					});
-					const saveAllowedNames = new Set(
-						saveAssignedMapels.map((m) => m.nama?.trim().toLowerCase() ?? '')
-					);
-					const saveMapelNorm = mapel.nama?.trim().toLowerCase() ?? '';
-					if (!saveAllowedNames.has(saveMapelNorm)) {
-						return fail(403, { fail: 'Anda tidak memiliki akses ke mata pelajaran ini.' });
-					}
-				}
-			} else {
-				authority('rapor_manage');
-			}
-		}
+		await assertAcademicAssessmentAccess(locals, murid.id, murid.kelasId, mapel.id);
 
 		const tujuanPembelajaran = await db.query.tableTujuanPembelajaran.findMany({
 			columns: { id: true },

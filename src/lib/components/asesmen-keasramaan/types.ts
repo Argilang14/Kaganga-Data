@@ -29,6 +29,7 @@ export type MuridRow = {
 	hasNilai: boolean;
 	lastUpdated: string | null;
 	isAsuhanku: boolean;
+	canView?: boolean;
 };
 
 export type PaginationState = {

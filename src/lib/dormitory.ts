@@ -1,8 +1,9 @@
-import { hasSchoolWideOperationalAccess } from './access-position.ts';
+import { schoolWideDorm, hasRole } from './user-role.ts';
 
 export type DormUser =
 	| {
 			type?: string | null;
+			roles?: readonly string[] | null;
 			jabatanAkses?: string | null;
 			sekolahId?: number | null;
 			pegawaiId?: number | null;
@@ -34,9 +35,10 @@ export function canDorm(user: DormUser, action: 'lihat' | 'manage' | 'penempatan
 	if (!user || user.mustChangePassword) return false;
 	return (
 		user.type === 'admin' ||
-		(hasSchoolWideOperationalAccess(user) && user.jabatanAkses !== 'waka_humas') ||
+		schoolWideDorm(user) ||
 		user.permissions?.includes(`asrama_${action}`) === true ||
-		(action === 'lihat' && ['wali_asrama', 'wali_asuh'].includes(user.type ?? ''))
+		(action === 'lihat' && hasRole(user, 'wali_asrama', 'wali_asuh')) ||
+		(action === 'penempatan' && hasRole(user, 'wali_asrama'))
 	);
 }
 export class DormValidationError extends Error {}
@@ -73,15 +75,35 @@ export function dormStudentIds(values: unknown[]) {
 	return ids;
 }
 export function dormViewHref(pathname: string, search: string, roomId: number) {
+	if (pathname.startsWith('/keasramaan/')) pathname = '/keasramaan';
+	if (pathname.startsWith('/asesmen-keasramaan/')) pathname = '/asesmen-keasramaan';
 	const supported =
-		pathname.startsWith('/pengasuhan/') || pathname === '/administrasi/absensi/monitoring';
+		pathname.startsWith('/pengasuhan/') ||
+		pathname === '/administrasi/absensi/monitoring' ||
+		[
+			'/keasramaan',
+			'/asesmen-keasramaan',
+			'/catatan-wali-asrama',
+			'/rekap-nilai-asrama',
+			'/cetak-raport'
+		].includes(pathname);
 	const params = new URLSearchParams(
 		supported || pathname === '/asrama' || pathname.startsWith('/asrama/') ? search : ''
 	);
 	for (const key of ['kelas_id', 'kelas', 'jenjang', 'page']) params.delete(key);
 	params.set('kamar_id', String(roomId));
 	params.delete('view');
-	return `${supported ? pathname : '/asrama/penghuni'}?${params}`;
+	for (const key of [
+		'penempatan_id',
+		'evaluasi_id',
+		'keasramaan_id',
+		'indikatorId',
+		'murid_id',
+		'pesan',
+		'galat'
+	])
+		params.delete(key);
+	return `${supported ? pathname : '/murid/asrama'}?${params}`;
 }
 
 export const dormSections = [
@@ -94,6 +116,7 @@ export const dormSections = [
 ] as const;
 export function dormSectionVisible(user: DormUser, key: string) {
 	if (!canDorm(user, 'lihat')) return false;
+	if (hasRole(user, 'wali_asrama') && ['pemetaan', 'riwayat'].includes(key)) return false;
 	if (key === 'gedung') return canDorm(user, 'manage');
 	if (key === 'pemetaan') return canDorm(user, 'penempatan');
 	if (key === 'riwayat') return canDorm(user, 'manage') || canDorm(user, 'penempatan');

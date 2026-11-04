@@ -4,10 +4,12 @@
 
 	let {
 		indikatorId,
+		action = '?/create',
 		canManage,
 		onSuccess
 	}: {
 		indikatorId: number;
+		action?: string;
 		canManage: boolean;
 		onSuccess: () => void;
 	} = $props();
@@ -24,7 +26,7 @@
 	<td class="align-top">
 		<FormEnhance
 			id="tp-keasramaan-create"
-			action="?/create"
+			{action}
 			onsuccess={() => {
 				deskripsiInput = '';
 				submitting = false;

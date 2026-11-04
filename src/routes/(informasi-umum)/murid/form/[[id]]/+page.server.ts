@@ -1,10 +1,19 @@
 ﻿import fs from 'node:fs/promises';
 import path from 'node:path';
 import db from '$lib/server/db/index.js';
+import { ensureDormEvaluationSchema } from '$lib/server/db/ensure-dorm-evaluation';
 import { ensureMuridWaliAsramaSchema } from '$lib/server/db/ensure-murid-wali-asrama';
-import { tableAlamat, tableKelas, tableMurid, tableWaliMurid } from '$lib/server/db/schema.js';
+import {
+	tableAlamat,
+	tableKelas,
+	tableMurid,
+	tableWaliMurid,
+	tablePegawai
+} from '$lib/server/db/schema.js';
 import { unflattenFormData } from '$lib/utils.js';
-import { canEditMurid } from '$lib/murid-permissions';
+import { canEditMurid, canRegisterMurid } from '$lib/murid-permissions';
+import { canEditStudentRecord } from '$lib/server/student-access';
+import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 import { error, fail, redirect } from '@sveltejs/kit';
 import { and, eq, ne } from 'drizzle-orm';
@@ -16,14 +25,23 @@ import { ensureDataGovernanceSchema } from '$lib/server/db/ensure-data-governanc
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	await ensureMuridWaliAsramaSchema();
+	await ensureDormEvaluationSchema();
 
 	// Allow homeroom/full users to manage student data; wali_asrama gets limited edit access.
-	if (!canEditMurid(locals.user)) {
+	if (!(params.id ? canEditMurid(locals.user) : canRegisterMurid(locals.user))) {
 		redirect(303, '/forbidden?required=kelas_manage');
 	}
 
 	const meta: PageMeta = { title: 'Form Murid' };
-	if (!params.id) return { meta };
+	const caregivers = await db.query.tablePegawai.findMany({
+		columns: { id: true, nama: true, nip: true },
+		where: and(
+			eq(tablePegawai.sekolahId, locals.sekolah?.id ?? -1),
+			eq(tablePegawai.jenis, 'wali_asuh'),
+			eq(tablePegawai.status, 'aktif')
+		)
+	});
+	if (!params.id) return { meta, caregivers };
 	const sekolahId = locals.sekolah?.id;
 	if (!sekolahId) error(400, 'Sekolah aktif tidak ditemukan');
 	const muridId = Number(params.id);
@@ -34,16 +52,19 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		with: { alamat: true, ibu: true, ayah: true, wali: true }
 	});
 	if (!murid) error(404, `Data murid tidak ditemukan`);
-	return { murid, meta };
+	if (!(await canEditStudentRecord(locals, murid)))
+		error(403, 'Murid berada di luar penugasan Anda.');
+	return { murid, meta, caregivers };
 };
 
 export const actions: Actions = {
 	async save({ locals, request, params }) {
 		await ensureMuridWaliAsramaSchema();
+		await ensureDormEvaluationSchema();
 		await ensureDataGovernanceSchema();
 
 		// Allow homeroom/full users to manage student data; wali_asrama gets limited edit access.
-		if (!canEditMurid(locals.user)) {
+		if (!(params.id ? canEditMurid(locals.user) : canRegisterMurid(locals.user))) {
 			redirect(303, '/forbidden?required=kelas_manage');
 		}
 
@@ -58,12 +79,17 @@ export const actions: Actions = {
 					where: and(eq(tableMurid.id, muridId), eq(tableMurid.sekolahId, sekolahId))
 				})
 			: null;
+		if (params.id && !beforeMurid) error(404, 'Data murid tidak ditemukan.');
+		if (beforeMurid && !(await canEditStudentRecord(locals, beforeMurid)))
+			error(403, 'Murid berada di luar penugasan Anda.');
 
 		const formData = await request.formData();
 		const uploadedFile = formData.get('foto') as File | null;
 		const formMurid = unflattenFormData<Murid>(formData);
 		const isLimitedWaliAsramaEdit =
-			locals.user?.type === 'wali_asrama' && !hasSchoolWideOperationalAccess(locals.user);
+			Boolean(params.id) &&
+			locals.user?.type === 'wali_asrama' &&
+			!hasSchoolWideOperationalAccess(locals.user);
 
 		function uploadsDir() {
 			const envPhoto = process.env.photo || 'file:./data/uploads';
@@ -116,6 +142,47 @@ export const actions: Actions = {
 			}
 		}
 		formMurid.sekolahId = sekolahId;
+		// Keep legacy dorm-guardian snapshots; current guardian comes from Data Asrama.
+		formMurid.waliAsramaNama = beforeMurid?.waliAsramaNama ?? null;
+		formMurid.waliAsramaNip = beforeMurid?.waliAsramaNip ?? null;
+		const caregiverValue = formData.get('waliAsuhPegawaiId');
+		const caregiverRaw =
+			caregiverValue === 'legacy' && beforeMurid?.waliAsuhNama && !beforeMurid.waliAsuhPegawaiId
+				? null
+				: caregiverValue;
+		const caregiverId =
+			caregiverRaw === null
+				? (beforeMurid?.waliAsuhPegawaiId ?? null)
+				: caregiverRaw === ''
+					? null
+					: Number(caregiverRaw);
+		if (caregiverId !== null && (!Number.isSafeInteger(caregiverId) || caregiverId <= 0))
+			return fail(400, { fail: 'Pilihan wali asuh tidak valid.' });
+		const caregiver = caregiverId
+			? await db.query.tablePegawai.findFirst({
+					where: and(
+						eq(tablePegawai.id, caregiverId),
+						eq(tablePegawai.sekolahId, sekolahId),
+						eq(tablePegawai.jenis, 'wali_asuh'),
+						eq(tablePegawai.status, 'aktif')
+					)
+				})
+			: null;
+		if (caregiverId && !caregiver && caregiverId !== beforeMurid?.waliAsuhPegawaiId)
+			return fail(400, { fail: 'Pilih pegawai Wali Asuh aktif dari sekolah ini.' });
+		formMurid.waliAsuhPegawaiId = caregiverId;
+		formMurid.waliAsuhNama =
+			caregiver?.nama ??
+			(caregiverRaw === null ||
+			(caregiverId !== null && caregiverId === beforeMurid?.waliAsuhPegawaiId)
+				? (beforeMurid?.waliAsuhNama ?? null)
+				: null);
+		formMurid.waliAsuhNip =
+			caregiver?.nip ??
+			(caregiverRaw === null ||
+			(caregiverId !== null && caregiverId === beforeMurid?.waliAsuhPegawaiId)
+				? (beforeMurid?.waliAsuhNip ?? null)
+				: null);
 
 		if (isLimitedWaliAsramaEdit) {
 			if (!params.id) {
@@ -135,6 +202,7 @@ export const actions: Actions = {
 				.set({
 					waliAsramaNama: formMurid.waliAsramaNama ?? null,
 					waliAsramaNip: formMurid.waliAsramaNip ?? null,
+					waliAsuhPegawaiId: formMurid.waliAsuhPegawaiId ?? null,
 					waliAsuhNama: formMurid.waliAsuhNama ?? null,
 					waliAsuhNip: formMurid.waliAsuhNip ?? null,
 					updatedAt: new Date().toISOString()
@@ -147,41 +215,45 @@ export const actions: Actions = {
 				action: 'update',
 				entityType: 'murid',
 				entityId: murid.id,
-				summary: 'Data wali asrama dan wali asuh murid diperbarui.',
+				summary: 'Penugasan wali asuh murid diperbarui.',
 				before: beforeMurid,
 				after: {
 					waliAsramaNama: formMurid.waliAsramaNama ?? null,
 					waliAsramaNip: formMurid.waliAsramaNip ?? null,
+					waliAsuhPegawaiId: formMurid.waliAsuhPegawaiId ?? null,
 					waliAsuhNama: formMurid.waliAsuhNama ?? null,
 					waliAsuhNip: formMurid.waliAsuhNip ?? null
 				}
 			});
 
 			return {
-				message: `Data wali asrama dan wali asuh berhasil disimpan`,
+				message: `Penugasan wali asuh berhasil disimpan`,
 				id: murid.id,
 				foto: murid.foto ?? null,
 				waliAsramaNama: formMurid.waliAsramaNama ?? null,
 				waliAsramaNip: formMurid.waliAsramaNip ?? null,
+				waliAsuhPegawaiId: formMurid.waliAsuhPegawaiId ?? null,
 				waliAsuhNama: formMurid.waliAsuhNama ?? null,
 				waliAsuhNip: formMurid.waliAsuhNip ?? null
 			};
 		}
 
-		if (!formMurid.kelasId) {
-			error(400, 'Kelas harus dipilih');
-		}
+		formMurid.kelasId = beforeMurid?.kelasId ?? null;
+		const kelas = formMurid.kelasId
+			? await db.query.tableKelas.findFirst({
+					where: eq(tableKelas.id, formMurid.kelasId),
+					columns: { id: true, sekolahId: true, semesterId: true }
+				})
+			: null;
 
-		const kelas = await db.query.tableKelas.findFirst({
-			where: eq(tableKelas.id, formMurid.kelasId),
-			columns: { id: true, sekolahId: true, semesterId: true }
-		});
-
-		if (!kelas || kelas.sekolahId !== formMurid.sekolahId) {
+		if (formMurid.kelasId && (!kelas || kelas.sekolahId !== formMurid.sekolahId)) {
 			error(400, 'Kelas tidak valid untuk sekolah ini');
 		}
 
-		formMurid.semesterId = kelas.semesterId;
+		const academic = await resolveSekolahAcademicContext(sekolahId);
+		formMurid.semesterId = beforeMurid?.semesterId ?? academic.activeSemesterId ?? 0;
+		if (!formMurid.semesterId)
+			return fail(400, { fail: 'Atur semester aktif di Data Rapor sebelum menambah murid.' });
 
 		const nis = String(formMurid.nis ?? '').trim();
 		formMurid.nis = nis;
@@ -432,6 +504,7 @@ export const actions: Actions = {
 			murid: savedMurid ?? null,
 			waliAsramaNama: formMurid.waliAsramaNama ?? null,
 			waliAsramaNip: formMurid.waliAsramaNip ?? null,
+			waliAsuhPegawaiId: formMurid.waliAsuhPegawaiId ?? null,
 			waliAsuhNama: formMurid.waliAsuhNama ?? null,
 			waliAsuhNip: formMurid.waliAsuhNip ?? null
 		};

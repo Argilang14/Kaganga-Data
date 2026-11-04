@@ -1,3 +1,4 @@
+import { assertHomeroomDocumentAccess } from '$lib/server/route-utils';
 import { error } from '@sveltejs/kit';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -108,6 +109,7 @@ export async function getBiodataPreviewPayload({ locals, url }: BiodataContext) 
 	}
 
 	const muridId = requireInteger('murid_id', url.searchParams.get('murid_id'));
+	await assertHomeroomDocumentAccess(locals, muridId);
 	const kelasId = optionalInteger('kelas_id', url.searchParams.get('kelas_id'));
 
 	const murid = await db.query.tableMurid.findFirst({

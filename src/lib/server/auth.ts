@@ -1,9 +1,10 @@
+import { getUserRoles, employeeSupportsRoles } from '$lib/user-role';
 import db from '$lib/server/db';
-import { tableAuthSession, tableAuthUser } from '$lib/server/db/schema';
+import { tableAuthSession, tableAuthUser, tablePegawai } from '$lib/server/db/schema';
 import { userPermissions } from '../../routes/pengguna/permissions';
 import { cookieNames } from '$lib/utils';
 import type { Cookies } from '@sveltejs/kit';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
 const SESSION_TTL_SECONDS = 60 * 60 * 12; // 12 hours
@@ -104,13 +105,33 @@ export async function ensureDefaultAdmin() {
 	return created;
 }
 
+async function employeeAccountActive(user: AuthUser) {
+	if (user.type === 'admin' || user.type === 'wali_murid') return true;
+	if (!user.pegawaiId || !user.sekolahId) return false;
+	const employee = await db.query.tablePegawai.findFirst({
+		columns: { jenis: true },
+		where: and(
+			eq(tablePegawai.id, user.pegawaiId),
+			eq(tablePegawai.sekolahId, user.sekolahId),
+			eq(tablePegawai.status, 'aktif')
+		)
+	});
+	if (!employee) return false;
+	return employeeSupportsRoles(employee.jenis, getUserRoles(user));
+}
+
+export async function revokeEmployeeSessions(pegawaiId: number, sekolahId: number) {
+	await db.delete(tableAuthSession).where(sql`${tableAuthSession.userId} IN
+		(SELECT ${tableAuthUser.id} FROM ${tableAuthUser} WHERE ${tableAuthUser.pegawaiId}=${pegawaiId} AND ${tableAuthUser.sekolahId}=${sekolahId} AND ${tableAuthUser.type}<>'admin')`);
+}
+
 export async function authenticateUser(username: string, password: string) {
 	const normalized = normalizeUsername(username);
 	if (!normalized) return null;
 	const user = await db.query.tableAuthUser.findFirst({
 		where: eq(tableAuthUser.usernameNormalized, normalized)
 	});
-	if (!user) return null;
+	if (!user || !(await employeeAccountActive(user))) return null;
 	const valid = verifyPassword(password, user.passwordHash, user.passwordSalt);
 	return valid ? user : null;
 }
@@ -164,6 +185,10 @@ export async function resolveSession(token: string): Promise<SessionResolution |
 	});
 
 	if (!record || !record.user) {
+		return null;
+	}
+	if (!(await employeeAccountActive(record.user))) {
+		await deleteSessionsForUser(record.user.id);
 		return null;
 	}
 

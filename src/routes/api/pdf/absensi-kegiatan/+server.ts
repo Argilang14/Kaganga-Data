@@ -1,5 +1,7 @@
 import { error } from '@sveltejs/kit';
-import { and, asc, between, eq } from 'drizzle-orm';
+import { isSummaryDate } from '$lib/attendance-summary';
+import { monthlyAttendanceIndicators, monthlyRecapPeriods } from '$lib/attendance-permit-recap';
+import { and, asc, between, eq, inArray } from 'drizzle-orm';
 import {
 	ABSENSI_KEGIATAN_STATUSES,
 	assertAbsensiKegiatanAccess,
@@ -13,7 +15,8 @@ import {
 	parsePositiveInteger,
 	todayLocalDate
 } from '$lib/server/absensi-digital';
-import { loadAttendanceMonitoring } from '$lib/server/attendance-monitoring.server';
+import { loadSchoolPermitRecap, loadPermitRecapDetails } from '$lib/server/attendance-permit-recap';
+import { activeMuridFilter } from '$lib/server/murid-query';
 import db from '$lib/server/db';
 import { projectPermitAttendance } from '$lib/server/attendance-permits';
 import { getClassEducationIdentity } from '$lib/server/education-units';
@@ -23,7 +26,8 @@ import {
 	tableKelas,
 	tableMurid,
 	tablePegawai,
-	tableSekolah
+	tableSekolah,
+	tableTindakLanjutAbsensi
 } from '$lib/server/db/schema';
 import { renderPDF } from '$lib/server/pdf/pagedpdf';
 import {
@@ -52,7 +56,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const today = todayLocalDate();
 	const tanggalAwal = normalizeDateInput(url.searchParams.get('tanggal_awal'), today);
 	const tanggalAkhir = normalizeDateInput(url.searchParams.get('tanggal_akhir'), tanggalAwal);
-	if (tanggalAwal > tanggalAkhir)
+	if (!isSummaryDate(tanggalAwal) || !isSummaryDate(tanggalAkhir) || tanggalAwal > tanggalAkhir)
 		throw error(400, 'Tanggal awal tidak boleh setelah tanggal akhir.');
 	const daySpan = Math.floor(
 		(Date.parse(`${tanggalAkhir}T00:00:00Z`) - Date.parse(`${tanggalAwal}T00:00:00Z`)) / 86_400_000
@@ -74,52 +78,49 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		: null;
 	if (kegiatanId && !selectedKegiatan) throw error(404, 'Kegiatan absensi tidak ditemukan.');
 
-	const [students, recordedRows, kelas, sekolah, logoUrl, logoDinasUrl, monitoring] =
-		await Promise.all([
-			db.query.tableMurid.findMany({
-				columns: { id: true, nis: true, nama: true },
-				where: and(
-					eq(tableMurid.sekolahId, sekolahId),
-					eq(tableMurid.semesterId, academic.activeSemesterId),
-					eq(tableMurid.kelasId, kelasId),
-					await studentAccessCondition(locals.user, sekolahId)
-				),
-				orderBy: asc(tableMurid.nama)
-			}),
-			db.query.tableAbsensiKegiatan.findMany({
-				where: and(
-					eq(tableAbsensiKegiatan.sekolahId, sekolahId),
-					eq(tableAbsensiKegiatan.semesterId, academic.activeSemesterId),
-					eq(tableAbsensiKegiatan.kelasId, kelasId),
-					between(tableAbsensiKegiatan.tanggal, tanggalAwal, tanggalAkhir),
-					kegiatanId ? eq(tableAbsensiKegiatan.kegiatanId, kegiatanId) : undefined
-				),
-				orderBy: [asc(tableAbsensiKegiatan.tanggal), asc(tableAbsensiKegiatan.kegiatanId)]
-			}),
-			db.query.tableKelas.findFirst({
-				columns: { id: true, nama: true, fase: true },
-				with: { waliKelas: { columns: { nama: true, nip: true } } },
-				where: and(eq(tableKelas.id, kelasId), eq(tableKelas.sekolahId, sekolahId))
-			}),
-			db.query.tableSekolah.findFirst({
-				columns: { nama: true, npsn: true, kepalaSekolahId: true },
-				where: eq(tableSekolah.id, sekolahId)
-			}),
-			getLogoSrc(sekolahId),
-			getLogoDinasSrc(sekolahId),
-			loadAttendanceMonitoring({
-				sekolahId,
-				tahunAjaranId: academic.activeTahunAjaranId,
-				semesterId: academic.activeSemesterId,
-				kelasIds: [kelasId],
-				user: locals.user,
-				today: tanggalAkhir > today ? today : tanggalAkhir
-			})
-		]);
+	const [students, recordedRows, kelas, sekolah, logoUrl, logoDinasUrl] = await Promise.all([
+		db.query.tableMurid.findMany({
+			columns: { id: true, nis: true, nama: true },
+			where: and(
+				eq(tableMurid.sekolahId, sekolahId),
+				eq(tableMurid.semesterId, academic.activeSemesterId),
+				eq(tableMurid.kelasId, kelasId),
+				activeMuridFilter(),
+				await studentAccessCondition(locals.user, sekolahId)
+			),
+			orderBy: asc(tableMurid.nama)
+		}),
+		db.query.tableAbsensiKegiatan.findMany({
+			where: and(
+				eq(tableAbsensiKegiatan.sekolahId, sekolahId),
+				eq(tableAbsensiKegiatan.semesterId, academic.activeSemesterId),
+				eq(tableAbsensiKegiatan.kelasId, kelasId),
+				between(tableAbsensiKegiatan.tanggal, tanggalAwal, tanggalAkhir),
+				kegiatanId ? eq(tableAbsensiKegiatan.kegiatanId, kegiatanId) : undefined
+			),
+			orderBy: [asc(tableAbsensiKegiatan.tanggal), asc(tableAbsensiKegiatan.kegiatanId)]
+		}),
+		db.query.tableKelas.findFirst({
+			columns: { id: true, nama: true, fase: true },
+			with: { waliKelas: { columns: { nama: true, nip: true } } },
+			where: and(eq(tableKelas.id, kelasId), eq(tableKelas.sekolahId, sekolahId))
+		}),
+		db.query.tableSekolah.findFirst({
+			columns: { nama: true, npsn: true, kepalaSekolahId: true },
+			where: eq(tableSekolah.id, sekolahId)
+		}),
+		getLogoSrc(sekolahId),
+		getLogoDinasSrc(sekolahId)
+	]);
 	if (!kelas || !sekolah) throw error(404, 'Data kelas atau sekolah tidak ditemukan.');
-	const attendanceRows = await projectPermitAttendance({ schoolId: sekolahId, semesterId: academic.activeSemesterId,
-		studentIds: students.map((item) => item.id), dates: listLocalDatesInRange(tanggalAwal, tanggalAkhir),
-		activities: kegiatanList.filter((item) => !kegiatanId || item.id === kegiatanId), rows: recordedRows });
+	const attendanceRows = await projectPermitAttendance({
+		schoolId: sekolahId,
+		semesterId: academic.activeSemesterId,
+		studentIds: students.map((item) => item.id),
+		dates: listLocalDatesInRange(tanggalAwal, tanggalAkhir),
+		activities: kegiatanList.filter((item) => !kegiatanId || item.id === kegiatanId),
+		rows: recordedRows
+	});
 
 	const kepala = sekolah.kepalaSekolahId
 		? await db.query.tablePegawai.findFirst({
@@ -130,28 +131,64 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 				)
 			})
 		: null;
-	const kegiatanById = new Map(kegiatanList.map((item) => [item.id, item.nama]));
 	const summary = emptyCounts();
 	const countsByStudent = new Map(students.map((student) => [student.id, emptyCounts()]));
-	const detailByKey = new Map<string, { tanggal: string; kegiatan: string; counts: Counts }>();
 	for (const row of attendanceRows) {
 		if (!countsByStudent.has(row.muridId)) continue;
 		summary[row.status] += 1;
 		const studentCounts = countsByStudent.get(row.muridId);
 		if (studentCounts) studentCounts[row.status] += 1;
-		const key = `${row.tanggal}:${row.kegiatanId}`;
-		const detail = detailByKey.get(key) ?? {
-			tanggal: row.tanggal,
-			kegiatan: kegiatanById.get(row.kegiatanId) ?? 'Kegiatan',
-			counts: emptyCounts()
-		};
-		detail.counts[row.status] += 1;
-		detailByKey.set(key, detail);
 	}
 
-	const activePermits = monitoring.izinPulang.filter(
-		(item) => !item.tanggalKembali && ['sedang_izin', 'terlambat_kembali'].includes(item.status)
-	);
+	const schoolRecap =
+		locals.user.type === 'tim_dapur'
+			? null
+			: await loadSchoolPermitRecap({
+					schoolId: sekolahId,
+					semesterId: academic.activeSemesterId,
+					studentIds: students.map((s) => s.id),
+					start: tanggalAwal,
+					end: tanggalAkhir,
+					excludeCurrentUnrecorded: true
+				});
+	const alerts: ReturnType<typeof monthlyAttendanceIndicators> = [];
+	if (schoolRecap && students.length) {
+		const followUps = await db.query.tableTindakLanjutAbsensi.findMany({
+			where: and(
+				eq(tableTindakLanjutAbsensi.sekolahId, sekolahId),
+				inArray(
+					tableTindakLanjutAbsensi.muridId,
+					students.map((student) => student.id)
+				),
+				between(tableTindakLanjutAbsensi.periodeMulai, tanggalAwal, tanggalAkhir)
+			)
+		});
+		const periods = monthlyRecapPeriods(tanggalAwal, tanggalAkhir);
+		for (const period of periods) {
+			const monthly =
+				periods.length === 1
+					? schoolRecap
+					: await loadSchoolPermitRecap({
+							schoolId: sekolahId,
+							semesterId: academic.activeSemesterId,
+							studentIds: students.map((student) => student.id),
+							...period,
+							excludeCurrentUnrecorded: true
+						});
+			for (const student of students)
+				alerts.push(
+					...monthlyAttendanceIndicators(student, monthly.get(student.id)!, period, followUps)
+				);
+		}
+	}
+	const periodPermits = schoolRecap
+		? await loadPermitRecapDetails(
+				sekolahId,
+				students.map((s) => s.id),
+				tanggalAwal,
+				tanggalAkhir
+			)
+		: [];
 	const periodLabel =
 		tanggalAwal === tanggalAkhir
 			? formatTanggal(tanggalAwal)
@@ -174,26 +211,23 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			no: index + 1,
 			nis: student.nis,
 			nama: student.nama,
-			counts: countsByStudent.get(student.id) ?? emptyCounts()
+			counts: countsByStudent.get(student.id) ?? emptyCounts(),
+			schoolRecap: schoolRecap?.get(student.id)
 		})),
-		detailRows: Array.from(detailByKey.values()).map((row) => ({
-			...row,
-			tanggal: formatTanggal(row.tanggal)
-		})),
-		alerts: monitoring.alerts.map((item) => ({
+		alerts: alerts.map((item) => ({
 			nama: item.nama,
-			indikator: titleCase(item.title),
+			indikator: item.indikator,
 			periode: `${formatTanggal(item.periodeMulai)} - ${formatTanggal(item.periodeSelesai)}`,
-			durasi: item.duration,
-			status: item.followUp ? titleCase(item.followUp.status) : 'Baru',
-			catatan: item.followUp?.catatan ?? ''
+			akumulasi: item.akumulasi,
+			status: titleCase(item.status),
+			catatan: item.catatan
 		})),
-		permits: activePermits.map((item) => ({
-			nama: item.nama,
+		permits: periodPermits.map((item) => ({
+			nama: item.namaSnapshot,
 			tanggalKeluar: formatTanggal(item.tanggalKeluar),
 			rencanaKembali: formatTanggal(item.rencanaKembali),
 			status: titleCase(item.status),
-			alasan: item.alasan
+			alasan: `${item.alasan}. Pencatat: ${item.pencatat}. Security keluar: ${item.perjalanan?.keluarPada ? new Date(item.perjalanan.keluarPada).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : 'belum diverifikasi'}${item.petugasKeluarSecurity ? ` (${item.petugasKeluarSecurity})` : ''}. Security kembali: ${item.perjalanan?.kembaliPada ? new Date(item.perjalanan.kembaliPada).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : 'belum diverifikasi'}${item.petugasKembaliSecurity ? ` (${item.petugasKembaliSecurity})` : ''}. ${item.perluDiperiksa.join(' ')}`
 		})),
 		tandaTangan: {
 			kiri: {

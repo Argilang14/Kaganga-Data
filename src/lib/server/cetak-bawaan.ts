@@ -36,9 +36,7 @@ export async function loadCetakBawaan({ locals, url, depends, parent }) {
 		});
 		const pegNama = peg?.nama?.trim().toLowerCase();
 		if (pegNama) {
-			daftarMurid = daftarMurid.filter(
-				(m) => (m.waliAsuhNama?.trim().toLowerCase() ?? '') === pegNama
-			);
+			daftarMurid = daftarMurid.filter((m) => m.waliAsuhPegawaiId === userWithType.pegawaiId);
 		} else {
 			daftarMurid = [];
 		}
@@ -95,4 +93,3 @@ export async function loadCetakBawaan({ locals, url, depends, parent }) {
 		tanggalBagiRaport
 	};
 }
-

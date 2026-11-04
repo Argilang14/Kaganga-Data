@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { invalidate } from '$app/navigation';
+	import StudentPassiveFields from './student-passive-fields.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import DeleteMurid from '../../../routes/(informasi-umum)/murid/[id]/delete/+page.svelte';
 	import DetailMurid from '../../../routes/(informasi-umum)/murid/[id]/+page.svelte';
@@ -90,9 +91,9 @@
 	{#if bulkModalData}
 		<dialog class="modal" onclose={() => history.back()} open>
 			<div class="modal-box">
-				<h3 class="mb-4 text-xl font-bold">Arsipkan murid terpilih?</h3>
+				<h3 class="mb-4 text-xl font-bold">Jadikan pasif murid terpilih?</h3>
 				<p class="mb-2">
-					Anda akan mengarsipkan <b>{bulkModalData.selectedMurids.length}</b> murid dari daftar aktif.
+					Jadikan pasif <b>{bulkModalData.selectedMurids.length}</b> murid terpilih.
 				</p>
 				<ul class="list-disc space-y-1 pl-5 text-sm">
 					{#each bulkModalData.selectedMurids.slice(0, 5) as murid (murid.id)}
@@ -104,10 +105,7 @@
 						dan {bulkModalData.selectedMurids.length - 5} murid lainnya
 					</p>
 				{/if}
-				<p class="mt-4 text-sm opacity-70">
-					Nilai, presensi, foto, dan QR tetap tersimpan. Status dapat dipulihkan melalui Arsip Murid
-					& Alumni.
-				</p>
+				<StudentPassiveFields formId="form-bulk-delete" />
 				<div class="modal-action">
 					<button class="btn btn-soft shadow-none" type="button" onclick={() => history.back()}>
 						<Icon name="close" />
@@ -124,7 +122,7 @@
 						{:else}
 							<Icon name="del" />
 						{/if}
-						Arsipkan
+						Jadikan pasif
 					</button>
 				</div>
 			</div>

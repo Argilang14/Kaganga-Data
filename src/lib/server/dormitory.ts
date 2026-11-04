@@ -68,7 +68,7 @@ export async function loadDormitory(
 	const employees = assign
 		? await rows(
 				db.$client,
-				"SELECT id,nama,nip FROM pegawai WHERE sekolah_id=? AND status='aktif' ORDER BY nama",
+				"SELECT id,nama,nip FROM pegawai WHERE sekolah_id=? AND status='aktif' AND jenis='wali_asrama' ORDER BY nama",
 				[ctx.school]
 			)
 		: [];
@@ -139,7 +139,7 @@ export async function loadDormitory(
 			...(tab === 'pemetaan' ? [] : roomIds)
 		];
 		const from = `FROM murid m JOIN murid_identity_link mi ON mi.murid_id=m.id AND mi.sekolah_id=m.sekolah_id
-		 JOIN kelas c ON c.id=m.kelas_id LEFT JOIN asrama_penempatan p ON p.identity_uid=mi.identity_uid
+		 LEFT JOIN kelas c ON c.id=m.kelas_id LEFT JOIN asrama_penempatan p ON p.identity_uid=mi.identity_uid
 		 AND p.sekolah_id=m.sekolah_id AND p.selesai IS NULL LEFT JOIN asrama_kamar k ON k.id=p.kamar_id
 		 LEFT JOIN asrama g ON g.id=k.asrama_id WHERE ${condition}`;
 		total = Number((await rows(db.$client, `SELECT COUNT(*) AS n ${from}`, args))[0]?.n ?? 0);
@@ -217,16 +217,24 @@ async function placementPlan(
 		)
 	)[0];
 	if (!room) error(409, 'Kamar tujuan tidak aktif atau tidak ditemukan.');
+	if (ctx.user.type === 'wali_asrama') {
+		const assigned = await rows(
+			source,
+			`SELECT w.id FROM asrama_penugasan w JOIN pegawai e ON e.id=w.pegawai_id WHERE w.sekolah_id=? AND w.kamar_id=? AND w.pegawai_id=? AND w.selesai IS NULL AND w.mulai<=? AND e.status='aktif'`,
+			[ctx.school, input.room, ctx.user.pegawaiId ?? -1, dormToday()]
+		);
+		if (!assigned.length) error(403, 'Asrama berada di luar penugasan Anda.');
+	}
 	const students = await rows(
 		source,
 		`SELECT m.id,m.nama,m.jenis_kelamin,m.tanggal_lahir,c.nama AS kelas,mi.identity_uid,m.wali_asrama_nama AS wali_lama,
 	 p.id AS lama_id,p.kamar_id AS lama_kamar,p.mulai AS lama_mulai,k.nama AS kamar_lama,g.nama AS asrama_lama
-	 FROM murid m JOIN kelas c ON c.id=m.kelas_id JOIN murid_identity_link mi ON mi.murid_id=m.id AND mi.sekolah_id=m.sekolah_id
+	 FROM murid m LEFT JOIN kelas c ON c.id=m.kelas_id JOIN murid_identity_link mi ON mi.murid_id=m.id AND mi.sekolah_id=m.sekolah_id
 	 LEFT JOIN asrama_penempatan p ON p.sekolah_id=mi.sekolah_id AND p.identity_uid=mi.identity_uid AND p.selesai IS NULL
 	 LEFT JOIN asrama_kamar k ON k.id=p.kamar_id LEFT JOIN asrama g ON g.id=k.asrama_id
-	 WHERE m.id IN (${input.ids.map(() => '?').join(',')}) AND m.sekolah_id=? AND m.semester_id=? AND ${activeMuridSql('m')}
+	 WHERE m.id IN (${input.ids.map(() => '?').join(',')}) AND m.sekolah_id=? AND ${activeMuridSql('m')}
 	 ORDER BY m.id`,
-		[...input.ids, ctx.school, ctx.academic.activeSemesterId ?? -1]
+		[...input.ids, ctx.school]
 	);
 	if (students.length !== input.ids.length)
 		error(409, 'Sebagian murid tidak aktif, berbeda sekolah, atau identitas belum dipetakan.');
@@ -346,7 +354,7 @@ export async function mutateDormitory(locals: App.Locals, operation: string, for
 						plan.input.date,
 						plan.input.reason,
 						student.nama,
-						student.kelas,
+						student.kelas ?? 'Belum mendapat kelas',
 						ctx.user.id
 					]
 				});
@@ -355,6 +363,14 @@ export async function mutateDormitory(locals: App.Locals, operation: string, for
 			}
 		} else if (operation === 'close') {
 			entity = dormId(form.get('id'));
+			if (ctx.user.type === 'wali_asrama') {
+				const assigned = await rows(
+					tx,
+					`SELECT p.id FROM asrama_penempatan p JOIN asrama_penugasan w ON w.kamar_id=p.kamar_id AND w.sekolah_id=p.sekolah_id JOIN pegawai e ON e.id=w.pegawai_id WHERE p.id=? AND p.sekolah_id=? AND w.pegawai_id=? AND w.selesai IS NULL AND w.mulai<=? AND e.status='aktif'`,
+					[entity, ctx.school, ctx.user.pegawaiId ?? -1, dormToday()]
+				);
+				if (!assigned.length) error(403, 'Asrama berada di luar penugasan Anda.');
+			}
 			const date = dormDate(form.get('tanggal'));
 			const reason = dormText(form.get('alasan'), 300);
 			const result = await tx.execute({
@@ -364,6 +380,92 @@ export async function mutateDormitory(locals: App.Locals, operation: string, for
 			if (result.rowsAffected !== 1)
 				error(409, 'Penempatan sudah berakhir atau tanggal tidak sesuai.');
 			await audit(tx, ctx, `akhiri penempatan: ${reason}`, entity);
+		} else if (operation === 'directory') {
+			if (!canDorm(ctx.user, 'penugasan')) error(403, 'Izin penugasan wali asrama diperlukan.');
+			entity = dormId(form.get('id') ?? '0', true);
+			const name = dormText(form.get('nama'));
+			const capacity = dormId(form.get('kapasitas'));
+			if (capacity > 1000) error(400, 'Kapasitas maksimal 1.000 penghuni.');
+			const employee = dormId(form.get('pegawaiId') ?? '0', true);
+			const guardian = employee
+				? (
+						await rows(
+							tx,
+							"SELECT nama FROM pegawai WHERE id=? AND sekolah_id=? AND status='aktif' AND jenis='wali_asrama'",
+							[employee, ctx.school]
+						)
+					)[0]
+				: null;
+			if (employee && !guardian) error(400, 'Pilih pegawai aktif berjenis Wali Asrama.');
+			const current = entity
+				? (
+						await rows(tx, 'SELECT * FROM asrama_kamar WHERE id=? AND sekolah_id=?', [
+							entity,
+							ctx.school
+						])
+					)[0]
+				: null;
+			if (entity && !current) error(404, 'Asrama tidak ditemukan.');
+			if (current) {
+				const version = dormId(form.get('versi'));
+				const result = await tx.execute({
+					sql: 'UPDATE asrama_kamar SET nama=?,nama_key=?,kapasitas=?,versi=versi+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND sekolah_id=? AND versi=?',
+					args: [name, name.toLocaleLowerCase('id'), capacity, entity, ctx.school, version]
+				});
+				if (result.rowsAffected !== 1)
+					error(409, 'Data asrama berubah. Muat ulang sebelum menyimpan.');
+				await tx.execute({
+					sql: 'UPDATE asrama SET nama=?,nama_key=?,versi=versi+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND sekolah_id=? AND (SELECT COUNT(*) FROM asrama_kamar WHERE asrama_id=asrama.id)=1',
+					args: [name, name.toLocaleLowerCase('id'), current.asrama_id, ctx.school]
+				});
+			} else {
+				const category = String(form.get('kategori'));
+				if (!['putra', 'putri'].includes(category))
+					error(400, 'Pilih kategori asrama putra atau putri.');
+				const building = await tx.execute({
+					sql: 'INSERT INTO asrama(sekolah_id,nama,nama_key,kategori,aktif) VALUES(?,?,?,?,1)',
+					args: [ctx.school, name, name.toLocaleLowerCase('id'), category]
+				});
+				const room = await tx.execute({
+					sql: 'INSERT INTO asrama_kamar(sekolah_id,asrama_id,nama,nama_key,kapasitas,aktif) VALUES(?,?,?,?,?,1)',
+					args: [
+						ctx.school,
+						Number(building.lastInsertRowid),
+						name,
+						name.toLocaleLowerCase('id'),
+						capacity
+					]
+				});
+				entity = Number(room.lastInsertRowid);
+			}
+			const old = (
+				await rows(
+					tx,
+					"SELECT * FROM asrama_penugasan WHERE sekolah_id=? AND kamar_id=? AND peran='utama' AND selesai IS NULL",
+					[ctx.school, entity]
+				)
+			)[0];
+			if (Number(old?.pegawai_id ?? 0) !== employee) {
+				if (old)
+					await tx.execute({
+						sql: 'UPDATE asrama_penugasan SET selesai=?,selesai_alasan=?,selesai_oleh=? WHERE id=?',
+						args: [dormToday(), 'Perubahan wali pada Data Asrama', ctx.user.id, old.id]
+					});
+				if (employee && guardian)
+					await tx.execute({
+						sql: "INSERT INTO asrama_penugasan(sekolah_id,kamar_id,pegawai_id,peran,mulai,nama_snapshot,alasan,petugas_id) VALUES(?,?,?,'utama',?,?,?,?)",
+						args: [
+							ctx.school,
+							entity,
+							employee,
+							dormToday(),
+							guardian.nama,
+							'Penugasan dari Data Asrama',
+							ctx.user.id
+						]
+					});
+			}
+			await audit(tx, ctx, operation, entity);
 		} else if (operation === 'building' || operation === 'room') {
 			entity = dormId(form.get('id') ?? '0', true);
 			const name = dormText(form.get('nama'));
@@ -428,11 +530,11 @@ export async function mutateDormitory(locals: App.Locals, operation: string, for
 				const e = (
 					await rows(
 						tx,
-						"SELECT nama FROM pegawai WHERE id=? AND sekolah_id=? AND status='aktif'",
+						"SELECT nama FROM pegawai WHERE id=? AND sekolah_id=? AND status='aktif' AND jenis='wali_asrama'",
 						[employee, ctx.school]
 					)
 				)[0];
-				if (!e) error(400, 'Pilih pegawai aktif di sekolah ini.');
+				if (!e) error(400, 'Pilih pegawai aktif berjenis Wali Asrama di sekolah ini.');
 				const result = await tx.execute({
 					sql: `INSERT INTO asrama_penugasan(sekolah_id,kamar_id,pegawai_id,peran,mulai,nama_snapshot,alasan,petugas_id)
 				 VALUES(?,?,?,?,?,?,?,?)`,

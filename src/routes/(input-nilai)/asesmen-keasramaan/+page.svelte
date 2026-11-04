@@ -1,4 +1,5 @@
 <script lang="ts">
+	import DormEvaluationScope from '$lib/components/keasramaan/DormEvaluationScope.svelte';
 	/* eslint-disable svelte/no-navigation-without-resolve -- file-level: intentional prebuilt hrefs and small navigation helpers */
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
@@ -12,7 +13,7 @@
 	import PaginationControls from '$lib/components/asesmen-keasramaan/pagination-controls.svelte';
 	import EmptyStates from '$lib/components/asesmen-keasramaan/empty-states.svelte';
 	import ImportModalBody from '$lib/components/asesmen-keasramaan/import-modal-body.svelte';
-	import { capitalizeSentence, buildNilaiLink } from '$lib/components/asesmen-keasramaan/utils';
+	import { capitalizeSentence } from '$lib/components/asesmen-keasramaan/utils';
 	import SvelteURLSearchParams from '$lib/svelte-helpers/url-search-params';
 	import {
 		downloadTemplate,
@@ -20,7 +21,9 @@
 		importNilai,
 		importNilaiMassal
 	} from '$lib/components/asesmen-keasramaan/api';
-	import type { PageData } from '$lib/components/asesmen-keasramaan/types';
+	type PageData = Awaited<
+		ReturnType<typeof import('$lib/server/dorm-evaluation-pages').loadDormInputPage>
+	>;
 
 	let { data }: { data: PageData } = $props();
 
@@ -42,11 +45,8 @@
 	let isDownloadingMassal = $state(false);
 	let isImportingMassal = $state(false);
 
-	const kelasAktif = $derived(page.data.kelasAktif ?? null);
-	const kelasAktifLabel = $derived.by(() => {
-		if (!kelasAktif) return null;
-		return kelasAktif.fase ? `${kelasAktif.nama} - ${kelasAktif.fase}` : kelasAktif.nama;
-	});
+	const asramaAktif = $derived(data.room);
+	const asramaAktifLabel = $derived(data.room ? `${data.room.asrama} / ${data.room.nama}` : null);
 
 	// Create navigation helper functions yang selalu gunakan URL terkini dari $page
 	const nav = {
@@ -92,15 +92,7 @@
 	};
 
 	$effect(() => {
-		// Sinkronisasi state dengan data dari server
-		// Jika server mengirim selectedKeasramaanId, gunakan nilai tersebut
-		// Jika tidak, pertahankan nilai yang sudah ada di state (untuk kasus pagination)
-		if (data.selectedKeasramaanId) {
-			const newValue = String(data.selectedKeasramaanId);
-			if (selectedKeasramaanValue !== newValue) {
-				selectedKeasramaanValue = newValue;
-			}
-		}
+		selectedKeasramaanValue = data.selectedKeasramaanId ? String(data.selectedKeasramaanId) : '';
 		searchTerm = data.search ?? '';
 	});
 
@@ -114,14 +106,18 @@
 	});
 
 	async function handleDownloadTemplate() {
-		if (!selectedKeasramaanValue || !selectedKeasraamHasTujuan || !kelasAktif?.id) {
+		if (!selectedKeasramaanValue || !selectedKeasraamHasTujuan || !asramaAktif?.id) {
 			toast('Pilih Matev dan pastikan memiliki tujuan pembelajaran terlebih dahulu', 'error');
 			return;
 		}
 
 		isDownloadingTemplate = true;
 		try {
-			const success = await downloadTemplate(selectedKeasramaanValue, kelasAktif.id);
+			const success = await downloadTemplate(
+				selectedKeasramaanValue,
+				asramaAktif.id,
+				data.period?.id ?? 0
+			);
 			if (success) {
 				toast('Template berhasil diunduh', 'success');
 			} else {
@@ -136,14 +132,14 @@
 	}
 
 	async function handleDownloadTemplateMassal() {
-		if (!kelasAktif?.id || !hasKeasramaan) {
-			toast('Pastikan kelas aktif dan mata evaluasi keasramaan sudah tersedia', 'error');
+		if (!asramaAktif?.id || !hasKeasramaan) {
+			toast('Pastikan asrama aktif dan mata evaluasi keasramaan sudah tersedia', 'error');
 			return;
 		}
 
 		isDownloadingMassal = true;
 		try {
-			const success = await downloadTemplateMassal(kelasAktif.id);
+			const success = await downloadTemplateMassal(asramaAktif.id, data.period?.id ?? 0);
 			toast(
 				success ? 'Template massal berhasil diunduh' : 'Gagal mengunduh template massal',
 				success ? 'success' : 'error'
@@ -156,7 +152,7 @@
 		}
 	}
 	function openImportModal() {
-		if (!selectedKeasramaanValue || !selectedKeasraamHasTujuan || !kelasAktif?.id) {
+		if (!selectedKeasramaanValue || !selectedKeasraamHasTujuan || !asramaAktif?.id) {
 			toast('Pilih Matev dan pastikan memiliki tujuan pembelajaran terlebih dahulu', 'error');
 			return;
 		}
@@ -182,14 +178,19 @@
 					isImportingFile = true;
 
 					try {
-						const result = await importNilai(file, selectedKeasramaanValue, kelasAktif?.id ?? 0);
+						const result = await importNilai(
+							file,
+							selectedKeasramaanValue,
+							asramaAktif?.id ?? 0,
+							data.period?.id ?? 0
+						);
 
 						if (result.success) {
 							toast(result.message || 'Nilai berhasil diimport', 'success');
 							close();
 							await invalidate('app:asesmen-keasramaan');
 							// Tetap di halaman yang sama dengan keasramaan yang dipilih
-							await goto(`?keasramaan_id=${selectedKeasramaanValue}`);
+							await nav.selectKeasramaan(selectedKeasramaanValue);
 						} else {
 							toast(result.message || 'Gagal import nilai', 'error');
 						}
@@ -210,8 +211,8 @@
 	}
 
 	function openImportMassalModal() {
-		if (!kelasAktif?.id || !hasKeasramaan) {
-			toast('Pastikan kelas aktif dan mata evaluasi keasramaan sudah tersedia', 'error');
+		if (!asramaAktif?.id || !hasKeasramaan) {
+			toast('Pastikan asrama aktif dan mata evaluasi keasramaan sudah tersedia', 'error');
 			return;
 		}
 
@@ -236,7 +237,7 @@
 
 					isImportingMassal = true;
 					try {
-						const result = await importNilaiMassal(file, kelasAktif.id);
+						const result = await importNilaiMassal(file, asramaAktif.id, data.period?.id ?? 0);
 						if (!result.success) {
 							toast(result.message || 'Gagal import nilai massal', 'error');
 							return;
@@ -288,8 +289,14 @@
 
 	function handleNilaiClick(muridId: number) {
 		if (!selectedKeasraam) return;
-		const link = buildNilaiLink(muridId, selectedKeasraam.id, page.url.pathname, page.url.search);
-		window.location.href = link;
+
+		const params = new URLSearchParams(page.url.search);
+		params.delete('redirect');
+		params.set('penempatan_id', String(muridId));
+		params.set('keasramaan_id', String(selectedKeasraam.id));
+		params.set('kamar_id', String(data.room?.id ?? 0));
+		params.set('semester_id', String(data.period?.id ?? 0));
+		window.location.href = `/asesmen-keasramaan/form-asesmen?${params}`;
 	}
 </script>
 
@@ -302,19 +309,27 @@
 					- {capitalizeSentence(selectedKeasraam.nama)}
 				{/if}
 			</h2>
-			{#if kelasAktifLabel}
-				<p class="text-base-content/80 block text-sm">{kelasAktifLabel}</p>
+			{#if asramaAktifLabel}
+				<p class="text-base-content/80 block text-sm">{asramaAktifLabel}</p>
 			{/if}
 		</div>
 	</div>
+
+	<DormEvaluationScope
+		rooms={data.rooms}
+		room={data.room}
+		periods={data.periods}
+		period={data.period}
+		history={data.history}
+	/>
 
 	<ActionButtons
 		isDownloading={isDownloadingTemplate}
 		isImporting={isImportingFile}
 		{isDownloadingMassal}
 		{isImportingMassal}
-		disabled={!selectedKeasraamHasTujuan}
-		massalDisabled={!kelasAktif?.id || !hasKeasramaan}
+		disabled={!selectedKeasraamHasTujuan || !data.canGrade}
+		massalDisabled={!asramaAktif?.id || !hasKeasramaan || !data.canGrade}
 		onDownload={handleDownloadTemplate}
 		onImport={handleFileImport}
 		onDownloadMassal={handleDownloadTemplateMassal}

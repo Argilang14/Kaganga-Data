@@ -23,11 +23,13 @@ export const GET = (async ({ locals, params }) => {
 	if (!stored) {
 		throw error(410, 'Token tidak valid atau sudah kedaluwarsa.');
 	}
-	if (!canPrintDocument(locals.user, stored.docType)) throw error(403, 'Jenis dokumen tidak diizinkan untuk akun ini.');
+	if (!canPrintDocument(locals.user, stored.docType))
+		throw error(403, 'Jenis dokumen tidak diizinkan untuk akun ini.');
 
 	const url = new URL('http://localhost');
 	if (stored.muridId) url.searchParams.set('murid_id', String(stored.muridId));
 	if (stored.kelasId) url.searchParams.set('kelas_id', String(stored.kelasId));
+	if (stored.penempatanId) url.searchParams.set('penempatan_id', String(stored.penempatanId));
 	if (stored.tpMode === 'full-desc') url.searchParams.set('full_tp', 'desc');
 	if (stored.kritCukup != null) url.searchParams.set('krit_cukup', String(stored.kritCukup));
 	if (stored.kritBaik != null) url.searchParams.set('krit_baik', String(stored.kritBaik));

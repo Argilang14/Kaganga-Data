@@ -148,8 +148,8 @@
 		<p>Dokumen ini dicetak berdasarkan data sekolah dan pilihan pengaturan di atas.</p>
 	{:else if hasMurid}
 		<p>
-			Terdapat <strong>{muridCount}</strong> murid di kelas ini. Download dokumen dalam bentuk PDF bisa
-			dilakukan per murid atau semuanya dalam satu file.
+			Terdapat <strong>{muridCount}</strong> murid di {isKeasramaanSelected ? 'asrama' : 'kelas'} ini.
+			Download dokumen dalam bentuk PDF bisa dilakukan per murid atau semuanya dalam satu file.
 		</p>
 	{:else}
 		<p class="text-warning">

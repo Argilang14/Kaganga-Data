@@ -6,6 +6,7 @@ import {
 	visibleNavigation
 } from './navigation-menu.ts';
 import { dormSections } from './dormitory.ts';
+import { appMenuItems } from './components/menu.ts';
 
 const items: MenuItem[] = [
 	{
@@ -17,6 +18,13 @@ const items: MenuItem[] = [
 	},
 	{ title: 'Akhir', path: '/status-akhir', condition: 'genap' }
 ];
+
+test('arsip dan alumni tersedia melalui Semua Murid tanpa menu terpisah', () => {
+	const paths = navigationLeaves(appMenuItems).map((item) => item.path);
+	assert(paths.includes('/murid/semua'));
+	assert(!paths.includes('/murid/arsip'));
+	assert(paths.includes('/murid/arsip/rapor'));
+});
 test('menu semester dan izin sama untuk daftar, pencarian, favorit, dan dock', () => {
 	const admin = { id: 1, type: 'admin', permissions: [] } as unknown as AuthUser;
 	assert.equal(navigationLeaves(visibleNavigation(items, admin, 'ganjil')).length, 2);
@@ -24,14 +32,14 @@ test('menu semester dan izin sama untuk daftar, pencarian, favorit, dan dock', (
 	const teacher = { id: 2, type: 'user', permissions: [] } as unknown as AuthUser;
 	assert.deepEqual(
 		navigationLeaves(visibleNavigation(items, teacher, 'ganjil')).map((item) => item.path),
-		['/murid']
+		[]
 	);
 	const favorites = ['/murid', '/pengguna', '/status-akhir', 'https://example.com', '/unknown'].map(
 		(path) => ({ path, userId: 2 })
 	);
 	assert.deepEqual(
 		allowedNavigationFavorites(favorites, items, teacher, 'ganjil').map((item) => item.path),
-		['/murid']
+		[]
 	);
 	assert.deepEqual(allowedNavigationFavorites(favorites, items, admin, 'genap'), []);
 	assert.deepEqual(visibleNavigation(items, null, 'genap'), []);

@@ -530,7 +530,7 @@ export async function previewDapodikSync(
 			? allKelas.filter((row) => unitClasses.includes(row.id))
 			: allKelas;
 		const muridLokal = unitClasses
-			? allMurid.filter((row) => unitClasses.includes(row.kelasId))
+			? allMurid.filter((row) => row.kelasId !== null && unitClasses.includes(row.kelasId))
 			: allMurid;
 
 		const pegawaiRows = source.pegawai.filter((row) => str(row, 'ptk_id') && str(row, 'nama'));
@@ -1293,7 +1293,7 @@ async function applyEkstrakurikuler(sekolahId: number, semesterId: number, rombe
 		for (const member of members) {
 			const pesertaDidikId = str(member, 'peserta_didik_id');
 			const student = pesertaDidikId ? studentByDapodik.get(pesertaDidikId) : null;
-			if (!student) {
+			if (!student?.kelasId) {
 				result.skipped++;
 				continue;
 			}

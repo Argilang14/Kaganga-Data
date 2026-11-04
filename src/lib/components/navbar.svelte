@@ -47,7 +47,17 @@
 	const kelasAktif = $derived(page.data.kelasAktif ?? null);
 	const daftarAsrama = $derived(page.data.daftarAsrama ?? []);
 	const asramaAktif = $derived(page.data.asramaAktif ?? null);
-	const asramaContext = $derived(page.url.pathname==='/asrama'||page.url.pathname.startsWith('/asrama/')||page.url.pathname.startsWith('/pengasuhan/')||page.url.pathname==='/administrasi/absensi/monitoring');
+	const asramaContext = $derived(
+		['/keasramaan', '/asesmen-keasramaan', '/catatan-wali-asrama', '/rekap-nilai-asrama'].some(
+			(path) => page.url.pathname === path || page.url.pathname.startsWith(path + '/')
+		) ||
+			(page.url.pathname === '/cetak-raport' && page.url.searchParams.get('bagian') === 'asrama') ||
+			page.url.pathname === '/murid/asrama' ||
+			page.url.pathname === '/asrama' ||
+			page.url.pathname.startsWith('/asrama/') ||
+			page.url.pathname.startsWith('/pengasuhan/') ||
+			page.url.pathname === '/administrasi/absensi/monitoring'
+	);
 	const user = $derived(page.data.user ?? null);
 	const canViewNotifications = $derived(
 		user?.type === 'admin' || user?.permissions?.includes('notifikasi_lihat') === true
@@ -56,7 +66,15 @@
 		if (!kelasAktif) return 'Pilih Kelas';
 		return kelasAktif.fase ? `${kelasAktif.nama} - ${kelasAktif.fase}` : kelasAktif.nama;
 	});
-	const contextLabel = $derived(asramaContext&&asramaAktif?`${asramaAktif.asrama} / ${asramaAktif.nama}`:kelasAktifLabel);
+	const contextLabel = $derived(
+		asramaContext && asramaAktif
+			? asramaAktif.asrama === asramaAktif.nama
+				? asramaAktif.nama
+				: `${asramaAktif.asrama} / ${asramaAktif.nama}`
+			: asramaContext
+				? 'Pilih Asrama'
+				: kelasAktifLabel
+	);
 
 	// Human-readable display name for current user (prefer pegawaiName if available)
 	const displayUserName = $derived.by(() => {
@@ -409,13 +427,24 @@
 							<details class="bg-base-200 collapse-plus collapse mt-1 rounded-none">
 								<summary class="collapse-title font-semibold">Pindah Asrama</summary>
 								<div class="flex max-h-[30vh] flex-col overflow-y-auto p-1">
-									<a class="btn btn-ghost btn-sm justify-start" href={dormViewHref(page.url.pathname,page.url.search,0)}>Semua kamar yang diizinkan</a>
+									<a
+										class="btn btn-ghost btn-sm justify-start"
+										href={dormViewHref(page.url.pathname, page.url.search, 0)}
+										>Semua kamar yang diizinkan</a
+									>
 									{#each daftarAsrama as kamar (kamar.id)}
-										<a class="btn btn-ghost btn-sm h-auto min-h-9 justify-start whitespace-normal py-2 text-left" class:btn-active={asramaAktif?.id===kamar.id} href={dormViewHref(page.url.pathname,page.url.search,kamar.id)}>{kamar.asrama} / {kamar.nama}</a>
+										<a
+											class="btn btn-ghost btn-sm h-auto min-h-9 justify-start whitespace-normal py-2 text-left"
+											class:btn-active={asramaAktif?.id === kamar.id}
+											href={dormViewHref(page.url.pathname, page.url.search, kamar.id)}
+											>{kamar.asrama === kamar.nama
+												? kamar.nama
+												: `${kamar.asrama} / ${kamar.nama}`}</a
+										>
 									{/each}
 								</div>
 							</details>
-						{:else if user?.type==='admin'||user?.type==='wali_asrama'||user?.type==='wali_asuh'}
+						{:else if user?.type === 'admin' || user?.type === 'wali_asrama' || user?.type === 'wali_asuh'}
 							<a href="/asrama" class="btn btn-ghost btn-sm mt-1 justify-start">Data Asrama</a>
 						{/if}
 						<li class="mt-1">

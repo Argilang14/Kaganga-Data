@@ -15,14 +15,15 @@
 		mataEvaluasi: MataEvaluasi[];
 		tableReady: boolean;
 		canEdit: boolean;
+		contextQuery?: string;
 	}
 
-	let { mataEvaluasi, tableReady, canEdit }: Props = $props();
+	let { mataEvaluasi, tableReady, canEdit, contextQuery = '' }: Props = $props();
 
 	function navigateToTP(indikatorId: number) {
 		if (!canEdit) return;
 		// Use full navigation to avoid SvelteKit goto lint rule here
-		void (location as Location).assign(`/keasramaan/tp?indikatorId=${indikatorId}`);
+		void (location as Location).assign(`/keasramaan/tp?indikatorId=${indikatorId}&${contextQuery}`);
 	}
 </script>
 

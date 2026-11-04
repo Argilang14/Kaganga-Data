@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/icon.svelte';
+	import { permitRecapColumns, type SchoolPermitRecap } from '$lib/attendance-permit-recap';
 
 	type StatusKey = 'hadir' | 'terlambat' | 'sakit' | 'izin' | 'alfa';
 	type Counts = Record<StatusKey, number>;
@@ -15,7 +16,12 @@
 		kelasList: Array<{ id: number; nama: string; fase: string | null }>;
 		muridList: Array<{ id: number; nama: string }>;
 		summary: Counts;
-		rekapSiswa: Array<{ id: number; nama: string; counts: Counts }>;
+		rekapSiswa: Array<{
+			id: number;
+			nama: string;
+			counts: Counts;
+			permitRecap?: SchoolPermitRecap;
+		}>;
 		rekapKelas: Array<{ kelas: string; counts: Counts }>;
 		statusLabels: Record<StatusKey, string>;
 	};
@@ -41,7 +47,10 @@
 	<div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
 		<div>
 			<h2 class="text-2xl font-bold">Rekap Absensi</h2>
-			<p class="text-base-content/70 text-sm">Ringkasan absensi digital per siswa dan kelas.</p>
+			<p class="text-base-content/70 text-sm">
+				Absensi dihitung per hari sekolah. Izin pulang dihitung per kejadian; hari tanpa catatan
+				bukan alfa.
+			</p>
 		</div>
 		<div class="flex gap-2">
 			<a class="btn btn-accent btn-sm shadow-none" href={exportHref}>
@@ -129,6 +138,9 @@
 							{#each statusOrder as status (status)}
 								<th class="text-center">{data.statusLabels[status]}</th>
 							{/each}
+							{#each permitRecapColumns as column (column.key)}
+								<th class="text-center">{column.label}</th>
+							{/each}
 						</tr>
 					</thead>
 					<tbody>
@@ -138,10 +150,13 @@
 								{#each statusOrder as status (status)}
 									<td class="text-center">{row.counts[status]}</td>
 								{/each}
+								{#each permitRecapColumns as column (column.key)}
+									<td class="text-center">{row.permitRecap?.[column.key] ?? 0}</td>
+								{/each}
 							</tr>
 						{:else}
 							<tr>
-								<td colspan="6">Tidak ada data siswa.</td>
+								<td colspan={6 + permitRecapColumns.length}>Tidak ada data siswa.</td>
 							</tr>
 						{/each}
 					</tbody>

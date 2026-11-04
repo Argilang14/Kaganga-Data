@@ -226,7 +226,7 @@ export const GET = (async ({ locals, url }) => {
 
 	const allAbsences: Array<{
 		tanggal: string;
-		kelasId: number;
+		kelasId: number | null;
 		sakit: number;
 		izin: number;
 		alfa: number;

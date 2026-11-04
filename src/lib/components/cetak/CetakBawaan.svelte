@@ -1,10 +1,11 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { canPrintDocument } from '$lib/role-menu-access';
 	import PreviewHeader from '$lib/components/cetak/PreviewHeader.svelte';
 	import DocumentMuridSelector from '$lib/components/cetak/DocumentMuridSelector.svelte';
 	import PdfPreviewModal from '$lib/components/cetak/PdfPreviewModal.svelte';
-	import Icon from '$lib/components/icon.svelte';
 	import { responsePdfFilename } from '$lib/pdf-filename';
 	import { toast } from '$lib/components/toast.svelte';
 	import { onDestroy, onMount } from 'svelte';
@@ -18,7 +19,17 @@
 		nisn?: string | null;
 	};
 
-	let { data }: { data: Partial<Awaited<ReturnType<typeof import('$lib/server/cetak-bawaan').loadCetakBawaan>>> } = $props();
+	let {
+		data
+	}: {
+		data: Omit<
+			Partial<Awaited<ReturnType<typeof import('$lib/server/cetak-bawaan').loadCetakBawaan>>>,
+			'daftarMurid'
+		> & {
+			dormReport?: { label: string; semesterId: number | null } | null;
+			daftarMurid?: Array<MuridData & { penempatan_id?: number }>;
+		};
+	} = $props();
 
 	const pdfVariant = 'default';
 	const isSRVariant = false;
@@ -29,12 +40,23 @@
 			{ value: 'biodata', label: 'Biodata' },
 			{ value: 'rapor', label: 'Rapor' },
 			{ value: 'piagam', label: 'Piagam' },
-			{ value: 'keasramaan', label: 'Rapor Keasramaan' },
+			{ value: 'keasramaan', label: 'Rapor Keasramaan' }
 		];
 		return all.filter((option) => canPrintDocument(page.data.user, option.value));
 	});
 
-	let selectedDocument = $state<DocumentType | ''>('');
+	let selectedDocument = $state<DocumentType | ''>(
+		data.dormReport ? 'keasramaan' : ((page.url.searchParams.get('dokumen') as DocumentType) ?? '')
+	);
+	$effect(() => {
+		if (!selectedDocument || (selectedDocument === 'keasramaan') === !!data.dormReport) return;
+		const params = new URLSearchParams(page.url.search);
+		params.set('dokumen', selectedDocument);
+		if (selectedDocument === 'keasramaan') params.set('bagian', 'asrama');
+		else for (const key of ['bagian', 'kamar_id', 'semester_id', 'riwayat']) params.delete(key);
+		void goto(resolve(`/cetak-raport?${params}`), { noScroll: true, keepFocus: true });
+	});
+
 	let selectedRaporPeriode = $state<RaporPeriode | ''>('');
 	let selectedTemplate = $state<'1' | '2'>('1');
 	let searchTerm = $state('');
@@ -81,6 +103,7 @@
 	const academicContext = $derived(data.academicContext ?? null);
 	const kelasAktif = $derived(page.data.kelasAktif ?? null);
 	const kelasAktifLabel = $derived.by(() => {
+		if (selectedDocument === 'keasramaan') return data.dormReport?.label ?? null;
 		if (!kelasAktif) return null;
 		return kelasAktif.fase ? `${kelasAktif.nama} - ${kelasAktif.fase}` : kelasAktif.nama;
 	});
@@ -176,7 +199,17 @@
 				body: JSON.stringify({
 					docType: documentType,
 					muridId: murid.id,
-					kelasId: data.kelasId ? Number(data.kelasId) : undefined,
+					kelasId:
+						documentType === 'keasramaan'
+							? undefined
+							: data.kelasId
+								? Number(data.kelasId)
+								: undefined,
+					penempatanId:
+						documentType === 'keasramaan'
+							? daftarMurid.find((m) => m.id === murid?.id)?.penempatan_id
+							: undefined,
+					semesterId: documentType === 'keasramaan' ? data.dormReport?.semesterId : undefined,
 					tpMode: fullTP,
 					kriteria: { kritCukup, kritBaik },
 					template: documentType === 'piagam' ? selectedTemplate : undefined,
@@ -292,7 +325,17 @@
 				body: JSON.stringify({
 					docType: documentType,
 					muridIds: muridList.map((m) => m.id),
-					kelasId: data.kelasId ? Number(data.kelasId) : undefined,
+					kelasId:
+						documentType === 'keasramaan'
+							? undefined
+							: data.kelasId
+								? Number(data.kelasId)
+								: undefined,
+					penempatanIds:
+						documentType === 'keasramaan'
+							? Object.fromEntries(daftarMurid.map((m) => [m.id, m.penempatan_id]))
+							: undefined,
+					semesterId: documentType === 'keasramaan' ? data.dormReport?.semesterId : undefined,
 					tpMode: fullTP === 'full-desc' ? 'full-desc' : undefined,
 					criteria: { kritCukup, kritBaik },
 					template: documentType === 'piagam' ? selectedTemplate : undefined,
@@ -329,25 +372,27 @@
 			downloadLoading = false;
 		}
 	}
-
 </script>
 
 <div class="card bg-base-100 rounded-lg border border-none p-4 shadow-md">
 	{#if isSRVariant}
 		<div class="border-info/25 bg-info/10 mb-3 rounded-lg border px-4 py-3 text-sm">
 			<strong>Cetak Dokumen SR</strong>
-			<span class="ml-1">menggunakan data yang sama dengan Cetak Dokumen, dengan format PDF SR.</span>
+			<span class="ml-1"
+				>menggunakan data yang sama dengan Cetak Dokumen, dengan format PDF SR.</span
+			>
 		</div>
 	{/if}
-	<PreviewHeader
-		{headingTitle}
-		{kelasAktifLabel}
-		{academicContext}
-	/>
+	<PreviewHeader {headingTitle} {kelasAktifLabel} {academicContext} />
 
 	{#if selectedDocument === 'rapor' || selectedDocument === 'piagam'}
 		<label class="mb-3 flex min-h-11 items-center gap-3 text-sm">
-			<input type="checkbox" class="toggle toggle-success" bind:checked={includeReportSignatures} onchange={closePdfModal} />
+			<input
+				type="checkbox"
+				class="toggle toggle-success"
+				bind:checked={includeReportSignatures}
+				onchange={closePdfModal}
+			/>
 			Tanda tangan digital kepsek
 		</label>
 	{/if}
@@ -418,5 +463,3 @@
 	onNext={handleNavigateNext}
 	onClose={closePdfModal}
 />
-
-

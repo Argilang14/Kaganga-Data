@@ -17,7 +17,9 @@
 	let { data } = $props();
 	let profileActive = $state(false);
 	let profileDirty = $state(false);
-	const canReadProfile = $derived(canUseStudentProfile(page.data.user, page.data.sekolah?.id ?? 0, 'read'));
+	const canReadProfile = $derived(
+		canUseStudentProfile(page.data.user, page.data.sekolah?.id ?? 0, 'read')
+	);
 
 	const canEditData = $derived.by(() => {
 		return canEditMurid(page.data.user);
@@ -263,7 +265,10 @@
 {/snippet}
 
 <div class="mb-6 text-xl font-bold">Detail Data Murid</div>
-<div class="max-h-[60vh] overflow-y-auto sm:max-h-none sm:overflow-y-visible" data-profile-dirty={profileDirty ? 'true' : undefined}>
+<div
+	class="max-h-[60vh] overflow-y-auto sm:max-h-none sm:overflow-y-visible"
+	data-profile-dirty={profileDirty ? 'true' : undefined}
+>
 	<div class="join join-vertical w-full max-w-full">
 		<div class="tabs tabs-box">
 			<!-- data Murid -->
@@ -360,14 +365,6 @@
 					{@render field('Kontak', data.murid.wali?.kontak)}
 				</div>
 			</div>
-			<!-- data Wali Asrama -->
-			<input type="radio" name="tab-detil-murid" class="tab" aria-label="Wali Asrama" />
-			<div class="tab-content bg-base-100 p-4">
-				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-					{@render field('Nama Wali Asrama', data.murid.waliAsramaNama)}
-					{@render field('NIP Wali Asrama', data.murid.waliAsramaNip)}
-				</div>
-			</div>
 			<!-- data Kesehatan & Fisik -->
 			<input type="radio" name="tab-detil-murid" class="tab" aria-label="Kesehatan & Fisik" />
 			<div class="tab-content bg-base-100 p-4">
@@ -436,9 +433,18 @@
 				</div>
 			</div>
 			{#if canReadProfile}
-				<input type="radio" name="tab-detil-murid" class="tab" aria-label="Informasi Tambahan" onchange={() => profileActive = true} />
+				<input
+					type="radio"
+					name="tab-detil-murid"
+					class="tab"
+					aria-label="Informasi Tambahan"
+					onchange={() => (profileActive = true)}
+				/>
 				<div class="tab-content bg-base-100 p-3 sm:p-4">
-					{#if profileActive}{#key data.murid.id}<StudentProfile muridId={data.murid.id} ondirty={(dirty) => profileDirty = dirty} />{/key}{/if}
+					{#if profileActive}{#key data.murid.id}<StudentProfile
+								muridId={data.murid.id}
+								ondirty={(dirty) => (profileDirty = dirty)}
+							/>{/key}{/if}
 				</div>
 			{/if}
 		</div>
@@ -446,7 +452,19 @@
 </div>
 
 <div class="mt-4 flex flex-col gap-2 sm:flex-row">
-	<a class="btn btn-soft shadow-none" href="/murid" onclickcapture={(event) => { if (profileDirty && !window.confirm('Tutup profil? Perubahan yang belum disimpan akan dibuang.')) { event.preventDefault(); event.stopImmediatePropagation(); } }}>
+	<a
+		class="btn btn-soft shadow-none"
+		href="/murid"
+		onclickcapture={(event) => {
+			if (
+				profileDirty &&
+				!window.confirm('Tutup profil? Perubahan yang belum disimpan akan dibuang.')
+			) {
+				event.preventDefault();
+				event.stopImmediatePropagation();
+			}
+		}}
+	>
 		<Icon name="close" />
 		Tutup
 	</a>
@@ -457,7 +475,17 @@
 			class="btn btn-primary btn-soft shadow-none"
 			href="/murid/form/{data.murid.id}"
 			use:modalRoute={'edit-murid'}
-			onclickcapture={(event) => { if (profileDirty && !window.confirm('Buka biodata utama? Perubahan profil tambahan yang belum disimpan akan dibuang.')) { event.preventDefault(); event.stopImmediatePropagation(); } }}
+			onclickcapture={(event) => {
+				if (
+					profileDirty &&
+					!window.confirm(
+						'Buka biodata utama? Perubahan profil tambahan yang belum disimpan akan dibuang.'
+					)
+				) {
+					event.preventDefault();
+					event.stopImmediatePropagation();
+				}
+			}}
 		>
 			<Icon name="edit" />
 			Edit
@@ -586,8 +614,7 @@
 							<textarea
 								class="textarea textarea-bordered min-h-24 w-full"
 								name="catatan"
-								placeholder="Catatan tambahan"
-							></textarea>
+								placeholder="Catatan tambahan"></textarea>
 						</label>
 					</div>
 					<div class="modal-action">

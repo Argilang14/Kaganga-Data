@@ -9,6 +9,7 @@
 	import { onDestroy } from 'svelte';
 	import MuridModals from '$lib/components/murid/modals.svelte';
 	import { canManageMurid } from '$lib/murid-permissions';
+	import StudentPlacement from '$lib/components/murid/student-placement.svelte';
 
 	type BulkModalData = {
 		type: 'bulk';
@@ -137,6 +138,16 @@
 		await goto(target, { replaceState: true, keepFocus: true });
 	}
 
+	async function selectClass(value: string) {
+		clearTimeout(searchTimer);
+		searchTimer = undefined;
+		selectedIds = new Set();
+		const url = new URL(page.url);
+		url.searchParams.set('kelas_id', value);
+		url.searchParams.delete('page');
+		await goto(url, { replaceState: true, keepFocus: true });
+	}
+
 	function buildPageUrl(pageNumber: number) {
 		const params = new SvelteURLSearchParams(page.url.search);
 		const sanitized = pageNumber < 1 ? 1 : pageNumber;
@@ -203,9 +214,7 @@
 		await invalidate('app:murid');
 		selectedIds = new Set();
 		const message =
-			typeof data?.message === 'string'
-				? data.message
-				: `${countBefore || 1} murid berhasil dihapus`;
+			typeof data?.message === 'string' ? data.message : `${countBefore || 1} murid menjadi pasif`;
 		toast({ message, type: 'success', persist: true });
 		if (page.state.modal?.name === 'delete-murid') {
 			history.back();
@@ -263,45 +272,33 @@
 	const offset = $derived((currentPage - 1) * data.page.perPage);
 </script>
 
-{#if academicContext}
-	{#if academicContext.activeSemesterId}
-		<div class="alert alert-info alert-soft mb-6 flex items-center gap-3">
-			<Icon name="info" />
-			<span>
-				Menampilkan data murid untuk
-				{#if activeSemester}
-					<strong>{activeSemester.nama}</strong>
-					({activeSemester.tahunAjaranNama})
-				{:else}
-					semester aktif
-				{/if}.
-			</span>
-		</div>
-	{:else}
-		<div class="alert alert-warning mb-6 flex items-center gap-3">
-			<Icon name="warning" />
-			<span>Setel semester aktif di menu Rapor untuk mulai mengelola data kelas per periode.</span>
-		</div>
-	{/if}
+{#if academicContext && !academicContext.activeSemesterId}
+	<div class="alert alert-warning mb-6 flex items-center gap-3">
+		<Icon name="warning" />
+		<span>Setel semester aktif di menu Rapor untuk mulai mengelola data kelas per periode.</span>
+	</div>
 {/if}
 
-<div class="card bg-base-100 rounded-lg border border-none p-4 shadow-md">
+<div class="student-workspace card bg-base-100 rounded-lg border border-none p-4 shadow-md">
 	{#if data.identityReviewCount}
 		<div class="alert alert-warning mb-4">
 			<Icon name="warning" /><span
 				>{data.identityReviewCount} murid menunggu pemeriksaan identitas lama.</span
 			>{#if page.data.user?.type === 'admin' || page.data.user?.permissions?.includes('murid_arsip')}<a
 					class="link"
-					href="/murid/arsip?perlu_periksa=1">Periksa Arsip</a
+					href="/murid/semua?view=arsip&perlu_periksa=1">Periksa identitas</a
 				>{/if}
 		</div>
 	{/if}
 	<div class="mb-6">
 		<div class="flex flex-col sm:flex-row sm:justify-between">
 			<div>
-				<h2 class="text-xl font-bold">Formulir Dan Tabel Isian Data Murid</h2>
+				<h2 class="text-xl font-bold">Murid Kelas</h2>
 				{#if kelasAktifLabel}
-					<p class="text-base-content/80 block text-sm">{kelasAktifLabel}</p>
+					<p class="text-base-content/65 mt-1 block text-sm">
+						{kelasAktifLabel}{#if activeSemester}
+							· {activeSemester.nama} ({activeSemester.tahunAjaranNama}){/if}
+					</p>
 				{/if}
 			</div>
 			<!-- Tombol Tambah Manual (dipindahkan ke kanan judul) -->
@@ -312,29 +309,32 @@
 					disabled={!hasSelection || formSubmitting || !canEdit}
 					onclick={openBulkDeleteModal}
 					title={!canEdit
-						? 'Anda tidak memiliki izin untuk mengarsipkan'
+						? 'Anda tidak memiliki izin menjadikan murid pasif'
 						: hasSelection
-							? 'Arsipkan murid terpilih'
+							? 'Jadikan pasif murid terpilih'
 							: 'Pilih murid terlebih dahulu'}
 				>
 					<Icon name="del" />
-					Arsipkan
+					Jadikan pasif
 				</button>
 			{:else}
-				<div class="mt-2 flex max-sm:w-full sm:mt-0">
+				<div
+					class="mt-2 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 max-sm:w-full sm:mt-0 sm:flex"
+				>
 					{#if canEdit}
-						<a
-							class="btn btn-soft rounded-r-none shadow-none max-sm:flex-1"
-							href="/murid/form"
-							use:modalRoute={'add-murid'}
-						>
-							<Icon name="plus" />
-							Tambah Murid
+						<div class="col-span-2 [&>button]:w-full sm:contents sm:[&>button]:w-auto">
+							<StudentPlacement registry={data.registry} activeClassId={data.page.kelasId} />
+						</div>
+					{/if}
+					{#if canEdit}
+						<a class="btn btn-soft gap-2 shadow-none" href="/murid/pasif">
+							<Icon name="users" />
+							Murid Pasif
 						</a>
 					{:else}
 						<button
 							type="button"
-							class="btn btn-disabled rounded-r-none shadow-none max-sm:flex-1"
+							class="btn btn-disabled shadow-none"
 							disabled
 							title="Anda tidak memiliki izin untuk menambah murid"
 						>
@@ -348,7 +348,7 @@
 							type="button"
 							aria-label="Opsi data murid"
 							tabindex="0"
-							class="btn btn-soft rounded-l-none shadow-none"
+							class="btn btn-soft btn-square shadow-none"
 						>
 							<Icon name="down" />
 						</button>
@@ -389,23 +389,41 @@
 	</div>
 
 	<form
-		class="flex max-w-2xl flex-col items-center gap-2 sm:flex-row"
+		class="student-toolbar mb-4"
 		data-sveltekit-keepfocus
 		data-sveltekit-replacestate
 		onsubmit={submitSearch}
 	>
+		<label class="fieldset w-full sm:w-64">
+			<span class="fieldset-legend">Kelas</span>
+			<select
+				class="select w-full"
+				name="kelas_id"
+				value={data.page.kelasId ?? ''}
+				onchange={(event) => selectClass(event.currentTarget.value)}
+			>
+				<option value="" disabled>Pilih kelas</option>
+				{#each data.registry.classes as kelas (kelas.id)}
+					<option value={String(kelas.id)}>{kelas.nama}</option>
+				{/each}
+			</select>
+		</label>
 		<!-- Cari nama murid -->
-		<label class="input bg-base-200 dark:bg-base-300 w-full dark:border-none">
-			<Icon name="search" />
-			<input
-				type="search"
-				name="q"
-				value={searchTerm}
-				spellcheck="false"
-				placeholder="Cari nama murid..."
-				autocomplete="name"
-				oninput={handleSearchInput}
-			/>
+		<label class="fieldset student-search min-w-0">
+			<span class="fieldset-legend">Cari murid</span>
+			<span class="input w-full">
+				<Icon name="search" />
+				<input
+					type="search"
+					name="q"
+					aria-label="Cari murid kelas"
+					value={searchTerm}
+					spellcheck="false"
+					placeholder="Cari nama murid..."
+					autocomplete="name"
+					oninput={handleSearchInput}
+				/>
+			</span>
 		</label>
 	</form>
 
@@ -420,14 +438,14 @@
 			<!-- The table region is focusable so keyboard users can scroll it horizontally. -->
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 			<div
-				class="murid-table-scroll bg-base-100 dark:bg-base-200 mt-4 overflow-x-auto rounded-md shadow-md dark:shadow-none"
+				class="murid-table-scroll student-table-scroll bg-base-100 mt-4"
 				tabindex="0"
 				role="region"
 				aria-label="Tabel data murid"
 			>
 				{#if data.daftarMurid.length > 0}
 					<table
-						class="murid-table border-base-200 table border dark:border-none"
+						class="murid-table student-table table"
 						class:murid-table-populated={data.daftarMurid.length > 0}
 					>
 						{#if data.daftarMurid.length > 0}
@@ -495,7 +513,7 @@
 													class="btn btn-sm btn-error btn-soft rounded-l-none shadow-none"
 													href="/murid/{murid.id}/delete"
 													use:modalRoute={'delete-murid'}
-													title="Arsipkan murid"
+													title="Jadikan pasif murid"
 												>
 													<Icon name="del" />
 												</a>
@@ -527,6 +545,11 @@
 					</div>
 				{/if}
 			</div>
+			{#if data.daftarMurid.length > 0}
+				<p class="mt-2 text-xs text-base-content/60 xl:hidden">
+					Geser tabel untuk melihat seluruh kolom.
+				</p>
+			{/if}
 		{/snippet}
 	</FormEnhance>
 	<!-- pagination -->

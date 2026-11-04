@@ -4,10 +4,8 @@ import { and, eq, isNotNull } from 'drizzle-orm';
 import db from '$lib/server/db';
 import { ensureMartikulasiSchema } from '$lib/server/db/ensure-martikulasi';
 import {
-	tableKelas,
 	tableMartikulasiHasil,
 	tableMartikulasiSettings,
-	tableMurid,
 	tablePegawai,
 	tableSekolah,
 	tableTahunAjaran
@@ -174,11 +172,12 @@ export const GET = (async ({ locals, url }) => {
 					: item.levelPenempatan,
 				rekomendasi: item.rekomendasi,
 				catatanUmum: item.catatanUmum,
-				waliKelas: item.waliKelasNamaSnapshot
-					? { nama: item.waliKelasNamaSnapshot, nip: item.waliKelasNipSnapshot }
-					: item.kelas!.waliKelas
-						? { nama: item.kelas!.waliKelas.nama, nip: item.kelas!.waliKelas.nip }
-						: null,
+				waliKelas:
+					jenis !== 'raport' && item.waliKelasNamaSnapshot
+						? { nama: item.waliKelasNamaSnapshot, nip: item.waliKelasNipSnapshot }
+						: item.kelas!.waliKelas
+							? { nama: item.kelas!.waliKelas.nama, nip: item.kelas!.waliKelas.nip }
+							: null,
 				schoolSnapshot: item.nomorSttm
 					? {
 							nama: item.sekolahNamaSnapshot || schoolPrint.nama,

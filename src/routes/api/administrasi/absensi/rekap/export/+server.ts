@@ -1,5 +1,4 @@
 import {
-	ABSENSI_STATUSES,
 	assertAbsensiDigitalAccess,
 	loadAbsensiKelasOptions,
 	normalizeDateInput,
@@ -8,12 +7,12 @@ import {
 	todayLocalDate
 } from '$lib/server/absensi-digital';
 import db from '$lib/server/db';
-import { projectDailyIllness } from '$lib/server/attendance-illness';
-import { listLocalDatesInRange } from '$lib/server/absensi-kegiatan';
+import { loadSchoolPermitRecap } from '$lib/server/attendance-permit-recap';
+import { permitRecapColumns } from '$lib/attendance-permit-recap';
 import { studentAccessCondition } from '$lib/server/attendance-student-access';
-import { tableAbsensiHarian, tableMurid } from '$lib/server/db/schema';
+import { tableMurid } from '$lib/server/db/schema';
 import { json } from '@sveltejs/kit';
-import { and, asc, eq, gte, inArray, lte } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 
 export async function GET({ locals, url }) {
@@ -44,29 +43,13 @@ export async function GET({ locals, url }) {
 		orderBy: asc(tableMurid.nama)
 	});
 	const muridIds = muridList.map((murid) => murid.id);
-	const recordedRows = muridIds.length
-		? await db.query.tableAbsensiHarian.findMany({
-				where: and(
-					eq(tableAbsensiHarian.sekolahId, sekolahId),
-					eq(tableAbsensiHarian.semesterId, academic.activeSemesterId),
-					eq(tableAbsensiHarian.kelasId, kelasId),
-					inArray(tableAbsensiHarian.muridId, muridIds),
-					gte(tableAbsensiHarian.tanggal, tanggalAwal),
-					lte(tableAbsensiHarian.tanggal, tanggalAkhir)
-				)
-			})
-		: [];
-
-	const counts = new Map<number, Record<(typeof ABSENSI_STATUSES)[number], number>>();
-	const absensiRows = await projectDailyIllness({ schoolId: sekolahId, semesterId: academic.activeSemesterId,
-		studentIds: muridIds, dates: listLocalDatesInRange(tanggalAwal, tanggalAkhir), rows: recordedRows });
-	for (const murid of muridList) {
-		counts.set(murid.id, { hadir: 0, terlambat: 0, sakit: 0, izin: 0, alfa: 0 });
-	}
-	for (const row of absensiRows) {
-		const target = counts.get(row.muridId);
-		if (target) target[row.status] += 1;
-	}
+	const schoolRecap = await loadSchoolPermitRecap({
+		schoolId: sekolahId,
+		semesterId: academic.activeSemesterId,
+		studentIds: muridIds,
+		start: tanggalAwal,
+		end: tanggalAkhir
+	});
 
 	const workbook = new ExcelJS.Workbook();
 	const sheet = workbook.addWorksheet('Rekap Absensi');
@@ -75,15 +58,41 @@ export async function GET({ locals, url }) {
 		['Sekolah', locals.sekolah?.nama ?? '-'],
 		['Tanggal', `${tanggalAwal} s.d. ${tanggalAkhir}`],
 		[],
-		['Nama', 'NIS', 'NISN', 'Hadir', 'Terlambat', 'Sakit', 'Izin', 'Alfa']
+		[
+			'Nama',
+			'NIS',
+			'NISN',
+			'Hadir (hari sekolah)',
+			'Terlambat (hari sekolah)',
+			'Sakit (hari sekolah)',
+			'Izin (hari sekolah)',
+			'Alfa (hari sekolah)',
+			...permitRecapColumns.map((c) => c.label)
+		]
 	]);
 	for (const murid of muridList) {
-		const row = counts.get(murid.id) ?? { hadir: 0, terlambat: 0, sakit: 0, izin: 0, alfa: 0 };
+		const row = schoolRecap.get(murid.id)?.counts ?? {
+			hadir: 0,
+			terlambat: 0,
+			sakit: 0,
+			izin: 0,
+			alfa: 0
+		};
 		sheet.addRows([
-			[murid.nama, murid.nis, murid.nisn, row.hadir, row.terlambat, row.sakit, row.izin, row.alfa]
+			[
+				murid.nama,
+				murid.nis,
+				murid.nisn,
+				row.hadir,
+				row.terlambat,
+				row.sakit,
+				row.izin,
+				row.alfa,
+				...permitRecapColumns.map((c) => schoolRecap.get(murid.id)?.[c.key] ?? 0)
+			]
 		]);
 	}
-	for (let index = 1; index <= 8; index += 1) {
+	for (let index = 1; index <= 8 + permitRecapColumns.length; index += 1) {
 		sheet.getColumn(index).width = index === 1 ? 28 : 14;
 	}
 

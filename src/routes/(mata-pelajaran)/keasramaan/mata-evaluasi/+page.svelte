@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { deserialize } from '$app/forms';
 	import { invalidate } from '$app/navigation';
 	import Icon from '$lib/components/icon.svelte';
 	import { toast } from '$lib/components/toast.svelte';
@@ -7,7 +8,13 @@
 	import MataEvaluasiEditRow from '$lib/components/keasramaan/MataEvaluasiEditRow.svelte';
 	import MataEvaluasiDeleteModal from '$lib/components/keasramaan/MataEvaluasiDeleteModal.svelte';
 
-	let { data }: { data: Record<string, unknown> } = $props();
+	let {
+		data
+	}: {
+		data: Awaited<
+			ReturnType<typeof import('$lib/server/dorm-evaluation-pages').loadDormMasterPage>
+		>;
+	} = $props();
 
 	interface MataEvaluasi {
 		id: number;
@@ -20,9 +27,16 @@
 
 	const mataEvaluasi = $derived((data.mataPelajaran as MataEvaluasi[]) ?? []);
 	const tableReady = $derived((data.tableReady as boolean) ?? true);
-	const kelasAktif = $derived(
-		data.kelasAktif as { id: number; nama: string; fase?: string } | null
+	const asramaAktif = $derived(data.room);
+	const canManage = $derived(data.canMaster);
+	const contextQuery = $derived(
+		new URLSearchParams({
+			kamar_id: String(data.room?.id ?? 0),
+			semester_id: String(data.period?.id ?? 0),
+			...(data.history ? { riwayat: '1' } : {})
+		}).toString()
 	);
+	const actionUrl = (name: string) => `?/${name}&${contextQuery}`;
 
 	let editingGroupId = $state<number | null>(null);
 	let editingGroupData = $state<{
@@ -223,15 +237,16 @@
 			return;
 		}
 
-		if (!kelasAktif?.id) {
-			toast('Kelas belum dipilih', 'warning');
+		if (!asramaAktif?.id) {
+			toast('Asrama belum dipilih', 'warning');
 			return;
 		}
 
 		const indicators = newGroupData.indikator.filter((ind) => ind.deskripsi.trim().length > 0);
 
 		const formData = new FormData();
-		formData.append('kelasId', String(kelasAktif.id));
+		formData.append('kamar_id', String(asramaAktif.id));
+		formData.append('semester_id', String(data.period?.id ?? 0));
 		formData.append('nama', newGroupData.nama.trim());
 		indicators.forEach((ind, idx) => {
 			formData.append(`indikator.${idx}.deskripsi`, ind.deskripsi.trim());
@@ -239,17 +254,21 @@
 
 		try {
 			isSubmitting = true;
-			const response = await fetch('?/create', {
+			const response = await fetch(actionUrl('create'), {
 				method: 'POST',
+				headers: { accept: 'application/json' },
 				body: formData
 			});
 
-			const result = await response.json();
+			const outcome = deserialize(await response.text());
+			const result = (
+				outcome.type === 'success' || outcome.type === 'failure' ? outcome.data : null
+			) as { fail?: string; message?: string } | null;
 
 			if (!response.ok) {
-				toast(result.fail || 'Gagal menambahkan mata evaluasi', 'error');
+				toast(result?.fail || 'Gagal menambahkan mata evaluasi', 'error');
 			} else {
-				toast(result.message || 'Berhasil menambahkan mata evaluasi', 'success');
+				toast(result?.message || 'Berhasil menambahkan mata evaluasi', 'success');
 				closeCreate();
 				await invalidate('app:keasramaan');
 			}
@@ -261,13 +280,7 @@
 		}
 	}
 
-	const kelasLabel = $derived(
-		kelasAktif
-			? kelasAktif.fase
-				? `${kelasAktif.nama} - ${kelasAktif.fase}`
-				: kelasAktif.nama
-			: '-'
-	);
+	const asramaLabel = $derived(asramaAktif ? `${asramaAktif.asrama} / ${asramaAktif.nama}` : '-');
 </script>
 
 <div class="card bg-base-100 rounded-lg border border-none p-4 shadow-md">
@@ -275,7 +288,7 @@
 	<div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
 		<div>
 			<h2 class="text-xl font-bold">Daftar Mata Evaluasi Keasramaan</h2>
-			<p class="text-base-content/70 text-sm">Kelas aktif: {kelasLabel}</p>
+			<p class="text-base-content/70 text-sm">Asrama aktif: {asramaLabel}</p>
 		</div>
 	</div>
 
@@ -284,9 +297,9 @@
 		{isCreateMode}
 		{isEditMode}
 		{hasSelection}
-		canManage={true}
+		{canManage}
 		{isSubmitting}
-		isTableReady={tableReady}
+		isTableReady={tableReady && canManage}
 		onBack={() => history.back()}
 		onToggleCreate={() => {
 			if (isCreateMode || isEditMode) {
@@ -303,7 +316,7 @@
 				type="button"
 				class="btn btn-primary shadow-none sm:max-w-40"
 				onclick={submitCreate}
-				disabled={isSubmitting || !newGroupData || !newGroupData.nama.trim()}
+				disabled={!canManage || isSubmitting || !newGroupData || !newGroupData.nama.trim()}
 				aria-busy={isSubmitting}
 			>
 				<Icon name="save" />
@@ -335,7 +348,11 @@
 							indeterminate={selectedGroups.size > 0 && selectedGroups.size < mataEvaluasi.length}
 							onchange={(event) =>
 								toggleSelectAll((event.currentTarget as HTMLInputElement).checked)}
-							disabled={isEditMode || !tableReady || mataEvaluasi.length === 0 || isSubmitting}
+							disabled={!canManage ||
+								isEditMode ||
+								!tableReady ||
+								mataEvaluasi.length === 0 ||
+								isSubmitting}
 						/>
 					</th>
 					<th style="width: 50px; min-width: 40px;">No</th>
@@ -390,16 +407,21 @@
 
 									try {
 										isSubmitting = true;
-										const response = await fetch('?/save', {
+										const response = await fetch(actionUrl('save'), {
 											method: 'POST',
+											headers: { accept: 'application/json' },
 											body: formData
 										});
 
-										const result = await response.json();
+										const outcome = deserialize(await response.text());
+										const result = (
+											outcome.type === 'success' || outcome.type === 'failure' ? outcome.data : null
+										) as { fail?: string; message?: string } | null;
+
 										if (!response.ok) {
-											toast(result.fail || 'Gagal menyimpan', 'error');
+											toast(result?.fail || 'Gagal menyimpan', 'error');
 										} else {
-											toast(result.message || 'Berhasil disimpan', 'success');
+											toast(result?.message || 'Berhasil disimpan', 'success');
 											closeEdit();
 											await invalidate('app:keasramaan');
 										}
@@ -478,11 +500,11 @@
 	<MataEvaluasiDeleteModal
 		open={deleteModalState !== null}
 		title={deleteModalTitle}
-		action="?/bulkDelete"
+		action={actionUrl('bulkDelete')}
 		ids={deleteModalIds}
 		mode={deleteModalMode}
 		item={deleteModalItem}
-		disabled={false}
+		disabled={!canManage}
 		onClose={closeDeleteModal}
 		onSuccess={handleDeleteSuccess}
 	/>

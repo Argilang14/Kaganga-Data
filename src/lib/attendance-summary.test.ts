@@ -69,7 +69,7 @@ const base = {
 		'Alfa',
 		'Izin Pulang',
 		'Belum Scan',
-		'Pulang Biasa'
+		'Pulang Manual'
 	].map((nama, index) => ({ id: index + 1, nama, kelasId: 1 })),
 	attendance: ['hadir', 'terlambat', 'sakit', 'izin', 'alfa', 'pulang']
 		.map((status, index) => ({ muridId: index + 1, status: status as SummaryStatus }))
@@ -81,25 +81,31 @@ const base = {
 test('format per kelas mengikuti contoh dan Jumat dihitung tanpa ketergantungan timezone host', () => {
 	const result = buildAttendanceSummary(base);
 	assert.match(result.text, /Rekap kehadiran kelas X.A\nHari Jum'at, 2\/10\/2026/);
-	assert.deepEqual(result.totals, { jumlah: 8, hadir: 2, tidakHadir: 4, belum: 2 });
+	assert.deepEqual(result.totals, { jumlah: 8, hadir: 2, tidakHadir: 5, belum: 1 });
 	assert.match(result.text, /Sakit \(s\)/);
 	assert.match(result.text, /Izin \(i\)/);
 	assert.match(result.text, /Alfa \(a\)/);
 	assert.match(result.text, /Izin Pulang \(p\)/);
-	assert.match(result.text, /Belum tercatat : 2/);
+	assert.match(result.text, /Belum tercatat : 1/);
 	assert.match(result.text, /07\.30/);
 });
-test('status Pulang biasa bukan otomatis tidak hadir dan menghasilkan peringatan', () => {
+test('Pulang manual tetap tercatat tanpa izin resmi dan tidak masuk daftar belum tercatat', () => {
 	const result = buildAttendanceSummary(base);
-	assert.match(result.text, /Pulang Biasa \(status pulang perlu konfirmasi\)/);
-	assert.ok(result.warnings.some((item) => item.includes('belum memiliki catatan izin pulang')));
+	assert.match(result.text, /Pulang Manual \(p\)/);
+	assert.equal(result.warnings.length, 0);
+	assert.deepEqual(
+		result.missingStudents.map((student) => student.id),
+		[7]
+	);
+	const overlapping = buildAttendanceSummary({ ...base, permitStudentIds: [6, 8] });
+	assert.deepEqual(overlapping.totals, result.totals);
 });
 test('catatan sakit dan izin menggantikan belum tercatat tanpa input ulang', () => {
 	const result = buildAttendanceSummary({
 		...base,
 		attendance: [...base.attendance, { muridId: 7, status: 'sakit' }]
 	});
-	assert.equal(result.totals.belum, 1);
+	assert.equal(result.totals.belum, 0);
 	assert.match(result.text, /Belum Scan \(s\)/);
 });
 test('hadir eksplisit tidak ditimpa oleh catatan izin pulang lama', () => {

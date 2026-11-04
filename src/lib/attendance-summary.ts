@@ -112,7 +112,6 @@ export function buildAttendanceSummary(input: {
 	const totals = emptyCounts();
 	const missingStudents: AttendanceSummary['missingStudents'] = [];
 	let previousLevel: SummaryLevel | null = null;
-	let unconfirmedPulang = 0;
 	const sorted = [...input.classes].sort(
 		(a, b) =>
 			['sd', 'smp', 'sma', 'unknown'].indexOf(a.jenjang) -
@@ -138,7 +137,7 @@ export function buildAttendanceSummary(input: {
 			else if (status === 'sakit' || status === 'alfa') {
 				counts.tidakHadir++;
 				absent.push(`- ${clean(student.nama)} (${status === 'sakit' ? 's' : 'a'})`);
-			} else if (permits.has(student.id)) {
+			} else if (status === 'pulang' || permits.has(student.id)) {
 				counts.tidakHadir++;
 				absent.push(`- ${clean(student.nama)} (p)`);
 			} else if (status === 'izin') {
@@ -147,10 +146,7 @@ export function buildAttendanceSummary(input: {
 			} else {
 				counts.belum++;
 				missingStudents.push({ ...student, kelas: kelas.nama });
-				if (status === 'pulang') unconfirmedPulang++;
-				missing.push(
-					`- ${clean(student.nama)}${status === 'pulang' ? ' (status pulang perlu konfirmasi)' : ''}`
-				);
+				missing.push(`- ${clean(student.nama)}`);
 			}
 		}
 		classes.push({ ...kelas, ...counts });
@@ -166,10 +162,6 @@ export function buildAttendanceSummary(input: {
 		);
 		if (missing.length) lines.push(`Belum tercatat : ${counts.belum}`, ...missing);
 	}
-	if (unconfirmedPulang)
-		warnings.push(
-			`${unconfirmedPulang} status Pulang belum memiliki catatan izin pulang; perlu konfirmasi.`
-		);
 	if (!input.students.length) warnings.push('Tidak ada murid aktif dalam cakupan ini.');
 	lines.push(
 		'',
@@ -185,7 +177,7 @@ export function buildAttendanceSummary(input: {
 		);
 	lines.push(
 		'',
-		'Keterangan : s = sakit, i = izin, a = alfa, p = izin pulang',
+		'Keterangan : s = sakit, i = izin, a = alfa, p = pulang',
 		`Diperbarui : ${new Date(generatedAt).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
 	);
 	return { text: lines.join('\n'), generatedAt, warnings, totals, classes, missingStudents };

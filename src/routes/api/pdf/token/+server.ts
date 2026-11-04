@@ -91,6 +91,7 @@ export const POST = (async ({ locals, request }) => {
 		docType,
 		muridId,
 		kelasId,
+		penempatanId,
 		tpMode,
 		kriteria,
 		template,
@@ -127,6 +128,7 @@ export const POST = (async ({ locals, request }) => {
 	const url = new URL('http://localhost');
 	if (muridId) url.searchParams.set('murid_id', String(muridId));
 	if (kelasId) url.searchParams.set('kelas_id', String(kelasId));
+	if (penempatanId) url.searchParams.set('penempatan_id', String(penempatanId));
 	if (tpMode === 'full-desc') url.searchParams.set('full_tp', 'desc');
 	if (kriteria) {
 		url.searchParams.set('krit_cukup', String(kriteria.kritCukup));
@@ -138,7 +140,8 @@ export const POST = (async ({ locals, request }) => {
 	if (parentSignature) url.searchParams.set('ttd_wali', parentSignature);
 	if (orientation) url.searchParams.set('orientation', orientation);
 	if (docType === 'jadwal-pelajaran') url.searchParams.set('layout_mode', layoutMode);
-	if (['jadwal-pelajaran', 'rapor', 'piagam'].includes(docType) && body.includeSchoolMarks === true) url.searchParams.set('school_marks', '1');
+	if (['jadwal-pelajaran', 'rapor', 'piagam'].includes(docType) && body.includeSchoolMarks === true)
+		url.searchParams.set('school_marks', '1');
 	if (jenjang) url.searchParams.set('jenjang', jenjang);
 	if (periodeMode) url.searchParams.set('periode_mode', periodeMode);
 	if (tahunAjaranId) url.searchParams.set('tahun_ajaran_id', String(tahunAjaranId));
@@ -157,6 +160,7 @@ export const POST = (async ({ locals, request }) => {
 		docType,
 		muridId,
 		kelasId,
+		penempatanId,
 		tpMode,
 		kritCukup: kriteria?.kritCukup,
 		kritBaik: kriteria?.kritBaik,
@@ -167,7 +171,8 @@ export const POST = (async ({ locals, request }) => {
 		parentSignature,
 		orientation,
 		layoutMode: docType === 'jadwal-pelajaran' ? layoutMode : undefined,
-		includeSchoolMarks: ['jadwal-pelajaran', 'rapor', 'piagam'].includes(docType) && body.includeSchoolMarks === true,
+		includeSchoolMarks:
+			['jadwal-pelajaran', 'rapor', 'piagam'].includes(docType) && body.includeSchoolMarks === true,
 		jenjang,
 		periodeMode,
 		tahunAjaranId,

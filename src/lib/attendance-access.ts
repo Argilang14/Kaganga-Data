@@ -1,4 +1,5 @@
-import { hasSchoolWideOperationalAccess } from './access-position.ts';
+import { hasRole, isFullAccess } from './user-role.ts';
+import { roleGrants } from './role-policy.ts';
 import { canonicalAttendanceActivityCode } from './attendance-activity.ts';
 
 export const attendanceActions = [
@@ -20,6 +21,7 @@ export type AttendanceUser =
 	| {
 			id?: number;
 			type?: string | null;
+			roles?: readonly string[] | null;
 			jabatanAkses?: string | null;
 			sekolahId?: number | null;
 			permissions?: readonly string[] | null;
@@ -36,36 +38,43 @@ export const basicAttendanceActions = new Set<AttendanceAction>([
 
 export function canAttendance(user: AttendanceUser, action: AttendanceAction) {
 	if (!user) return false;
-	if (hasSchoolWideOperationalAccess(user)) return true;
-	if (user.type === 'tim_keamanan') return action === 'scan' || action === 'perjalanan';
+	if (roleGrants(user, `absensi_${action}`)) return true;
+	if (hasRole(user, 'tim_keamanan')) return action === 'scan' || action === 'perjalanan';
 	if (user.permissions?.includes(`absensi_${action}`)) return true;
 	return (
 		basicAttendanceActions.has(action) &&
-		(['user', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'tim_dapur'].includes(user.type ?? '') ||
+		(hasRole(user, 'user', 'wali_asuh', 'wali_asrama', 'tim_dapur') ||
 			user.permissions?.includes('administrasi_absensi') === true)
 	);
 }
 
 export function canViewAttendanceActivity(user: AttendanceUser, category?: string) {
-	if (user?.type === 'tim_keamanan' && !hasSchoolWideOperationalAccess(user)) return false;
-	return user?.type !== 'tim_dapur' || hasSchoolWideOperationalAccess(user) || category === 'makan';
+	if (
+		hasRole(user, 'tim_keamanan') &&
+		!hasRole(user, 'user', 'wali_asuh', 'wali_asrama', 'tim_dapur') &&
+		!hasSchoolWideAttendanceAccess(user)
+	)
+		return false;
+	return (
+		!hasRole(user, 'tim_dapur') ||
+		hasRole(user, 'user', 'wali_asuh', 'wali_asrama') ||
+		hasSchoolWideAttendanceAccess(user) ||
+		category === 'makan'
+	);
 }
 
+export function hasSchoolWideAttendanceAccess(user: AttendanceUser) {
+	return isFullAccess(user) || hasRole(user, 'operator', 'waka_kesiswaan', 'waka_humas');
+}
 export function hasSchoolWideAttendanceStudentAccess(user: AttendanceUser, sekolahId: number) {
 	return (
-		user?.type === 'wali_asrama' && user.sekolahId === sekolahId && canAttendance(user, 'lihat')
+		!!user &&
+		(isFullAccess(user) || user.sekolahId === sekolahId) &&
+		hasSchoolWideAttendanceAccess(user)
 	);
 }
-
-// Reporting access does not grant permission to change attendance or student data.
 export function hasSchoolWideAttendanceSummaryAccess(user: AttendanceUser, sekolahId: number) {
-	if (!user || !canAttendance(user, 'export')) return false;
-	if (user.type === 'admin') return true;
-	if (user.sekolahId !== sekolahId) return false;
-	return (
-		hasSchoolWideOperationalAccess(user) ||
-		['user', 'wali_kelas', 'wali_asuh', 'wali_asrama'].includes(user.type ?? '')
-	);
+	return canAttendance(user, 'export') && hasSchoolWideAttendanceStudentAccess(user, sekolahId);
 }
 
 export type AttendanceActivityContext = { kode?: string; tanggal?: string };
@@ -77,14 +86,14 @@ export function canAttendActivity(
 	context?: AttendanceActivityContext
 ) {
 	if (!canAttendance(user, 'input')) return false;
-	if (hasSchoolWideOperationalAccess(user)) return true;
-	if (category === 'makan') return user?.type === 'tim_dapur';
-	if (user?.type === 'tim_dapur') return category === 'makan';
-	if (category === 'sekolah' && !['user', 'wali_kelas'].includes(user?.type ?? '')) return false;
-	if (category === 'asrama' && !['wali_asuh', 'wali_asrama'].includes(user?.type ?? '')) return false;
+	if (hasSchoolWideAttendanceAccess(user)) return true;
+	if (category === 'makan') return hasRole(user, 'tim_dapur');
+	if (!canViewAttendanceActivity(user, category)) return false;
+	if (category === 'sekolah' && !hasRole(user, 'user')) return false;
+	if (category === 'asrama' && !hasRole(user, 'wali_asuh', 'wali_asrama')) return false;
 	if (category === 'sholat') {
-		if (['wali_asuh', 'wali_asrama'].includes(user?.type ?? '')) return true;
-		if (['user', 'wali_kelas'].includes(user?.type ?? '')) {
+		if (hasRole(user, 'wali_asuh', 'wali_asrama')) return true;
+		if (hasRole(user, 'user')) {
 			if (
 				!['sholat_zuhur', 'sholat_asar'].includes(
 					canonicalAttendanceActivityCode(context?.kode ?? '')
@@ -103,12 +112,9 @@ export function canAttendActivity(
 		}
 		return false;
 	}
-	if (scope === 'sekolah') return ['user', 'wali_kelas'].includes(user?.type ?? '');
-	if (scope === 'asrama') return ['wali_asuh', 'wali_asrama'].includes(user?.type ?? '');
-	return (
-		scope === 'semua' &&
-		['user', 'wali_kelas', 'wali_asuh', 'wali_asrama'].includes(user?.type ?? '')
-	);
+	if (scope === 'sekolah') return hasRole(user, 'user');
+	if (scope === 'asrama') return hasRole(user, 'wali_asuh', 'wali_asrama');
+	return scope === 'semua' && hasRole(user, 'user', 'wali_asuh', 'wali_asrama');
 }
 
 export function attendanceDateAllowed(user: AttendanceUser, date: string, today: string) {

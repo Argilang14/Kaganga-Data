@@ -301,20 +301,38 @@ interface UpdateDownloadStatus {
 }
 
 // Declare exceljs module for TS when types are not present in node_modules
+
 declare module 'exceljs' {
 	// Minimal typing surface used in the project. Keep conservative types to
 	// avoid pulling a heavy dependency for full typings.
 	export class Workbook {
 		addWorksheet(name: string): Worksheet;
+		getWorksheet(name: string): Worksheet | undefined;
+		worksheets: Worksheet[];
 		xlsx: {
+			load(buffer: ArrayBuffer): Promise<Workbook>;
 			writeBuffer(): Promise<ArrayBuffer | ArrayBufferView>;
 		};
 	}
 
 	export interface Worksheet {
 		addRows(rows: Array<unknown>): void;
+		addRow(values: unknown[]): Row;
+		getRow(index: number): Row;
+		getCell(address: string): Cell;
+		rowCount: number;
+		columns: Array<{ width: number }>;
 		getColumn(index: number): { width?: number };
 		views?: unknown;
+	}
+
+	export interface Row {
+		getCell(index: number): Cell;
+		font: { bold?: boolean };
+	}
+	export interface Cell {
+		text: string;
+		value: unknown;
 	}
 
 	const ExcelJS: {

@@ -9,7 +9,7 @@ export function dormMembershipCondition(school: number, room: number, date = dor
 	 WHERE di.murid_id=${tableMurid.id} AND di.sekolah_id=${school} AND dp.kamar_id=${room}
 	 AND dp.mulai<=${date} AND (dp.selesai IS NULL OR dp.selesai>${date}))`;
 }
-export function dormGuardianCondition(school: number, employee: number, legacyName: string | null) {
+export function dormGuardianCondition(school: number, employee: number) {
 	const today = dormToday();
 	return sql`EXISTS(SELECT 1 FROM murid_identity_link di WHERE di.murid_id=${tableMurid.id}
 	 AND di.sekolah_id=${school} AND (
@@ -17,8 +17,5 @@ export function dormGuardianCondition(school: number, employee: number, legacyNa
 	 AND dw.sekolah_id=dp.sekolah_id JOIN pegawai de ON de.id=dw.pegawai_id
 	 WHERE dp.identity_uid=di.identity_uid AND dp.sekolah_id=${school}
 	 AND dp.mulai<=${today} AND (dp.selesai IS NULL OR dp.selesai>${today})
-	 AND dw.pegawai_id=${employee} AND de.status='aktif' AND dw.mulai<=${today} AND dw.selesai IS NULL)
-	 OR (NOT EXISTS(SELECT 1 FROM asrama_penempatan dp WHERE dp.identity_uid=di.identity_uid
-	 AND dp.sekolah_id=${school})
-	 AND ${legacyName !== null} AND lower(trim(${tableMurid.waliAsramaNama}))=${legacyName ?? ''})))`;
+	 AND dw.pegawai_id=${employee} AND de.status='aktif' AND dw.mulai<=${today} AND dw.selesai IS NULL)))`;
 }

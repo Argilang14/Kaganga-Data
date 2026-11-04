@@ -53,7 +53,8 @@ export async function load({ locals, parent }) {
 	let picker: { mapelList: Array<{ id: number; nama: string }>; pickerMapelId: number };
 	const needFilter = needsMapelFilter(
 		{
-			type: user?.type,
+			...locals.user,
+            type: user?.type,
 			id: user?.id,
 			kelasId: kelasAktif.id
 		},

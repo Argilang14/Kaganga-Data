@@ -1,3 +1,4 @@
+import { assertAcademicAssessmentAccess } from '$lib/server/academic-assessment-access';
 import db from '$lib/server/db';
 import { calculateSumatifRts } from '$lib/sumatif-rts';
 import { ensureAsesmenSumatifSchema } from '$lib/server/db/ensure-asesmen-sumatif';
@@ -6,13 +7,11 @@ import {
 	tableAsesmenSumatifTujuan,
 	tableMataPelajaran,
 	tableMurid,
-	tableTujuanPembelajaran,
-	tableAuthUserMataPelajaran
+	tableTujuanPembelajaran
 } from '$lib/server/db/schema';
 import { unflattenFormData } from '$lib/utils';
 import { fail, error, redirect } from '@sveltejs/kit';
 import { and, asc, eq, inArray } from 'drizzle-orm';
-import { authority } from '../../../pengguna/utils.server';
 
 const DEFAULT_LINGKUP = 'Tanpa lingkup materi';
 
@@ -182,39 +181,7 @@ export async function load({ url, locals, depends }) {
 		throw error(404, 'Mata pelajaran tidak ditemukan untuk murid ini.');
 	}
 
-	// Permission check: Allow admin, wali_kelas, wali_asuh, and user (guru mapel) assigned to this subject
-	const smUserType = (locals.user as { type?: string } | null)?.type;
-	if (smUserType !== 'admin' && smUserType !== 'wali_kelas' && smUserType !== 'wali_asuh') {
-		if (smUserType === 'user' && locals.user?.id) {
-			const smUserId = locals.user.id;
-			const smAssigned = await db.query.tableAuthUserMataPelajaran.findMany({
-				columns: { mataPelajaranId: true },
-				where: eq(tableAuthUserMataPelajaran.authUserId, smUserId)
-			});
-			const smAssignedIds = new Set(smAssigned.map((m) => m.mataPelajaranId));
-			const smLegacyId = (locals.user as { mataPelajaranId?: number | null }).mataPelajaranId;
-			if (smLegacyId) smAssignedIds.add(smLegacyId);
-
-			// Check by ID first, then by name (cross-semester resolution)
-			const smAccessById = smAssignedIds.has(mapel.id);
-			if (!smAccessById) {
-				// Fetch the assigned mapel records and check by name
-				const smAssignedMapels = await db.query.tableMataPelajaran.findMany({
-					columns: { nama: true },
-					where: inArray(tableMataPelajaran.id, Array.from(smAssignedIds))
-				});
-				const smAllowedNames = new Set(
-					smAssignedMapels.map((m) => m.nama?.trim().toLowerCase() ?? '')
-				);
-				const smMapelNorm = mapel.nama?.trim().toLowerCase() ?? '';
-				if (!smAllowedNames.has(smMapelNorm)) {
-					throw redirect(303, '/forbidden?required=mapel_id');
-				}
-			}
-		} else {
-			authority('rapor_manage');
-		}
-	}
+	await assertAcademicAssessmentAccess(locals, murid.id, murid.kelasId, mapel.id);
 
 	// If the requested mapel is the agama or PKS parent, try to resolve the student's
 	// religion-specific variant in the same kelas and redirect to it so the
@@ -376,42 +343,7 @@ export const actions = {
 			return fail(404, { fail: 'Mata pelajaran tidak ditemukan.' });
 		}
 
-		// Permission check: Allow admin, wali_kelas, wali_asuh, and user (guru mapel) assigned to this subject
-		const saveSmUserType = (locals.user as { type?: string } | null)?.type;
-		if (
-			saveSmUserType !== 'admin' &&
-			saveSmUserType !== 'wali_kelas' &&
-			saveSmUserType !== 'wali_asuh'
-		) {
-			if (saveSmUserType === 'user' && locals.user?.id) {
-				const saveSmUserId = locals.user.id;
-				const saveSmAssigned = await db.query.tableAuthUserMataPelajaran.findMany({
-					columns: { mataPelajaranId: true },
-					where: eq(tableAuthUserMataPelajaran.authUserId, saveSmUserId)
-				});
-				const saveSmAssignedIds = new Set(saveSmAssigned.map((m) => m.mataPelajaranId));
-				const saveSmLegacyId = (locals.user as { mataPelajaranId?: number | null }).mataPelajaranId;
-				if (saveSmLegacyId) saveSmAssignedIds.add(saveSmLegacyId);
-
-				// Check by ID first, then by name (cross-semester resolution)
-				const saveAccessById = saveSmAssignedIds.has(mapel.id);
-				if (!saveAccessById) {
-					const saveSmAssignedMapels = await db.query.tableMataPelajaran.findMany({
-						columns: { nama: true },
-						where: inArray(tableMataPelajaran.id, Array.from(saveSmAssignedIds))
-					});
-					const saveSmAllowedNames = new Set(
-						saveSmAssignedMapels.map((m) => m.nama?.trim().toLowerCase() ?? '')
-					);
-					const saveSmMapelNorm = mapel.nama?.trim().toLowerCase() ?? '';
-					if (!saveSmAllowedNames.has(saveSmMapelNorm)) {
-						return fail(403, { fail: 'Anda tidak memiliki akses ke mata pelajaran ini.' });
-					}
-				}
-			} else {
-				authority('rapor_manage');
-			}
-		}
+		await assertAcademicAssessmentAccess(locals, murid.id, murid.kelasId, mapel.id);
 
 		await ensureAsesmenSumatifSchema();
 

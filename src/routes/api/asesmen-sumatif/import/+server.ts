@@ -1,5 +1,8 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import db from '$lib/server/db';
+import { schoolWideAcademic } from '$lib/user-role';
+import { activeMuridFilter } from '$lib/server/murid-query';
+import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { calculateSumatifRts } from '$lib/sumatif-rts';
 import { canAccessExportClass } from '$lib/server/class-export-access';
 import { getAksesMapelUser, needsMapelFilter } from '$lib/server/mapel-access';
@@ -129,7 +132,9 @@ function deriveLingkupBobot(
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!locals.user || !canAccessMenu(locals.user, '/api/asesmen-sumatif')) {
-		return new Response(JSON.stringify({ error: 'Tidak memiliki izin mengimpor nilai.' }), { status: 403 });
+		return new Response(JSON.stringify({ error: 'Tidak memiliki izin mengimpor nilai.' }), {
+			status: 403
+		});
 	}
 	const contentType = request.headers.get('content-type') || '';
 	if (!contentType.toLowerCase().includes('multipart/form-data')) {
@@ -142,8 +147,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const file = formData.get('file') as File | null;
 	const kelasId = Number(formData.get('kelas_id') ?? NaN);
 	const mapelIdRaw = String(formData.get('mapel_id') ?? '');
-	if (!(Number.isSafeInteger(Number(mapelIdRaw)) && Number(mapelIdRaw) > 0) && !['agama', 'pks'].includes(mapelIdRaw)) {
-		return new Response(JSON.stringify({ error: 'Pilih mata pelajaran yang akan diimpor.' }), { status: 400 });
+	if (
+		!(Number.isSafeInteger(Number(mapelIdRaw)) && Number(mapelIdRaw) > 0) &&
+		!['agama', 'pks'].includes(mapelIdRaw)
+	) {
+		return new Response(JSON.stringify({ error: 'Pilih mata pelajaran yang akan diimpor.' }), {
+			status: 400
+		});
 	}
 
 	if (!(file instanceof File)) {
@@ -162,11 +172,31 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			status: 401
 		});
 	}
-	if (!(await canAccessExportClass(locals.user, sekolahId, kelasId))) {
+	if (
+		!(await canAccessExportClass(locals.user, sekolahId, kelasId, {
+			schoolWide: schoolWideAcademic(locals.user),
+			includeGuardians: false
+		}))
+	) {
 		return new Response(JSON.stringify({ error: 'Kelas di luar penugasan akun.' }), {
 			status: 403
 		});
 	}
+
+	const context = await resolveSekolahAcademicContext(sekolahId);
+	const activeClass = await db.query.tableKelas.findFirst({
+		with: { semester: { with: { tahunAjaran: true } } },
+		where: (k, { and, eq }) =>
+			and(
+				eq(k.id, kelasId),
+				eq(k.sekolahId, sekolahId),
+				eq(k.semesterId, context?.activeSemesterId ?? -1)
+			)
+	});
+	if (!activeClass?.semester?.isAktif || !activeClass.semester.tahunAjaran?.isAktif)
+		return new Response(JSON.stringify({ error: 'Kelas tidak berada pada periode aktif.' }), {
+			status: 409
+		});
 
 	// Read file buffer
 	const arrayBuffer = await file.arrayBuffer();
@@ -182,7 +212,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 		await workbook.xlsx.load(Buffer.from(arrayBuffer));
 	} catch {
-		return new Response(JSON.stringify({ error: 'Berkas Excel tidak dapat dibaca.' }), { status: 400 });
+		return new Response(JSON.stringify({ error: 'Berkas Excel tidak dapat dibaca.' }), {
+			status: 400
+		});
 	}
 	const sheet = workbook.worksheets?.[0];
 	if (!sheet) {
@@ -267,7 +299,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			try {
 				vals.push(parseNumericCell((row.getCell(c) as { value: unknown }).value));
 			} catch {
-				return new Response(JSON.stringify({ error: `Nilai pada baris ${r}, kolom ${c} harus berupa angka 0-100 atau kosong. Belum ada nilai yang diimpor.` }), { status: 400 });
+				return new Response(
+					JSON.stringify({
+						error: `Nilai pada baris ${r}, kolom ${c} harus berupa angka 0-100 atau kosong. Belum ada nilai yang diimpor.`
+					}),
+					{ status: 400 }
+				);
 			}
 		}
 		students.push({ rowIndex: r, name, values: vals });
@@ -326,7 +363,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	};
 	const classStudents = await db.query.tableMurid.findMany({
 		columns: { id: true, nama: true, agama: true },
-		where: and(eq(tableMurid.kelasId, kelasId), eq(tableMurid.sekolahId, sekolahId))
+		where: and(
+			eq(tableMurid.kelasId, kelasId),
+			eq(tableMurid.sekolahId, sekolahId),
+			eq(tableMurid.semesterId, activeClass.semesterId),
+			activeMuridFilter()
+		)
 	});
 
 	// Cache tujuan lists per mapel for mapping TP columns to tujuan IDs
@@ -382,7 +424,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					if (variantRecord) targetMapelId = variantRecord.id;
 				}
 				if (mapelIdRaw === 'pks' && !targetMapelId && pksBase) targetMapelId = pksBase.id;
-
 			}
 
 			if (!targetMapelId) {

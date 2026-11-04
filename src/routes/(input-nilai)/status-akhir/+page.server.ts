@@ -1,4 +1,6 @@
 import db from '$lib/server/db';
+import { isHomeroomTeacher } from '$lib/homeroom-access';
+import { canManageKelas } from '$lib/server/kelas-manage';
 import { ensureCatatanWaliSchema } from '$lib/server/db/ensure-catatan-wali';
 import { tableMurid, tableStatusAkhirRapor } from '$lib/server/db/schema';
 import { buildKelasContext } from '$lib/server/route-utils';
@@ -182,13 +184,14 @@ export const actions = {
 		}
 
 		const murid = await db.query.tableMurid.findFirst({
-			columns: { id: true, nama: true },
+			columns: { id: true, nama: true, kelasId: true },
 			where: and(eq(tableMurid.id, muridId), eq(tableMurid.sekolahId, sekolahId))
 		});
 
 		if (!murid) {
 			return fail(404, { fail: 'Murid tidak ditemukan' });
 		}
+		if (!murid.kelasId || (isHomeroomTeacher(locals.user) && !(await canManageKelas(locals.user, sekolahId, murid.kelasId)))) return fail(403, { fail: 'Murid berada di luar kelas binaan Anda.' });
 
 		const statusRaw = formData.get('status');
 		const status = typeof statusRaw === 'string' ? statusRaw.trim() : '';
@@ -261,6 +264,7 @@ export const actions = {
 		}
 
 		const kelasId = Number(cookies.get(cookieNames.ACTIVE_KELAS_ID));
+		if (isHomeroomTeacher(locals.user) && !(await canManageKelas(locals.user, sekolahId, kelasId))) return fail(403, { fail: 'Kelas berada di luar penugasan Anda.' });
 		if (!Number.isInteger(kelasId) || kelasId <= 0) {
 			return fail(400, { fail: 'Pilih kelas aktif terlebih dahulu' });
 		}

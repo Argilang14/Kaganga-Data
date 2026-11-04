@@ -116,7 +116,7 @@ export async function getKartuAbsensiPreviewPayload({ locals, url }: KartuAbsens
 		throw error(400, 'Murid tidak terdaftar pada kelas yang diminta.');
 	}
 
-	const accessWhere = await buildKelasAccessWhere(sekolah.id, murid.kelasId, user);
+	const accessWhere = await buildKelasAccessWhere(sekolah.id, murid.kelas.id, user);
 	const kelas = await db.query.tableKelas.findFirst({
 		columns: { id: true, nama: true, fase: true },
 		where: accessWhere

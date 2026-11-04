@@ -25,10 +25,10 @@ test('asrama: validasi tanggal kalender, ID, teks dan batas batch', () => {
 	assert.equal(dormText('  Kamar   Satu  '), 'Kamar Satu');
 	assert.throws(() => dormText(''));
 });
-test('asrama: wali hanya baca bawaan, mutasi membutuhkan izin, tenant diperiksa server', () => {
+test('asrama: wali asrama dapat menempatkan murid, cakupan diperiksa server', () => {
 	for (const type of ['wali_asuh', 'wali_asrama']) {
 		assert.ok(canDorm({ type }, 'lihat'));
-		assert.equal(canDorm({ type }, 'penempatan'), false);
+		assert.equal(canDorm({ type }, 'penempatan'), type === 'wali_asrama');
 	}
 	assert.equal(canDorm({ type: 'user' }, 'lihat'), false);
 	assert.ok(canDorm({ type: 'admin' }, 'penugasan'));
@@ -38,7 +38,21 @@ test('asrama: wali hanya baca bawaan, mutasi membutuhkan izin, tenant diperiksa 
 	assert.equal(canDorm({ type: 'admin', jabatanAkses: 'waka_humas' }, 'manage'), true);
 });
 test('asrama: konteks tampilan tidak mengubah kelas, nilai, atau penempatan', () => {
-	assert.equal(dormViewHref('/asesmen-sumatif', '?kelas_id=4', 2), '/asrama/penghuni?kamar_id=2');
+	for (const path of ['/keasramaan/tp', '/asesmen-keasramaan/form-asesmen']) {
+		const moved = new URL(
+			dormViewHref(path, '?semester_id=9&indikatorId=5&keasramaan_id=3&penempatan_id=4', 2),
+			'http://localhost'
+		);
+		assert.equal(
+			moved.pathname,
+			path.startsWith('/keasramaan/') ? '/keasramaan' : '/asesmen-keasramaan'
+		);
+		assert.equal(moved.searchParams.get('semester_id'), '9');
+		assert.equal(moved.searchParams.get('kamar_id'), '2');
+		for (const key of ['indikatorId', 'keasramaan_id', 'penempatan_id'])
+			assert.equal(moved.searchParams.get(key), null);
+	}
+	assert.equal(dormViewHref('/asesmen-sumatif', '?kelas_id=4', 2), '/murid/asrama?kamar_id=2');
 	const link = new URL(
 		dormViewHref(
 			'/administrasi/absensi/monitoring',
@@ -71,6 +85,6 @@ test('asrama: halaman dan tautan lama dipetakan tanpa mengubah filter atau izin'
 	assert.equal(dormSectionVisible({ type: 'user' }, 'penghuni'), false);
 	assert.equal(
 		dormViewHref('/asrama/kamar', '?kelas_id=1&view=kamar&page=3', 4),
-		'/asrama/penghuni?kamar_id=4'
+		'/murid/asrama?kamar_id=4'
 	);
 });

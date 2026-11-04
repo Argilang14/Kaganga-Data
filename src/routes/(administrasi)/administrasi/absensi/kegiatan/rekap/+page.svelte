@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { canAttendance } from '$lib/attendance-access';
+	import { permitRecapColumns, type SchoolPermitRecap } from '$lib/attendance-permit-recap';
 	import FormEnhance from '$lib/components/form-enhance.svelte';
 	import AttendanceMonitoringPanel from '$lib/components/absensi/AttendanceMonitoringPanel.svelte';
 	import Icon from '$lib/components/icon.svelte';
@@ -19,6 +20,7 @@
 		nisn: string;
 		kelasNama: string;
 		counts: Record<StatusKey, number>;
+		schoolRecap: SchoolPermitRecap | null;
 	};
 	type DetailRow = {
 		tanggal: string;
@@ -87,6 +89,7 @@
 	let importDialog: HTMLDialogElement;
 	const statusOrder: StatusKey[] = ['hadir', 'terlambat', 'sakit', 'izin', 'alfa', 'pulang'];
 	const total = $derived(statusOrder.reduce((sum, status) => sum + data.summary[status], 0));
+	const hasSchoolRecap = $derived(data.rows.some((row) => row.schoolRecap));
 	const kelasLabel = $derived(
 		data.allKelas
 			? 'Semua Kelas'
@@ -380,8 +383,15 @@
 							<th scope="col">No</th>
 							<th scope="col">Nama Murid</th>
 							{#each statusOrder as status (status)}
-								<th scope="col" class="text-center">{data.statusLabels[status]}</th>
+								<th scope="col" class="text-center">{data.statusLabels[status]} (kegiatan)</th>
 							{/each}
+							{#if hasSchoolRecap}
+								<th scope="col" class="text-center">Izin sekolah (hari)</th>
+								<th scope="col" class="text-center">Alfa sekolah (hari)</th>
+								{#each permitRecapColumns as column (column.key)}
+									<th scope="col" class="text-center">{column.label}</th>
+								{/each}
+							{/if}
 						</tr>
 					</thead>
 					<tbody>
@@ -402,12 +412,31 @@
 										class="recap-count text-center"
 										data-status={status}
 										data-positive={row.counts[status] > 0}
-										><span class="recap-mobile-label">{data.statusLabels[status]}</span><span
-											class="recap-count-number font-semibold tabular-nums"
+										><span class="recap-mobile-label">{data.statusLabels[status]} (kegiatan)</span
+										><span class="recap-count-number font-semibold tabular-nums"
 											>{row.counts[status]}</span
 										></td
 									>
 								{/each}
+								{#if hasSchoolRecap}
+									{#each ['izin', 'alfa'] as status (status)}
+										<td class="recap-count text-center"
+											><span class="recap-mobile-label"
+												>{status === 'izin' ? 'Izin' : 'Alfa'} sekolah (hari)</span
+											><span class="recap-count-number font-semibold tabular-nums"
+												>{row.schoolRecap?.counts[status as 'izin' | 'alfa'] ?? 0}</span
+											></td
+										>
+									{/each}
+									{#each permitRecapColumns as column (column.key)}
+										<td class="recap-count text-center"
+											><span class="recap-mobile-label">{column.label}</span><span
+												class="recap-count-number font-semibold tabular-nums"
+												>{row.schoolRecap?.[column.key] ?? 0}</span
+											></td
+										>
+									{/each}
+								{/if}
 							</tr>
 						{/each}
 					</tbody>

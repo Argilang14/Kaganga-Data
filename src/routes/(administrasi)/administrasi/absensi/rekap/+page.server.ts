@@ -8,12 +8,11 @@ import {
 	todayLocalDate
 } from '$lib/server/absensi-digital';
 import db from '$lib/server/db';
-import { projectDailyIllness } from '$lib/server/attendance-illness';
-import { listLocalDatesInRange } from '$lib/server/absensi-kegiatan';
+import { loadSchoolPermitRecap } from '$lib/server/attendance-permit-recap';
 import { studentAccessCondition } from '$lib/server/attendance-student-access';
-import { tableAbsensiHarian, tableMurid } from '$lib/server/db/schema';
+import { tableMurid } from '$lib/server/db/schema';
 import { redirect } from '@sveltejs/kit';
-import { and, asc, eq, gte, inArray, lte } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 
 const STATUS_LABELS = {
 	hadir: 'Hadir',
@@ -56,37 +55,24 @@ export async function load({ locals, url }) {
 				})
 			: [];
 
-	const selectedMuridIds = muridId ? [muridId] : muridList.map((murid) => murid.id);
-	const recordedRows =
-		academic.activeSemesterId && selectedMuridIds.length
-			? await db.query.tableAbsensiHarian.findMany({
-					where: and(
-						eq(tableAbsensiHarian.sekolahId, sekolahId),
-						eq(tableAbsensiHarian.semesterId, academic.activeSemesterId),
-						kelasId ? eq(tableAbsensiHarian.kelasId, kelasId) : undefined,
-						inArray(tableAbsensiHarian.muridId, selectedMuridIds),
-						gte(tableAbsensiHarian.tanggal, tanggalAwal),
-						lte(tableAbsensiHarian.tanggal, tanggalAkhir)
-					)
-				})
-			: [];
-
-	const rowsByMurid = new Map<number, ReturnType<typeof emptyCounts>>();
-	const absensiRows = academic.activeSemesterId ? await projectDailyIllness({ schoolId: sekolahId, semesterId: academic.activeSemesterId,
-		studentIds: muridList.filter((item) => !muridId || item.id === muridId).map((item) => item.id),
-		dates: listLocalDatesInRange(tanggalAwal, tanggalAkhir), rows: recordedRows }) : [];
-	for (const murid of muridList) rowsByMurid.set(murid.id, emptyCounts());
-	for (const row of absensiRows) {
-		const target = rowsByMurid.get(row.muridId);
-		if (target) target[row.status] += 1;
-	}
+	const selectedMuridIds = muridList.filter((m) => !muridId || m.id === muridId).map((m) => m.id);
+	const schoolRecap = academic.activeSemesterId
+		? await loadSchoolPermitRecap({
+				schoolId: sekolahId,
+				semesterId: academic.activeSemesterId,
+				studentIds: selectedMuridIds,
+				start: tanggalAwal,
+				end: tanggalAkhir
+			})
+		: new Map();
 
 	const rekapSiswa = muridList
 		.filter((murid) => !muridId || murid.id === muridId)
 		.map((murid) => ({
 			id: murid.id,
 			nama: murid.nama,
-			counts: rowsByMurid.get(murid.id) ?? emptyCounts()
+			counts: schoolRecap.get(murid.id)?.counts ?? emptyCounts(),
+			permitRecap: schoolRecap.get(murid.id)
 		}));
 
 	const summary = emptyCounts();

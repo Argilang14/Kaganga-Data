@@ -13,6 +13,7 @@
 	import NavIndicator from '$lib/components/nav-indicator.svelte';
 	import ScrollToTop from '$lib/components/scroll-to-top.svelte';
 	import '../app.css';
+	import { isHomeroomPage, isHomeroomTeacher } from '$lib/homeroom-access';
 	import { isRestrictedTeacher } from '$lib/access-position';
 
 	let { data, children } = $props();
@@ -28,7 +29,7 @@
 	const isPublicGuestPage = $derived(page.url.pathname.startsWith('/tamu/'));
 	const isFluidWorkspace = $derived(
 		/^\/asrama(?:\/|$)/.test(page.url.pathname) ||
-		/^\/murid\/?$/.test(page.url.pathname) ||
+			/^\/murid(?:\/(?:semua|pasif|asrama))?\/?$/.test(page.url.pathname) ||
 			/^\/pengasuhan\/(ringkasan|piket|kejadian|perkembangan|sakit)\/?$/.test(page.url.pathname)
 	);
 
@@ -51,8 +52,12 @@
 
 	const disableInteraction = $derived(
 		isRestrictedTeacher(data.user) &&
+			!(isHomeroomTeacher(data.user) && isHomeroomPage(page.url.pathname)) &&
 			isReadonlyPage &&
-			!(page.url.pathname === '/murid/arsip/rapor' || page.url.pathname.startsWith('/murid/arsip/rapor/')) &&
+			!(
+				page.url.pathname === '/murid/arsip/rapor' ||
+				page.url.pathname.startsWith('/murid/arsip/rapor/')
+			) &&
 			!(
 				page.url.pathname.startsWith('/murid') && data.user?.permissions?.includes('kelas_manage')
 			) &&
@@ -265,8 +270,12 @@
 
 <style>
 	@media screen and (max-width: 767px) {
-		:global(.app-workspace) { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px)); }
-		:global(.app-shell .fab) { bottom: calc(5rem + env(safe-area-inset-bottom, 0px)); }
+		:global(.app-workspace) {
+			padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+		}
+		:global(.app-shell .fab) {
+			bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+		}
 	}
 	:global(
 		.is-readonly :is(button, input, select, textarea, a, [role='button']):not(.pointer-events-auto)

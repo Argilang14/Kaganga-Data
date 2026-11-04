@@ -1,3 +1,4 @@
+import { hasRole } from '$lib/user-role';
 import type { Handle } from '@sveltejs/kit';
 import { error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
@@ -71,25 +72,45 @@ export const attendanceGuard: Handle = async ({ event, resolve }) => {
 			? await event.request.clone().formData()
 			: null;
 	const params = event.url.searchParams;
-	if (isAttendance && user.type === 'tim_dapur') {
-		const id = Number(
-			form?.get('kegiatanId') ?? params.get('kegiatan_id') ?? params.get('kegiatanId')
-		);
-		if (id) {
-			const activity = await db.query.tableKegiatanAbsensi.findFirst({
-				where: and(eq(tableKegiatanAbsensi.id, id), eq(tableKegiatanAbsensi.sekolahId, sekolah.id))
-			});
-			if (!activity || activity.kategori !== 'makan')
-				throw error(403, 'Tim Dapur hanya dapat mengakses kegiatan makan.');
-		}
-	}
+	const activityId = Number(
+		form?.get('kegiatanId') ?? params.get('kegiatan_id') ?? params.get('kegiatanId')
+	);
+	const selectedActivity =
+		isAttendance && activityId
+			? await db.query.tableKegiatanAbsensi.findFirst({
+					where: and(
+						eq(tableKegiatanAbsensi.id, activityId),
+						eq(tableKegiatanAbsensi.sekolahId, sekolah.id)
+					)
+				})
+			: undefined;
+	const mealsOnly =
+		hasRole(user, 'tim_dapur') &&
+		!hasRole(user, 'user', 'wali_asuh', 'wali_asrama') &&
+		!hasSchoolWideAttendanceStudentAccess(user, sekolah.id);
+	if (
+		isAttendance &&
+		mealsOnly &&
+		([
+			'/administrasi/absensi',
+			'/administrasi/absensi/rekap',
+			'/api/administrasi/absensi/rekap/export'
+		].includes(path) ||
+			(activityId && selectedActivity?.kategori !== 'makan'))
+	)
+		throw error(403, 'Tim Dapur hanya dapat mengakses kegiatan makan.');
+
 	const action = [...params.keys()].find((key) => key.startsWith('/'))?.slice(1) ?? '';
-	if (user.type === 'tim_dapur' && action === 'saveFollowUp')
+	if (isStudent && action === 'assign' && ['/murid', '/murid/asrama'].includes(path))
+		return resolve(event);
+	if (/^\/murid\/form(?:\/\d+)?$/.test(path)) return resolve(event);
+	if (mealsOnly && action === 'saveFollowUp')
 		throw error(403, 'Tindak lanjut izin pulang bukan tugas Tim Dapur.');
 	if (isAttendance) {
 		const permission: AttendanceAction = path.endsWith('/pengaturan')
 			? 'pengaturan'
-			: path === '/api/administrasi/absensi/scan/perjalanan' || path === '/administrasi/absensi/konfirmasi-pulang'
+			: path === '/api/administrasi/absensi/scan/perjalanan' ||
+				  path === '/administrasi/absensi/konfirmasi-pulang'
 				? 'perjalanan'
 				: path.endsWith('/scan')
 					? 'scan'
@@ -110,7 +131,16 @@ export const attendanceGuard: Handle = async ({ event, resolve }) => {
 	const expandedPhotoRead = photoRead && hasSchoolWideAttendanceStudentAccess(user, sekolah.id);
 	const allowedClasses = isAttendance ? attendanceClasses : accessibleClassIds;
 	const allowedStudent =
-		isAttendance || expandedPhotoRead ? attendanceStudent : assertStudentAccess;
+		isAttendance || expandedPhotoRead
+			? (actor: App.Locals['user'], school: number, student: number, active = false) =>
+					attendanceStudent(
+						actor,
+						school,
+						student,
+						active,
+						selectedActivity?.kategori ?? (isAttendance ? 'sekolah' : undefined)
+					)
+			: assertStudentAccess;
 	if (classId && !schoolSummaryRead && !(await allowedClasses(user, sekolah.id)).includes(classId))
 		throw error(403, 'Kelas di luar penugasan akun.');
 	const studentId = Number(

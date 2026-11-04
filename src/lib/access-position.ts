@@ -1,3 +1,4 @@
+import { getUserRoles, hasRole, schoolWideAcademic } from './user-role.ts';
 export const accessPositionValues = [
 	'kepala_sekolah',
 	'waka_kesiswaan',
@@ -38,13 +39,35 @@ export function isLeadershipAccessPosition(value: unknown): value is AccessPosit
 }
 
 export function hasSchoolWideOperationalAccess(
-	user?: { type?: string | null; jabatanAkses?: string | null } | null
+	user?: {
+		type?: string | null;
+		roles?: readonly string[] | null;
+		jabatanAkses?: string | null;
+	} | null
 ) {
-	return user?.type === 'admin' || parseAccessPosition(user?.jabatanAkses) !== null;
+	return getUserRoles(user).some((role) =>
+		[
+			'admin',
+			'kepala_sekolah',
+			'operator',
+			'waka_kurikulum',
+			'waka_kesiswaan',
+			'waka_sarpras',
+			'waka_keasramaan',
+			'waka_humas'
+		].includes(role)
+	);
 }
 
 export function isRestrictedTeacher(
-	user?: { type?: string | null; jabatanAkses?: string | null } | null
+	user?: {
+		type?: string | null;
+		roles?: readonly string[] | null;
+		jabatanAkses?: string | null;
+		waliKelasIds?: readonly number[];
+	} | null,
+	selectedClass?: number | null
 ) {
-	return user?.type === 'user' && !hasSchoolWideOperationalAccess(user);
+	if (selectedClass && user?.waliKelasIds?.includes(selectedClass)) return false;
+	return hasRole(user, 'user') && !schoolWideAcademic(user);
 }

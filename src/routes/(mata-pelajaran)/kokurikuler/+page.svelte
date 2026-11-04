@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { schoolWideAcademic } from '$lib/user-role';
 	import { deserialize } from '$app/forms';
 	import { invalidate } from '$app/navigation';
 	import { page } from '$app/state';
@@ -91,7 +92,7 @@
 	// Restrict editing for wali_asuh and user (guru mapel)
 	const canEdit = $derived.by(() => {
 		const u = page.data.user as { type?: string } | null | undefined;
-		return u?.type !== 'wali_asuh' && u?.type !== 'user';
+		return schoolWideAcademic(page.data.user) || (u?.type !== 'wali_asuh' && u?.type !== 'user');
 	});
 	const dimensionOptions = $derived.by(() => [...data.dimensiPilihan]);
 	const isModalOpen = $derived.by(() => modalState !== null);

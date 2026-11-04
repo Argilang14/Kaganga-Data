@@ -38,14 +38,18 @@ import {
 	tableIzinPulangMurid as permit
 } from './db/schema';
 
-export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSearchParams, cookies?: Cookies) {
+export async function loadMonitoringSnapshot(
+	locals: App.Locals,
+	params: URLSearchParams,
+	cookies?: Cookies
+) {
 	const { user, sekolah } = locals;
 	if (!user || !sekolah) throw error(401, 'Sesi sekolah tidak valid.');
 	if (user.type !== 'admin' && user.sekolahId !== sekolah.id)
 		throw error(403, 'Sekolah di luar penugasan akun.');
 	if (!canAttendance(user, 'lihat')) throw error(403, 'Izin melihat absensi belum diberikan.');
 	const date = params.get('tanggal') ?? monitoringToday();
-	const dorm = await dormView(locals,params,cookies,true);
+	const dorm = await dormView(locals, params, cookies, true);
 	if (!isSummaryDate(date) || date > monitoringToday())
 		throw error(400, 'Pilih tanggal valid, bukan tanggal mendatang.');
 	// A kitchen account never receives non-meal activity metadata, even with a forged tab.
@@ -108,9 +112,14 @@ export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSear
 			? await db.query.tableMurid.findMany({
 					columns: { id: true, nama: true, kelasId: true },
 					where: and(
-						await studentAccessCondition(user, sekolah.id, academic.activeSemesterId),
+						await studentAccessCondition(
+							user,
+							sekolah.id,
+							academic.activeSemesterId,
+							tab === 'makan' ? 'makan' : tab === 'asrama' ? 'asrama' : 'sekolah'
+						),
 						activeMuridFilter(),
-						dorm.room ? dormMembershipCondition(sekolah.id,dorm.room.id,date) : undefined,
+						dorm.room ? dormMembershipCondition(sekolah.id, dorm.room.id, date) : undefined,
 						inArray(
 							m.kelasId,
 							selectedClasses.map((item) => item.id)
@@ -202,7 +211,11 @@ export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSear
 		columns: queryColumns,
 		records,
 		permits,
-		students: students.map((item) => ({ ...item, kelas: names.get(item.kelasId) ?? '-' }))
+		students: students.flatMap((item) =>
+			item.kelasId === null
+				? []
+				: [{ ...item, kelasId: item.kelasId, kelas: names.get(item.kelasId) ?? '-' }]
+		)
 	});
 	const connectedRows = connected
 		? connectSchoolDormRows(rawRows, queryColumns)
@@ -272,7 +285,11 @@ export async function loadMonitoringSnapshot(locals: App.Locals, params: URLSear
 	};
 }
 
-export async function loadAttendanceMonitoring(locals: App.Locals, params: URLSearchParams, cookies?: Cookies) {
+export async function loadAttendanceMonitoring(
+	locals: App.Locals,
+	params: URLSearchParams,
+	cookies?: Cookies
+) {
 	const snapshot = await loadMonitoringSnapshot(locals, params, cookies);
 	const { rows, columns } = snapshot;
 	const focus = params.get('kolom') ?? columns[0].key;

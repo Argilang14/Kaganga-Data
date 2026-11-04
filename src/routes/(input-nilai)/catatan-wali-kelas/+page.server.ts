@@ -1,4 +1,7 @@
+import { schoolWideAcademic } from '$lib/user-role';
 import db from '$lib/server/db';
+import { isHomeroomTeacher } from '$lib/homeroom-access';
+import { canManageKelas } from '$lib/server/kelas-manage';
 import { ensureCatatanWaliSchema } from '$lib/server/db/ensure-catatan-wali';
 import { tableCatatanWaliKelas, tableMurid, tableKelas } from '$lib/server/db/schema';
 import { fail, redirect } from '@sveltejs/kit';
@@ -111,8 +114,7 @@ export const actions = {
 		}
 
 		// Permission check: only admin and wali_kelas can write catatan wali kelas
-		const saveUserType = (locals.user as { type?: string } | null)?.type;
-		if (saveUserType !== 'admin' && saveUserType !== 'wali_kelas') {
+		if (!schoolWideAcademic(locals.user) && !isHomeroomTeacher(locals.user)) {
 			return fail(403, { fail: 'Anda tidak memiliki izin untuk menulis catatan wali kelas.' });
 		}
 
@@ -137,16 +139,16 @@ export const actions = {
 		}
 
 		// If wali_kelas, verify they are the actual wali of the student's class
-		if (saveUserType === 'wali_kelas') {
+		if (!schoolWideAcademic(locals.user)) {
 			const pegawaiId = (locals.user as { pegawaiId?: number | null }).pegawaiId;
 			if (!pegawaiId) {
 				return fail(403, { fail: 'Data wali kelas tidak lengkap.' });
 			}
 			const kelas = await db.query.tableKelas.findFirst({
 				columns: { id: true, waliKelasId: true },
-				where: eq(tableKelas.id, murid.kelasId)
+				where: eq(tableKelas.id, murid.kelasId ?? -1)
 			});
-			if (!kelas || kelas.waliKelasId !== pegawaiId) {
+			if (!kelas || !(await canManageKelas(locals.user, sekolahId, kelas.id))) {
 				return fail(403, { fail: 'Anda bukan wali kelas dari murid ini.' });
 			}
 		}
@@ -184,8 +186,7 @@ export const actions = {
 		}
 
 		// Permission check: only admin and wali_kelas can write catatan wali kelas
-		const fillUserType = (locals.user as { type?: string } | null)?.type;
-		if (fillUserType !== 'admin' && fillUserType !== 'wali_kelas') {
+		if (!schoolWideAcademic(locals.user) && !isHomeroomTeacher(locals.user)) {
 			return fail(403, { fail: 'Anda tidak memiliki izin untuk menulis catatan wali kelas.' });
 		}
 
@@ -218,7 +219,7 @@ export const actions = {
 		}
 
 		// If wali_kelas, verify they are the wali of ALL selected students' classes
-		if (fillUserType === 'wali_kelas') {
+		if (!schoolWideAcademic(locals.user)) {
 			const pegawaiId = (locals.user as { pegawaiId?: number | null }).pegawaiId;
 			if (!pegawaiId) {
 				return fail(403, { fail: 'Data wali kelas tidak lengkap.' });
@@ -231,9 +232,9 @@ export const actions = {
 			for (const kId of uniqueKelasIds) {
 				const kelasRow = await db.query.tableKelas.findFirst({
 					columns: { id: true, waliKelasId: true },
-					where: eq(tableKelas.id, kId)
+					where: eq(tableKelas.id, kId ?? -1)
 				});
-				if (!kelasRow || kelasRow.waliKelasId !== pegawaiId) {
+				if (!kelasRow || !(await canManageKelas(locals.user, sekolahId, kelasRow.id))) {
 					return fail(403, { fail: 'Anda bukan wali kelas dari salah satu murid yang dipilih.' });
 				}
 			}
@@ -244,6 +245,8 @@ export const actions = {
 			.from(tableMurid)
 			.where(and(eq(tableMurid.sekolahId, sekolahId), inArray(tableMurid.id, muridIds)));
 
+		if (muridList.length !== new Set(muridIds).size)
+			return fail(403, { fail: 'Sebagian murid berada di luar penugasan Anda.' });
 		const validIds = muridList.map((item) => item.id);
 		if (!validIds.length) {
 			return fail(404, { fail: 'Murid tidak ditemukan' });

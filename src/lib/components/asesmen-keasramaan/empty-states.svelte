@@ -12,7 +12,7 @@
 	<div class="alert alert-soft alert-info mt-6">
 		<Icon name="info" />
 		<span>
-			Belum ada data Matev Keasramaan untuk kelas ini. Tambahkan terlebih dahulu di menu
+			Belum ada data Matev Keasramaan untuk asrama ini. Tambahkan terlebih dahulu di menu
 			<strong>Keasramaan</strong>.
 		</span>
 	</div>
@@ -33,8 +33,8 @@
 	<div class="alert alert-soft alert-warning mt-6">
 		<Icon name="alert" />
 		<span>
-			Belum ada data murid di kelas ini. Tambahkan murid terlebih dahulu melalui menu
-			<strong>Murid</strong>.
+			Belum ada murid sesuai penempatan dan penugasan di asrama ini. Periksa melalui menu
+			<strong>Murid Asrama</strong>.
 		</span>
 	</div>
 {:else if state === 'no-results'}

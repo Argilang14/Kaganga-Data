@@ -1,3 +1,6 @@
+import { getAksesMapelUser } from '$lib/server/mapel-access';
+import { canAccessExportClass } from '$lib/server/class-export-access';
+import { error } from '@sveltejs/kit';
 import db from '$lib/server/db';
 import {
 	tableAsesmenFormatif,
@@ -103,7 +106,7 @@ function buildSummarySentence(parts: ProgressSummaryPart[]): string | null {
 		const lingkup = part.lingkupMateri.toLowerCase();
 		return `${kategoriLabel} dalam materi ${lingkup} (${part.tuntas}/${part.totalTujuan} TP)`;
 	});
-	let sentence = '';
+	let sentence: string;
 	if (formatted.length === 1) {
 		sentence = formatted[0];
 	} else if (formatted.length === 2) {
@@ -115,7 +118,7 @@ function buildSummarySentence(parts: ProgressSummaryPart[]): string | null {
 	const capitalized = sentence.charAt(0).toUpperCase() + sentence.slice(1);
 	return capitalized.endsWith('.') ? capitalized : `${capitalized}.`;
 }
-export async function load({ parent, url, depends }) {
+export async function load({ parent, url, depends, locals }) {
 	depends('app:asesmen-formatif');
 	const { kelasAktif, user } = await parent();
 	const meta: PageMeta = { title: 'Asesmen Formatif' };
@@ -150,6 +153,19 @@ export async function load({ parent, url, depends }) {
 		orderBy: asc(tableMataPelajaran.nama)
 	});
 
+	if (
+		!user ||
+		!locals.sekolah ||
+		!(await canAccessExportClass(user, locals.sekolah.id, kelasAktif.id))
+	)
+		error(403, 'Kelas di luar penugasan.');
+	if (isRestrictedTeacher(user, kelasAktif.id) && user) {
+		const access = await getAksesMapelUser(user, kelasAktif.id);
+		mapelRecords = mapelRecords.filter(
+			(m) => access.ids.has(m.id) || access.names.has(normalizeText(m.nama))
+		);
+	}
+
 	// If the logged-in user is a simple 'user' and has an assigned mataPelajaranId,
 	// prefer the subject with the same name in the active kelas (so subject exists
 	// across multiple kelas rows with same name).
@@ -161,7 +177,7 @@ export async function load({ parent, url, depends }) {
 	// default to it in the UI. This does NOT grant them wider grading
 	// access; that remains restricted to their assigned variant.
 	let treatAssignedAgamaVariantAsBase = false;
-	if (maybeUser && isRestrictedTeacher(maybeUser) && maybeUser.id) {
+	if (maybeUser && isRestrictedTeacher(maybeUser, kelasAktif.id) && maybeUser.id) {
 		try {
 			// First check join table auth_user_mata_pelajaran for multi-mapel support
 			const multiMapels = await db.query.tableAuthUserMataPelajaran.findMany({
@@ -259,7 +275,7 @@ export async function load({ parent, url, depends }) {
 	// grades students of their agama.
 	let assignedLocalMapelId: number | null = null;
 	let assignedIsAgamaVariant = false;
-	if (maybeUser && isRestrictedTeacher(maybeUser) && maybeUser.mataPelajaranId) {
+	if (maybeUser && isRestrictedTeacher(maybeUser, kelasAktif.id) && maybeUser.mataPelajaranId) {
 		try {
 			const assigned = await db.query.tableMataPelajaran.findFirst({
 				columns: { id: true, nama: true },
@@ -296,7 +312,7 @@ export async function load({ parent, url, depends }) {
 	// Derive human readable agama labels for the assigned agama/PKS variant(s).
 	// Support both multi-mapel (join table) and legacy single-mapel.
 	const allowedAgamaVariants = new Set<string>();
-	if (maybeUser && isRestrictedTeacher(maybeUser) && maybeUser.id) {
+	if (maybeUser && isRestrictedTeacher(maybeUser, kelasAktif.id) && maybeUser.id) {
 		try {
 			// First try multi-mapel from join table
 			const multiMapels = await db.query.tableAuthUserMataPelajaran.findMany({
@@ -474,7 +490,12 @@ export async function load({ parent, url, depends }) {
 	}
 
 	// If user is locked to a mapel and no explicit query param is provided, default to user's mapel
-	if (!selectedMapelValue && maybeUser && isRestrictedTeacher(maybeUser) && maybeUser.mataPelajaranId) {
+	if (
+		!selectedMapelValue &&
+		maybeUser &&
+		isRestrictedTeacher(maybeUser, kelasAktif.id) &&
+		maybeUser.mataPelajaranId
+	) {
 		// If the user's assigned mapel is an agama or PKS variant and we have the
 		// special rule enabled, default to the parent option instead of the variant id.
 		if (treatAssignedAgamaVariantAsBase) {
@@ -514,7 +535,7 @@ export async function load({ parent, url, depends }) {
 	if (
 		(!requestedValue || requestedValue === '') &&
 		maybeUser &&
-		isRestrictedTeacher(maybeUser) &&
+		isRestrictedTeacher(maybeUser, kelasAktif.id) &&
 		maybeUser.mataPelajaranId
 	) {
 		// Special-case: if assigned to an agama or PKS variant, default to the parent option.
@@ -787,7 +808,7 @@ export async function load({ parent, url, depends }) {
 		}
 
 		const canAccess = (() => {
-			if (!isRestrictedTeacher(maybeUser)) return true;
+			if (!isRestrictedTeacher(maybeUser, kelasAktif.id)) return true;
 
 			// If agama is selected and user has assigned agama variants, restrict by agama
 			if (isAgamaSelected && allowedAgamaVariants.size > 0) {

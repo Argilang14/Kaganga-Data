@@ -14,12 +14,17 @@ import {
 	normalizeOrigin as normalizeFileOrigin
 } from '$lib/server/csrf-origins';
 import { startBellScheduler } from '$lib/server/bell-scheduler';
-import { isDatabaseMaintenanceActive, withDatabaseRequest, withDatabaseBackground } from '$lib/server/database-maintenance';
-import { canLegacyWaliKelasAccess, isLegacyWaliKelas } from '$lib/server/legacy-wali-kelas';
+import {
+	isDatabaseMaintenanceActive,
+	withDatabaseRequest,
+	withDatabaseBackground
+} from '$lib/server/database-maintenance';
+import { canLegacyWaliKelasAccess, getLegacyWaliKelasIds, isLegacyWaliKelas } from '$lib/server/legacy-wali-kelas';
 import { canAccessArea, getProtectedArea, getAreaAction } from '$lib/menu-access';
 import { canAccessExportClass } from '$lib/server/class-export-access';
-import { assertKeasramaanTargets } from '$lib/server/keasramaan-target-access';
+import { dormEvaluationContext } from '$lib/server/dorm-evaluation';
 import { recordServerHeartbeat, startMaintenanceScheduler } from '$lib/server/system-operations';
+import { isFullAccess } from '$lib/user-role';
 import { hasSchoolWideOperationalAccess } from '$lib/access-position';
 import { effectivePermissions } from './routes/pengguna/permissions';
 import { attendanceGuard } from '$lib/server/attendance-guard';
@@ -168,13 +173,17 @@ const authGuard: Handle = async ({ event, resolve }) => {
 	if (sessionToken) {
 		const resolved = await resolveSession(sessionToken);
 		if (resolved) {
+			const waliKelasIds = resolved.user.sekolahId
+				? await getLegacyWaliKelasIds(resolved.user, resolved.user.sekolahId) : [];
 			// Expose key user fields on locals for downstream loaders/guards.
 			event.locals.user = {
 				id: resolved.user.id,
 				username: resolved.user.username,
-				permissions: effectivePermissions(resolved.user),
+				permissions: effectivePermissions({ ...resolved.user, waliKelasIds }),
+				waliKelasIds,
 				jabatanAkses: resolved.user.jabatanAkses,
-				type: resolved.user.type,
+				type: isFullAccess(resolved.user) ? 'admin' : resolved.user.type,
+                roles: resolved.user.roles,
 				kelasId: resolved.user.kelasId,
 				pegawaiId: resolved.user.pegawaiId,
 				sekolahId: resolved.user.sekolahId,
@@ -361,9 +370,9 @@ const menuAccessGuard: Handle = async ({ event, resolve }) => {
 				? await event.request.clone().formData()
 				: null;
 		const params = event.url.searchParams;
-		if (area === 'keasramaan' && !hasSchoolWideOperationalAccess(user)) {
-			await assertKeasramaanTargets(user, sekolahId, event.url.pathname, params);
-			if (posted) await assertKeasramaanTargets(user, sekolahId, event.url.pathname, posted);
+		if (area === 'keasramaan') {
+			await dormEvaluationContext(event, posted ?? undefined);
+			return resolve(event);
 		}
 		const targetSchool =
 			params.get('sekolahId') ??
@@ -386,30 +395,30 @@ const menuAccessGuard: Handle = async ({ event, resolve }) => {
 		)
 			throw error(403, 'Kelas di luar penugasan akun.');
 	}
-	if (
-		area === 'keasramaan' &&
-		event.locals.user?.type !== 'admin' &&
-		!hasSchoolWideOperationalAccess(event.locals.user)
-	) {
-		const kelasId = Number(event.cookies.get(cookieNames.ACTIVE_KELAS_ID));
-		if (
-			!event.locals.sekolah?.id ||
-			!(await canAccessExportClass(event.locals.user, event.locals.sekolah.id, kelasId))
-		) {
-			throw error(403, 'Kelas tidak termasuk dalam penugasan akun ini.');
-		}
-	}
 	return resolve(event);
 };
 
 const roleMenuGuard: Handle = async ({ event, resolve }) => {
-	if (event.locals.user && event.url.pathname.startsWith('/api/pegawai-photo/') && !event.locals.user.permissions.includes('sekolah_manage') && Number(event.params.id) !== event.locals.user.pegawaiId) throw error(403, 'Foto pegawai di luar akun Anda.');
+	if (
+		event.locals.user &&
+		event.url.pathname.startsWith('/api/pegawai-photo/') &&
+		!event.locals.user.permissions.includes('sekolah_manage') &&
+		Number(event.params.id) !== event.locals.user.pegawaiId
+	)
+		throw error(403, 'Foto pegawai di luar akun Anda.');
 	if (event.locals.user && event.route.id && !canAccessMenu(event.locals.user, event.url.pathname))
 		throw error(403, 'Menu ini tidak diizinkan untuk akun Anda. Hubungi admin jika diperlukan.');
 	return resolve(event);
 };
 
-const _composed = sequence(csrfGuard, authGuard, cookieParser, roleMenuGuard, menuAccessGuard, attendanceGuard);
+const _composed = sequence(
+	csrfGuard,
+	authGuard,
+	cookieParser,
+	roleMenuGuard,
+	menuAccessGuard,
+	attendanceGuard
+);
 export const handle: Handle = async ({ event, resolve }) => {
 	const bodySizeLimit = parseAsBytes(process.env.BODY_SIZE_LIMIT, '512M');
 	const contentLength = Number(event.request.headers.get('content-length'));
@@ -433,7 +442,14 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Note: this does not change how SvelteKit parses the raw request body
 	// (that happens earlier), but makes the configured limit available.
 	event.locals.bodySizeLimit = bodySizeLimit;
-	if (isDatabaseMaintenanceActive()) return json({ message: 'Database sementara tidak tersedia. Pemulihan sedang berjalan atau memerlukan pemeriksaan admin.' }, { status: 503, headers: { 'retry-after': '30' } });
+	if (isDatabaseMaintenanceActive())
+		return json(
+			{
+				message:
+					'Database sementara tidak tersedia. Pemulihan sedang berjalan atau memerlukan pemeriksaan admin.'
+			},
+			{ status: 503, headers: { 'retry-after': '30' } }
+		);
 	return withDatabaseRequest(async () => _composed({ event, resolve }));
 };
 

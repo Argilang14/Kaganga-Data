@@ -6,13 +6,14 @@ test('guardian defaults cannot open school or class management', () => {
 	for (const type of ['wali_asuh', 'wali_asrama']) {
 		assert.equal(canAccessArea({ type }, 'sekolah'), false);
 		assert.equal(canAccessArea({ type }, 'kelas'), false);
-		assert.equal(canAccessArea({ type }, 'keasramaan', 'input'), true);
+		assert.equal(canAccessArea({ type }, 'keasramaan', 'input'), type === 'wali_asuh');
+		assert.equal(canAccessArea({ type }, 'keasramaan', 'manage'), type === 'wali_asrama');
 	}
 });
 
 test('teacher exceptions do not change role or grant unrelated actions', () => {
 	const user = { type: 'user', permissions: ['keasramaan_lihat', 'sekolah_lihat'] };
-	assert.equal(canAccessArea(user, 'keasramaan'), true);
+	assert.equal(canAccessArea(user, 'keasramaan'), false);
 	assert.equal(canAccessArea(user, 'keasramaan', 'input'), false);
 	assert.equal(canAccessArea(user, 'sekolah'), true);
 	assert.equal(canAccessArea(user, 'sekolah', 'manage'), false);
@@ -22,7 +23,7 @@ test('teacher exceptions do not change role or grant unrelated actions', () => {
 test('export permission alone does not open view, edit, or assessment', () => {
 	const user = { type: 'user', permissions: ['mata_pelajaran_keasramaan'] };
 	for (const action of ['lihat', 'manage', 'input'] as const) assert.equal(canAccessArea(user, 'keasramaan', action), false);
-	assert.equal(canAccessArea(user, 'keasramaan', 'export'), true);
+	assert.equal(canAccessArea(user, 'keasramaan', 'export'), false);
 });
 
 test('protected route boundaries and action types are explicit', () => {

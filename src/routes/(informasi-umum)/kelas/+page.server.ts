@@ -83,7 +83,7 @@ export const load: PageServerLoad = async ({ depends, locals }) => {
 
 	const muridMap = new Map<number, number>();
 	for (const row of muridCounts) {
-		muridMap.set(row.kelasId, row.total ?? 0);
+		if (row.kelasId !== null) muridMap.set(row.kelasId, row.total ?? 0);
 	}
 
 	const mapelMap = new Map<number, number>();

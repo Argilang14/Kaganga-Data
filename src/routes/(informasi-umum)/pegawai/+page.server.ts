@@ -1,4 +1,5 @@
 import db from '$lib/server/db';
+import { revokeEmployeeSessions } from '$lib/server/auth';
 import { ensurePegawaiSchema } from '$lib/server/db/ensure-pegawai';
 import {
 	tableAuthUser,
@@ -462,6 +463,7 @@ export const actions: Actions = {
 				.update(tablePegawai)
 				.set(payload)
 				.where(and(eq(tablePegawai.id, id), eq(tablePegawai.sekolahId, sekolahId)));
+			if (status === 'nonaktif') await revokeEmployeeSessions(id, sekolahId);
 			await recordPegawaiHistory({
 				sekolahId,
 				pegawaiId: id,
@@ -513,6 +515,7 @@ export const actions: Actions = {
 			.update(tablePegawai)
 			.set({ status, updatedAt: new Date().toISOString() })
 			.where(and(eq(tablePegawai.id, id), eq(tablePegawai.sekolahId, sekolahId)));
+		if (status === 'nonaktif') await revokeEmployeeSessions(id, sekolahId);
 		await recordPegawaiHistory({
 			sekolahId,
 			pegawaiId: id,

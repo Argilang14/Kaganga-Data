@@ -1,3 +1,6 @@
+import { loadSchoolPermitRecap, loadPermitRecapDetails } from '$lib/server/attendance-permit-recap';
+import { permitRecapColumns } from '$lib/attendance-permit-recap';
+import { isSummaryDate } from '$lib/attendance-summary';
 /* eslint-disable @typescript-eslint/no-explicit-any -- Tipe ExcelJS di workspace ini tidak memuat semua API runtime. */
 import {
 	loadAbsensiKelasOptions,
@@ -9,17 +12,15 @@ import { attendanceReportClasses } from '$lib/attendance-report-navigation';
 import {
 	ABSENSI_KEGIATAN_STATUS_LABELS,
 	ABSENSI_KEGIATAN_STATUSES,
-	applyAutoAlfaKegiatan,
 	listLocalDatesInRange,
 	loadKegiatanAbsensiOptions,
 	requireAbsensiKegiatanAccess
 } from '$lib/server/absensi-kegiatan';
 import db from '$lib/server/db';
 import { studentAccessCondition } from '$lib/server/attendance-student-access';
-import { canAttendance } from '$lib/attendance-access';
 import { projectPermitAttendance } from '$lib/server/attendance-permits';
 import { tableAbsensiKegiatan, tableMurid } from '$lib/server/db/schema';
-import { json } from '@sveltejs/kit';
+import { error, json } from '@sveltejs/kit';
 import { and, asc, between, eq, inArray } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
 
@@ -36,6 +37,12 @@ function normalizeDateRange(valueAwal: string | null, valueAkhir: string | null)
 	const today = todayLocalDate();
 	const tanggalAwal = normalizeDateInput(valueAwal, today);
 	const tanggalAkhir = normalizeDateInput(valueAkhir, tanggalAwal);
+	if (
+		!isSummaryDate(tanggalAwal) ||
+		!isSummaryDate(tanggalAkhir) ||
+		Math.abs(Date.parse(tanggalAkhir) - Date.parse(tanggalAwal)) > 366 * 86400000
+	)
+		error(400, 'Pilih rentang tanggal valid, maksimal satu tahun.');
 	return tanggalAwal <= tanggalAkhir
 		? { tanggalAwal, tanggalAkhir }
 		: { tanggalAwal: tanggalAkhir, tanggalAkhir: tanggalAwal };
@@ -82,25 +89,11 @@ export async function GET({ locals, url }) {
 			eq(tableMurid.sekolahId, sekolahId),
 			eq(tableMurid.semesterId, academic.activeSemesterId),
 			inArray(tableMurid.kelasId, kelasIds),
-			await studentAccessCondition(locals.user, sekolahId)
+			await studentAccessCondition(locals.user, sekolahId, undefined, selectedKegiatan?.kategori)
 		),
 		orderBy: [asc(tableMurid.kelasId), asc(tableMurid.nama)]
 	});
 	const muridIds = muridList.map((murid) => murid.id);
-	if (muridIds.length && canAttendance(locals.user, 'pengaturan')) {
-		const kegiatanIds = kegiatanId ? [kegiatanId] : kegiatanList.map((kegiatan) => kegiatan.id);
-		for (const targetKelasId of kelasIds) {
-			for (const tanggal of listLocalDatesInRange(tanggalAwal, tanggalAkhir)) {
-				await applyAutoAlfaKegiatan({
-					sekolahId,
-					semesterId: academic.activeSemesterId,
-					kelasId: targetKelasId,
-					tanggal,
-					kegiatanIds
-				});
-			}
-		}
-	}
 
 	const recordedRows = muridIds.length
 		? await db.query.tableAbsensiKegiatan.findMany({
@@ -121,9 +114,25 @@ export async function GET({ locals, url }) {
 			})
 		: [];
 
-	const absensiRows = await projectPermitAttendance({ schoolId: sekolahId, semesterId: academic.activeSemesterId,
-		studentIds: muridIds, dates: listLocalDatesInRange(tanggalAwal, tanggalAkhir),
-		activities: kegiatanList.filter((item) => !kegiatanId || item.id === kegiatanId), rows: recordedRows });
+	const schoolRecap =
+		locals.user.type !== 'tim_dapur'
+			? await loadSchoolPermitRecap({
+					schoolId: sekolahId,
+					semesterId: academic.activeSemesterId,
+					studentIds: muridIds,
+					start: tanggalAwal,
+					end: tanggalAkhir
+				})
+			: null;
+
+	const absensiRows = await projectPermitAttendance({
+		schoolId: sekolahId,
+		semesterId: academic.activeSemesterId,
+		studentIds: muridIds,
+		dates: listLocalDatesInRange(tanggalAwal, tanggalAkhir),
+		activities: kegiatanList.filter((item) => !kegiatanId || item.id === kegiatanId),
+		rows: recordedRows
+	});
 	const summary = emptySummary();
 	const byMurid = new Map<number, Record<StatusKey, number>>();
 	const kegiatanNameById = new Map(kegiatanList.map((kegiatan) => [kegiatan.id, kegiatan.nama]));
@@ -172,7 +181,12 @@ export async function GET({ locals, url }) {
 			'NIS',
 			'NISN',
 			...(allKelas ? ['Kelas'] : []),
-			...ABSENSI_KEGIATAN_STATUSES.map((status) => ABSENSI_KEGIATAN_STATUS_LABELS[status])
+			...ABSENSI_KEGIATAN_STATUSES.map(
+				(status) => `${ABSENSI_KEGIATAN_STATUS_LABELS[status]} (kegiatan)`
+			),
+			...(schoolRecap
+				? ['Izin sekolah (hari)', 'Alfa sekolah (hari)', ...permitRecapColumns.map((c) => c.label)]
+				: [])
 		]
 	]);
 	for (const [index, murid] of muridList.entries()) {
@@ -182,8 +196,15 @@ export async function GET({ locals, url }) {
 			murid.nama,
 			murid.nis,
 			murid.nisn,
-			...(allKelas ? [kelasNames.get(murid.kelasId) ?? '-'] : []),
-			...ABSENSI_KEGIATAN_STATUSES.map((status) => counts[status])
+			...(allKelas ? [kelasNames.get(murid.kelasId ?? -1) ?? '-'] : []),
+			...ABSENSI_KEGIATAN_STATUSES.map((status) => counts[status]),
+			...(schoolRecap
+				? [
+						schoolRecap.get(murid.id)?.counts.izin ?? 0,
+						schoolRecap.get(murid.id)?.counts.alfa ?? 0,
+						...permitRecapColumns.map((c) => schoolRecap.get(murid.id)?.[c.key] ?? 0)
+					]
+				: [])
 		]);
 	}
 
@@ -240,7 +261,52 @@ export async function GET({ locals, url }) {
 			])
 	]);
 
-	for (const sheet of [rekapSheet, detailSheet, dataSheet]) {
+	const permitSheet = schoolRecap ? workbook.addWorksheet('Catatan Izin Pulang') : null;
+	if (permitSheet) {
+		permitSheet.addRow([
+			'ID Izin',
+			'Nama',
+			'Kelas saat izin',
+			'Keluar izin',
+			'Waktu keluar izin',
+			'Rencana kembali',
+			'Waktu rencana kembali',
+			'Kembali tercatat',
+			'Waktu kembali tercatat',
+			'Status',
+			'Pencatat izin',
+			'Pencatat kembali',
+			'Scan keluar security (UTC)',
+			'Petugas keluar security',
+			'Scan kembali security (UTC)',
+			'Petugas kembali security',
+			'Alasan',
+			'Perlu diperiksa'
+		]);
+		for (const p of await loadPermitRecapDetails(sekolahId, muridIds, tanggalAwal, tanggalAkhir)) {
+			permitSheet.addRow([
+				p.id,
+				p.namaSnapshot,
+				p.kelasSnapshot,
+				p.tanggalKeluar,
+				p.waktuKeluar ?? '',
+				p.rencanaKembali,
+				p.waktuRencanaKembali ?? '',
+				p.tanggalKembali ?? '',
+				p.waktuKembali ?? '',
+				p.status,
+				p.pencatat,
+				p.pencatatKembali,
+				p.perjalanan?.keluarPada ?? '',
+				p.petugasKeluarSecurity,
+				p.perjalanan?.kembaliPada ?? '',
+				p.petugasKembaliSecurity,
+				p.alasan,
+				p.perluDiperiksa.join(' ')
+			]);
+		}
+	}
+	for (const sheet of [rekapSheet, detailSheet, dataSheet, ...(permitSheet ? [permitSheet] : [])]) {
 		sheet.views = [{ state: 'frozen', ySplit: sheet === rekapSheet ? 7 : 1 }];
 		sheet.eachRow((row: any, rowNumber: number) => {
 			if (rowNumber === 1 || rowNumber === 7) row.font = { bold: true };

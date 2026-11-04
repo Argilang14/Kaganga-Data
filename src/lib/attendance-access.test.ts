@@ -8,48 +8,30 @@ import {
 	hasSchoolWideAttendanceStudentAccess,
 	hasSchoolWideAttendanceSummaryAccess
 } from './attendance-access.ts';
-import { accessPositionValues, isRestrictedTeacher } from './access-position.ts';
-import {
-	effectivePermissions,
-	permissionsForAccessPosition,
-	systemOnlyPermissions
-} from '../routes/pengguna/permissions.ts';
+import { isRestrictedTeacher } from './access-position.ts';
+import { effectivePermissions } from '../routes/pengguna/permissions.ts';
 
-test('ringkasan guru dan wali boleh seluruh sekolah tanpa memperluas izin input', () => {
-	for (const type of ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama']) {
-		const user = { type, sekolahId: 7, permissions: [] };
-		assert.equal(hasSchoolWideAttendanceSummaryAccess(user, 7), true);
-		assert.equal(hasSchoolWideAttendanceSummaryAccess(user, 8), false);
-		assert.equal(canAttendance(user, 'pengaturan'), false);
-	}
-	assert.equal(hasSchoolWideAttendanceSummaryAccess({ type: 'tim_dapur', sekolahId: 7 }, 7), false);
-	assert.equal(
-		hasSchoolWideAttendanceSummaryAccess({ type: 'wali_murid', sekolahId: 7 }, 7),
-		false
-	);
+test('guru dan wali hanya melihat rekap penugasan', () => {
+	for (const type of ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama'])
+		assert.equal(hasSchoolWideAttendanceSummaryAccess({ type, sekolahId: 7 }, 7), false);
+	for (const role of ['kepala_sekolah', 'operator', 'waka_kesiswaan', 'waka_humas'])
+		assert.ok(hasSchoolWideAttendanceSummaryAccess({ roles: [role], sekolahId: 7 }, 7));
 	assert.equal(hasSchoolWideAttendanceSummaryAccess(null, 7), false);
-	assert.equal(hasSchoolWideAttendanceSummaryAccess({ type: 'admin' }, 7), true);
 });
 
-test('cakupan semua murid absensi hanya untuk Wali Asrama di sekolah sendiri', () => {
-	assert.equal(
-		hasSchoolWideAttendanceStudentAccess({ type: 'wali_asrama', sekolahId: 7 }, 7),
-		true
-	);
-	assert.equal(
-		hasSchoolWideAttendanceStudentAccess({ type: 'wali_asrama', sekolahId: 7 }, 8),
-		false
-	);
-	for (const type of ['user', 'wali_kelas', 'wali_asuh', 'tim_dapur', 'admin']) {
+test('semua murid absensi hanya untuk role yang mengelola absensi sekolah', () => {
+	for (const type of ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'tim_dapur'])
 		assert.equal(hasSchoolWideAttendanceStudentAccess({ type, sekolahId: 7 }, 7), false);
+	for (const role of ['operator', 'waka_kesiswaan', 'waka_humas']) {
+		assert.ok(hasSchoolWideAttendanceStudentAccess({ roles: [role], sekolahId: 7 }, 7));
+		assert.equal(hasSchoolWideAttendanceStudentAccess({ roles: [role], sekolahId: 7 }, 8), false);
 	}
-	assert.equal(hasSchoolWideAttendanceStudentAccess(null, 7), false);
-	assert.equal(hasSchoolWideAttendanceStudentAccess(undefined, 7), false);
+	assert.ok(hasSchoolWideAttendanceStudentAccess({ type: 'admin' }, 7));
 });
 
 test('cakupan Wali Asrama tidak menambah izin berisiko atau input kegiatan sekolah', () => {
 	const user = { type: 'wali_asrama', sekolahId: 7, permissions: [] };
-	assert.equal(hasSchoolWideAttendanceStudentAccess(user, 7), true);
+	assert.equal(hasSchoolWideAttendanceStudentAccess(user, 7), false);
 	assert.equal(canAttendActivity(user, 'asrama'), true);
 	assert.equal(canAttendActivity(user, 'sekolah'), false);
 	for (const action of ['impor', 'pengaturan', 'qr_manage', 'koreksi_lama'] as const) {
@@ -57,17 +39,15 @@ test('cakupan Wali Asrama tidak menambah izin berisiko atau input kegiatan sekol
 	}
 });
 
-test('pimpinan dan operator memiliki izin operasional, bukan izin sistem', () => {
-	for (const jabatanAkses of accessPositionValues) {
-		const user = { type: 'user', jabatanAkses, permissions: [] };
-		assert.equal(isRestrictedTeacher(user), false);
-		for (const action of attendanceActions) assert.equal(canAttendance(user, action), true);
-		const permissions = permissionsForAccessPosition(jabatanAkses);
-		for (const permission of ['kelas_manage', 'rapor_manage', 'administrasi_jadwal'] as const)
-			assert.equal(permissions.includes(permission), jabatanAkses !== 'waka_humas');
-		for (const permission of systemOnlyPermissions) assert.ok(!permissions.includes(permission));
-	}
+test('izin absensi penuh mengikuti domain role', () => {
+	for (const role of ['admin', 'kepala_sekolah', 'operator', 'waka_kesiswaan', 'waka_humas'])
+		for (const action of attendanceActions) assert.ok(canAttendance({ roles: [role] }, action));
+	for (const role of ['waka_kurikulum', 'waka_sarpras', 'waka_keasramaan'])
+		assert.equal(canAttendance({ roles: [role] }, 'pengaturan'), false);
+	assert.equal(isRestrictedTeacher({ type: 'user', roles: ['user', 'waka_sarpras'] }), true);
+	assert.equal(isRestrictedTeacher({ type: 'user', roles: ['user', 'waka_kurikulum'] }), false);
 });
+
 test('guru dan wali memperoleh izin dasar, tindakan berisiko tetap memerlukan izin', () => {
 	for (const type of ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama']) {
 		const user = { type, permissions: [] };
@@ -116,14 +96,14 @@ test('tanggal hari ini boleh, tanggal lama perlu izin dan tanggal mustahil ditol
 	assert.equal(attendanceDateAllowed({ type: 'admin' }, '2026-10-05', today), false);
 	assert.equal(attendanceDateAllowed({ type: 'admin' }, '2026-02-31', today), false);
 });
-test('operator tidak mendapat persetujuan pimpinan atau pengelolaan pengguna', () => {
+test('operator mendapat operasional tanpa pengelolaan pengguna', () => {
 	const user = {
 		type: 'user',
 		jabatanAkses: 'operator' as const,
 		permissions: ['user_add' as const]
 	};
 	assert.equal(effectivePermissions(user).includes('user_add'), false);
-	assert.equal(effectivePermissions(user).includes('persetujuan_setujui'), false);
+	assert.equal(effectivePermissions(user).includes('persetujuan_setujui'), true);
 });
 
 test('guru dan wali kelas dapat mencatat Zuhur/Asar pada Senin-Jumat saja', () => {
@@ -201,4 +181,11 @@ test('pimpinan/operator tetap mendapat akses operasional sholat tanpa pembatasan
 			true
 		);
 	}
+});
+
+test('gabungan dapur dan wali tetap mengikuti kategori masing-masing', () => {
+	const user = { type: 'tim_dapur', roles: ['tim_dapur', 'wali_asrama'] };
+	assert.equal(canAttendActivity(user, 'asrama', 'asrama'), true);
+	assert.equal(canAttendActivity(user, 'semua', 'makan'), true);
+	assert.equal(canAttendActivity(user, 'sekolah', 'sekolah'), false);
 });

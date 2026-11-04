@@ -84,11 +84,13 @@
 				{#if previewError}<div class="alert alert-warning">
 						<Icon name="warning" /><span>{previewError}</span>
 					</div>{/if}
-				<form method="POST" action="?/previewPurge" use:enhance={previewSubmit}>
+				<form method="POST" action="?view=arsip&/previewPurge" use:enhance={previewSubmit}>
 					<input type="hidden" name="lifecycleIds" value={selected.id} />
 					<div class="flex justify-end">
-						<button type="submit" class="btn btn-soft h-auto min-h-10 whitespace-normal max-sm:w-full" disabled={busy}
-							><Icon name="eye" /> Periksa Dampak Penghapusan</button
+						<button
+							type="submit"
+							class="btn btn-soft h-auto min-h-10 whitespace-normal max-sm:w-full"
+							disabled={busy}><Icon name="eye" /> Periksa Dampak Penghapusan</button
 						>
 					</div>
 				</form>
@@ -128,7 +130,7 @@
 						>
 					</div>
 					<FormEnhance
-						action="?/purge"
+						action="?view=arsip&/purge"
 						submitStateChange={(state) => (busy = state)}
 						onsuccess={deleted}
 					>

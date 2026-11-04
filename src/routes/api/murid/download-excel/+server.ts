@@ -186,9 +186,9 @@ export async function GET({ locals, url }) {
 			wali?.pekerjaan ?? '',
 			wali?.kontak ?? '',
 			lifecycleById.get(murid.id) ?? 'aktif',
-			identityByClass.get(murid.kelasId)?.nama_snapshot ?? '',
-			identityByClass.get(murid.kelasId)?.jenjang ?? '',
-			identityByClass.get(murid.kelasId)?.npsn_snapshot ?? ''
+			identityByClass.get(murid.kelasId ?? -1)?.nama_snapshot ?? '',
+			identityByClass.get(murid.kelasId ?? -1)?.jenjang ?? '',
+			identityByClass.get(murid.kelasId ?? -1)?.npsn_snapshot ?? ''
 		]);
 	}
 

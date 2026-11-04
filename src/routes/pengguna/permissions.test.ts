@@ -28,31 +28,35 @@ test('hasil izin admin berupa salinan yang aman diubah pemanggil', () => {
 
 test('pimpinan menerima izin operasional tanpa pengaturan sistem', () => {
 	const permissions = permissionsForAccessPosition('waka_kurikulum');
-	assert.equal(permissions.includes('kelas_manage'), true);
-	assert.equal(permissions.includes('persetujuan_setujui'), true);
+	assert.equal(permissions.includes('kelas_manage'), false);
+	assert.equal(permissions.includes('persetujuan_setujui'), false);
 	for (const permission of systemOnlyPermissions)
 		assert.equal(permissions.includes(permission), false);
 });
 
-test('operator tidak otomatis menerima kewenangan persetujuan', () => {
+test('operator mendapat semua operasional, tanpa sistem', () => {
 	const permissions = permissionsForAccessPosition('operator');
-	assert.equal(permissions.includes('kelas_manage'), true);
-	assert.equal(permissions.includes('persetujuan_setujui'), false);
-	assert.equal(permissions.includes('komunikasi_approve'), false);
+	for (const permission of ['kelas_manage', 'persetujuan_setujui', 'komunikasi_approve'] as const)
+		assert.ok(permissions.includes(permission));
+	for (const permission of systemOnlyPermissions)
+		assert.equal(permissions.includes(permission), false);
 });
 
-test('finalisasi, revisi dan massal rapor memerlukan delegasi eksplisit di luar admin',()=>{
-	const approvals=['rapor_arsip_finalisasi','rapor_arsip_revisi','rapor_arsip_massal'] as const;
-	for(const position of ['kepala_sekolah','waka_kurikulum','waka_keasramaan','operator'] as const){
-		for(const permission of approvals)assert.equal(permissionsForAccessPosition(position).includes(permission),false);
-	}
-	for(const permission of approvals){
-		assert.equal(effectivePermissions({type:'admin'}).includes(permission),true);
-		assert.equal(effectivePermissions({type:'user',jabatanAkses:'waka_kurikulum',permissions:[permission]}).includes(permission),true);
-	}
+test('rapor penuh bagi Kepala Sekolah, Wakakur dan Operator', () => {
+	for (const role of ['kepala_sekolah', 'waka_kurikulum', 'operator'] as const)
+		for (const permission of [
+			'rapor_arsip_finalisasi',
+			'rapor_arsip_revisi',
+			'rapor_arsip_massal'
+		] as const)
+			assert.ok(permissionsForAccessPosition(role).includes(permission));
+	assert.equal(
+		permissionsForAccessPosition('waka_keasramaan').includes('rapor_arsip_finalisasi'),
+		false
+	);
 });
 
-test('izin manual dapat menambah pengecualian operator tetapi bukan izin sistem', () => {
+test('operator tetap tidak mendapat izin sistem dari centang manual', () => {
 	const permissions = effectivePermissions({
 		type: 'user',
 		jabatanAkses: 'operator',
@@ -80,7 +84,7 @@ test('profil pribadi murid memerlukan izin khusus, tidak otomatis mengikuti role
 			permissionsForAccessPosition(position).some((permission) =>
 				permission.startsWith('murid_profil_')
 			),
-			false
+			['kepala_sekolah', 'operator'].includes(position)
 		);
 	}
 	for (const type of [
@@ -104,4 +108,42 @@ test('profil pribadi murid memerlukan izin khusus, tidak otomatis mengikuti role
 		true
 	);
 	assert.equal(effectivePermissions({ type: 'admin' }).includes('murid_profil_cetak'), true);
+});
+
+test('wali kelas mengikuti penugasan aktif tanpa mengubah role guru', () => {
+	const user = { type: 'user', waliKelasIds: [123] };
+	assert.ok(effectivePermissions(user).includes('rapor_manage'));
+	assert.ok(effectivePermissions(user).includes('cetak_akademik'));
+	assert.equal(effectivePermissions({ ...user, waliKelasIds: [] }).includes('rapor_manage'), false);
+	assert.equal(effectivePermissions(user).includes('user_list'), false);
+});
+
+test('seluruh nonadmin tidak memperoleh izin sistem dari centang manual', () => {
+	for (const type of [
+		'user',
+		'wali_kelas',
+		'wali_asuh',
+		'wali_asrama',
+		'tim_dapur',
+		'tim_keamanan'
+	]) {
+		const permissions = effectivePermissions({ type, permissions: [...systemOnlyPermissions] });
+		for (const permission of systemOnlyPermissions)
+			assert.equal(permissions.includes(permission), false);
+	}
+});
+
+test('izin keasramaan menggambarkan tindakan peran, termasuk izin tersimpan lama', () => {
+	const stored = ['keasramaan_manage', 'keasramaan_input', 'menu_catatan_asrama'] as const;
+	const warden = effectivePermissions({ type: 'wali_asrama', permissions: stored });
+	assert.ok(warden.includes('keasramaan_manage'));
+	assert.equal(warden.includes('keasramaan_input'), false);
+	const caregiver = effectivePermissions({ type: 'wali_asuh', permissions: stored });
+	assert.ok(caregiver.includes('keasramaan_input'));
+	assert.equal(caregiver.includes('keasramaan_manage'), false);
+	assert.equal(caregiver.includes('menu_catatan_asrama'), false);
+	assert.equal(
+		effectivePermissions({ type: 'user', permissions: stored }).includes('keasramaan_input'),
+		false
+	);
 });

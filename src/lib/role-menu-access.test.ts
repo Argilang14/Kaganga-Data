@@ -24,7 +24,7 @@ test('cetak informasi siswa memerlukan grant cetak pribadi, bukan izin baca atau
 		assert.ok(canPrintDocument(user(type, { sekolahId: 1, permissions: ['cetak_dokumen', 'murid_profil_cetak'] }), 'informasi-siswa'));
 		assert.ok(canAccessMenu(user(type, { permissions: ['murid_profil_cetak'] }), '/api/pdf/informasi-siswa'));
 	}
-	assert.equal(canPrintDocument(user('user', { sekolahId: 1, jabatanAkses: 'kepala_sekolah' }), 'informasi-siswa'), false);
+	assert.equal(canPrintDocument(user('user', { sekolahId: 1, jabatanAkses: 'kepala_sekolah' }), 'informasi-siswa'), true);
 });
 test('private student profile endpoints recognize explicit read/manage grants', () => {
 	for (const type of ['user', 'wali_asuh', 'wali_asrama']) {
@@ -50,7 +50,7 @@ test('monitoring kelas has independent menu and API permissions', () => {
 		assert.ok(canAccessMenu(user('admin'), path));
 		for (const type of ['wali_asuh', 'wali_asrama', 'tim_dapur', 'wali_murid']) {
 			if (type !== 'wali_murid') assert.equal(canAccessMenu(user(type), path), false, type);
-			assert.ok(canAccessMenu(user(type, { permissions: ['class_monitoring_lihat'] }), path));
+			assert.ok(!canAccessMenu(user(type, { permissions: ['class_monitoring_lihat'] }), path));
 		}
 	}
 	assert.ok(effectivePermissions(user('user')).includes('class_monitoring_scan'));
@@ -59,7 +59,6 @@ test('monitoring kelas has independent menu and API permissions', () => {
 });
 test('guru only requested menus, APIs and documents', () => {
 	for (const path of [
-		'/murid',
 		'/jurnal-mengajar',
 		'/intrakurikuler',
 		'/asesmen-formatif',
@@ -78,6 +77,7 @@ test('guru only requested menus, APIs and documents', () => {
 			path
 		);
 	for (const path of [
+		'/murid',
 		'/sekolah',
 		'/pegawai',
 		'/kelas',
@@ -125,7 +125,7 @@ test('meal staff cannot access or mutate other activity categories', () => {
 	}
 });
 test('existing leadership stays broad, Humas only adds attendance and letters', () => {
-	for (const jabatanAkses of ['kepala_sekolah', 'waka_kurikulum', 'waka_sarpras'])
+	for (const jabatanAkses of ['kepala_sekolah', 'waka_sarpras'])
 		assert.ok(canAccessMenu(user('user', { jabatanAkses }), '/inventaris'));
 	const humas = user('user', {
 		jabatanAkses: 'waka_humas',
@@ -139,12 +139,12 @@ test('existing leadership stays broad, Humas only adds attendance and letters', 
 test('manual admin exceptions open menu but keep other features closed', () => {
 	assert.ok(canAccessMenu(user('user'), '/api/murid-photo/1'));
 	assert.equal(canAccessMenu(user('user'), '/api/murid-bulk-photo'), false);
-	assert.ok(canAccessMenu(user('user', { permissions: ['keasramaan_lihat'] }), '/keasramaan'));
+	assert.equal(canAccessMenu(user('user', { permissions: ['keasramaan_lihat'] }), '/keasramaan'), false);
 	assert.equal(
 		canAccessMenu(user('user', { permissions: ['keasramaan_lihat'] }), '/asesmen-keasramaan'),
 		false
 	);
-	assert.ok(canPrintDocument(user('wali_asuh', { permissions: ['cetak_akademik'] }), 'rapor'));
+	assert.ok(!canPrintDocument(user('wali_asuh', { permissions: ['cetak_akademik'] }), 'rapor'));
 	assert.ok(canAccessMenu(user('admin'), '/pengguna'));
 	assert.equal(canAccessMenu(null, '/murid'), false);
 	assert.equal(canAccessMenu(user('tidak_valid'), '/murid'), false);

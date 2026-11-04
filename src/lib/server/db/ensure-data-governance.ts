@@ -2,6 +2,7 @@ import { ensureSchema } from './ensure-helper';
 import db, { databaseUrl } from '$lib/server/db';
 import path from 'node:path';
 import { migrateMuridIdentity } from './murid-identity-migration';
+import { migrateStudentPlacement } from './student-placement-migration';
 
 const migrations = new WeakMap<object, Promise<unknown>>();
 
@@ -70,10 +71,17 @@ export async function ensureDataGovernanceSchema() {
 		const url = databaseUrl;
 		const migration = migrateMuridIdentity(client, {
 			databasePath: url.startsWith('file:') ? path.resolve(url.slice(5)) : undefined
-		}).catch((error) => {
-			migrations.delete(client);
-			throw error;
-		});
+		})
+			.then(() =>
+				migrateStudentPlacement(
+					client,
+					url.startsWith('file:') ? path.resolve(url.slice(5)) : undefined
+				)
+			)
+			.catch((error) => {
+				migrations.delete(client);
+				throw error;
+			});
 		migrations.set(client, migration);
 	}
 	await migrations.get(client);

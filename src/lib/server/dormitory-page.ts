@@ -1,4 +1,12 @@
-import { error, fail, isHttpError, type Actions, type RequestEvent } from '@sveltejs/kit';
+import {
+	error,
+	fail,
+	isHttpError,
+	isRedirect,
+	redirect,
+	type Actions,
+	type RequestEvent
+} from '@sveltejs/kit';
 import { DormValidationError, dormSections, dormSectionVisible } from '$lib/dormitory';
 import {
 	loadDormitory,
@@ -23,13 +31,17 @@ export async function loadDormitoryPage(event: RequestEvent) {
 	};
 }
 export const dormitoryActions: Actions = {
-	save: async ({ locals, request }) => {
+	save: async ({ locals, request, url }) => {
 		try {
 			const form = await request.formData();
 			if (form.get('operation') === 'preview')
 				return { preview: await previewPlacement(locals, placementInput(form)), success: false };
-			return await mutateDormitory(locals, String(form.get('operation')), form);
+			const operation = String(form.get('operation'));
+			const result = await mutateDormitory(locals, operation, form);
+			if (operation === 'delete' && url.searchParams.has('kamar_id')) redirect(303, '/asrama');
+			return result;
 		} catch (cause) {
+			if (isRedirect(cause)) throw cause;
 			if (isHttpError(cause))
 				return fail(cause.status, { success: false, message: cause.body.message });
 			if (cause instanceof DormValidationError)

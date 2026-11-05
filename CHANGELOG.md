@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.3.3 - 2026-11-05
+
+- Menambahkan hapus asrama dengan konfirmasi; penempatan penghuni dan penugasan wali otomatis diakhiri, sementara riwayat, nilai, dan catatan tetap tersimpan.
+- Memperbarui impor/ekspor murid menjadi 67 kolom: 52 kolom Setara dan 15 kolom Kaganga, termasuk kode QR. Murid baru masuk Murid Pasif, kelas murid lama tetap, dan NIS sementara tersedia jika diperlukan.
+- Mempertahankan QR pribadi murid lintas kelas, asrama, semester, dan tahun ajaran melalui identitas murid. Scan mengikuti data serta penugasan semester aktif.
+- Menambahkan pencadangan/pemulihan kode QR melalui CSV dan XLSX, dengan pemeriksaan identitas, konflik, pencabutan kartu, dan hak akses.
+- Panduan pembaruan, pengujian, serta batasan tersedia pada [catatan rilis v2.3.3](docs/releases/v2.3.3.md). Audit pergantian tahun ajaran dicatat pada [issue #8](https://github.com/Argilang14/Kaganga-Data/issues/8) untuk pekerjaan berikutnya.
+
 ## 2.3.2 - 2026-11-04
 
 - Menggabungkan status dan riwayat murid melalui Semua Murid, menyediakan Murid Pasif untuk penempatan kelas/asrama, serta menambahkan Wali Asuh dan aksi pada daftar murid asrama.

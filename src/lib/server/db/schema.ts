@@ -685,6 +685,26 @@ export const tableMuridIdentityLink = sqliteTable(
 	]
 );
 
+export const tableMuridSumberSetara = sqliteTable(
+	'murid_sumber_setara',
+	{
+		id: int().primaryKey({ autoIncrement: true }),
+		sekolahId: int()
+			.notNull()
+			.references(() => tableSekolah.id, { onDelete: 'cascade' }),
+		identityUid: text().notNull(),
+		fields: text({ mode: 'json' }).notNull().$type<Record<string, string>>(),
+		temporaryNis: text(),
+		sourceFilename: text().notNull(),
+		sourceHash: text().notNull(),
+		sourceRow: int().notNull(),
+		importedBy: int().references(() => tableAuthUser.id, { onDelete: 'set null' }),
+		importedAt: text().notNull(),
+		revision: int().notNull().default(1)
+	},
+	(table) => [unique('murid_sumber_setara_identity_unique').on(table.sekolahId, table.identityUid)]
+);
+
 export const tableMuridProfilTambahan = sqliteTable(
 	'murid_profil_tambahan',
 	{
@@ -1544,6 +1564,7 @@ export const tableQrMurid = sqliteTable(
 			.references(() => tableMurid.id, { onDelete: 'cascade' })
 			.notNull(),
 		tokenHash: text().notNull(),
+		tokenValue: text(),
 		tokenVersion: int().default(1).notNull(),
 		issuedAt: text().notNull(),
 		revokedAt: text(),
@@ -4042,6 +4063,7 @@ export const tableAsrama = sqliteTable(
 		kategori: text({ enum: ['putra', 'putri'] }).notNull(),
 		aktif: int().notNull().default(1),
 		versi: int().notNull().default(1),
+		deletedAt: text(),
 		...audit
 	},
 	(t) => [unique('asrama_nama_unique').on(t.sekolahId, t.namaKey)]
@@ -4061,6 +4083,7 @@ export const tableAsramaKamar = sqliteTable(
 		kapasitas: int().notNull(),
 		aktif: int().notNull().default(1),
 		versi: int().notNull().default(1),
+		deletedAt: text(),
 		...audit
 	},
 	(t) => [unique('asrama_kamar_nama_unique').on(t.asramaId, t.namaKey)]

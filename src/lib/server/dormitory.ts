@@ -51,7 +51,7 @@ export async function loadDormitory(
 	cookies?: Cookies
 ) {
 	const ctx = await dormContext(locals);
-	const view = await dormView(locals, params, cookies);
+	const view = await dormView(locals, params, cookies, false, params.get('view') === 'riwayat');
 	const manage = canDorm(ctx.user, 'manage');
 	const place = canDorm(ctx.user, 'penempatan');
 	const assign = canDorm(ctx.user, 'penugasan');
@@ -63,7 +63,11 @@ export async function loadDormitory(
 	if ((tab === 'riwayat' && !(manage || place)) || (tab === 'pemetaan' && !place))
 		error(403, 'Riwayat dan pemetaan hanya untuk pengelola.');
 	const buildings = manage
-		? await rows(db.$client, 'SELECT * FROM asrama WHERE sekolah_id=? ORDER BY nama', [ctx.school])
+		? await rows(
+				db.$client,
+				'SELECT * FROM asrama WHERE sekolah_id=? AND deleted_at IS NULL ORDER BY nama',
+				[ctx.school]
+			)
 		: [];
 	const employees = assign
 		? await rows(
@@ -304,7 +308,8 @@ async function audit(
 	tx: Reader,
 	ctx: Awaited<ReturnType<typeof dormContext>>,
 	operation: string,
-	id: number
+	id: number,
+	action = 'update'
 ) {
 	await rows(
 		tx,
@@ -315,7 +320,7 @@ async function audit(
 			ctx.user.id,
 			ctx.user.username,
 			ctx.user.type,
-			'update',
+			action,
 			String(id),
 			`Data asrama: ${operation}`
 		]
@@ -380,6 +385,50 @@ export async function mutateDormitory(locals: App.Locals, operation: string, for
 			if (result.rowsAffected !== 1)
 				error(409, 'Penempatan sudah berakhir atau tanggal tidak sesuai.');
 			await audit(tx, ctx, `akhiri penempatan: ${reason}`, entity);
+		} else if (operation === 'delete') {
+			if (!canDorm(ctx.user, 'penugasan')) error(403, 'Izin penugasan wali asrama diperlukan.');
+			entity = dormId(form.get('id'));
+			const version = dormId(form.get('versi'));
+			if (form.get('confirmDelete') !== 'true')
+				error(400, 'Konfirmasi penghapusan asrama diperlukan.');
+			const current = (
+				await rows(
+					tx,
+					'SELECT * FROM asrama_kamar WHERE id=? AND sekolah_id=? AND deleted_at IS NULL',
+					[entity, ctx.school]
+				)
+			)[0];
+			if (!current) error(404, 'Asrama tidak ditemukan.');
+			if (Number(current.versi) !== version)
+				error(409, 'Data asrama berubah. Muat ulang sebelum menghapus.');
+			const date = dormToday();
+			const reason = 'Asrama dihapus';
+			// Close current and future assignments without deleting immutable history.
+			const placements = await tx.execute({
+				sql: 'UPDATE asrama_penempatan SET selesai=MAX(mulai,?),selesai_alasan=?,selesai_oleh=? WHERE kamar_id=? AND sekolah_id=? AND selesai IS NULL',
+				args: [date, reason, ctx.user.id, entity, ctx.school]
+			});
+			const assignments = await tx.execute({
+				sql: 'UPDATE asrama_penugasan SET selesai=MAX(mulai,?),selesai_alasan=?,selesai_oleh=? WHERE kamar_id=? AND sekolah_id=? AND selesai IS NULL',
+				args: [date, reason, ctx.user.id, entity, ctx.school]
+			});
+			const result = await tx.execute({
+				sql: "UPDATE asrama_kamar SET aktif=0,deleted_at=CURRENT_TIMESTAMP,nama_key='deleted:'||id,versi=versi+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND sekolah_id=? AND versi=? AND deleted_at IS NULL",
+				args: [entity, ctx.school, version]
+			});
+			if (result.rowsAffected !== 1)
+				error(409, 'Data asrama berubah. Muat ulang sebelum menghapus.');
+			await tx.execute({
+				sql: "UPDATE asrama SET aktif=0,deleted_at=CURRENT_TIMESTAMP,nama_key='deleted:'||id,versi=versi+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND sekolah_id=? AND deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM asrama_kamar WHERE asrama_id=asrama.id AND deleted_at IS NULL)",
+				args: [current.asrama_id, ctx.school]
+			});
+			await audit(
+				tx,
+				ctx,
+				`hapus: ${current.nama}; ${placements.rowsAffected} penempatan dan ${assignments.rowsAffected} penugasan diakhiri`,
+				entity,
+				'delete'
+			);
 		} else if (operation === 'directory') {
 			if (!canDorm(ctx.user, 'penugasan')) error(403, 'Izin penugasan wali asrama diperlukan.');
 			entity = dormId(form.get('id') ?? '0', true);
@@ -399,10 +448,11 @@ export async function mutateDormitory(locals: App.Locals, operation: string, for
 			if (employee && !guardian) error(400, 'Pilih pegawai aktif berjenis Wali Asrama.');
 			const current = entity
 				? (
-						await rows(tx, 'SELECT * FROM asrama_kamar WHERE id=? AND sekolah_id=?', [
-							entity,
-							ctx.school
-						])
+						await rows(
+							tx,
+							'SELECT * FROM asrama_kamar WHERE id=? AND sekolah_id=? AND deleted_at IS NULL',
+							[entity, ctx.school]
+						)
 					)[0]
 				: null;
 			if (entity && !current) error(404, 'Asrama tidak ditemukan.');
@@ -415,7 +465,7 @@ export async function mutateDormitory(locals: App.Locals, operation: string, for
 				if (result.rowsAffected !== 1)
 					error(409, 'Data asrama berubah. Muat ulang sebelum menyimpan.');
 				await tx.execute({
-					sql: 'UPDATE asrama SET nama=?,nama_key=?,versi=versi+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND sekolah_id=? AND (SELECT COUNT(*) FROM asrama_kamar WHERE asrama_id=asrama.id)=1',
+					sql: 'UPDATE asrama SET nama=?,nama_key=?,versi=versi+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND sekolah_id=? AND deleted_at IS NULL AND (SELECT COUNT(*) FROM asrama_kamar WHERE asrama_id=asrama.id AND deleted_at IS NULL)=1',
 					args: [name, name.toLocaleLowerCase('id'), current.asrama_id, ctx.school]
 				});
 			} else {
@@ -483,7 +533,7 @@ export async function mutateDormitory(locals: App.Locals, operation: string, for
 				const version = dormId(form.get('versi'));
 				const result = await tx.execute({
 					sql: `UPDATE ${table} SET nama=?,nama_key=?,${col}=?,aktif=?,versi=versi+1,updated_at=CURRENT_TIMESTAMP
-				 WHERE id=? AND sekolah_id=? AND versi=?`,
+				 WHERE id=? AND sekolah_id=? AND versi=? AND deleted_at IS NULL`,
 					args: [name, key, extra, active, entity, ctx.school, version]
 				});
 				if (result.rowsAffected !== 1)
@@ -545,7 +595,10 @@ export async function mutateDormitory(locals: App.Locals, operation: string, for
 			await audit(tx, ctx, `penugasan: ${reason}`, entity || old);
 		} else error(400, 'Tindakan tidak tersedia.');
 		await tx.commit();
-		return { success: true, message: 'Data asrama tersimpan.' };
+		return {
+			success: true,
+			message: operation === 'delete' ? 'Asrama berhasil dihapus.' : 'Data asrama tersimpan.'
+		};
 	} catch (cause) {
 		await tx.rollback();
 		throw cause;

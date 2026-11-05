@@ -1,3 +1,4 @@
+import db from '$lib/server/db';
 import { ensureSchema } from './ensure-helper';
 
 export async function ensureAbsensiDigitalSchema() {
@@ -71,6 +72,7 @@ export async function ensureAbsensiDigitalSchema() {
 			"id" integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 			"murid_id" integer NOT NULL REFERENCES "murid"("id") ON DELETE CASCADE,
 			"token_hash" text NOT NULL,
+			"token_value" text,
 			"token_version" integer DEFAULT 1 NOT NULL,
 			"issued_at" text NOT NULL,
 			"revoked_at" text,
@@ -81,4 +83,13 @@ export async function ensureAbsensiDigitalSchema() {
 		`CREATE INDEX IF NOT EXISTS "qr_murid_murid_idx" ON "qr_murid" ("murid_id")`,
 		`CREATE INDEX IF NOT EXISTS "qr_murid_revoked_idx" ON "qr_murid" ("revoked_at")`
 	]);
+	const columns = await db.$client.execute('PRAGMA table_info(qr_murid)');
+	if (!columns.rows.some((row) => row.name === 'token_value')) {
+		try {
+			await db.$client.execute('ALTER TABLE qr_murid ADD COLUMN token_value TEXT');
+		} catch (cause) {
+			const refreshed = await db.$client.execute('PRAGMA table_info(qr_murid)');
+			if (!refreshed.rows.some((row) => row.name === 'token_value')) throw cause;
+		}
+	}
 }

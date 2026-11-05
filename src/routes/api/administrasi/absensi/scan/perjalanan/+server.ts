@@ -1,3 +1,4 @@
+import { currentQrStudent, rememberScannedQr } from '$lib/server/student-qr';
 import { error, json } from '@sveltejs/kit';
 import { and, desc, eq, isNull, ne } from 'drizzle-orm';
 import { assertTravelAccess } from '$lib/server/attendance-travel-access';
@@ -12,7 +13,6 @@ import {
 import db from '$lib/server/db';
 import {
 	tableIzinPulangMurid as permitTable,
-	tableMurid,
 	tablePegawai,
 	tablePerjalananMurid as journeyTable,
 	tableQrMurid
@@ -22,7 +22,6 @@ import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digita
 import { ensureDataGovernanceSchema } from '$lib/server/db/ensure-data-governance';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { hashQrToken } from '$lib/server/absensi-digital';
-import { activeMuridFilter } from '$lib/server/murid-query';
 import { writeAuditLog } from '$lib/server/audit-log';
 
 export async function POST({ request, locals }) {
@@ -66,17 +65,9 @@ export async function POST({ request, locals }) {
 		const qr = await tx.query.tableQrMurid.findFirst({ where: eq(tableQrMurid.tokenHash, hash) });
 		if (!qr || qr.revokedAt)
 			throw error(404, 'QR tidak berlaku. Gunakan kartu absensi murid yang aktif.');
-		const murid = await tx.query.tableMurid.findFirst({
-			columns: { id: true, nama: true, kelasId: true },
-			where: and(
-				eq(tableMurid.id, qr.muridId),
-				eq(tableMurid.sekolahId, sekolah.id),
-				eq(tableMurid.semesterId, academic.activeSemesterId ?? -1),
-				activeMuridFilter()
-			),
-			with: { kelas: { columns: { nama: true } } }
-		});
+		const murid = await currentQrStudent(sekolah.id, qr.muridId, academic.activeSemesterId, tx);
 		if (!murid) throw error(404, 'Murid aktif tidak ditemukan di sekolah ini.');
+		await rememberScannedQr(qr, body.token.trim(), tx);
 		const permits = await tx.query.tableIzinPulangMurid.findMany({
 			where: and(
 				eq(permitTable.sekolahId, sekolah.id),

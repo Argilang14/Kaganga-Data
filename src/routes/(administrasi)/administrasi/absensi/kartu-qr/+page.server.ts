@@ -1,7 +1,5 @@
 import {
 	buildKelasAccessWhere,
-	createPreviewableQrToken,
-	hashQrToken,
 	loadAbsensiKelasOptions,
 	parsePositiveInteger,
 	requireAbsensiDigitalAccess,
@@ -11,12 +9,17 @@ import {
 import db from '$lib/server/db';
 import { canAttendance } from '$lib/attendance-access';
 import { writeAuditLog } from '$lib/server/audit-log';
-import { ensureDataGovernanceSchema } from '$lib/server/db/ensure-data-governance';
+import {
+	personalQrTransaction,
+	issuePersonalQr,
+	loadPersonalQrMap,
+	preparePersonalQr
+} from '$lib/server/student-qr';
 import { studentAccessCondition } from '$lib/server/student-access';
 import { tableKelas, tableMurid, tableQrMurid, tableSekolah } from '$lib/server/db/schema';
 import { formatTanggal } from '$lib/server/pdf/preview-utils';
 import { error, fail, redirect } from '@sveltejs/kit';
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import QRCode from 'qrcode';
 
 type CardPayload = {
@@ -32,8 +35,8 @@ type CardPayload = {
 
 type QrRow = Pick<
 	typeof tableQrMurid.$inferSelect,
-	'muridId' | 'tokenHash' | 'tokenVersion' | 'issuedAt' | 'revokedAt'
->;
+	'muridId' | 'tokenHash' | 'tokenValue' | 'tokenVersion' | 'issuedAt' | 'revokedAt'
+> & { conflicting?: boolean };
 
 function joinAddress(
 	alamat:
@@ -81,7 +84,7 @@ async function getAccessibleActiveKelas(
 
 async function buildCardFromQr(
 	murid: { id: number; nama: string; nis: string },
-	qr: Pick<QrRow, 'muridId' | 'tokenVersion' | 'issuedAt' | 'tokenHash'>,
+	qr: QrRow,
 	kelasLabel: string,
 	sekolahNama: string
 ) {
@@ -108,44 +111,19 @@ async function generateCard(
 ) {
 	if (!canAttendance(locals.user, 'qr_manage')) throw error(403, 'Izin pengelolaan QR diperlukan.');
 	const now = new Date().toISOString();
-	await ensureDataGovernanceSchema();
-	const token = await db.transaction(async (tx) => {
-		const latest = await tx.query.tableQrMurid.findFirst({
-			columns: { tokenVersion: true },
-			where: eq(tableQrMurid.muridId, murid.id),
-			orderBy: (table, { desc }) => [desc(table.tokenVersion)]
-		});
-		const tokenVersion = (latest?.tokenVersion ?? 0) + 1;
-		const token = createPreviewableQrToken({
-			muridId: murid.id,
-			tokenVersion,
-			issuedAt: now
-		});
-		const tokenHash = hashQrToken(token);
-
-		await tx
-			.update(tableQrMurid)
-			.set({ revokedAt: now, updatedAt: now })
-			.where(and(eq(tableQrMurid.muridId, murid.id), isNull(tableQrMurid.revokedAt)));
-
-		await tx.insert(tableQrMurid).values({
-			muridId: murid.id,
-			tokenHash,
-			tokenVersion,
-			issuedAt: now,
-			createdAt: now,
-			updatedAt: now
-		});
+	await preparePersonalQr();
+	const token = await personalQrTransaction(async (tx) => {
+		const { qr, token } = await issuePersonalQr(locals.sekolah!.id, murid.id, true, tx);
 		await writeAuditLog(
 			{
 				locals,
 				request,
-				action: latest ? 'update' : 'create',
+				action: 'update',
 				entityType: 'qr_murid',
 				entityId: murid.id,
 				summary: 'QR absensi murid diterbitkan ulang.',
-				before: latest ?? null,
-				after: { tokenVersion, issuedAt: now }
+
+				after: { tokenVersion: qr.tokenVersion, issuedAt: now }
 			},
 			tx
 		);
@@ -200,22 +178,10 @@ export async function load({ locals, parent }) {
 					with: { alamat: true }
 				})
 			: [];
-	const qrRows = muridList.length
-		? await db.query.tableQrMurid.findMany({
-				columns: {
-					muridId: true,
-					tokenHash: true,
-					issuedAt: true,
-					revokedAt: true,
-					tokenVersion: true
-				},
-				where: inArray(
-					tableQrMurid.muridId,
-					muridList.map((murid) => murid.id)
-				)
-			})
-		: [];
-	const activeQr = new Map(qrRows.filter((row) => !row.revokedAt).map((row) => [row.muridId, row]));
+	const activeQr = await loadPersonalQrMap(
+		sekolahId,
+		muridList.map((murid) => murid.id)
+	);
 
 	return {
 		meta: { title: 'Kartu Absensi Murid' } satisfies PageMeta,
@@ -246,6 +212,7 @@ export async function load({ locals, parent }) {
 								issuedAt: qr.issuedAt,
 								tokenVersion: qr.tokenVersion,
 								previewable: Boolean(token),
+								needsReview: Boolean(qr.conflicting),
 								qrDataUrl: token ? await QRCode.toDataURL(token, { margin: 1, width: 240 }) : null
 							}
 						: null
@@ -281,16 +248,7 @@ export const actions = {
 		});
 		if (!murid) return fail(404, { fail: 'Siswa tidak ditemukan.' });
 
-		const qr = await db.query.tableQrMurid.findFirst({
-			columns: {
-				muridId: true,
-				tokenHash: true,
-				tokenVersion: true,
-				issuedAt: true,
-				revokedAt: true
-			},
-			where: and(eq(tableQrMurid.muridId, murid.id), isNull(tableQrMurid.revokedAt))
-		});
+		const qr = (await loadPersonalQrMap(sekolahId, [murid.id])).get(murid.id);
 		if (!qr) return fail(404, { fail: 'QR siswa belum dibuat.' });
 
 		const card = await buildCardFromQr(
@@ -301,7 +259,7 @@ export const actions = {
 		);
 		if (!card) {
 			return fail(409, {
-				fail: 'Kartu lama tidak bisa direview ulang. Klik Perbarui QR sekali lagi untuk membuat kartu absensi yang bisa dicetak ulang.'
+				fail: 'Kode kartu lama belum dapat dipulihkan atau ada beberapa QR aktif. Pindai kartu lama untuk memulihkan kode; Perbarui QR akan mengganti dan mencabut kartu sebelumnya.'
 			});
 		}
 
@@ -331,21 +289,9 @@ export const actions = {
 		});
 		if (!muridList.length) return fail(404, { fail: 'Belum ada siswa pada kelas ini.' });
 
-		const qrRows = await db.query.tableQrMurid.findMany({
-			columns: {
-				muridId: true,
-				tokenHash: true,
-				tokenVersion: true,
-				issuedAt: true,
-				revokedAt: true
-			},
-			where: inArray(
-				tableQrMurid.muridId,
-				muridList.map((murid) => murid.id)
-			)
-		});
-		const activeQr = new Map(
-			qrRows.filter((row) => !row.revokedAt).map((row) => [row.muridId, row])
+		const activeQr = await loadPersonalQrMap(
+			sekolahId,
+			muridList.map((murid) => murid.id)
 		);
 
 		const cards: CardPayload[] = [];
@@ -361,7 +307,7 @@ export const actions = {
 
 		if (!cards.length) {
 			return fail(409, {
-				fail: 'Belum ada kartu yang bisa direview. Klik Generate/Perbarui Massal sekali, lalu berikutnya gunakan Review Cetak.'
+				fail: 'Belum ada kartu yang dapat dicetak. Periksa QR yang belum tersedia atau pindai kartu lama untuk memulihkan kodenya.'
 			});
 		}
 

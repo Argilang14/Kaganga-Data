@@ -1,3 +1,4 @@
+import { currentQrStudent, preparePersonalQr, rememberScannedQr } from '$lib/server/student-qr';
 import {
 	canAccessAbsensiDigital,
 	assertAbsensiDigitalAccess,
@@ -19,7 +20,6 @@ import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { saveAttendance } from '$lib/server/attendance-mutation';
 import { scanReceipt, type RecordedAttendance } from '$lib/attendance-scan-result';
 import { canScanModeActivity, parseAttendanceScanMode } from '$lib/attendance-scan';
-import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
 import {
 	tableAbsensiHarian,
 	tableAbsensiKegiatan,
@@ -76,7 +76,7 @@ export async function POST({ request, locals }) {
 			{ status: 401 }
 		);
 	}
-	await ensureAbsensiDigitalSchema();
+	await preparePersonalQr();
 	if (!canAttendance(locals.user, 'scan'))
 		return json({ ok: false, message: 'Izin scan belum diberikan.' }, { status: 403 });
 	if (locals.user.type === 'tim_keamanan')
@@ -111,7 +111,7 @@ export async function POST({ request, locals }) {
 			{ status: 400 }
 		);
 	const token = typeof body?.token === 'string' ? body.token.trim() : '';
-	if (!token) {
+	if (!token || token.length > 512) {
 		return json(
 			{ ok: false, code: 'invalid_token', message: 'Token QR tidak valid.' },
 			{ status: 400 }
@@ -160,7 +160,7 @@ export async function POST({ request, locals }) {
 	else assertAbsensiDigitalAccess(locals.user);
 
 	const tokenHash = hashQrToken(token);
-	const qr = await db.query.tableQrMurid.findFirst({
+	const originalQr = await db.query.tableQrMurid.findFirst({
 		where: eq(tableQrMurid.tokenHash, tokenHash),
 		with: {
 			murid: {
@@ -177,24 +177,31 @@ export async function POST({ request, locals }) {
 		}
 	});
 
-	if (!qr) {
+	if (!originalQr || !originalQr.murid || originalQr.murid.sekolahId !== sekolahId) {
 		return json(
-			{ ok: false, code: 'invalid_token', message: 'Token QR tidak valid.' },
+			{ ok: false, code: 'invalid_token', message: 'QR murid tidak ditemukan di sekolah aktif.' },
 			{ status: 404 }
 		);
 	}
-	if (!qr.murid) {
+	if (originalQr.revokedAt) {
 		return json(
-			{ ok: false, code: 'student_not_found', message: 'Data siswa tidak ditemukan.' },
-			{ status: 404 }
+			{ ok: false, code: 'revoked_token', message: 'Token QR sudah dicabut.' },
+			{ status: 410 }
 		);
 	}
-	if (qr.murid.sekolahId !== sekolahId) {
+	const academic = await resolveSekolahAcademicContext(sekolahId);
+	const current = await currentQrStudent(sekolahId, originalQr.muridId, academic.activeSemesterId);
+	if (!current)
 		return json(
-			{ ok: false, code: 'student_not_found', message: 'Siswa tidak ditemukan di sekolah aktif.' },
-			{ status: 404 }
+			{
+				ok: false,
+				code: 'forbidden_student',
+				message: 'Murid tidak aktif pada semester sekolah saat ini.'
+			},
+			{ status: 403 }
 		);
-	}
+	const qr = { ...originalQr, murid: current };
+
 	if (!qr.murid.kelasId)
 		return json(
 			{
@@ -214,7 +221,7 @@ export async function POST({ request, locals }) {
 					)
 				})
 			: undefined;
-	const academic = await resolveSekolahAcademicContext(sekolahId);
+
 	if (
 		!(await assertStudentAccess(
 			locals.user,
@@ -234,17 +241,7 @@ export async function POST({ request, locals }) {
 			{ status: 403 }
 		);
 	}
-	if (qr.revokedAt) {
-		return json(
-			{
-				ok: false,
-				code: 'revoked_token',
-				message: 'Token QR sudah dicabut.',
-				murid: muridPayload(qr.murid)
-			},
-			{ status: 410 }
-		);
-	}
+	await rememberScannedQr(qr, token);
 	if (mode === 'kegiatan') {
 		if (!kegiatan) {
 			return json(

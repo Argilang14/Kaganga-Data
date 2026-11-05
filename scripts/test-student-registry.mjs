@@ -786,6 +786,312 @@ try {
 	assert(
 		archiveWithJournal.archive.rows.find((row) => row.lastMuridId === waiting).movements.length >= 3
 	);
+	// Dorm deletion closes placements and hides the room while preserving all history.
+	{
+		const createEmptyDorm = async (name) => {
+			await dorm.mutateDormitory(
+				locals(admin),
+				'directory',
+				form({
+					id: 0,
+					nama: name,
+					kategori: 'putra',
+					kapasitas: 10,
+					pegawaiId: 0
+				})
+			);
+			return (
+				await client.execute({
+					sql: 'SELECT * FROM asrama_kamar WHERE sekolah_id=? AND nama=? AND deleted_at IS NULL',
+					args: [school, name]
+				})
+			).rows[0];
+		};
+		const deleteDorm = (room, user = admin, extra = {}) =>
+			dorm.mutateDormitory(
+				locals(user),
+				'delete',
+				form({
+					id: room.id,
+					versi: room.versi,
+					confirmDelete: 'true',
+					...extra
+				})
+			);
+		const exists = async (table, id) =>
+			(await client.execute({ sql: `SELECT id FROM ${table} WHERE id=?`, args: [id] })).rows.length;
+		const record = async (table, id) =>
+			(await client.execute({ sql: `SELECT * FROM ${table} WHERE id=?`, args: [id] })).rows[0];
+		const { dormRooms } = await vite.ssrLoadModule('/src/lib/server/dormitory-access.ts');
+		const unused = await createEmptyDorm('Asrama Hapus Uji');
+		await assert.rejects(
+			deleteDorm(unused, admin, { confirmDelete: '' }),
+			(cause) => cause.status === 400
+		);
+		await assert.rejects(
+			deleteDorm(unused, admin, { versi: Number(unused.versi) + 1 }),
+			(cause) => cause.status === 409
+		);
+		await assert.rejects(deleteDorm(unused, guardian), (cause) => cause.status === 403);
+		await assert.rejects(
+			deleteDorm(unused, { ...admin, type: 'guru', permissions: ['asrama_manage'] }),
+			(cause) => cause.status === 403
+		);
+		await assert.rejects(
+			deleteDorm(unused, {
+				...admin,
+				type: 'guru',
+				permissions: ['asrama_manage', 'asrama_penugasan'],
+				sekolahId: school + 1
+			}),
+			(cause) => cause.status === 403
+		);
+		const foreignSchool = await insert('sekolah', {
+			nama: 'Sekolah Pembatas Uji',
+			npsn: `QAD${Date.now()}`,
+			jenjang_pendidikan: 'sma',
+			alamat_id: schoolAddress,
+			kepala_sekolah_id: principal,
+			email: 'qa@example.invalid'
+		});
+		const foreignBuilding = await insert('asrama', {
+			sekolah_id: foreignSchool,
+			nama: 'Asrama Sekolah Lain',
+			nama_key: 'asrama sekolah lain',
+			kategori: 'putra'
+		});
+		const foreignRoom = {
+			id: await insert('asrama_kamar', {
+				sekolah_id: foreignSchool,
+				asrama_id: foreignBuilding,
+				nama: 'Kamar Lain',
+				nama_key: 'kamar lain',
+				kapasitas: 10
+			}),
+			versi: 1
+		};
+		await assert.rejects(deleteDorm(foreignRoom), (cause) => cause.status === 404);
+		assert.equal(await exists('asrama_kamar', foreignRoom.id), 1);
+		assert.equal(await exists('asrama_kamar', unused.id), 1);
+		assert.equal((await deleteDorm(unused)).message, 'Asrama berhasil dihapus.');
+		assert((await record('asrama_kamar', unused.id)).deleted_at);
+		assert((await record('asrama', unused.asrama_id)).deleted_at);
+		assert(!(await dormRooms(locals(admin))).some((room) => room.id === unused.id));
+		assert((await dormRooms(locals(admin), false, true)).some((room) => room.id === unused.id));
+		const replacement = await createEmptyDorm('Asrama Hapus Uji');
+		assert.notEqual(replacement.id, unused.id);
+		const { dormitoryActions } = await vite.ssrLoadModule('/src/lib/server/dormitory-page.ts');
+		await assert.rejects(
+			dormitoryActions.save(
+				event(`/asrama?kamar_id=${replacement.id}`, admin, {
+					operation: 'delete',
+					id: replacement.id,
+					versi: replacement.versi,
+					confirmDelete: 'true'
+				})
+			),
+			(cause) => cause.status === 303 && cause.location === '/asrama'
+		);
+		await assert.rejects(deleteDorm(unused), (cause) => cause.status === 404);
+		const deleteAudit = (
+			await client.execute({
+				sql: "SELECT * FROM audit_log WHERE sekolah_id=? AND entity_type='asrama' AND entity_id=? AND action='delete'",
+				args: [school, String(unused.id)]
+			})
+		).rows;
+		assert.equal(deleteAudit.length, 1);
+		assert.match(deleteAudit[0].summary, /Asrama Hapus Uji/);
+		const shared = await createEmptyDorm('Gedung Bersama Uji');
+		const sibling = await insert('asrama_kamar', {
+			sekolah_id: school,
+			asrama_id: shared.asrama_id,
+			nama: 'Kamar Tetap',
+			nama_key: 'kamar tetap',
+			kapasitas: 10
+		});
+		await deleteDorm(shared);
+		assert.equal((await record('asrama', shared.asrama_id)).deleted_at, null);
+		assert.equal(await exists('asrama_kamar', sibling), 1);
+		// A failure writing the audit rolls the room and its parent back atomically.
+		const rollbackDorm = await createEmptyDorm('Asrama Rollback Uji');
+		await client.execute(
+			"CREATE TRIGGER qa_reject_dorm_delete_audit BEFORE INSERT ON audit_log WHEN NEW.action='delete' AND NEW.entity_type='asrama' BEGIN SELECT RAISE(ABORT,'qa_audit_failure'); END"
+		);
+		await assert.rejects(deleteDorm(rollbackDorm), /qa_audit_failure/);
+		assert.equal((await record('asrama_kamar', rollbackDorm.id)).deleted_at, null);
+		assert.equal((await record('asrama', rollbackDorm.asrama_id)).deleted_at, null);
+		await client.execute('DROP TRIGGER qa_reject_dorm_delete_audit');
+		const assigned = await createEmptyDorm('Asrama Wali Uji');
+		const assignment = await insert('asrama_penugasan', {
+			sekolah_id: school,
+			kamar_id: assigned.id,
+			pegawai_id: warden,
+			peran: 'utama',
+			mulai: today,
+			nama_snapshot: 'Wali Uji',
+			alasan: 'Uji pengaman hapus',
+			petugas_id: actor
+		});
+		await deleteDorm(assigned);
+		assert.equal((await record('asrama_penugasan', assignment)).selesai, today);
+		const futureRoom = await createEmptyDorm('Asrama Rencana Uji');
+		const futureAssignment = await insert('asrama_penugasan', {
+			sekolah_id: school,
+			kamar_id: futureRoom.id,
+			pegawai_id: warden,
+			peran: 'utama',
+			mulai: '2099-01-01',
+			nama_snapshot: 'Wali Rencana',
+			alasan: 'Penugasan mendatang',
+			petugas_id: actor
+		});
+		await deleteDorm(futureRoom);
+		assert.equal((await record('asrama_penugasan', futureAssignment)).selesai, '2099-01-01');
+		const placed = await createEmptyDorm('Asrama Murid Uji');
+		const testStudent = await student('Murid Uji Penghapusan', classA);
+		const identity = (
+			await client.execute({
+				sql: 'SELECT identity_uid FROM murid_identity_link WHERE murid_id=?',
+				args: [testStudent]
+			})
+		).rows[0].identity_uid;
+		const placement = await insert('asrama_penempatan', {
+			sekolah_id: school,
+			kamar_id: placed.id,
+			murid_id: testStudent,
+			identity_uid: identity,
+			mulai: today,
+			alasan: 'Uji pengaman hapus',
+			nama_snapshot: 'Murid Uji Penghapusan',
+			kelas_snapshot: 'Belum mendapat kelas',
+			petugas_id: actor
+		});
+		const { ensureDormEvaluationSchema } = await vite.ssrLoadModule(
+			'/src/lib/server/db/ensure-dorm-evaluation.ts'
+		);
+		await ensureDormEvaluationSchema();
+		const evaluation = await insert('asrama_evaluasi', {
+			sekolah_id: school,
+			kamar_id: placed.id,
+			semester_id: semester,
+			nama: 'Evaluasi Uji'
+		});
+		const goal = await insert('asrama_evaluasi_tujuan', {
+			evaluasi_id: evaluation,
+			indikator: 'Kedisiplinan',
+			deskripsi: 'Tertib mengikuti kegiatan'
+		});
+		const grade = await insert('asrama_evaluasi_nilai', {
+			penempatan_id: placement,
+			tujuan_id: goal,
+			murid_id: testStudent,
+			kategori: 'baik',
+			penilai_id: actor
+		});
+		const note = await insert('asrama_evaluasi_catatan', {
+			penempatan_id: placement,
+			semester_id: semester,
+			catatan: 'Catatan tetap tersimpan',
+			petugas_id: actor
+		});
+		const preservedGrade = await record('asrama_evaluasi_nilai', grade);
+		const preservedNote = await record('asrama_evaluasi_catatan', note);
+		const studentBefore = await record('murid', testStudent);
+		// Failure after closing residents must roll the closures back as well.
+		await client.execute(
+			"CREATE TRIGGER qa_reject_dorm_delete_audit BEFORE INSERT ON audit_log WHEN NEW.action='delete' AND NEW.entity_type='asrama' BEGIN SELECT RAISE(ABORT,'qa_audit_failure'); END"
+		);
+		await assert.rejects(deleteDorm(placed), /qa_audit_failure/);
+		assert.equal((await record('asrama_penempatan', placement)).selesai, null);
+		assert.equal((await record('asrama_kamar', placed.id)).deleted_at, null);
+		await client.execute('DROP TRIGGER qa_reject_dorm_delete_audit');
+		await deleteDorm(placed);
+		assert.equal((await record('asrama_penempatan', placement)).selesai, today);
+		assert.equal((await record('asrama_penempatan', placement)).selesai_alasan, 'Asrama dihapus');
+		assert.deepEqual(await record('murid', testStudent), studentBefore);
+		assert.deepEqual(await record('asrama_evaluasi_nilai', grade), preservedGrade);
+		assert.deepEqual(await record('asrama_evaluasi_catatan', note), preservedNote);
+		const passiveAfterDelete = await registry.loadStudentRegistry(event('/murid/pasif'));
+		assert(
+			passiveAfterDelete.registry.students.some(
+				(row) => row.id === testStudent && row.kamar_id === null
+			)
+		);
+		const allAfterDelete = await registry.loadStudentRegistry(event('/murid/semua'));
+		assert(
+			allAfterDelete.registry.students
+				.find((row) => row.id === testStudent)
+				.dormHistory.some((row) => row.kamar === placed.nama)
+		);
+		const { dormEvaluationContext } = await vite.ssrLoadModule(
+			'/src/lib/server/dorm-evaluation.ts'
+		);
+		const historical = await dormEvaluationContext(
+			event(`/asesmen-keasramaan?riwayat=1&kamar_id=${placed.id}&semester_id=${semester}`)
+		);
+		assert(historical.students.some((row) => row.id === testStudent));
+		assert(historical.grades.some((row) => row.penempatan_id === placement));
+		assert.equal(historical.canGrade, false);
+		const printed = await dormEvaluationContext(
+			event(`/cetak-raport?bagian=asrama&kamar_id=${placed.id}&semester_id=${semester}`)
+		);
+		assert(printed.students.some((row) => row.id === testStudent));
+		assert(printed.grades.some((row) => row.penempatan_id === placement));
+		await assert.rejects(
+			dormEvaluationContext(event(`/asesmen-keasramaan?kamar_id=${placed.id}`)),
+			(cause) => cause.status === 403
+		);
+		await assert.rejects(
+			client.execute({ sql: 'UPDATE asrama_kamar SET aktif=1 WHERE id=?', args: [placed.id] }),
+			/asrama_deleted/
+		);
+		await assert.rejects(
+			dorm.mutateDormitory(
+				locals(admin),
+				'room',
+				form({
+					id: placed.id,
+					versi: Number(placed.versi) + 1,
+					nama: placed.nama,
+					kapasitas: 10,
+					aktif: 'on'
+				})
+			),
+			(cause) => cause.status === 409
+		);
+		const destination = await createEmptyDorm('Asrama Tujuan Uji');
+		const move = {
+			kamarId: destination.id,
+			tanggal: today,
+			alasan: 'Penempatan setelah asrama dihapus',
+			muridId: testStudent
+		};
+		const preview = await dorm.previewPlacement(locals(admin), dorm.placementInput(form(move)));
+		await dorm.mutateDormitory(locals(admin), 'place', form({ ...move, token: preview.token }));
+		assert.equal(
+			(
+				await client.execute({
+					sql: 'SELECT kamar_id FROM asrama_penempatan WHERE murid_id=? AND selesai IS NULL',
+					args: [testStudent]
+				})
+			).rows[0].kamar_id,
+			destination.id
+		);
+		assert.equal(await exists('asrama_evaluasi', evaluation), 1);
+		assert.equal(await exists('asrama_penempatan', placement), 1);
+		assert.equal(await exists('asrama_penugasan', assignment), 1);
+		await assert.rejects(
+			client.execute({ sql: 'DELETE FROM asrama_penempatan WHERE id=?', args: [placement] }),
+			/asrama_history_locked/
+		);
+		await assert.rejects(
+			client.execute({ sql: 'DELETE FROM asrama_penugasan WHERE id=?', args: [assignment] }),
+			/asrama_history_locked/
+		);
+		console.log(
+			'PASS: simple dorm deletion, automatic release/reassignment, confirmation, role/school/version guards, name reuse, shared building, audit rollback, historical grades/notes/printing and immutable history.'
+		);
+	}
 	const salt = randomBytes(16).toString('hex');
 	const password = 'RegistryQa-' + randomBytes(10).toString('hex');
 	const qaUser = await insert('auth_user', {

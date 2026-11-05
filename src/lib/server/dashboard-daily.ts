@@ -1,3 +1,4 @@
+import { personalQrExists } from '$lib/server/student-qr';
 import db from './db';
 import { error } from '@sveltejs/kit';
 import { canAttendance, hasSchoolWideAttendanceStudentAccess } from '$lib/attendance-access';
@@ -99,7 +100,7 @@ export async function loadDashboardDaily(
 		.select({
 			total: sql<number>`count(*)`,
 			photo: sql<number>`sum(case when trim(coalesce(${m.foto}, '')) = '' then 1 else 0 end)`,
-			qr: sql<number>`sum(case when not exists (select 1 from qr_murid q where q.murid_id = ${m.id} and q.revoked_at is null) then 1 else 0 end)`
+			qr: sql<number>`sum(case when not ${personalQrExists(m.id, m.sekolahId)} then 1 else 0 end)`
 		})
 		.from(m)
 		.where(studentWhere);

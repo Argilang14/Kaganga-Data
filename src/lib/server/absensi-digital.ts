@@ -1,10 +1,9 @@
 import db from '$lib/server/db';
 import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
-import { tableKelas, tableQrMurid } from '$lib/server/db/schema';
+import { tableKelas } from '$lib/server/db/schema';
 import { error, redirect } from '@sveltejs/kit';
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
-import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { canAttendance } from '$lib/attendance-access';
 import { accessibleClassIds } from './attendance-student-access';
 
@@ -30,7 +29,12 @@ export function assertAbsensiDigitalAccess(user?: Pick<AuthUser, 'type' | 'permi
 }
 
 export function todayLocalDate(date = new Date()) {
-	return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+	return new Intl.DateTimeFormat('en-CA', {
+		timeZone: 'Asia/Jakarta',
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit'
+	}).format(date);
 }
 
 export function normalizeDateInput(value: string | null | undefined, fallback = todayLocalDate()) {
@@ -38,64 +42,14 @@ export function normalizeDateInput(value: string | null | undefined, fallback = 
 	return value;
 }
 
-export function hashQrToken(token: string) {
-	return createHash('sha256').update(token, 'utf8').digest('hex');
-}
-
-export function createQrToken() {
-	return `rapkumer-absensi:${randomBytes(32).toString('base64url')}`;
-}
-
-function qrTokenSecret() {
-	return (
-		process.env.RAPKUMER_QR_SECRET ||
-		process.env.INTERNAL_RELOAD_SECRET ||
-		'rapkumer-absensi-digital-v1'
-	);
-}
-
-export function createPreviewableQrToken(params: {
-	muridId: number;
-	tokenVersion: number;
-	issuedAt: string;
-}) {
-	const payload = `${params.muridId}.${params.tokenVersion}.${params.issuedAt}`;
-	const signature = createHmac('sha256', qrTokenSecret())
-		.update(payload, 'utf8')
-		.digest('base64url');
-	return `rapkumer-absensi:v2:${payload}.${signature}`;
-}
-
-export type PrintableQrRecord = {
-	muridId: number;
-	tokenHash: string;
-	tokenVersion: number;
-	issuedAt: string;
-};
-
-export function resolvePrintableQrToken(qr: PrintableQrRecord): string | null {
-	const token = createPreviewableQrToken(qr);
-	return hashQrToken(token) === qr.tokenHash ? token : null;
-}
-
-export async function loadActivePrintableQr(muridId: number) {
-	await ensureAbsensiDigitalSchema();
-	const qr = await db.query.tableQrMurid.findFirst({
-		columns: {
-			muridId: true,
-			tokenHash: true,
-			tokenVersion: true,
-			issuedAt: true
-		},
-		where: and(eq(tableQrMurid.muridId, muridId), isNull(tableQrMurid.revokedAt)),
-		orderBy: (table, { desc }) => [desc(table.tokenVersion), desc(table.id)]
-	});
-	if (!qr) return { status: 'missing' as const };
-
-	const token = resolvePrintableQrToken(qr);
-	if (!token) return { status: 'not_printable' as const, qr };
-	return { status: 'ready' as const, qr, token };
-}
+export {
+	hashQrToken,
+	createQrToken,
+	createPreviewableQrToken,
+	resolvePrintableQrToken,
+	type PrintableQrRecord
+} from './student-qr-token';
+export { loadActivePrintableQr } from './student-qr';
 
 export function parsePositiveInteger(value: FormDataEntryValue | string | null | undefined) {
 	if (value == null) return null;

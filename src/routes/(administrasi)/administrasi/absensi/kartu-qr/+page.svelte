@@ -35,6 +35,7 @@
 				issuedAt: string;
 				tokenVersion: number;
 				previewable: boolean;
+				needsReview: boolean;
 				qrDataUrl: string | null;
 			} | null;
 		}>;
@@ -119,7 +120,7 @@
 						{form.skipped ? ` ${form.skipped} siswa belum memiliki QR yang bisa direview.` : ''}
 					</div>
 				</div>
-				<a class="btn btn-accent shadow-none" href={`${resolve('/cetak')}?dokumen=kartu-absensi`}>
+				<a class="btn btn-accent shadow-none" href={resolve('/cetak?dokumen=kartu-absensi')}>
 					<Icon name="print" />
 					Buka Cetak Dokumen
 				</a>
@@ -155,10 +156,16 @@
 						<div class="mx-auto w-full max-w-[520px] space-y-2">
 							<div class="min-w-0 text-left">
 								{#if murid.qr}
-									<div class="badge badge-success">Aktif v{murid.qr.tokenVersion}</div>
+									<div class={murid.qr.needsReview ? 'badge badge-warning' : 'badge badge-success'}>
+										{murid.qr.needsReview
+											? 'QR perlu diperiksa'
+											: `Aktif v${murid.qr.tokenVersion}`}
+									</div>
 									{#if !murid.qr.previewable}
 										<div class="text-warning mt-1 text-xs">
-											Perlu generate ulang agar bisa direview.
+											{murid.qr.needsReview
+												? 'Ada beberapa QR aktif untuk anak ini. Periksa identitas sebelum mencetak.'
+												: 'Pindai kartu lama untuk memulihkan kode. Perbarui akan mengganti kartu sebelumnya.'}
 										</div>
 									{/if}
 								{:else}
@@ -181,7 +188,7 @@
 								{/if}
 								<a
 									class="btn btn-xs btn-primary w-full shadow-none"
-									href={`${resolve('/cetak')}?dokumen=kartu-absensi`}
+									href={resolve('/cetak?dokumen=kartu-absensi')}
 								>
 									<Icon name="print" />
 									Cetak

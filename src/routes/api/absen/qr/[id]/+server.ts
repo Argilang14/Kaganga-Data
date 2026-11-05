@@ -1,4 +1,11 @@
-import { randomUUID } from 'node:crypto';
+import {
+	personalQrTransaction,
+	issuePersonalQr,
+	loadActivePrintableQr,
+	preparePersonalQr
+} from '$lib/server/student-qr';
+import { canAttendance } from '$lib/attendance-access';
+import { assertStudentAccess } from '$lib/server/attendance-student-access';
 import db from '$lib/server/db';
 import { tableMurid } from '$lib/server/db/schema';
 import { error } from '@sveltejs/kit';
@@ -20,13 +27,21 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	});
 	if (!murid) throw error(404, 'Murid tidak ditemukan');
 
-	let token = murid.qrToken;
+	if (
+		!canAttendance(locals.user, 'lihat') ||
+		!(await assertStudentAccess(locals.user, sekolahId, murid.id, true))
+	)
+		throw error(403, 'Murid di luar penugasan akun.');
+	await preparePersonalQr();
+	const current = await loadActivePrintableQr(murid.id);
+	if (current.status === 'not_printable')
+		throw error(409, 'QR perlu diperiksa melalui Kartu Absensi.');
+	let token = current.status === 'ready' ? current.token : murid.qrToken;
 	if (!token) {
-		token = randomUUID();
-		await db
-			.update(tableMurid)
-			.set({ qrToken: token, updatedAt: new Date().toISOString() })
-			.where(eq(tableMurid.id, murid.id));
+		if (!canAttendance(locals.user, 'qr_manage'))
+			throw error(403, 'Izin pengelolaan QR diperlukan.');
+		token = (await personalQrTransaction((tx) => issuePersonalQr(sekolahId, murid.id, false, tx)))
+			.token;
 	}
 
 	const payload = JSON.stringify({ type: 'rapkumer-absensi', token });

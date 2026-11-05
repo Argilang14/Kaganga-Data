@@ -1,6 +1,6 @@
 #define AppName "Kaganga"
-#define AppVersion "2.3.2"
-#define AppFileVersion "2.3.2.0"
+#define AppVersion "2.3.3"
+#define AppFileVersion "2.3.3.0"
 #define StagePath "..\\dist\\windows\\stage\\Kaganga"
 
 [Setup]

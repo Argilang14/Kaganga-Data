@@ -6,7 +6,11 @@ import { canDorm, dormId, dormToday, type DormRoom } from '$lib/dormitory';
 import { hasSchoolWideAttendanceStudentAccess } from '$lib/attendance-access';
 
 export const dormCookie = 'active-kamar-id';
-export async function dormRooms(locals: App.Locals, attendance = false): Promise<DormRoom[]> {
+export async function dormRooms(
+	locals: App.Locals,
+	attendance = false,
+	includeDeleted = false
+): Promise<DormRoom[]> {
 	const { user, sekolah } = locals;
 	if (
 		!sekolah ||
@@ -24,7 +28,7 @@ export async function dormRooms(locals: App.Locals, attendance = false): Promise
 	 (SELECT COUNT(*) FROM asrama_penempatan p WHERE p.kamar_id=k.id AND p.selesai IS NULL) AS penghuni,
 	 (SELECT e.nama FROM asrama_penugasan w JOIN pegawai e ON e.id=w.pegawai_id
 	 WHERE w.kamar_id=k.id AND w.peran='utama' AND w.selesai IS NULL) AS wali
-	 FROM asrama_kamar k JOIN asrama g ON g.id=k.asrama_id WHERE k.sekolah_id=? AND (
+	 FROM asrama_kamar k JOIN asrama g ON g.id=k.asrama_id WHERE k.sekolah_id=? ${includeDeleted ? '' : 'AND k.deleted_at IS NULL AND g.deleted_at IS NULL'} AND (
 	 ?=1 OR EXISTS(SELECT 1 FROM asrama_penugasan w JOIN pegawai e ON e.id=w.pegawai_id
 	 WHERE w.kamar_id=k.id AND w.pegawai_id=? AND e.status='aktif' AND w.selesai IS NULL)
 	 OR (?='wali_asuh' AND EXISTS(SELECT 1 FROM asrama_penempatan p JOIN murid_identity_link mi
@@ -46,9 +50,10 @@ export async function dormView(
 	locals: App.Locals,
 	params: URLSearchParams,
 	cookies?: Cookies,
-	attendance = false
+	attendance = false,
+	includeDeleted = false
 ) {
-	const rooms = await dormRooms(locals, attendance);
+	const rooms = await dormRooms(locals, attendance, includeDeleted);
 	const supplied = params.get('kamar_id');
 	let id = 0;
 	try {

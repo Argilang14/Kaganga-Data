@@ -1,5 +1,6 @@
 import { ensureSchema } from './ensure-helper';
 import { ensureDataGovernanceSchema } from './ensure-data-governance';
+import db from './index';
 
 export async function ensureDormitorySchema() {
 	await ensureDataGovernanceSchema();
@@ -87,4 +88,23 @@ export async function ensureDormitorySchema() {
 			 BEGIN SELECT RAISE(ABORT,'asrama_history_locked'); END`
 		])
 	]);
+	for (const table of ['asrama', 'asrama_kamar']) {
+		const columns = await db.$client.execute(`PRAGMA table_info(${table})`);
+		if (!columns.rows.some((column) => column.name === 'deleted_at')) {
+			try {
+				await db.$client.execute(`ALTER TABLE ${table} ADD COLUMN deleted_at TEXT`);
+			} catch (cause) {
+				// Another first request may have completed the same migration.
+				if (!String(cause).includes('duplicate column name')) throw cause;
+			}
+		}
+	}
+	await ensureSchema(
+		'dormitory-soft-delete-v1',
+		['asrama', 'asrama_kamar'].map(
+			(table) =>
+				`CREATE TRIGGER IF NOT EXISTS ${table}_deleted_locked BEFORE UPDATE ON ${table}
+		 WHEN OLD.deleted_at IS NOT NULL BEGIN SELECT RAISE(ABORT,'asrama_deleted'); END`
+		)
+	);
 }

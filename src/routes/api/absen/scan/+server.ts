@@ -1,5 +1,10 @@
+import { currentQrStudent, preparePersonalQr, rememberScannedQr } from '$lib/server/student-qr';
+import { hashQrToken } from '$lib/server/student-qr-token';
+import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
+import { assertStudentAccess } from '$lib/server/attendance-student-access';
+import { canAttendance, canAttendActivity } from '$lib/attendance-access';
 import db from '$lib/server/db';
-import { tableAbsensi, tableMurid } from '$lib/server/db/schema';
+import { tableAbsensi, tableMurid, tableQrMurid } from '$lib/server/db/schema';
 import { json } from '@sveltejs/kit';
 import { and, eq, sql } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
@@ -50,21 +55,40 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const token = parseToken(body.token);
 	const mode = body.mode === 'pulang' ? 'pulang' : 'masuk';
-	if (!token) {
+	if (!token || token.length > 512) {
 		return json({ ok: false, message: 'Token QR kosong' }, { status: 400 });
 	}
 
-	const murid = await db.query.tableMurid.findFirst({
-		columns: { id: true, nama: true, qrToken: true },
-		with: { kelas: { columns: { nama: true, fase: true } } },
-		where: and(eq(tableMurid.sekolahId, sekolahId), eq(tableMurid.qrToken, token))
+	if (!canAttendance(locals.user, 'scan') || !canAttendActivity(locals.user, 'sekolah'))
+		return json({ ok: false, message: 'Izin scan sekolah diperlukan.' }, { status: 403 });
+	await preparePersonalQr();
+	const record = await db.query.tableQrMurid.findFirst({
+		where: eq(tableQrMurid.tokenHash, hashQrToken(token))
 	});
-	if (!murid) {
+	if (record?.revokedAt)
+		return json({ ok: false, message: 'Token QR sudah dicabut.' }, { status: 410 });
+	const legacy = !record
+		? await db.query.tableMurid.findFirst({
+				columns: { id: true },
+				where: and(eq(tableMurid.sekolahId, sekolahId), eq(tableMurid.qrToken, token))
+			})
+		: undefined;
+	const academic = await resolveSekolahAcademicContext(sekolahId);
+	const sourceId = record?.muridId ?? legacy?.id;
+	const murid = sourceId
+		? await currentQrStudent(sekolahId, sourceId, academic.activeSemesterId)
+		: undefined;
+	if (!murid)
 		return json(
-			{ ok: false, message: 'QR murid tidak dikenali untuk sekolah aktif' },
+			{ ok: false, message: 'QR murid aktif tidak ditemukan di sekolah ini.' },
 			{ status: 404 }
 		);
-	}
+	if (!murid.kelasId || !(await assertStudentAccess(locals.user, sekolahId, murid.id, true)))
+		return json(
+			{ ok: false, message: 'Murid belum ditempatkan atau di luar penugasan akun.' },
+			{ status: 403 }
+		);
+	if (record) await rememberScannedQr(record, token);
 
 	const { start, end } = dayRange();
 	const existing = await db.query.tableAbsensi.findFirst({

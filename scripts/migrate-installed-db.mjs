@@ -225,6 +225,7 @@ async function main() {
 					{ table: 'kelas', column: 'sekolah_id', type: 'INTEGER' },
 					{ table: 'mata_pelajaran', column: 'kelas_id', type: 'INTEGER' },
 					{ table: 'murid', column: 'qr_token', type: 'TEXT' },
+					{ table: 'qr_murid', column: 'token_value', type: 'TEXT' },
 					{ table: 'auth_user', column: 'sekolah_id', type: 'INTEGER' },
 					{ table: 'feature_unlock', column: 'sekolah_id', type: 'INTEGER' },
 					{ table: 'tahun_ajaran', column: 'sekolah_id', type: 'INTEGER' }
@@ -468,7 +469,7 @@ async function main() {
 									cwd: projectRoot
 								}
 							);
-						} catch (_) {
+						} catch {
 							// non-fatal
 						}
 

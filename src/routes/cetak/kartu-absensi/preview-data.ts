@@ -137,7 +137,7 @@ export async function getKartuAbsensiPreviewPayload({ locals, url }: KartuAbsens
 	if (activeQr.status === 'not_printable') {
 		throw error(
 			409,
-			'QR aktif lama tidak dapat dicetak ulang. Perbarui QR siswa dari menu Absensi - Kartu Absensi.'
+			'Kode kartu lama belum dapat dipulihkan atau ada beberapa QR aktif. Pindai kartu lama untuk pemulihan; gunakan Perbarui QR hanya jika ingin mengganti kartu.'
 		);
 	}
 

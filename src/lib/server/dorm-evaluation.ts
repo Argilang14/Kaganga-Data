@@ -19,6 +19,7 @@ export type EvaluationRoom = {
 	asrama: string;
 	wali: string | null;
 	aktif: number;
+	deletedAt: string | null;
 };
 export type EvaluationPeriod = {
 	id: number;
@@ -103,10 +104,13 @@ export async function dormEvaluationContext(
 	const employee = user.pegawaiId ?? -1;
 	const grading = /^\/(?:api\/)?asesmen-keasramaan(?:\/|$)/.test(event.url.pathname);
 	const ownGrades = grading && hasRole(user, 'wali_asuh') && !schoolWideAcademic(user);
+	const requestedHistory = event.url.searchParams.get('riwayat') === '1';
+	const printing = event.url.pathname.startsWith('/cetak');
+	const includeDeleted = requestedHistory || printing;
 	const rooms = await evaluationRows<EvaluationRoom>(
-		`SELECT k.id,k.nama,g.nama asrama,k.aktif*g.aktif aktif,
+		`SELECT k.id,k.nama,g.nama asrama,k.aktif*g.aktif aktif,k.deleted_at deletedAt,
 	 (SELECT w.nama_snapshot FROM asrama_penugasan w WHERE w.kamar_id=k.id AND w.peran='utama' AND w.mulai<=? AND (w.selesai IS NULL OR w.selesai>?) LIMIT 1) wali
-	 FROM asrama_kamar k JOIN asrama g ON g.id=k.asrama_id WHERE k.sekolah_id=? AND (?=1
+	 FROM asrama_kamar k JOIN asrama g ON g.id=k.asrama_id WHERE k.sekolah_id=? ${includeDeleted ? '' : 'AND k.deleted_at IS NULL AND g.deleted_at IS NULL'} AND (?=1
 	 OR (?='wali_asrama' AND EXISTS(SELECT 1 FROM asrama_penugasan w JOIN pegawai e ON e.id=w.pegawai_id WHERE w.kamar_id=k.id AND w.pegawai_id=? AND e.status='aktif' AND w.mulai<=? AND (w.selesai IS NULL OR w.selesai>?)))
 	 OR (?='wali_asuh' AND EXISTS(SELECT 1 FROM asrama_penempatan p JOIN murid_identity_link mi ON mi.identity_uid=p.identity_uid AND mi.sekolah_id=p.sekolah_id
 	 JOIN murid m ON m.id=mi.murid_id JOIN pegawai e ON e.id=m.wali_asuh_pegawai_id AND e.sekolah_id=m.sekolah_id AND e.status='aktif'
@@ -131,6 +135,7 @@ export async function dormEvaluationContext(
 		event.cookies.get('active-kamar-id');
 	const roomId = id(suppliedRoom, true);
 	const room = rooms.find((r) => r.id === roomId) ?? null;
+	const history = requestedHistory || (printing && !!room?.deletedAt);
 	if (roomId && !room && (form?.has('kamar_id') || event.url.searchParams.has('kamar_id')))
 		error(403, 'Asrama berada di luar penugasan. Pilih asrama yang tersedia.');
 	const ownsRoom =
@@ -143,7 +148,6 @@ export async function dormEvaluationContext(
 			)
 		).length > 0;
 	const limitToWards = hasRole(user, 'wali_asuh') && ((!wide && !ownsRoom) || ownGrades);
-	const history = event.url.searchParams.get('riwayat') === '1';
 	const students =
 		room && period
 			? await evaluationRows<EvaluationStudent>(

@@ -1,3 +1,4 @@
+import { personalQrExists } from '$lib/server/student-qr';
 import db from '$lib/server/db/index.js';
 import { tableMurid } from '$lib/server/db/schema.js';
 import { error, redirect } from '@sveltejs/kit';
@@ -57,7 +58,7 @@ export async function load(event: ServerLoadEvent) {
 		url.searchParams.get('belum_lengkap') === 'foto'
 			? sql`trim(coalesce(${tableMurid.foto}, '')) = ''`
 			: url.searchParams.get('belum_lengkap') === 'qr'
-				? sql`not exists (select 1 from qr_murid q where q.murid_id = ${tableMurid.id} and q.revoked_at is null)`
+				? sql`not ${personalQrExists(tableMurid.id, tableMurid.sekolahId)}`
 				: undefined
 	);
 

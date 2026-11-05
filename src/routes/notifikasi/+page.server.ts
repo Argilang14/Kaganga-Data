@@ -1,3 +1,4 @@
+import { personalQrExists } from '$lib/server/student-qr';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { loadAbsensiKelasOptions, todayLocalDate } from '$lib/server/absensi-digital';
 import { loadAttendanceMonitoring } from '$lib/server/attendance-monitoring.server';
@@ -21,7 +22,8 @@ import {
 	tableSuratArsip
 } from '$lib/server/db/schema';
 import { redirect } from '@sveltejs/kit';
-import { and, eq, gte, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, eq, gte, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
+import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { authority } from '../pengguna/utils.server';
 
 type Notice = {
@@ -33,7 +35,11 @@ type Notice = {
 	href: string;
 };
 
-async function countRows(table: Parameters<typeof db.select>[0], from: any, where: any) {
+async function countRows(
+	table: Parameters<typeof db.select>[0],
+	from: SQLiteTable,
+	where: SQL | undefined
+) {
 	const [row] = await db.select(table).from(from).where(where);
 	return Number((row as { total?: number } | undefined)?.total ?? 0);
 }
@@ -153,7 +159,7 @@ export async function _getNotificationData(locals: App.Locals) {
 					and(
 						eq(tableMurid.sekolahId, sekolahId),
 						eq(tableMurid.semesterId, academic.activeSemesterId),
-						or(isNull(tableMurid.qrToken), eq(tableMurid.qrToken, '')),
+						sql`not ${personalQrExists(tableMurid.id, tableMurid.sekolahId)}`,
 						activeMuridFilter()
 					)
 				)

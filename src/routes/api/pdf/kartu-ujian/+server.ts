@@ -1,11 +1,12 @@
+import { loadPersonalQrMap } from '$lib/server/student-qr';
 import { error } from '@sveltejs/kit';
 import db from '$lib/server/db';
 import { getStudentEducationIdentity } from '$lib/server/education-units';
 import { ensureUjianSchema } from '$lib/server/db/ensure-ujian';
 import { ensureAbsensiDigitalSchema } from '$lib/server/db/ensure-absensi-digital';
-import { tableMurid, tableQrMurid } from '$lib/server/db/schema';
+import { tableMurid } from '$lib/server/db/schema';
 import { resolvePrintableQrToken } from '$lib/server/absensi-digital';
-import { and, eq, inArray, isNull, desc } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import QRCode from 'qrcode';
 import { renderPDF } from '$lib/server/pdf/pagedpdf';
 import { renderKartuUjianHTML } from '$lib/server/pdf/templates/kartu-ujian';
@@ -77,17 +78,11 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 				})
 			: [];
 		const studentIds = students.map((student) => student.id);
-		const records = studentIds.length
-			? await db.query.tableQrMurid.findMany({
-					columns: { muridId: true, tokenHash: true, tokenVersion: true, issuedAt: true },
-					where: and(inArray(tableQrMurid.muridId, studentIds), isNull(tableQrMurid.revokedAt)),
-					orderBy: [desc(tableQrMurid.tokenVersion), desc(tableQrMurid.id)]
-				})
-			: [];
+		const records = await loadPersonalQrMap(sekolahId, studentIds);
 		const tokens = new Map<number, string | null>();
-		for (const record of records) {
-			if (!tokens.has(record.muridId)) tokens.set(record.muridId, resolvePrintableQrToken(record));
-		}
+		for (const [studentId, record] of records)
+			tokens.set(studentId, resolvePrintableQrToken(record));
+
 		const unavailable = participantResult.rows.filter((row) => !tokens.get(Number(row.muridId)));
 		if (unavailable.length)
 			throw error(

@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import FormEnhance from '$lib/components/form-enhance.svelte';
 	import Icon from '$lib/components/icon.svelte';
+	import StudentImportPanel from '$lib/components/murid/student-import-panel.svelte';
 	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
 
@@ -16,11 +17,6 @@
 	let activeSekolahId = $state(data.activeSekolahId ?? null);
 	const activeTahunAjaranId = data.activeTahunAjaranId ?? null;
 	const activeSemesterId = data.activeSemesterId ?? null;
-	const downloadDataSiswaHref = $derived(
-		activeSemesterId
-			? resolve('/api/rapor/unduh-data-siswa') + '?semesterId=' + activeSemesterId
-			: resolve('/api/rapor/unduh-data-siswa')
-	);
 	const tanggalBagiRaport = data.tanggalBagiRaport as {
 		ganjilId?: number;
 		ganjil?: string | null;
@@ -220,7 +216,7 @@
 	import { page } from '$app/state';
 	let canRaporManage = $derived.by(() => {
 		const perms = (page.data.user ?? { permissions: [] }).permissions ?? [];
-		return (perms as string[]).includes('rapor_manage');
+		return page.data.user?.type === 'admin' || (perms as string[]).includes('rapor_manage');
 	});
 
 	// Check if selected school is different from active school
@@ -489,60 +485,12 @@
 						{/if}
 
 						<fieldset class="fieldset md:col-span-2">
-							<legend class="fieldset-legend">Import data siswa dan kelas</legend>
-							<div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-								<input
-									type="file"
-									class="file-input file-input-ghost"
-									accept=".xlsx, .xls"
-									name="data"
-									disabled={!canRaporManage}
-									aria-disabled={!canRaporManage}
-									title={!canRaporManage
-										? 'Anda tidak memiliki izin untuk mengimpor data siswa'
-										: ''}
-								/>
-								{#if canRaporManage}
-									<a
-										class="btn btn-soft shadow-none"
-										href={resolve('/api/rapor/import-siswa-kelas-template')}
-										download
-									>
-										<Icon name="download" />
-										Download template
-									</a>
-								{:else}
-									<button
-										class="btn btn-soft shadow-none"
-										type="button"
-										disabled
-										title="Anda tidak memiliki izin untuk mengunduh template"
-									>
-										<Icon name="download" />
-										Download template
-									</button>
-								{/if}
-								{#if canRaporManage}
-									<a class="btn btn-soft shadow-none" href={downloadDataSiswaHref} download>
-										<Icon name="download" />
-										Unduh data siswa
-									</a>
-								{:else}
-									<button
-										class="btn btn-soft shadow-none"
-										type="button"
-										disabled
-										title="Anda tidak memiliki izin untuk mengunduh data siswa"
-									>
-										<Icon name="download" />
-										Unduh data siswa
-									</button>
-								{/if}
-							</div>
-							<p class="text-base-content/70 mt-1 text-xs">
-								Gunakan template Excel atau file daftar siswa dari Dapodik. Kolom Nama, NIPD/NIS,
-								dan Rombel wajib diisi.
-							</p>
+							<legend class="fieldset-legend">Impor data siswa</legend>
+							<StudentImportPanel
+								schoolId={activeSekolahId}
+								semesterId={selectedSemesterId}
+								enabled={canRaporManage}
+							/>
 						</fieldset>
 					</div>
 

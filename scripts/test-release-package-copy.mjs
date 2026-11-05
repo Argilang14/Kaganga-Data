@@ -197,7 +197,7 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 			for (const route of [
 				'/',
 				'/pegawai',
-				...(['2.3.1', '2.3.2'].includes(version)
+				...(['2.3.1', '2.3.2', '2.3.3'].includes(version)
 					? [
 							'/asrama/gedung',
 							'/asrama/kamar',
@@ -209,11 +209,12 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 							'/murid/arsip/rapor?jenis=martikulasi&periode=ras'
 						]
 					: []),
-				...(version === '2.3.2'
+				...(['2.3.2', '2.3.3'].includes(version)
 					? [
 							'/murid/semua',
 							'/murid/pasif',
 							'/murid/asrama',
+							'/akademik',
 							'/asrama',
 							'/keasramaan',
 							'/asesmen-keasramaan',
@@ -242,6 +243,26 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 				if (version === '2.2.3' && route === '/administrasi/absensi/monitoring') continue;
 				const response = await fetch(base + route, { headers, redirect: 'manual' });
 				assert.equal(response.status, 200, `Paket upgrade ${route}`);
+			}
+			if (version === '2.3.3') {
+				for (const [table, column] of [
+					['qr_murid', 'token_value'],
+					['asrama', 'deleted_at'],
+					['asrama_kamar', 'deleted_at']
+				]) {
+					const columns = (await client.execute(`PRAGMA table_info(${table})`)).rows;
+					assert.ok(
+						columns.some((row) => row.name === column),
+						`Migrasi ${table}.${column}`
+					);
+				}
+				const template = await fetch(`${base}/api/rapor/import-siswa-kelas-template?format=csv`, {
+					headers
+				});
+				assert.equal(template.status, 200, 'Template CSV murid');
+				const header = (await template.text()).replace(/^\uFEFF/, '').split(/\r?\n/)[0];
+				assert.equal(header.split(';').length, 67, 'Template harus memuat 67 kolom');
+				assert.match(header, /Kode QR Murid/);
 			}
 			const update = await fetch(`${base}/api/updates/latest`, { headers });
 			assert.equal(update.status, 200, 'Pemeriksaan pembaruan paket');

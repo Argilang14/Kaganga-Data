@@ -1,7 +1,7 @@
+import { activeMuridFilter } from '$lib/server/murid-query';
+import { personalQrTransaction, issuePersonalQr, loadPersonalQrMap } from '$lib/server/student-qr';
 import {
 	assertAbsensiDigitalAccess,
-	createPreviewableQrToken,
-	hashQrToken,
 	loadAbsensiKelasOptions,
 	resolvePrintableQrToken
 } from '$lib/server/absensi-digital';
@@ -9,9 +9,9 @@ import db from '$lib/server/db';
 import { studentAccessCondition } from '$lib/server/student-access';
 import { canAttendance } from '$lib/attendance-access';
 import { writeAuditLog } from '$lib/server/audit-log';
-import { tableMurid, tableQrMurid } from '$lib/server/db/schema';
+import { tableMurid } from '$lib/server/db/schema';
 import { error, json } from '@sveltejs/kit';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { RequestHandler } from './$types';
 
 const MAX_QR_MURID = 500;
@@ -33,7 +33,8 @@ export const POST = (async ({ locals, request }) => {
 
 	const body = (await request.json()) as QrRequest;
 	const action = body.action === 'generate-missing' ? body.action : 'status';
-	if (action === 'generate-missing' && !canAttendance(locals.user, 'qr_manage')) throw error(403, 'Izin penerbitan QR belum diberikan.');
+	if (action === 'generate-missing' && !canAttendance(locals.user, 'qr_manage'))
+		throw error(403, 'Izin penerbitan QR belum diberikan.');
 	const muridIds = normalizeMuridIds(body.muridIds);
 	if (!muridIds.length) throw error(400, 'Daftar murid wajib diisi.');
 	if (muridIds.length > MAX_QR_MURID) {
@@ -52,6 +53,7 @@ export const POST = (async ({ locals, request }) => {
 			eq(tableMurid.semesterId, academic.activeSemesterId),
 			inArray(tableMurid.kelasId, kelasIds),
 			inArray(tableMurid.id, muridIds),
+			activeMuridFilter(),
 			await studentAccessCondition(locals.user, sekolahId)
 		)
 	});
@@ -59,22 +61,7 @@ export const POST = (async ({ locals, request }) => {
 		throw error(403, 'Sebagian murid tidak ditemukan atau berada di luar akses Anda.');
 	}
 
-	const qrRows = await db.query.tableQrMurid.findMany({
-		columns: {
-			id: true,
-			muridId: true,
-			tokenHash: true,
-			tokenVersion: true,
-			issuedAt: true,
-			revokedAt: true
-		},
-		where: and(inArray(tableQrMurid.muridId, muridIds), isNull(tableQrMurid.revokedAt)),
-		orderBy: (table, { desc }) => [desc(table.tokenVersion), desc(table.id)]
-	});
-	const activeByMurid = new Map<number, (typeof qrRows)[number]>();
-	for (const row of qrRows) {
-		if (!activeByMurid.has(row.muridId)) activeByMurid.set(row.muridId, row);
-	}
+	const activeByMurid = await loadPersonalQrMap(sekolahId, muridIds);
 
 	const readyIds: number[] = [];
 	const missingIds: number[] = [];
@@ -87,33 +74,30 @@ export const POST = (async ({ locals, request }) => {
 	}
 
 	let generated = 0;
-	const targetIds = [...missingIds, ...outdatedIds];
+	const targetIds = missingIds;
+	if (action === 'generate-missing' && outdatedIds.length)
+		throw error(
+			409,
+			'QR lama belum dapat dicetak atau ada beberapa QR aktif. Pindai kartu lama untuk pemulihan; gunakan Perbarui QR hanya jika ingin menggantinya.'
+		);
 	if (action === 'generate-missing' && targetIds.length) {
-		const now = new Date().toISOString();
-		await db.transaction(async (tx) => {
+		await personalQrTransaction(async (tx) => {
 			for (const muridId of targetIds) {
-				const latest = await tx.query.tableQrMurid.findFirst({
-					columns: { tokenVersion: true },
-					where: eq(tableQrMurid.muridId, muridId),
-					orderBy: (table, { desc }) => [desc(table.tokenVersion), desc(table.id)]
-				});
-				const tokenVersion = (latest?.tokenVersion ?? 0) + 1;
-				const token = createPreviewableQrToken({ muridId, tokenVersion, issuedAt: now });
-				await tx
-					.update(tableQrMurid)
-					.set({ revokedAt: now, updatedAt: now })
-					.where(and(eq(tableQrMurid.muridId, muridId), isNull(tableQrMurid.revokedAt)));
-				await tx.insert(tableQrMurid).values({
-					muridId,
-					tokenHash: hashQrToken(token),
-					tokenVersion,
-					issuedAt: now,
-					createdAt: now,
-					updatedAt: now
-				});
+				const result = await issuePersonalQr(sekolahId, muridId, false, tx);
+				if (!result.created) continue;
 				generated += 1;
-				await writeAuditLog({ locals, request, action: 'update', entityType: 'qr_murid', entityId: muridId,
-					summary: 'Menerbitkan ulang QR absensi', before: { tokenVersion: latest?.tokenVersion ?? 0 }, after: { tokenVersion } }, tx);
+				await writeAuditLog(
+					{
+						locals,
+						request,
+						action: 'create',
+						entityType: 'qr_murid',
+						entityId: muridId,
+						summary: 'Menerbitkan QR absensi murid',
+						after: { tokenVersion: result.qr.tokenVersion }
+					},
+					tx
+				);
 			}
 		});
 	}

@@ -175,7 +175,10 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 		locals,
 		url.searchParams,
 		cookies,
-		url.pathname === '/administrasi/absensi/monitoring'
+		url.pathname === '/administrasi/absensi/monitoring',
+		url.searchParams.get('riwayat') === '1' ||
+			url.pathname.startsWith('/cetak') ||
+			url.pathname === '/asrama/riwayat'
 	);
 	if (url.searchParams.has('kamar_id')) {
 		cookies.set(dormCookie, String(dorm.room?.id ?? 0), {

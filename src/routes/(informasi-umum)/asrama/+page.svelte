@@ -2,9 +2,12 @@
 	import { invalidate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import FormEnhance from '$lib/components/form-enhance.svelte';
+	import Icon from '$lib/components/icon.svelte';
+	import DeleteAsramaModal from '$lib/components/asrama/delete-asrama-modal.svelte';
 	import '$lib/components/murid/student-workspace.css';
 	let { data } = $props();
 	let dialog: HTMLDialogElement;
+	let deleteModal = $state<DeleteAsramaModal>();
 	let id = $state(0);
 	let version = $state(1);
 	let name = $state('');
@@ -87,6 +90,12 @@
 										: undefined}>{room.aktif ? 'Nonaktifkan' : 'Aktifkan'}</button
 								>{/snippet}
 						</FormEnhance>
+						<button
+							class="btn btn-error btn-soft shadow-none"
+							onclick={() => deleteModal?.open(room)}
+						>
+							<Icon name="del" /> Hapus
+						</button>
 					{/if}<a class="btn btn-soft" href={resolve(`/murid/asrama?kamar_id=${room.id}`)}
 						>Lihat murid</a
 					>
@@ -98,6 +107,7 @@
 				: 'Hubungi admin untuk menetapkan asrama Anda.'}
 		</p>{/each}
 </div>
+{#if data.manage}<DeleteAsramaModal bind:this={deleteModal} />{/if}
 <dialog bind:this={dialog} class="modal" aria-labelledby="asrama-form-title">
 	<div class="modal-box w-full max-w-2xl p-4">
 		<h3 id="asrama-form-title" class="mb-4 text-xl font-bold">

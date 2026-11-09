@@ -25,6 +25,7 @@ export type DocumentType =
 	| 'kartu-absensi'
 	| 'qr-kelas'
 	| 'informasi-siswa'
+	| 'daftar-wali-asuh'
 	| 'kartu-ujian'
 	| 'kartu-ujian-meja'
 	| 'jadwal-pelajaran'
@@ -59,7 +60,10 @@ export type SinglePreviewRequest = {
 	signal?: AbortSignal;
 };
 
-const DOCUMENT_PATHS: Record<Exclude<DocumentType, 'qr-kelas' | 'informasi-siswa'>, string> = {
+const DOCUMENT_PATHS: Record<
+	Exclude<DocumentType, 'qr-kelas' | 'informasi-siswa' | 'daftar-wali-asuh'>,
+	string
+> = {
 	cover: '/cetak/cover',
 	biodata: '/cetak/biodata',
 	rapor: '/cetak/rapor',
@@ -80,6 +84,7 @@ const DOCUMENT_PATHS: Record<Exclude<DocumentType, 'qr-kelas' | 'informasi-siswa
 
 const DOCUMENT_LABELS: Record<DocumentType, string> = {
 	'informasi-siswa': 'Informasi Siswa',
+	'daftar-wali-asuh': 'Daftar Murid dan Wali Asuh',
 	'qr-kelas': 'QR Kelas',
 	cover: 'Cover',
 	biodata: 'Biodata',
@@ -102,8 +107,12 @@ const DOCUMENT_LABELS: Record<DocumentType, string> = {
 export async function loadSinglePreview(
 	request: SinglePreviewRequest
 ): Promise<{ data: PreviewPayload; title: string }> {
-	if (request.documentType === 'qr-kelas') throw new Error('QR kelas dicetak melalui panel QR Kelas.');
-	if (request.documentType === 'informasi-siswa') throw new Error('Informasi siswa dicetak melalui panel Informasi Siswa.');
+	if (request.documentType === 'daftar-wali-asuh')
+		throw new Error('Gunakan panel Daftar Murid dan Wali Asuh.');
+	if (request.documentType === 'qr-kelas')
+		throw new Error('QR kelas dicetak melalui panel QR Kelas.');
+	if (request.documentType === 'informasi-siswa')
+		throw new Error('Informasi siswa dicetak melalui panel Informasi Siswa.');
 	const path = DOCUMENT_PATHS[request.documentType];
 	const label = DOCUMENT_LABELS[request.documentType];
 

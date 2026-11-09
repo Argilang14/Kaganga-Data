@@ -28,7 +28,7 @@ export const appMenuItems: MenuItem[] = [
 						tags: ['arsip', 'alumni', 'kelulusan', 'pindah', 'keluar']
 					},
 					{ title: 'Murid Kelas', path: '/murid' },
-					{ title: 'Data Murid Asrama', path: '/murid/asrama' },
+					{ title: 'Murid Asrama', path: '/murid/asrama' },
 					{ title: 'Murid Pasif', path: '/murid/pasif' }
 				]
 			},

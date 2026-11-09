@@ -4060,6 +4060,7 @@ export const tableAsrama = sqliteTable(
 			.references(() => tableSekolah.id),
 		nama: text().notNull(),
 		namaKey: text().notNull(),
+		semesterId: int().references(() => tableSemester.id),
 		kategori: text({ enum: ['putra', 'putri'] }).notNull(),
 		aktif: int().notNull().default(1),
 		versi: int().notNull().default(1),

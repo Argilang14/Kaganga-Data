@@ -63,6 +63,12 @@ export function hasMenuPermission(user: MenuAccessUser, permission: string) {
 export function canPrintDocument(user: MenuAccessUser, document: string) {
 	if (!user) return false;
 	if (isFullAccess(user)) return true;
+	if (document === 'daftar-wali-asuh')
+		return (
+			!user.mustChangePassword &&
+			hasMenuPermission(user, 'cetak_dokumen') &&
+			hasMenuPermission(user, 'menu_murid')
+		);
 	if (document === 'informasi-siswa')
 		return (
 			!user.mustChangePassword &&
@@ -95,6 +101,7 @@ const rules: [string, string[]][] = [
 	['/api/rapor-arsip', ['murid_arsip', 'rapor_arsip_lihat']],
 	['/murid/arsip/rapor', ['murid_arsip', 'rapor_arsip_lihat']],
 	['/api/pdf/informasi-siswa', ['murid_profil_cetak']],
+	['/api/pdf/daftar-wali-asuh', ['cetak_dokumen']],
 	['/api/pdf/qr-kelas', ['class_monitoring_manage']],
 	['/murid/arsip', ['murid_arsip']],
 	['/murid', ['menu_murid']],

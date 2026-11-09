@@ -100,6 +100,7 @@
 	function buildKelasHref(kelasId: number) {
 		const params = new SvelteURLSearchParams(page.url.search);
 		params.set('kelas_id', String(kelasId));
+		if (page.url.pathname === '/murid') params.delete('page');
 		const query = params.toString();
 		return query ? `${page.url.pathname}?${query}` : page.url.pathname;
 	}

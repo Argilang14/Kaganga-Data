@@ -65,8 +65,8 @@ export async function loadDormitory(
 	const buildings = manage
 		? await rows(
 				db.$client,
-				'SELECT * FROM asrama WHERE sekolah_id=? AND deleted_at IS NULL ORDER BY nama',
-				[ctx.school]
+				'SELECT * FROM asrama WHERE sekolah_id=? AND deleted_at IS NULL AND semester_id=? ORDER BY nama',
+				[ctx.school, ctx.academic.activeSemesterId ?? 0]
 			)
 		: [];
 	const employees = assign
@@ -216,8 +216,8 @@ async function placementPlan(
 	 (SELECT MAX(id) FROM asrama_penugasan w WHERE w.kamar_id=k.id) AS wali_revisi,
 	 (SELECT e.nama FROM asrama_penugasan w JOIN pegawai e ON e.id=w.pegawai_id
 	 WHERE w.kamar_id=k.id AND w.peran='utama' AND w.selesai IS NULL) AS wali
-	 FROM asrama_kamar k JOIN asrama g ON g.id=k.asrama_id WHERE k.id=? AND k.sekolah_id=? AND k.aktif=1 AND g.aktif=1`,
-			[input.room, ctx.school]
+	 FROM asrama_kamar k JOIN asrama g ON g.id=k.asrama_id WHERE k.id=? AND k.sekolah_id=? AND k.aktif=1 AND g.aktif=1 AND g.semester_id=?`,
+			[input.room, ctx.school, ctx.academic.activeSemesterId ?? 0]
 		)
 	)[0];
 	if (!room) error(409, 'Kamar tujuan tidak aktif atau tidak ditemukan.');
@@ -333,8 +333,52 @@ export async function mutateDormitory(locals: App.Locals, operation: string, for
 			? 'penugasan'
 			: 'manage';
 	const ctx = await dormContext(locals, action);
+	const semester = ctx.academic.activeSemesterId;
+	if (!semester) error(400, 'Setel semester aktif di Data Rapor terlebih dahulu.');
+	if (form.has('semesterId') && Number(form.get('semesterId')) !== semester)
+		error(409, 'Periode rapor berubah. Muat ulang Data Asrama sebelum menyimpan.');
 	const tx = await db.$client.transaction('write');
 	try {
+		const currentPeriod = await rows(
+			tx,
+			`SELECT s.id FROM semester s WHERE s.tahun_ajaran_id=(
+ SELECT t.id FROM tahun_ajaran t WHERE t.sekolah_id=? ORDER BY t.is_aktif DESC,t.id DESC LIMIT 1)
+ ORDER BY s.is_aktif DESC,s.id ASC LIMIT 1`,
+			[ctx.school]
+		);
+		if (Number(currentPeriod[0]?.id) !== semester)
+			error(409, 'Periode rapor berubah. Muat ulang Data Asrama sebelum menyimpan.');
+		// Every posted target must belong to this period, including direct requests to old IDs.
+		const target = ['directory', 'delete', 'building', 'room', 'close'].includes(operation)
+			? dormId(form.get('id') ?? '0', true)
+			: operation === 'staff'
+				? dormId(form.get('kamarId'))
+				: 0;
+		if (target || (operation === 'room' && !target)) {
+			const from =
+				operation === 'building' || (operation === 'room' && !target)
+					? 'asrama g'
+					: operation === 'close'
+						? 'asrama_penempatan p JOIN asrama_kamar k ON k.id=p.kamar_id JOIN asrama g ON g.id=k.asrama_id'
+						: 'asrama_kamar k JOIN asrama g ON g.id=k.asrama_id';
+			const idColumn =
+				operation === 'building' || (operation === 'room' && !target)
+					? 'g.id'
+					: operation === 'close'
+						? 'p.id'
+						: 'k.id';
+			const targetId = target || dormId(form.get('asramaId'));
+			const scoped = await rows(
+				tx,
+				`SELECT g.id FROM ${from} WHERE ${idColumn}=? AND g.sekolah_id=? AND g.semester_id=?`,
+				[targetId, ctx.school, semester]
+			);
+			if (!scoped.length)
+				error(
+					operation === 'delete' ? 404 : 403,
+					'Asrama berada di luar sekolah atau semester aktif.'
+				);
+		}
 		let entity = 0;
 		if (operation === 'place') {
 			const plan = await placementPlan(tx, ctx, placementInput(form));
@@ -466,15 +510,26 @@ export async function mutateDormitory(locals: App.Locals, operation: string, for
 					error(409, 'Data asrama berubah. Muat ulang sebelum menyimpan.');
 				await tx.execute({
 					sql: 'UPDATE asrama SET nama=?,nama_key=?,versi=versi+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND sekolah_id=? AND deleted_at IS NULL AND (SELECT COUNT(*) FROM asrama_kamar WHERE asrama_id=asrama.id AND deleted_at IS NULL)=1',
-					args: [name, name.toLocaleLowerCase('id'), current.asrama_id, ctx.school]
+					args: [
+						name,
+						`semester:${semester}:${name.toLocaleLowerCase('id')}`,
+						current.asrama_id,
+						ctx.school
+					]
 				});
 			} else {
 				const category = String(form.get('kategori'));
 				if (!['putra', 'putri'].includes(category))
 					error(400, 'Pilih kategori asrama putra atau putri.');
 				const building = await tx.execute({
-					sql: 'INSERT INTO asrama(sekolah_id,nama,nama_key,kategori,aktif) VALUES(?,?,?,?,1)',
-					args: [ctx.school, name, name.toLocaleLowerCase('id'), category]
+					sql: 'INSERT INTO asrama(sekolah_id,nama,nama_key,kategori,aktif,semester_id) VALUES(?,?,?,?,1,?)',
+					args: [
+						ctx.school,
+						name,
+						`semester:${semester}:${name.toLocaleLowerCase('id')}`,
+						category,
+						semester
+					]
 				});
 				const room = await tx.execute({
 					sql: 'INSERT INTO asrama_kamar(sekolah_id,asrama_id,nama,nama_key,kapasitas,aktif) VALUES(?,?,?,?,?,1)',
@@ -519,7 +574,10 @@ export async function mutateDormitory(locals: App.Locals, operation: string, for
 		} else if (operation === 'building' || operation === 'room') {
 			entity = dormId(form.get('id') ?? '0', true);
 			const name = dormText(form.get('nama'));
-			const key = name.toLocaleLowerCase('id');
+			const key =
+				operation === 'building'
+					? `semester:${semester}:${name.toLocaleLowerCase('id')}`
+					: name.toLocaleLowerCase('id');
 			const active = form.get('aktif') === 'on' ? 1 : 0;
 			const table = operation === 'building' ? 'asrama' : 'asrama_kamar';
 			const extra =
@@ -540,15 +598,15 @@ export async function mutateDormitory(locals: App.Locals, operation: string, for
 					error(409, 'Data telah berubah. Muat ulang sebelum menyimpan.');
 			} else {
 				const result = await tx.execute({
-					sql: `INSERT INTO ${table}(sekolah_id,nama,nama_key,${col},aktif${operation === 'room' ? ',asrama_id' : ''})
-				 VALUES(?,?,?,?,?${operation === 'room' ? ',?' : ''})`,
+					sql: `INSERT INTO ${table}(sekolah_id,nama,nama_key,${col},aktif${operation === 'room' ? ',asrama_id' : ',semester_id'})
+				 VALUES(?,?,?,?,?,?)`,
 					args: [
 						ctx.school,
 						name,
 						key,
 						extra,
 						active,
-						...(operation === 'room' ? [dormId(form.get('asramaId'))] : [])
+						operation === 'room' ? dormId(form.get('asramaId')) : semester
 					]
 				});
 				entity = Number(result.lastInsertRowid);

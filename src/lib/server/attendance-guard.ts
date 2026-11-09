@@ -20,6 +20,7 @@ import {
 } from './attendance-student-access';
 import { resolveSekolahAcademicContext } from './db/academic';
 import { todayLocalDate } from './absensi-digital';
+import { canManageStudentPermit } from './attendance-permits';
 
 const actionPermissions: Record<string, AttendanceAction> = {
 	updateManual: 'input',
@@ -198,7 +199,7 @@ export const attendanceGuard: Handle = async ({ event, resolve }) => {
 					eq(tableIzinPulangMurid.sekolahId, sekolah.id)
 				)
 			});
-			if (!permit?.muridId || !(await attendanceStudent(user, sekolah.id, permit.muridId)))
+			if (!permit?.muridId || !(await canManageStudentPermit(user, sekolah.id, permit.muridId)))
 				throw error(403, 'Izin pulang di luar penugasan akun.');
 		}
 	}

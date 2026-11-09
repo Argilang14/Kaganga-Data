@@ -8,10 +8,12 @@
 	import GuestPdf from '$lib/components/cetak/GuestPdf.svelte';
 	import ClassQrPrint from '$lib/components/cetak/ClassQrPrint.svelte';
 	import StudentInformationPrint from '$lib/components/cetak/StudentInformationPrint.svelte';
+	import CaregiverRosterPrint from '$lib/components/cetak/CaregiverRosterPrint.svelte';
 	import type { ClassQrPrintContext } from '$lib/class-monitoring';
 	import { responsePdfFilename } from '$lib/pdf-filename';
 	import PreviewHeader from '$lib/components/cetak-sr/PreviewHeader.svelte';
 	import DocumentMuridSelector from '$lib/components/cetak-sr/DocumentMuridSelector.svelte';
+	import DocumentOptions from './DocumentOptions.svelte';
 	import PreviewFooter from '$lib/components/cetak-sr/PreviewFooter.svelte';
 	import PreviewContent from '$lib/components/cetak-sr/PreviewContent.svelte';
 	import { toast } from '$lib/components/toast.svelte';
@@ -124,6 +126,7 @@
 		{ value: 'kartu-absensi', label: 'Kartu Absensi Murid' },
 		{ value: 'qr-kelas', label: 'QR Kelas' },
 		{ value: 'informasi-siswa', label: 'Informasi Siswa' },
+		{ value: 'daftar-wali-asuh', label: 'Daftar Murid dan Wali Asuh' },
 		{ value: 'kartu-ujian', label: 'Kartu Ujian' },
 		{ value: 'jadwal-pelajaran', label: 'Jadwal Pelajaran' },
 		{ value: 'kalender-pendidikan', label: 'Kalender Pendidikan' },
@@ -138,6 +141,7 @@
 	const visibleDocumentOptions = $derived.by(() => {
 		const general = [
 			'informasi-siswa',
+			'daftar-wali-asuh',
 			'kartu-absensi',
 			'qr-kelas',
 			'kartu-ujian',
@@ -151,7 +155,7 @@
 		const availableOptions = documentOptions.filter(
 			(option) =>
 				(option.value !== 'qr-kelas' || data.classQrPrintContext) &&
-				(option.value !== 'informasi-siswa' || canPrintDocument(page.data.user, option.value))
+				(!['informasi-siswa', 'daftar-wali-asuh'].includes(option.value) || canPrintDocument(page.data.user, option.value))
 		);
 		if (documentGroup === 'dokumen')
 			return availableOptions.filter(
@@ -493,6 +497,7 @@
 			selectedDocument !== 'jadwal-pelajaran' &&
 			selectedDocument !== 'qr-kelas' &&
 			selectedDocument !== 'informasi-siswa' &&
+			selectedDocument !== 'daftar-wali-asuh' &&
 			selectedDocument !== 'kalender-pendidikan' &&
 			selectedDocument !== 'jurnal-mengajar' &&
 			selectedDocument !== 'rekap-absensi-kegiatan' &&
@@ -1234,15 +1239,21 @@
 	}
 </script>
 
-{#if selectedDocument === 'informasi-siswa'}
+{#if selectedDocument === 'daftar-wali-asuh'}
+	<section class="min-w-0 rounded-lg bg-base-100 p-4 shadow-md" aria-label="Cetak Daftar Murid dan Wali Asuh">
+		<h2 class="mb-4 text-xl font-bold">Cetak - Daftar Murid dan Wali Asuh</h2>
+		<label class="mb-4 block min-w-0"><span class="mb-1 block text-sm font-medium">Pilih Dokumen</span>
+			<select class="select h-10 w-full" bind:value={selectedDocument}><DocumentOptions options={visibleDocumentOptions} grouped={documentGroup === 'dokumen'} /></select>
+		</label>
+		<CaregiverRosterPrint initialClassId={Number(data.kelasId) || undefined} />
+	</section>
+{:else if selectedDocument === 'informasi-siswa'}
 	<section class="min-w-0 rounded-lg bg-base-100 p-4 shadow-md" aria-label="Cetak Informasi Siswa">
 		<h2 class="mb-4 text-xl font-bold">Cetak - Informasi Siswa</h2>
 		<label class="mb-4 block min-w-0"
 			><span class="mb-1 block text-sm font-medium">Pilih Dokumen</span>
 			<select class="select h-10 w-full" bind:value={selectedDocument}>
-				{#each visibleDocumentOptions as option (option.value)}<option value={option.value}
-						>{option.label}</option
-					>{/each}
+				<DocumentOptions options={visibleDocumentOptions} grouped={documentGroup === 'dokumen'} />
 			</select>
 		</label>
 		<StudentInformationPrint initialClassId={Number(data.kelasId) || undefined} />
@@ -1253,9 +1264,7 @@
 		<label class="mb-4 block min-w-0">
 			<span class="mb-1 block text-sm font-medium">Pilih Dokumen</span>
 			<select class="select select-bordered bg-base-100 w-full" bind:value={selectedDocument}>
-				{#each visibleDocumentOptions as option (option.value)}
-					<option value={option.value}>{option.label}</option>
-				{/each}
+				<DocumentOptions options={visibleDocumentOptions} grouped={documentGroup === 'dokumen'} />
 			</select>
 		</label>
 		<ClassQrPrint context={data.classQrPrintContext} />
@@ -1269,9 +1278,7 @@
 		<label class="form-control mb-4 min-w-0">
 			<span class="label-text mb-1">Pilih Dokumen</span>
 			<select class="select select-bordered bg-base-100 w-full" bind:value={selectedDocument}>
-				{#each visibleDocumentOptions as option}
-					<option value={option.value}>{option.label}</option>
-				{/each}
+				<DocumentOptions options={visibleDocumentOptions} grouped={documentGroup === 'dokumen'} />
 			</select>
 		</label>
 		<GuestPdf />
@@ -1298,6 +1305,7 @@
 			{daftarMurid}
 			{piagamRankingOptions}
 			documentOptions={visibleDocumentOptions}
+			groupDocuments={documentGroup === 'dokumen'}
 			onDownload={handleDownloadSingle}
 			onBulkDownload={handleDownloadBulk}
 			{downloadDisabled}

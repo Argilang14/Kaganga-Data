@@ -197,7 +197,7 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 			for (const route of [
 				'/',
 				'/pegawai',
-				...(['2.3.1', '2.3.2', '2.3.3'].includes(version)
+				...(['2.3.1', '2.3.2', '2.3.3', '2.3.4'].includes(version)
 					? [
 							'/asrama/gedung',
 							'/asrama/kamar',
@@ -209,7 +209,7 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 							'/murid/arsip/rapor?jenis=martikulasi&periode=ras'
 						]
 					: []),
-				...(['2.3.2', '2.3.3'].includes(version)
+				...(['2.3.2', '2.3.3', '2.3.4'].includes(version)
 					? [
 							'/murid/semua',
 							'/murid/pasif',
@@ -228,6 +228,9 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 				'/ujian',
 				'/cetak?dokumen=kartu-ujian',
 				'/cetak?dokumen=kartu-ujian-meja',
+				...(version === '2.3.4'
+					? ['/cetak?dokumen=daftar-wali-asuh', '/api/pdf/daftar-wali-asuh']
+					: []),
 				'/asesmen-martikulasi',
 				'/jurnal-mengajar',
 				'/berkas',
@@ -244,7 +247,7 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 				const response = await fetch(base + route, { headers, redirect: 'manual' });
 				assert.equal(response.status, 200, `Paket upgrade ${route}`);
 			}
-			if (version === '2.3.3') {
+			if (['2.3.3', '2.3.4'].includes(version)) {
 				for (const [table, column] of [
 					['qr_murid', 'token_value'],
 					['asrama', 'deleted_at'],
@@ -263,6 +266,28 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 				const header = (await template.text()).replace(/^\uFEFF/, '').split(/\r?\n/)[0];
 				assert.equal(header.split(';').length, 67, 'Template harus memuat 67 kolom');
 				assert.match(header, /Kode QR Murid/);
+			}
+			if (version === '2.3.4') {
+				const columns = (await client.execute('PRAGMA table_info(asrama)')).rows;
+				assert.ok(
+					columns.some((column) => column.name === 'semester_id'),
+					'Asrama memiliki periode'
+				);
+				assert.equal(
+					(
+						await client.execute(
+							`SELECT COUNT(*) AS total FROM asrama a JOIN semester s ON s.id=a.semester_id JOIN tahun_ajaran t ON t.id=s.tahun_ajaran_id WHERE a.sekolah_id<>t.sekolah_id`
+						)
+					).rows[0].total,
+					0,
+					'Periode asrama tetap dalam sekolah yang sama'
+				);
+				const roster = await fetch(`${base}/api/pdf/daftar-wali-asuh`, { headers });
+				assert.equal(roster.status, 200);
+				const context = await roster.json();
+				assert.equal(typeof context.period, 'string');
+				for (const group of ['classes', 'dorms', 'caregivers'])
+					assert.ok(Array.isArray(context[group]));
 			}
 			const update = await fetch(`${base}/api/updates/latest`, { headers });
 			assert.equal(update.status, 200, 'Pemeriksaan pembaruan paket');

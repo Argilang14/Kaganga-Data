@@ -1,7 +1,8 @@
 import db from '$lib/server/db';
 import { tableKelas, tableSekolah, tableSemester, tableTahunAjaran } from '$lib/server/db/schema';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { fail, redirect } from '@sveltejs/kit';
+import { and, desc, eq, sql } from 'drizzle-orm';
+import { deleteEmptyAcademicYears } from '$lib/server/academic-year-retention';
+import { fail, redirect, isHttpError } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { authority } from '../../../pengguna/utils.server';
 
@@ -178,13 +179,13 @@ export const actions: Actions = {
 			tahunAjaran: await getTahunAjaran(sekolahId)
 		};
 	},
-	delete: async ({ request }) => {
+	delete: async ({ request, locals }) => {
 		authority('sekolah_manage');
 
 		const formData = await request.formData();
 		const sekolahId = Number(formData.get('sekolahId'));
 		const idsRaw = formData.getAll('ids');
-		const ids = idsRaw.map((val) => Number(val)).filter((val) => Number.isFinite(val));
+		const ids = idsRaw.map((val) => Number(val));
 
 		if (!sekolahId || Number.isNaN(sekolahId)) {
 			return fail(400, { fail: 'Pilih sekolah terlebih dahulu.' });
@@ -194,9 +195,12 @@ export const actions: Actions = {
 			return fail(400, { fail: 'Tidak ada tahun ajaran terpilih.' });
 		}
 
-		await db
-			.delete(tableTahunAjaran)
-			.where(and(eq(tableTahunAjaran.sekolahId, sekolahId), inArray(tableTahunAjaran.id, ids)));
+		try {
+			await deleteEmptyAcademicYears(locals, request, sekolahId, ids);
+		} catch (cause) {
+			if (isHttpError(cause)) return fail(cause.status, { fail: cause.body.message });
+			throw cause;
+		}
 
 		return {
 			message: 'Tahun ajaran terhapus.',

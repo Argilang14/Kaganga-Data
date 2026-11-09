@@ -1,3 +1,4 @@
+import { canManageStudentPermit } from '$lib/server/attendance-permits';
 import { loadSchoolPermitRecap } from '$lib/server/attendance-permit-recap';
 import {
 	buildKelasAccessWhere,
@@ -441,14 +442,8 @@ export const actions = {
 					})
 				: null;
 			if (!permit || !permit.muridId) return fail(404, { fail: 'Izin tidak ditemukan.' });
-			const student = await tx.query.tableMurid.findFirst({
-				columns: { id: true },
-				where: and(
-					eq(tableMurid.id, permit.muridId),
-					await studentAccessCondition(locals.user, school)
-				)
-			});
-			if (!student) return fail(403, { fail: 'Murid di luar penugasan akun.' });
+			if (!(await canManageStudentPermit(locals.user, school, permit.muridId, tx)))
+				return fail(403, { fail: 'Murid di luar penugasan akun.' });
 			if (permit.tanggalKembali || permit.status === 'dibatalkan' || permit.perjalanan?.keluarPada)
 				return fail(409, {
 					fail: 'Penjemput tidak dapat diubah setelah keberangkatan terkonfirmasi atau izin ditutup.'
@@ -506,18 +501,15 @@ export const actions = {
 		)
 			return fail(400, { fail: 'Waktu kembali tidak valid atau belum terjadi.' });
 		if (!id) return fail(400, { fail: 'Catatan izin tidak valid.' });
-		const { kelasList } = await loadAbsensiKelasOptions(sekolahId, locals.user);
-		const accessibleIds = kelasList.map((kelas) => kelas.id);
-		if (!accessibleIds.length) return fail(403, { fail: 'Tidak ada kelas yang dapat diakses.' });
 		const existing = await db.query.tableIzinPulangMurid.findFirst({
 			with: { perjalanan: true },
-			where: and(
-				eq(tableIzinPulangMurid.id, id),
-				eq(tableIzinPulangMurid.sekolahId, sekolahId),
-				inArray(tableIzinPulangMurid.kelasId, accessibleIds)
-			)
+			where: and(eq(tableIzinPulangMurid.id, id), eq(tableIzinPulangMurid.sekolahId, sekolahId))
 		});
-		if (!existing) return fail(404, { fail: 'Catatan izin tidak ditemukan.' });
+		if (
+			!existing?.muridId ||
+			!(await canManageStudentPermit(locals.user, sekolahId, existing.muridId))
+		)
+			return fail(404, { fail: 'Catatan izin tidak ditemukan atau di luar penugasan akun.' });
 		if (
 			existing.tanggalKembali ||
 			!['sedang_izin', 'terlambat_kembali'].includes(existing.status)
@@ -578,19 +570,15 @@ export const actions = {
 		const formData = await request.formData();
 		const id = parsePositiveInteger(formData.get('id'));
 		if (!id) return fail(400, { fail: 'Catatan izin tidak valid.' });
-		const { kelasList } = await loadAbsensiKelasOptions(sekolahId, locals.user);
-		const accessibleIds = kelasList.map((kelas) => kelas.id);
-		const existing = accessibleIds.length
-			? await db.query.tableIzinPulangMurid.findFirst({
-					with: { perjalanan: true },
-					where: and(
-						eq(tableIzinPulangMurid.id, id),
-						eq(tableIzinPulangMurid.sekolahId, sekolahId),
-						inArray(tableIzinPulangMurid.kelasId, accessibleIds)
-					)
-				})
-			: null;
-		if (!existing) return fail(404, { fail: 'Catatan izin tidak ditemukan.' });
+		const existing = await db.query.tableIzinPulangMurid.findFirst({
+			with: { perjalanan: true },
+			where: and(eq(tableIzinPulangMurid.id, id), eq(tableIzinPulangMurid.sekolahId, sekolahId))
+		});
+		if (
+			!existing?.muridId ||
+			!(await canManageStudentPermit(locals.user, sekolahId, existing.muridId))
+		)
+			return fail(404, { fail: 'Catatan izin tidak ditemukan atau di luar penugasan akun.' });
 		if (
 			existing.tanggalKembali ||
 			existing.perjalanan?.keluarPada ||

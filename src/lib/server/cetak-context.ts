@@ -1,14 +1,9 @@
 import db from '$lib/server/db';
+import { documentSemester } from '$lib/server/db/academic';
 import { classMonitoringCapabilities } from '$lib/class-monitoring';
 import { loadClassQrPrintContext } from '$lib/server/class-monitoring';
 import { hasSchoolWideOperationalAccess, isRestrictedTeacher } from '$lib/access-position';
-import {
-	tableJadwalMapel,
-	tableKelas,
-	tablePegawai,
-	tableSemester,
-	tableTahunAjaran
-} from '$lib/server/db/schema';
+import { tableJadwalMapel, tableKelas, tablePegawai } from '$lib/server/db/schema';
 import { computeNilaiAkhirRekap } from '$lib/server/nilai-akhir';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { buildKelasContext, fetchMuridList } from '$lib/server/route-utils';
@@ -16,20 +11,26 @@ import type { RequestEvent } from '@sveltejs/kit';
 import { ensureUjianSchema } from '$lib/server/db/ensure-ujian';
 import { isAuthorizedUser } from '../../routes/pengguna/permissions';
 import { loadAbsensiKelasOptions, todayLocalDate } from '$lib/server/absensi-digital';
-import {
-	canAccessAbsensiKegiatan,
-	loadKegiatanAbsensiOptions
-} from '$lib/server/absensi-kegiatan';
+import { canAccessAbsensiKegiatan, loadKegiatanAbsensiOptions } from '$lib/server/absensi-kegiatan';
 
-export async function loadCetakContext({ locals, url, depends, parent }: Pick<RequestEvent, 'locals' | 'url'> & { depends: (...dependencies: string[]) => void; parent: () => Promise<Parameters<typeof buildKelasContext>[1]> }) {
+export async function loadCetakContext({
+	locals,
+	url,
+	depends,
+	parent
+}: Pick<RequestEvent, 'locals' | 'url'> & {
+	depends: (...dependencies: string[]) => void;
+	parent: () => Promise<Parameters<typeof buildKelasContext>[1]>;
+}) {
 	depends('app:cetak-sr');
 
 	const user = locals.user;
 	const jurnalAccess = {
 		canPrint: ['admin', 'wali_kelas', 'user'].includes(user?.type ?? ''),
 		requiresClass: !hasSchoolWideOperationalAccess(user),
-		allowedSigners:
-			isRestrictedTeacher(user) ? (['guru_mapel'] as const) : (['wali_kelas', 'guru_mapel'] as const),
+		allowedSigners: isRestrictedTeacher(user)
+			? (['guru_mapel'] as const)
+			: (['wali_kelas', 'guru_mapel'] as const),
 		defaultScope: isRestrictedTeacher(user) ? ('mapel' as const) : ('kelas' as const),
 		defaultSigner: isRestrictedTeacher(user) ? ('guru_mapel' as const) : ('wali_kelas' as const)
 	};
@@ -49,9 +50,10 @@ export async function loadCetakContext({ locals, url, depends, parent }: Pick<Re
 		}))
 	}));
 	const printContext = {
-		classQrPrintContext: sekolahId && classMonitoringCapabilities(user).canManage
-			? await loadClassQrPrintContext(locals)
-			: null,
+		classQrPrintContext:
+			sekolahId && classMonitoringCapabilities(user).canManage
+				? await loadClassQrPrintContext(locals)
+				: null,
 		tahunAjaranList,
 		activeTahunAjaranId: academicContext?.activeTahunAjaranId ?? null,
 		activeSemesterId: academicContext?.activeSemesterId ?? null,
@@ -132,18 +134,11 @@ export async function loadCetakContext({ locals, url, depends, parent }: Pick<Re
 		}));
 	}
 	const activeSemester = sekolahId
-		? await db
-				.select({
-					tanggalMasuk: tableSemester.tanggalMasuk,
-					tanggalMulai: tableSemester.tanggalMulai,
-					tanggalBagiRaport: tableSemester.tanggalBagiRaport,
-					tanggalSelesai: tableSemester.tanggalSelesai
-				})
-				.from(tableSemester)
-				.innerJoin(tableTahunAjaran, eq(tableSemester.tahunAjaranId, tableTahunAjaran.id))
-				.where(and(eq(tableTahunAjaran.sekolahId, sekolahId), eq(tableSemester.isAktif, true)))
-				.limit(1)
-				.then((rows) => rows[0])
+		? await documentSemester(
+				sekolahId,
+				kelasId ? Number(kelasId) : null,
+				academicContext?.activeSemesterId ?? null
+			)
 		: null;
 	const jurnalPeriod = {
 		tanggalMasuk: activeSemester?.tanggalMasuk ?? activeSemester?.tanggalMulai ?? '',

@@ -1,10 +1,10 @@
 .student-workspace {
 	min-width: 0;
-	--student-table-min-width: 54rem;
+	--student-table-min-width: 60.5rem;
 	--student-cell-padding: 0.75rem 1rem;
 }
 .student-dorm-workspace {
-	--student-table-min-width: 73.5rem;
+	--student-table-min-width: 66rem;
 }
 
 .student-toolbar {
@@ -15,7 +15,7 @@
 }
 .student-toolbar .student-search {
 	flex: 1 1 16rem;
-	max-width: 28rem;
+	max-width: none;
 }
 .student-toolbar .fieldset {
 	padding-bottom: 0;
@@ -71,6 +71,21 @@
 	width: 13rem;
 }
 .student-table .student-row-actions {
+	width: 6.5rem;
+}
+.student-dorm-workspace .student-status {
+	width: 8rem;
+}
+.student-dorm-workspace .student-class {
+	width: 7rem;
+}
+.student-dorm-workspace .student-dorm {
+	width: 9rem;
+}
+.student-dorm-workspace .student-caregiver {
+	width: 11rem;
+}
+.student-dorm-workspace .student-actions {
 	width: 6.5rem;
 }
 .modal .student-dialog {

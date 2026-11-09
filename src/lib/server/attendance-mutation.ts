@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
-import { and, eq, inArray, ne, lte, gte, or, isNull } from 'drizzle-orm';
+import { and, eq, inArray, lte, isNull } from 'drizzle-orm';
+import { loadAttendancePermits } from './attendance-permits';
 import { permitCoversMonitoring } from '$lib/attendance-monitoring';
 import { travelLocalTime } from '$lib/attendance-travel';
 import { ensureAbsenceMonitoringSchema } from './db/ensure-absence-monitoring';
@@ -8,8 +9,7 @@ import {
 	tableAbsensiHarian,
 	tableAbsensiKegiatan,
 	tableKegiatanAbsensi,
-	tableMurid,
-	tableIzinPulangMurid
+	tableMurid
 } from './db/schema';
 import db from './db';
 import { studentAccessCondition } from './attendance-student-access';
@@ -115,19 +115,7 @@ export async function saveAttendance(options: {
 			);
 		const permits =
 			options.status && ['hadir', 'terlambat'].includes(options.status)
-				? await tx.query.tableIzinPulangMurid.findMany({
-						with: { perjalanan: true },
-						where: and(
-							eq(tableIzinPulangMurid.sekolahId, sekolahId),
-							inArray(tableIzinPulangMurid.muridId, ids),
-							ne(tableIzinPulangMurid.status, 'dibatalkan'),
-							lte(tableIzinPulangMurid.tanggalKeluar, tanggal),
-							or(
-								isNull(tableIzinPulangMurid.tanggalKembali),
-								gte(tableIzinPulangMurid.tanggalKembali, tanggal)
-							)
-						)
-					})
+				? await loadAttendancePermits(sekolahId, ids, tanggal, tanggal, tx)
 				: [];
 		const table = kegiatanId ? tableAbsensiKegiatan : tableAbsensiHarian;
 		const condition = and(

@@ -6,16 +6,31 @@
 	import DeleteAsramaModal from '$lib/components/asrama/delete-asrama-modal.svelte';
 	import '$lib/components/murid/student-workspace.css';
 	let { data } = $props();
+	const activeYear = $derived(
+		data.academicContext.tahunAjaranList.find(
+			(year) => year.id === data.academicContext.activeTahunAjaranId
+		)
+	);
+	const activeSemester = $derived(
+		activeYear?.semester.find((semester) => semester.id === data.academicContext.activeSemesterId)
+	);
+	const semesterLabel = $derived(
+		activeSemester?.nama.toLowerCase().startsWith('semester ')
+			? activeSemester.nama
+			: `Semester ${activeSemester?.nama ?? ''}`
+	);
 	let dialog: HTMLDialogElement;
 	let deleteModal = $state<DeleteAsramaModal>();
 	let id = $state(0);
 	let version = $state(1);
+	let formSemester = $state<number | null>(null);
 	let name = $state('');
 	let category = $state('putra');
 	let capacity = $state(30);
 	let employee = $state('0');
 	let message = $state('');
 	function edit(room?: (typeof data.rooms)[number]) {
+		formSemester = data.academicContext.activeSemesterId;
 		id = room?.id ?? 0;
 		version = room?.versi ?? 1;
 		name = room?.nama ?? '';
@@ -26,6 +41,19 @@
 		dialog.showModal();
 	}
 </script>
+
+{#if activeSemester}
+	<div class="alert alert-info alert-soft mb-6 flex items-center gap-3" role="status">
+		<Icon name="info" />
+		<span>Menampilkan asrama untuk <strong>{semesterLabel}</strong> ({activeYear?.nama}).</span>
+	</div>
+{:else}
+	<div class="alert alert-warning mb-6 flex items-center gap-3" role="status">
+		<Icon name="warning" /><span
+			>Setel semester aktif di Data Rapor untuk mulai mengelola asrama per periode.</span
+		>
+	</div>
+{/if}
 
 <div class="student-workspace mb-6 flex flex-wrap items-start justify-between gap-3">
 	<div>
@@ -71,13 +99,17 @@
 						>
 							{#snippet children({ submitting })}<input
 									type="hidden"
-									name="operation"
-									value="room"
-								/><input type="hidden" name="id" value={room.id} /><input
+									name="semesterId"
+									value={data.academicContext.activeSemesterId}
+								/><input type="hidden" name="operation" value="room" /><input
 									type="hidden"
-									name="versi"
-									value={room.versi}
-								/><input type="hidden" name="nama" value={room.nama} /><input
+									name="id"
+									value={room.id}
+								/><input type="hidden" name="versi" value={room.versi} /><input
+									type="hidden"
+									name="nama"
+									value={room.nama}
+								/><input
 									type="hidden"
 									name="kapasitas"
 									value={room.kapasitas}
@@ -107,7 +139,10 @@
 				: 'Hubungi admin untuk menetapkan asrama Anda.'}
 		</p>{/each}
 </div>
-{#if data.manage}<DeleteAsramaModal bind:this={deleteModal} />{/if}
+{#if data.manage}<DeleteAsramaModal
+		bind:this={deleteModal}
+		semesterId={data.academicContext.activeSemesterId}
+	/>{/if}
 <dialog bind:this={dialog} class="modal" aria-labelledby="asrama-form-title">
 	<div class="modal-box w-full max-w-2xl p-4">
 		<h3 id="asrama-form-title" class="mb-4 text-xl font-bold">
@@ -125,6 +160,7 @@
 			}}
 		>
 			{#snippet children({ submitting })}
+				<input type="hidden" name="semesterId" value={formSemester} />
 				<input type="hidden" name="operation" value="directory" /><input
 					type="hidden"
 					name="id"

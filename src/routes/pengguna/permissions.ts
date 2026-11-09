@@ -295,6 +295,7 @@ export function permissionAppliesToUser(
 		return false;
 	if (
 		[
+			'rapor_arsip_lihat',
 			'rapor_arsip_finalisasi',
 			'rapor_arsip_revisi',
 			'rapor_arsip_massal',

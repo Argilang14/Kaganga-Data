@@ -12,12 +12,18 @@ import {
 	tableAuthUser
 } from '$lib/server/db/schema';
 import { cookieNames, unflattenFormData } from '$lib/utils';
-import { error, fail } from '@sveltejs/kit';
+import { error, fail, isHttpError } from '@sveltejs/kit';
+import { MuridIdentityConflictError } from '$lib/server/murid-identity-integrity';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { syncMuridGovernance } from '$lib/server/murid-lifecycle';
 import { writeAuditLog } from '$lib/server/audit-log';
 import { activeMuridFilter } from '$lib/server/murid-query';
+import { ensureDataGovernanceSchema } from '$lib/server/db/ensure-data-governance';
+import {
+	linkMuridIdentity,
+	assertMuridIdentityConsistent
+} from '$lib/server/murid-identity-service';
 
 type TahunAjaranRow = typeof tableTahunAjaran.$inferSelect;
 type SemesterRow = typeof tableSemester.$inferSelect;
@@ -36,6 +42,7 @@ async function copyKelasDanMuridDariGanjilKeGenap(opts: {
 	sourceSemester: SemesterRow;
 	targetSemester: SemesterRow;
 }): Promise<CopySummary> {
+	await ensureDataGovernanceSchema();
 	const timestamp = new Date().toISOString();
 
 	return db.transaction(async (tx) => {
@@ -84,26 +91,12 @@ async function copyKelasDanMuridDariGanjilKeGenap(opts: {
 
 		const sourceToTarget = new Map<number, number>();
 		let insertedKelas = 0;
-		let updatedKelas = 0;
+		const updatedKelas = 0;
 
 		for (const kelas of sourceKelas) {
 			const key = kelas.nama.toLowerCase();
 			const existing = targetByName.get(key);
 			if (existing) {
-				const needsUpdate =
-					(existing.fase ?? '') !== (kelas.fase ?? '') ||
-					(existing.waliKelasId ?? null) !== (kelas.waliKelasId ?? null);
-				if (needsUpdate) {
-					await tx
-						.update(tableKelas)
-						.set({
-							fase: kelas.fase,
-							waliKelasId: kelas.waliKelasId,
-							updatedAt: timestamp
-						})
-						.where(eq(tableKelas.id, existing.id));
-					updatedKelas += 1;
-				}
 				sourceToTarget.set(kelas.id, existing.id);
 				continue;
 			}
@@ -166,38 +159,38 @@ async function copyKelasDanMuridDariGanjilKeGenap(opts: {
 			const existingTargetMurid = await tx.query.tableMurid.findMany({
 				where: and(
 					eq(tableMurid.sekolahId, opts.sekolahId),
-					eq(tableMurid.semesterId, opts.targetSemester.id),
-					eq(tableMurid.kelasId, targetId)
+					eq(tableMurid.semesterId, opts.targetSemester.id)
 				),
 				columns: { nis: true }
 			});
 
 			const existingNis = new Set(existingTargetMurid.map((row) => row.nis));
 			const values: (typeof tableMurid.$inferInsert)[] = [];
+			const sourceUids = new Map<string, string>();
 
 			for (const murid of sourceMuridList) {
-				if (existingNis.has(murid.nis)) {
+				const uid = await linkMuridIdentity(tx, opts.sekolahId, murid);
+				const members = await assertMuridIdentityConsistent(tx, opts.sekolahId, uid, murid.id);
+				if (members.some((row) => row.semesterId === opts.targetSemester.id)) {
 					skippedMurid += 1;
 					continue;
 				}
+				if (existingNis.has(murid.nis))
+					error(
+						409,
+						'NIS pada semester tujuan terhubung ke identitas berbeda. Periksa identitas sebelum menyalin.'
+					);
+				sourceUids.set(murid.nis, uid);
 				existingNis.add(murid.nis);
 				values.push({
+					...murid,
+					id: undefined,
 					sekolahId: opts.sekolahId,
 					kelasId: targetId,
 					semesterId: opts.targetSemester.id,
-					nama: murid.nama,
-					nis: murid.nis,
-					nisn: murid.nisn,
-					tempatLahir: murid.tempatLahir,
-					tanggalLahir: murid.tanggalLahir,
-					jenisKelamin: murid.jenisKelamin,
-					agama: murid.agama,
-					pendidikanSebelumnya: murid.pendidikanSebelumnya,
-					tanggalMasuk: murid.tanggalMasuk,
-					alamatId: murid.alamatId,
-					ibuId: murid.ibuId,
-					ayahId: murid.ayahId,
-					waliId: murid.waliId,
+					qrToken: null,
+					dapodikAnggotaRombelId: null,
+					createdAt: timestamp,
 					updatedAt: timestamp
 				});
 			}
@@ -207,6 +200,20 @@ async function copyKelasDanMuridDariGanjilKeGenap(opts: {
 					.insert(tableMurid)
 					.values(values)
 					.returning({ id: tableMurid.id });
+				for (let index = 0; index < inserted.length; index++) {
+					const source = sourceMuridList.find((row) => row.nis === values[index].nis)!;
+					const uid = sourceUids.get(source.nis)!;
+					await linkMuridIdentity(
+						tx,
+						opts.sekolahId,
+						{
+							...source,
+							id: inserted[index].id,
+							semesterId: opts.targetSemester.id
+						},
+						uid
+					);
+				}
 				await syncMuridGovernance(
 					opts.sekolahId,
 					inserted.map((row) => row.id),
@@ -536,11 +543,18 @@ export const actions: Actions = {
 			return fail(400, { fail: 'Semester tujuan tidak boleh sama dengan semester sumber.' });
 		}
 
-		const summary = await copyKelasDanMuridDariGanjilKeGenap({
-			sekolahId,
-			sourceSemester,
-			targetSemester
-		});
+		let summary: CopySummary;
+		try {
+			summary = await copyKelasDanMuridDariGanjilKeGenap({
+				sekolahId,
+				sourceSemester,
+				targetSemester
+			});
+		} catch (cause) {
+			if (isHttpError(cause)) return fail(cause.status, { fail: cause.body.message });
+			if (cause instanceof MuridIdentityConflictError) return fail(409, { fail: cause.message });
+			throw cause;
+		}
 		const targetMurid = await db.query.tableMurid.findMany({
 			columns: { id: true },
 			where: and(eq(tableMurid.sekolahId, sekolahId), eq(tableMurid.semesterId, targetSemester.id))

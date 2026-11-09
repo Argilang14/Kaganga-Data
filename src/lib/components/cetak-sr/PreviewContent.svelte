@@ -10,6 +10,7 @@
 		| 'kartu-absensi'
 		| 'qr-kelas'
 		| 'informasi-siswa'
+		| 'daftar-wali-asuh'
 		| 'kartu-ujian'
 		| 'kartu-ujian-meja'
 		| 'jadwal-pelajaran'

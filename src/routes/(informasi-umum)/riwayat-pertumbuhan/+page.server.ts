@@ -4,6 +4,8 @@ import { tableKelas, tableKesehatanMurid, tableMurid } from '$lib/server/db/sche
 import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, desc, eq, gte, inArray, like, lte, or, type SQL } from 'drizzle-orm';
 import ExcelJS from 'exceljs';
+import { muridIdentityIds } from '$lib/server/murid-identity-service';
+import { ensureDataGovernanceSchema } from '$lib/server/db/ensure-data-governance';
 import type { Actions, PageServerLoad } from './$types';
 
 const statusList = ['gizi_buruk', 'gizi_kurang', 'normal', 'gizi_lebih', 'obesitas'] as const;
@@ -52,6 +54,7 @@ function excelNumber(value: string | undefined) {
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	await ensureKesehatanMuridSchema();
+	await ensureDataGovernanceSchema();
 	if (!locals.user) throw redirect(303, '/login');
 	const sekolahId = locals.sekolah?.id;
 	if (!sekolahId) throw redirect(303, '/login');
@@ -79,7 +82,12 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			where: and(...muridFilters),
 			columns: { id: true }
 		});
-		allowedMuridIds = muridList.map((item) => item.id);
+		const members = new Set<number>();
+		for (const item of muridList) {
+			if (members.has(item.id)) continue;
+			for (const id of await muridIdentityIds(db, sekolahId, item.id)) members.add(id);
+		}
+		allowedMuridIds = [...members];
 	}
 
 	const filters: SQL[] = [eq(tableKesehatanMurid.sekolahId, sekolahId)];

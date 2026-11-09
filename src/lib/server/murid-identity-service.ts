@@ -12,6 +12,19 @@ import {
 } from './murid-identity';
 
 type Reader = typeof db | DBTransaction;
+
+export async function muridIdentityIds(reader: Reader, sekolahId: number, muridId: number) {
+	const link = await reader.query.tableMuridIdentityLink.findFirst({
+		where: and(
+			eq(tableMuridIdentityLink.muridId, muridId),
+			eq(tableMuridIdentityLink.sekolahId, sekolahId)
+		)
+	});
+	if (!link) return [muridId];
+	return (await assertMuridIdentityConsistent(reader, sekolahId, link.identityUid, muridId)).map(
+		(row) => row.id
+	);
+}
 type StudentInput = {
 	id?: number;
 	nis: string;

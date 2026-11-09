@@ -4,6 +4,7 @@ import db from './db';
 import { ensureDormitorySchema } from './db/ensure-dormitory';
 import { canDorm, dormId, dormToday, type DormRoom } from '$lib/dormitory';
 import { hasSchoolWideAttendanceStudentAccess } from '$lib/attendance-access';
+import { resolveSekolahAcademicContext } from './db/academic';
 
 export const dormCookie = 'active-kamar-id';
 export async function dormRooms(
@@ -19,6 +20,7 @@ export async function dormRooms(
 	)
 		return [];
 	await ensureDormitorySchema();
+	const academic = await resolveSekolahAcademicContext(sekolah.id);
 	const wide =
 		schoolWideDorm(user) || (attendance && hasSchoolWideAttendanceStudentAccess(user, sekolah.id));
 	const employee = user?.pegawaiId ?? -1;
@@ -28,7 +30,7 @@ export async function dormRooms(
 	 (SELECT COUNT(*) FROM asrama_penempatan p WHERE p.kamar_id=k.id AND p.selesai IS NULL) AS penghuni,
 	 (SELECT e.nama FROM asrama_penugasan w JOIN pegawai e ON e.id=w.pegawai_id
 	 WHERE w.kamar_id=k.id AND w.peran='utama' AND w.selesai IS NULL) AS wali
-	 FROM asrama_kamar k JOIN asrama g ON g.id=k.asrama_id WHERE k.sekolah_id=? ${includeDeleted ? '' : 'AND k.deleted_at IS NULL AND g.deleted_at IS NULL'} AND (
+	 FROM asrama_kamar k JOIN asrama g ON g.id=k.asrama_id WHERE k.sekolah_id=? ${includeDeleted ? '' : 'AND k.deleted_at IS NULL AND g.deleted_at IS NULL AND g.semester_id=?'} AND (
 	 ?=1 OR EXISTS(SELECT 1 FROM asrama_penugasan w JOIN pegawai e ON e.id=w.pegawai_id
 	 WHERE w.kamar_id=k.id AND w.pegawai_id=? AND e.status='aktif' AND w.selesai IS NULL)
 	 OR (?='wali_asuh' AND EXISTS(SELECT 1 FROM asrama_penempatan p JOIN murid_identity_link mi
@@ -38,6 +40,7 @@ export async function dormRooms(
 	 ORDER BY g.nama,k.nama`,
 		args: [
 			sekolah.id,
+			...(includeDeleted ? [] : [academic.activeSemesterId ?? 0]),
 			wide ? 1 : 0,
 			employee,
 			hasRole(user, 'wali_asuh') ? 'wali_asuh' : '',

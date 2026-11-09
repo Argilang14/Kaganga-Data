@@ -399,6 +399,34 @@ try {
 	const residents = await dormRegistry();
 	assert.equal(residents.students.find((s) => s.id === waiting).wali_asuh, 'Wali Asuh Terhubung');
 	assert.equal(residents.students.find((s) => s.id === dormOnly).wali_asuh, 'Wali Asuh Lama');
+	const classPage = await vite.ssrLoadModule('/src/routes/(informasi-umum)/murid/+page.server.ts');
+	const loadClassPage = () =>
+		classPage.load({
+			...event(`/murid?kelas_id=${classA}`),
+			parent: async () => ({
+				daftarKelas: [{ id: classA }, { id: classB }],
+				kelasAktif: { id: classA }
+			})
+		});
+	assert.equal(
+		(await loadClassPage()).daftarMurid.find((s) => s.id === waiting).waliAsuhDisplay,
+		'Wali Asuh Terhubung'
+	);
+	await client.execute({
+		sql: 'UPDATE murid SET wali_asuh_nama=? WHERE id=?',
+		args: ['Wali Asuh Lama', classOnly]
+	});
+	assert.equal(
+		(await loadClassPage()).daftarMurid.find((s) => s.id === classOnly).waliAsuhDisplay,
+		'Wali Asuh Lama'
+	);
+	await client.execute({
+		sql: 'UPDATE murid SET wali_asuh_nama=? WHERE id=?',
+		args: ['   ', classOnly]
+	});
+	const classRows = (await loadClassPage()).daftarMurid;
+	assert.equal(classRows.find((s) => s.id === classOnly).waliAsuhDisplay, null);
+	assert(classRows.every((s) => s.kelasId === classA));
 	assert(residents.students.every((s) => s.canPassivate));
 	assert((await dormRegistry(guardian)).students.every((s) => !s.canPassivate));
 	await client.execute({
@@ -1092,6 +1120,111 @@ try {
 			'PASS: simple dorm deletion, automatic release/reassignment, confirmation, role/school/version guards, name reuse, shared building, audit rollback, historical grades/notes/printing and immutable history.'
 		);
 	}
+	// Master lists must not reclassify students when the report period changes.
+	const independentStudent = await student('QA Periode Mandiri', classA);
+	const assignment = await registry.studentRegistryActions.assign(
+		event('/murid/asrama', admin, { muridId: independentStudent, kamarId: roomA })
+	);
+	assert.equal(assignment.success, true);
+	const masterSnapshot = async () => {
+		const all = await registry.loadStudentRegistry(event('/murid/semua?q=QA%20Periode%20Mandiri'));
+		const passive = await registry.loadStudentRegistry(
+			event('/murid/pasif?q=QA%20Periode%20Mandiri')
+		);
+		return { students: all.registry.students, passive: passive.registry.students };
+	};
+	const beforePeriod = await masterSnapshot();
+	assert.equal(beforePeriod.students[0].kelas, 'X A');
+	assert.equal(beforePeriod.passive.length, 0);
+	const newYear = await insert('tahun_ajaran', {
+		sekolah_id: school,
+		nama: '2027/2028',
+		is_aktif: 1
+	});
+	await insert('semester', {
+		tahun_ajaran_id: newYear,
+		nama: 'Ganjil',
+		tipe: 'ganjil',
+		is_aktif: 1
+	});
+	await client.execute({ sql: 'UPDATE tahun_ajaran SET is_aktif=0 WHERE id=?', args: [year] });
+	assert.deepEqual(await masterSnapshot(), beforePeriod);
+	const withoutPlacement = await registry.loadStudentRegistry(event('/murid/pasif?q=Murid'));
+	await client.execute({ sql: 'UPDATE tahun_ajaran SET is_aktif=0 WHERE id=?', args: [newYear] });
+	await client.execute({ sql: 'UPDATE tahun_ajaran SET is_aktif=1 WHERE id=?', args: [year] });
+	assert.deepEqual(
+		(await registry.loadStudentRegistry(event('/murid/pasif?q=Murid'))).registry.students,
+		withoutPlacement.registry.students
+	);
+	const noSelectedDorm = await registry.loadStudentRegistry(event('/murid/asrama', guardian));
+	assert.equal(noSelectedDorm.registry.roomId, null);
+	assert.equal(noSelectedDorm.registry.total, 0);
+	assert.equal(
+		(await registry.loadStudentRegistry(event('/murid/asrama?kamar_id=0', guardian))).registry
+			.roomId,
+		null
+	);
+	console.log(
+		'PASS: master and passive lists retain identities, current placements and membership across report-year changes; dorm selection matches navbar.'
+	);
+	// Dormitory rollover starts empty, while previous placements remain historical.
+	const { dormRooms } = await vite.ssrLoadModule('/src/lib/server/dormitory-access.ts');
+	assert((await dormRooms(locals(admin))).some((room) => room.id === roomA));
+	await client.execute({ sql: 'UPDATE tahun_ajaran SET is_aktif=0 WHERE id=?', args: [year] });
+	await client.execute({ sql: 'UPDATE tahun_ajaran SET is_aktif=1 WHERE id=?', args: [newYear] });
+	assert.equal((await dormRooms(locals(admin))).length, 0);
+	await assert.rejects(
+		dorm.mutateDormitory(
+			locals(admin),
+			'directory',
+			form({ id: roomA, nama: 'Tidak boleh', kapasitas: 30 })
+		),
+		(cause) => cause.status === 403
+	);
+	await assert.rejects(
+		dorm.mutateDormitory(
+			locals(admin),
+			'directory',
+			form({ semesterId: semester, nama: 'Form lama', kapasitas: 30 })
+		),
+		(cause) => cause.status === 409
+	);
+	await dorm.mutateDormitory(
+		locals(admin),
+		'directory',
+		form({ nama: 'Asrama A', kategori: 'putra', kapasitas: 30 })
+	);
+	const newRooms = await dormRooms(locals(admin));
+	assert.equal(newRooms.length, 1);
+	assert.equal(newRooms[0].penghuni, 0);
+	assert.equal(newRooms[0].wali, null);
+	const newRoom = newRooms[0].id;
+	const rolloverCandidates = await registry.loadStudentRegistry(
+		event(`/murid/asrama?kamar_id=${newRoom}`)
+	);
+	assert(rolloverCandidates.registry.candidates.some((row) => row.id === independentStudent));
+	const placedAgain = await registry.studentRegistryActions.assign(
+		event('/murid/asrama', admin, { muridId: independentStudent, kamarId: newRoom })
+	);
+	assert.equal(placedAgain.success, true);
+	const placementHistory = (
+		await client.execute({
+			sql: 'SELECT kamar_id,selesai FROM asrama_penempatan WHERE murid_id=? ORDER BY id',
+			args: [independentStudent]
+		})
+	).rows;
+	assert.equal(placementHistory.length, 2);
+	assert.equal(placementHistory[0].kamar_id, roomA);
+	assert(placementHistory[0].selesai);
+	assert.equal(placementHistory[1].kamar_id, newRoom);
+	assert.equal(placementHistory[1].selesai, null);
+	await client.execute({ sql: 'UPDATE tahun_ajaran SET is_aktif=0 WHERE id=?', args: [newYear] });
+	await client.execute({ sql: 'UPDATE tahun_ajaran SET is_aktif=1 WHERE id=?', args: [year] });
+	assert((await dormRooms(locals(admin))).some((room) => room.id === roomA));
+	assert(!(await dormRooms(locals(admin))).some((room) => room.id === newRoom));
+	console.log(
+		'PASS: dormitory period rollover, empty assignments, name reuse, stale/foreign-period guards and student reassignment history.'
+	);
 	const salt = randomBytes(16).toString('hex');
 	const password = 'RegistryQa-' + randomBytes(10).toString('hex');
 	const qaUser = await insert('auth_user', {

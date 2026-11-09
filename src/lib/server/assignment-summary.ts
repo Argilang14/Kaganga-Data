@@ -114,6 +114,7 @@ export async function getAssignmentSummaries(
 							eq(tableAsramaPenugasan.pegawaiId, user.pegawaiId),
 							eq(tableAsramaKamar.aktif, 1),
 							eq(tableAsrama.aktif, 1),
+							eq(tableAsrama.semesterId, semesterId),
 							sql`${tableAsramaPenugasan.mulai} <= ${dormToday()}`,
 							sql`(${tableAsramaPenugasan.selesai} IS NULL OR ${tableAsramaPenugasan.selesai} > ${dormToday()})`
 						)

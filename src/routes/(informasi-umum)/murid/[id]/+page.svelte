@@ -321,6 +321,7 @@
 						{@render field('NISN', data.murid.nisn)}
 						{@render field('Nama', data.murid.nama)}
 						{@render field('Kelas', kelas)}
+						{@render field('Asrama', data.asrama ?? 'Belum ditempatkan')}
 						{@render field('Tempat Lahir', data.murid.tempatLahir)}
 						{@render field('Tanggal Lahir', data.murid.tanggalLahir)}
 						{@render field('Jenis Kelamin', jenisKelamin[data.murid.jenisKelamin])}

@@ -138,6 +138,8 @@ try {
 		user: {
 			...user,
 			type: 'user',
+			roles: ['user'],
+			pegawaiId: null,
 			jabatanAkses: null,
 			permissions: ['murid_arsip', 'cetak_akademik', 'cetak_keasramaan']
 		}
@@ -583,6 +585,9 @@ try {
 		user: {
 			...user,
 			type: 'user',
+			roles: ['user'],
+			pegawaiId: null,
+			waliKelasIds: [kelas],
 			jabatanAkses: null,
 			sekolahId: schoolId,
 			kelasId: kelas,
@@ -592,6 +597,16 @@ try {
 	assert.equal(
 		(await service.historicalReportInfo(teacher, history, 'sekolah', 'ras')).archived.id,
 		archive.id
+	);
+	await rejected(
+		() =>
+			service.historicalReportInfo(
+				{ ...teacher, user: { ...teacher.user, waliKelasIds: [] } },
+				history,
+				'sekolah',
+				'ras'
+			),
+		403
 	);
 	await rejected(
 		() =>
@@ -607,7 +622,7 @@ try {
 		await rejected(
 			() =>
 				service.historicalReportInfo(
-					{ ...teacher, user: { ...teacher.user, type } },
+					{ ...teacher, user: { ...teacher.user, type, roles: [type] } },
 					history,
 					'sekolah',
 					'ras'
@@ -624,19 +639,86 @@ try {
 			),
 		403
 	);
-	const guardianEmployee = await row(
-		'SELECT * FROM pegawai WHERE sekolah_id=? AND nama IN (SELECT nama FROM pegawai WHERE sekolah_id=? GROUP BY nama HAVING COUNT(*)=1) LIMIT 1',
-		[schoolId, schoolId]
+	const employeeTemplate = await row('SELECT * FROM pegawai WHERE sekolah_id=? LIMIT 1', [
+		schoolId
+	]);
+	const guardianId = await insert(
+		'pegawai',
+		clone(employeeTemplate, {
+			nama: 'QA Wali Asuh Riwayat',
+			nip: 'QA-ASUH-RIWAYAT',
+			jenis: 'wali_asuh',
+			status: 'aktif',
+			nik: null,
+			nuptk: null,
+			email: null,
+			kode_pegawai: null
+		})
 	);
+	const guardianEmployee = await row('SELECT * FROM pegawai WHERE id=?', [guardianId]);
+	const wardenId = await insert(
+		'pegawai',
+		clone(employeeTemplate, {
+			nama: 'QA Wali Asrama Riwayat',
+			nip: 'QA-ASRAMA-RIWAYAT',
+			jenis: 'wali_asrama',
+			status: 'aktif',
+			nik: null,
+			nuptk: null,
+			email: null,
+			kode_pegawai: null
+		})
+	);
+	const buildingId = await insert('asrama', {
+		sekolah_id: schoolId,
+		semester_id: semester,
+		nama: 'QA Arsip Historis',
+		nama_key: `semester:${semester}:qa arsip historis`,
+		kategori: original.jenis_kelamin === 'P' ? 'putri' : 'putra'
+	});
+	const roomId = await insert('asrama_kamar', {
+		sekolah_id: schoolId,
+		asrama_id: buildingId,
+		nama: 'QA Arsip Historis',
+		nama_key: 'qa arsip historis',
+		kapasitas: 30
+	});
+	await insert('asrama_penugasan', {
+		sekolah_id: schoolId,
+		kamar_id: roomId,
+		pegawai_id: wardenId,
+		peran: 'utama',
+		mulai: '2024-07-01',
+		nama_snapshot: 'QA Wali Asrama Riwayat',
+		alasan: 'Fixture arsip',
+		petugas_id: user.id
+	});
+	await insert('asrama_penempatan', {
+		sekolah_id: schoolId,
+		kamar_id: roomId,
+		identity_uid: identity.identity_uid,
+		murid_id: student,
+		mulai: '2024-07-01',
+		alasan: 'Fixture arsip',
+		nama_snapshot: original.nama,
+		kelas_snapshot: 'X.QA Riwayat',
+		petugas_id: user.id
+	});
 	assert.ok(guardianEmployee);
 	await client.execute({
-		sql: 'UPDATE murid SET wali_asuh_nama=?,wali_asrama_nama=? WHERE id=?',
-		args: [guardianEmployee.nama, guardianEmployee.nama, student]
+		sql: 'UPDATE murid SET wali_asuh_nama=?,wali_asuh_pegawai_id=? WHERE id=?',
+		args: [guardianEmployee.nama, guardianEmployee.id, student]
 	});
 	for (const type of ['wali_asuh', 'wali_asrama']) {
 		const guardian = {
 			...teacher,
-			user: { ...teacher.user, type, pegawaiId: guardianEmployee.id, kelasId: null }
+			user: {
+				...teacher.user,
+				type,
+				roles: [type],
+				pegawaiId: type === 'wali_asrama' ? wardenId : guardianEmployee.id,
+				kelasId: null
+			}
 		};
 		assert.equal(
 			(await service.historicalReportInfo(guardian, history, 'asrama', 'ras')).archived.id,
@@ -655,14 +737,24 @@ try {
 	}
 	const leader = {
 		...teacher,
-		user: { ...teacher.user, kelasId: null, jabatanAkses: 'waka_kurikulum', permissions: [] }
+		user: {
+			...teacher.user,
+			type: 'waka_kurikulum',
+			roles: ['waka_kurikulum'],
+			kelasId: null,
+			jabatanAkses: null,
+			permissions: []
+		}
 	};
 	assert.ok((await service.historicalReportInfo(leader, history, 'sekolah', 'ras')).archived);
-	assert.equal(service.canArchiveAction(leader, 'finalisasi'), false);
+	assert.equal(service.canArchiveAction(leader, 'finalisasi'), true);
 	assert.ok(
 		(
 			await service.historicalReportInfo(
-				{ ...leader, user: { ...leader.user, type: 'tim_dapur' } },
+				{
+					...leader,
+					user: { ...leader.user, type: 'tim_dapur', roles: ['waka_kurikulum', 'tim_dapur'] }
+				},
 				history,
 				'sekolah',
 				'ras'
@@ -1098,7 +1190,7 @@ try {
 		},
 		asrama: {
 			type: 'wali_asrama',
-			pegawai_id: guardianEmployee.id,
+			pegawai_id: wardenId,
 			permissions: ['rapor_arsip_lihat']
 		},
 		asrama_unassigned: {
@@ -1106,7 +1198,7 @@ try {
 			pegawai_id: null,
 			permissions: ['rapor_arsip_lihat']
 		},
-		leader: { type: 'user', jabatan_akses: 'waka_kurikulum', permissions: [] },
+		leader: { type: 'waka_kurikulum', permissions: [] },
 		kitchen: { type: 'tim_dapur', permissions: ['rapor_arsip_lihat', 'cetak_akademik'] }
 	})) {
 		const accountToken = randomBytes(32).toString('hex');
@@ -1122,6 +1214,7 @@ try {
 				mata_pelajaran_id: null,
 				must_change_password: 0,
 				...options,
+				roles: JSON.stringify([options.type]),
 				permissions: JSON.stringify(options.permissions)
 			})
 		);

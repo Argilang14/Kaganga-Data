@@ -5,6 +5,8 @@
 	import { passiveStatusLabels } from '$lib/student-status';
 	import { dormToday } from '$lib/dormitory';
 	import Icon from '$lib/components/icon.svelte';
+	import { modalRoute } from '$lib/utils';
+	import MuridModals from './modals.svelte';
 	import PurgeMuridModal from '$lib/components/murid/purge-murid-modal.svelte';
 	import type { loadStudentArchive } from '$lib/server/student-archive';
 	import type { ActionData } from '../../../routes/(informasi-umum)/murid/semua/$types';
@@ -206,7 +208,7 @@
 						<h2 class="font-semibold">Perubahan status murid</h2>
 						<p class="text-sm text-base-content/65">
 							Menjadi pasif mengosongkan kelas dan asrama saat ini. Aktif kembali memerlukan
-							penempatan ulang melalui Murid Kelas dan Data Murid Asrama.
+							penempatan ulang melalui Murid Kelas dan Murid Asrama.
 						</p>
 						<div class="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_2fr]">
 							<label
@@ -367,7 +369,7 @@
 				<colgroup>
 					<col class="w-14" /><col class="w-14" /><col />
 					<col class="w-28" /><col class="w-32" /><col class="w-36" />
-					<col class="w-40" /><col class="w-24" /><col class="w-16" />
+					<col class="w-40" /><col class="w-24" /><col class="w-28" />
 				</colgroup>
 				<thead class="bg-base-200"
 					><tr
@@ -523,6 +525,15 @@
 									</form>
 								</dialog></td
 							><td>
+								{#if row.lastMuridId}
+									<a
+										class="btn btn-sm btn-soft btn-square mb-1 shadow-none"
+										href={resolve(`/murid/${row.lastMuridId}`)}
+										use:modalRoute={'detail-murid'}
+										title="Lihat detail murid"
+										aria-label={`Lihat detail ${row.nama}`}><Icon name="eye" /></a
+									>
+								{/if}
 								{#if row.identityEvidence}
 									<button
 										class="btn btn-soft btn-warning btn-sm btn-square shadow-none"
@@ -712,6 +723,7 @@
 </div>
 
 {#if data.canReviewIdentity}<PurgeMuridModal bind:this={purgeModal} />{/if}
+<MuridModals formSubmitting={false} submitBulkDelete={(event) => event.preventDefault()} />
 
 <style>
 	.archive-table > tbody > tr > td:not([colspan]) {

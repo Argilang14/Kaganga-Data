@@ -1,9 +1,10 @@
 // @ts-nocheck
 import db from '$lib/server/db';
+import { documentSemester } from '$lib/server/db/academic';
 import { computeNilaiAkhirRekap } from '$lib/server/nilai-akhir';
 import { buildKelasContext, fetchMuridList } from '$lib/server/route-utils';
-import { tablePegawai, tableSemester, tableTahunAjaran } from '$lib/server/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { tablePegawai } from '$lib/server/db/schema';
+import { eq } from 'drizzle-orm';
 
 export async function loadCetakBawaan({ locals, url, depends, parent }) {
 	depends('app:cetak');
@@ -67,16 +68,11 @@ export async function loadCetakBawaan({ locals, url, depends, parent }) {
 	let tanggalMasuk = '';
 	let tanggalBagiRaport = '';
 	if (sekolahId) {
-		const activeSemester = await db
-			.select({
-				tanggalMasuk: tableSemester.tanggalMasuk,
-				tanggalBagiRaport: tableSemester.tanggalBagiRaport
-			})
-			.from(tableSemester)
-			.innerJoin(tableTahunAjaran, eq(tableSemester.tahunAjaranId, tableTahunAjaran.id))
-			.where(and(eq(tableTahunAjaran.sekolahId, sekolahId), eq(tableSemester.isAktif, true)))
-			.limit(1)
-			.then((r) => r[0]);
+		const activeSemester = await documentSemester(
+			sekolahId,
+			kelasId ? Number(kelasId) : null,
+			academicContext?.activeSemesterId ?? null
+		);
 		if (activeSemester) {
 			tanggalMasuk = activeSemester.tanggalMasuk ?? '';
 			tanggalBagiRaport = activeSemester.tanggalBagiRaport ?? '';

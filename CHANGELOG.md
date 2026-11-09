@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.3.4 - 2026-11-09
+
+- Merapikan tabel peserta didik, menambahkan akses informasi murid dan nama wali asuh, serta mengikuti pilihan kelas/asrama pada navbar.
+- Mengikat Data Asrama ke semester aktif pada Data Rapor. Periode baru mulai kosong; riwayat penempatan dan penilaian lama tetap disimpan.
+- Memperkuat pergantian periode: salin biodata dengan identitas stabil, retensi tahun ajaran, kesinambungan portal wali, profil, QR, pertumbuhan, dan izin pulang.
+- Mengelompokkan pilihan Cetak Dokumen dan menambahkan Daftar Murid dan Wali Asuh per kelas, per asrama, atau per wali asuh, lengkap dengan kop sekolah ringkas.
+- Panduan pembaruan dan batasan tersedia pada [catatan rilis v2.3.4](docs/releases/v2.3.4.md).
+
 ## 2.3.3 - 2026-11-05
 
 - Menambahkan hapus asrama dengan konfirmasi; penempatan penghuni dan penugasan wali otomatis diakhiri, sementara riwayat, nilai, dan catatan tetap tersimpan.

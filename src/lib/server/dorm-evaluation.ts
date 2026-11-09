@@ -110,7 +110,7 @@ export async function dormEvaluationContext(
 	const rooms = await evaluationRows<EvaluationRoom>(
 		`SELECT k.id,k.nama,g.nama asrama,k.aktif*g.aktif aktif,k.deleted_at deletedAt,
 	 (SELECT w.nama_snapshot FROM asrama_penugasan w WHERE w.kamar_id=k.id AND w.peran='utama' AND w.mulai<=? AND (w.selesai IS NULL OR w.selesai>?) LIMIT 1) wali
-	 FROM asrama_kamar k JOIN asrama g ON g.id=k.asrama_id WHERE k.sekolah_id=? ${includeDeleted ? '' : 'AND k.deleted_at IS NULL AND g.deleted_at IS NULL'} AND (?=1
+	 FROM asrama_kamar k JOIN asrama g ON g.id=k.asrama_id WHERE k.sekolah_id=? ${includeDeleted ? '' : 'AND k.deleted_at IS NULL AND g.deleted_at IS NULL AND g.semester_id=?'} AND (?=1
 	 OR (?='wali_asrama' AND EXISTS(SELECT 1 FROM asrama_penugasan w JOIN pegawai e ON e.id=w.pegawai_id WHERE w.kamar_id=k.id AND w.pegawai_id=? AND e.status='aktif' AND w.mulai<=? AND (w.selesai IS NULL OR w.selesai>?)))
 	 OR (?='wali_asuh' AND EXISTS(SELECT 1 FROM asrama_penempatan p JOIN murid_identity_link mi ON mi.identity_uid=p.identity_uid AND mi.sekolah_id=p.sekolah_id
 	 JOIN murid m ON m.id=mi.murid_id JOIN pegawai e ON e.id=m.wali_asuh_pegawai_id AND e.sekolah_id=m.sekolah_id AND e.status='aktif'
@@ -119,6 +119,7 @@ export async function dormEvaluationContext(
 			dormToday(),
 			dormToday(),
 			school,
+			...(includeDeleted ? [] : [periodId]),
 			wide && !ownGrades ? 1 : 0,
 			hasRole(user, 'wali_asrama') && !ownGrades ? 'wali_asrama' : '',
 			employee,
@@ -312,7 +313,7 @@ export async function assertDormWritable(
 		error(403, 'Tindakan berada di luar penugasan atau periode aktif.');
 	const valid = await evaluationRows(
 		`SELECT k.id FROM asrama_kamar k JOIN asrama g ON g.id=k.asrama_id JOIN semester s ON s.id=? JOIN tahun_ajaran y ON y.id=s.tahun_ajaran_id
-	 WHERE k.id=? AND k.sekolah_id=? AND y.sekolah_id=k.sekolah_id AND k.aktif=1 AND g.aktif=1 AND s.is_aktif=1 AND y.is_aktif=1
+	 WHERE k.id=? AND k.sekolah_id=? AND y.sekolah_id=k.sekolah_id AND g.semester_id=s.id AND k.aktif=1 AND g.aktif=1 AND s.is_aktif=1 AND y.is_aktif=1
 	 AND (?=1 OR (?='wali_asuh' AND EXISTS(SELECT 1 FROM pegawai e WHERE e.id=? AND e.sekolah_id=k.sekolah_id AND e.status='aktif'))
 	 OR (?='wali_asrama' AND EXISTS(SELECT 1 FROM asrama_penugasan w JOIN pegawai e ON e.id=w.pegawai_id WHERE w.kamar_id=k.id AND w.pegawai_id=? AND e.status='aktif' AND w.mulai<=? AND (w.selesai IS NULL OR w.selesai>?))))`,
 		[

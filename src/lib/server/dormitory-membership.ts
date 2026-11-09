@@ -15,7 +15,9 @@ export function dormGuardianCondition(school: number, employee: number) {
 	 AND di.sekolah_id=${school} AND (
 	 EXISTS(SELECT 1 FROM asrama_penempatan dp JOIN asrama_penugasan dw ON dw.kamar_id=dp.kamar_id
 	 AND dw.sekolah_id=dp.sekolah_id JOIN pegawai de ON de.id=dw.pegawai_id
+	 JOIN asrama_kamar dk ON dk.id=dp.kamar_id JOIN asrama dg ON dg.id=dk.asrama_id
 	 WHERE dp.identity_uid=di.identity_uid AND dp.sekolah_id=${school}
+	 AND dg.semester_id=${tableMurid.semesterId}
 	 AND dp.mulai<=${today} AND (dp.selesai IS NULL OR dp.selesai>${today})
 	 AND dw.pegawai_id=${employee} AND de.status='aktif' AND dw.mulai<=${today} AND dw.selesai IS NULL)))`;
 }

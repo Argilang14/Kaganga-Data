@@ -1,13 +1,12 @@
 import db from '$lib/server/db';
+import { guardianStudentLinks } from '$lib/server/guardian-student-links';
+import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import { ensureLongTermFoundationSchema } from '$lib/server/db/ensure-long-term-foundation';
 import {
 	tableAbsensiHarian,
 	tableAsesmenSumatif,
-	tableAuthUserMurid,
 	tableDocumentApproval,
 	tableKesehatanMurid,
-	tableKelas,
-	tableMurid,
 	tablePengumuman
 } from '$lib/server/db/schema';
 import { redirect } from '@sveltejs/kit';
@@ -19,22 +18,10 @@ export async function load({ locals }) {
 	const sekolahId = locals.sekolah?.id;
 	if (!sekolahId || !locals.user) throw redirect(303, '/login');
 	await ensureLongTermFoundationSchema();
-	const links = await db
-		.select({
-			muridId: tableMurid.id,
-			nama: tableMurid.nama,
-			nis: tableMurid.nis,
-			kelas: tableKelas.nama,
-			fase: tableKelas.fase,
-			hubungan: tableAuthUserMurid.hubungan
-		})
-		.from(tableAuthUserMurid)
-		.innerJoin(tableMurid, eq(tableAuthUserMurid.muridId, tableMurid.id))
-		.innerJoin(tableKelas, eq(tableMurid.kelasId, tableKelas.id))
-		.where(
-			and(eq(tableAuthUserMurid.authUserId, locals.user.id), eq(tableMurid.sekolahId, sekolahId))
-		);
-	const ids = links.map((item) => item.muridId);
+	const academic = await resolveSekolahAcademicContext(sekolahId);
+	const links = await guardianStudentLinks(locals.user.id, sekolahId, academic.activeSemesterId);
+	const ids = links.flatMap((item) => item.memberIds);
+	const activeIds = links.flatMap((item) => (item.activeId ? [item.activeId] : []));
 	const [growthRows, attendance, grades, publishedReports, announcements] = await Promise.all([
 		ids.length
 			? db
@@ -52,7 +39,7 @@ export async function load({ locals }) {
 							inArray(tableKesehatanMurid.muridId, ids)
 						)
 					)
-					.orderBy(desc(tableKesehatanMurid.tanggalPengukuran))
+					.orderBy(desc(tableKesehatanMurid.tanggalPengukuran), desc(tableKesehatanMurid.id))
 			: [],
 		ids.length
 			? db
@@ -62,7 +49,7 @@ export async function load({ locals }) {
 						total: sql<number>`count(*)`
 					})
 					.from(tableAbsensiHarian)
-					.where(inArray(tableAbsensiHarian.muridId, ids))
+					.where(inArray(tableAbsensiHarian.muridId, activeIds))
 					.groupBy(tableAbsensiHarian.muridId, tableAbsensiHarian.status)
 			: [],
 		ids.length
@@ -73,7 +60,7 @@ export async function load({ locals }) {
 						jumlah: sql<number>`count(*)`
 					})
 					.from(tableAsesmenSumatif)
-					.where(inArray(tableAsesmenSumatif.muridId, ids))
+					.where(inArray(tableAsesmenSumatif.muridId, activeIds))
 					.groupBy(tableAsesmenSumatif.muridId)
 			: [],
 		ids.length
@@ -120,11 +107,11 @@ export async function load({ locals }) {
 		children: links.map((child) => ({
 			...child,
 			attendance: attendance
-				.filter((item) => item.muridId === child.muridId)
+				.filter((item) => item.muridId === child.activeId)
 				.map((item) => ({ status: item.status, total: Number(item.total) })),
-			grade: grades.find((item) => item.muridId === child.muridId) ?? null,
-			growth: growthRows.find((item) => item.muridId === child.muridId) ?? null,
-			reports: publishedReports.filter((item) => Number(item.entityId) === child.muridId)
+			grade: grades.find((item) => item.muridId === child.activeId) ?? null,
+			growth: growthRows.find((item) => child.memberIds.includes(item.muridId)) ?? null,
+			reports: publishedReports.filter((item) => child.memberIds.includes(Number(item.entityId)))
 		})),
 		announcements,
 		canManage:

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from '$lib/components/icon.svelte';
+	import DocumentOptions from './DocumentOptions.svelte';
 
 	type DocumentType =
 		| 'cover'
@@ -10,6 +11,7 @@
 		| 'kartu-absensi'
 		| 'qr-kelas'
 		| 'informasi-siswa'
+		| 'daftar-wali-asuh'
 		| 'kartu-ujian'
 		| 'kartu-ujian-meja'
 		| 'jadwal-pelajaran'
@@ -57,6 +59,7 @@
 			{ value: 'martikulasi-raport', label: 'Masa Persiapan - Raport Hasil Martikulasi' },
 			{ value: 'martikulasi-sttm', label: 'Masa Persiapan - STTM' }
 		],
+		groupDocuments = false,
 		onDownload,
 		onBulkDownload,
 		downloadDisabled = false,
@@ -70,6 +73,7 @@
 		daftarMurid: MuridData[];
 		piagamRankingOptions: PiagamRankingOption[];
 		documentOptions?: Array<{ value: DocumentType; label: string }>;
+		groupDocuments?: boolean;
 		onDownload: () => void;
 		onBulkDownload: () => void;
 		downloadDisabled?: boolean;
@@ -79,7 +83,9 @@
 
 	const isPiagamSelected = $derived.by(() => selectedDocument === 'piagam');
 	const isKartuAbsensiSelected = $derived.by(() => selectedDocument === 'kartu-absensi');
-	const isKartuUjianSelected = $derived.by(() => selectedDocument === 'kartu-ujian' || selectedDocument === 'kartu-ujian-meja');
+	const isKartuUjianSelected = $derived.by(
+		() => selectedDocument === 'kartu-ujian' || selectedDocument === 'kartu-ujian-meja'
+	);
 	const isJadwalSelected = $derived.by(() => selectedDocument === 'jadwal-pelajaran');
 	const isKalenderSelected = $derived.by(() => selectedDocument === 'kalender-pendidikan');
 	const isJurnalSelected = $derived.by(() => selectedDocument === 'jurnal-mengajar');
@@ -110,7 +116,15 @@
 	);
 
 	const hasSelectionOptions = $derived.by(() => {
-		if (isJadwalSelected || isKalenderSelected || isJurnalSelected || isAbsensiKegiatanSelected || isMartikulasiSkSelected || isKartuUjianSelected) return true;
+		if (
+			isJadwalSelected ||
+			isKalenderSelected ||
+			isJurnalSelected ||
+			isAbsensiKegiatanSelected ||
+			isMartikulasiSkSelected ||
+			isKartuUjianSelected
+		)
+			return true;
 		return isPiagamSelected ? hasPiagamRankingOptions : hasMurid;
 	});
 </script>
@@ -123,9 +137,7 @@
 		disabled={downloadLoading}
 	>
 		<option value="">Pilih dokumen…</option>
-		{#each documentOptions as option (option.value)}
-			<option value={option.value}>{option.label}</option>
-		{/each}
+		<DocumentOptions options={documentOptions} grouped={groupDocuments} />
 	</select>
 	{#if isPiagamSelected}
 		<select

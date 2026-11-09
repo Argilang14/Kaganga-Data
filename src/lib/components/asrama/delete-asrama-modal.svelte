@@ -4,6 +4,8 @@
 	import type { DormRoom } from '$lib/dormitory';
 	import FormEnhance from '$lib/components/form-enhance.svelte';
 	import Icon from '$lib/components/icon.svelte';
+	let { semesterId = null }: { semesterId?: number | null } = $props();
+	let targetSemester = $state<number | null>(null);
 
 	let dialog: HTMLDialogElement;
 	let target = $state<DormRoom | null>(null);
@@ -11,6 +13,7 @@
 	let busy = $state(false);
 
 	export async function open(room: DormRoom) {
+		targetSemester = semesterId;
 		target = room;
 		message = '';
 		await tick();
@@ -57,6 +60,7 @@
 			>
 				{#snippet children({ submitting })}
 					<input type="hidden" name="operation" value="delete" />
+					{#if targetSemester}<input type="hidden" name="semesterId" value={targetSemester} />{/if}
 					<input type="hidden" name="id" value={room.id} />
 					<input type="hidden" name="versi" value={room.versi} />
 					<input type="hidden" name="confirmDelete" value="true" />

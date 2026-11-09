@@ -1,6 +1,7 @@
 import { ensureSchema } from './ensure-helper';
 import { ensureDataGovernanceSchema } from './ensure-data-governance';
 import db from './index';
+import { ensureDormitoryPeriod } from './dormitory-period';
 
 export async function ensureDormitorySchema() {
 	await ensureDataGovernanceSchema();
@@ -107,4 +108,5 @@ export async function ensureDormitorySchema() {
 		 WHEN OLD.deleted_at IS NOT NULL BEGIN SELECT RAISE(ABORT,'asrama_deleted'); END`
 		)
 	);
+	await ensureDormitoryPeriod(db.$client);
 }

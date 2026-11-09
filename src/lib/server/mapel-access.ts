@@ -92,7 +92,7 @@ export async function getAksesMapelUser(
 
 	if (!ids.size) return { ids, names: new Set(), rawNames: new Set() };
 
-	const intiRows = await db.query.tableMataPelajaran.findMany({
+	let intiRows = await db.query.tableMataPelajaran.findMany({
 		columns: { id: true, kelasId: true, nama: true, dapodikPembelajaranId: true },
 		with: { kelas: { columns: { nama: true, tahunAjaranId: true, semesterId: true } } },
 		where: inArray(tableMataPelajaran.id, Array.from(ids))
@@ -124,16 +124,11 @@ export async function getAksesMapelUser(
 		const matches =
 			target &&
 			target.sekolahId === account?.sekolahId &&
-			assignedClasses.some(
-				(row) =>
-					row.sekolahId === target.sekolahId &&
-					(row.id === target.id ||
-						(row.nama === target.nama &&
-							row.tahunAjaranId === target.tahunAjaranId &&
-							row.semesterId !== target.semesterId &&
-							!assignedClasses.some((current) => current.semesterId === target.semesterId)))
-			);
+			assignedClasses.some((row) => row.sekolahId === target.sekolahId && row.id === target.id);
 		if (!matches) return { ids: new Set(), names: new Set(), rawNames: new Set() };
+		intiRows = intiRows.filter((row) => row.kelas?.tahunAjaranId === target.tahunAjaranId);
+		ids.clear();
+		for (const row of intiRows) ids.add(row.id);
 	}
 
 	const names = new Set<string>();

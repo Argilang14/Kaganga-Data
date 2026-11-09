@@ -38,15 +38,24 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 	const q = url.searchParams.get('q')?.trim().slice(0, 100) ?? '';
 	const jenis = normalizePegawaiJenis(url.searchParams.get('jenis'));
 	const requestedPage = Math.max(1, Number(url.searchParams.get('page')) || 1);
-	const settings = await getPresensiPegawaiSettings(sekolahId);
-	const disabled = settings?.presensiPegawaiEnabled === false;
 
 	if (mode === 'bulanan') {
 		const now = new Date();
 		const monthParam = Number(url.searchParams.get('bulan'));
 		const yearParam = Number(url.searchParams.get('tahun'));
-		const bulan = Number.isInteger(monthParam) && monthParam >= 1 && monthParam <= 12 ? monthParam : now.getMonth() + 1;
-		const tahun = Number.isInteger(yearParam) && yearParam >= 2000 && yearParam <= 2200 ? yearParam : now.getFullYear();
+		const bulan =
+			Number.isInteger(monthParam) && monthParam >= 1 && monthParam <= 12
+				? monthParam
+				: now.getMonth() + 1;
+		const tahun =
+			Number.isInteger(yearParam) && yearParam >= 2000 && yearParam <= 2200
+				? yearParam
+				: now.getFullYear();
+		const settings = await getPresensiPegawaiSettings(
+			sekolahId,
+			`${tahun}-${String(bulan).padStart(2, '0')}-01`
+		);
+		const disabled = settings?.presensiPegawaiEnabled === false;
 		const result = await listPresensiPegawaiBulanan(sekolahId, tahun, bulan, q, jenis);
 		const total = result.rows.length;
 		const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
@@ -69,6 +78,8 @@ export const load: PageServerLoad = async ({ locals, url, depends }) => {
 
 	const requestedDate = url.searchParams.get('tanggal');
 	const tanggal = requestedDate && isValidDate(requestedDate) ? requestedDate : todayDateString();
+	const settings = await getPresensiPegawaiSettings(sekolahId, tanggal);
+	const disabled = settings?.presensiPegawaiEnabled === false;
 	const [rows, day] = await Promise.all([
 		listPresensiPegawaiHarian(sekolahId, tanggal, q, jenis),
 		isPresensiPegawaiWorkday(sekolahId, tanggal)
@@ -101,7 +112,10 @@ export const actions: Actions = {
 		const status = form.get('status');
 		const waktuMasuk = validTime(form.get('waktuMasuk'));
 		const waktuPulang = validTime(form.get('waktuPulang'));
-		const keterangan = String(form.get('keterangan') ?? '').trim().slice(0, 500) || null;
+		const keterangan =
+			String(form.get('keterangan') ?? '')
+				.trim()
+				.slice(0, 500) || null;
 		if (!pegawaiId || !isValidDate(tanggal) || !isPresensiPegawaiStatus(status)) {
 			return fail(400, { fail: 'Data presensi tidak valid.' });
 		}
@@ -127,12 +141,26 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const tanggal = String(form.get('tanggal') ?? '');
 		const status = form.get('status');
-		const ids = String(form.get('pegawaiIds') ?? '').split(',').map(Number).filter((id) => Number.isInteger(id) && id > 0);
-		if (!isValidDate(tanggal) || !isPresensiPegawaiStatus(status) || !ids.length || ids.length > PER_PAGE) {
+		const ids = String(form.get('pegawaiIds') ?? '')
+			.split(',')
+			.map(Number)
+			.filter((id) => Number.isInteger(id) && id > 0);
+		if (
+			!isValidDate(tanggal) ||
+			!isPresensiPegawaiStatus(status) ||
+			!ids.length ||
+			ids.length > PER_PAGE
+		) {
 			return fail(400, { fail: 'Data pengisian massal tidak valid.' });
 		}
 		for (const pegawaiId of ids) {
-			await savePresensiPegawai({ sekolahId, pegawaiId, tanggal, status, petugasUserId: locals.user?.id ?? null });
+			await savePresensiPegawai({
+				sekolahId,
+				pegawaiId,
+				tanggal,
+				status,
+				petugasUserId: locals.user?.id ?? null
+			});
 		}
 		return { message: `${ids.length} data presensi berhasil diisi.` };
 	},
@@ -143,12 +171,17 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const pegawaiId = positiveInt(form.get('pegawaiId'));
 		const tanggal = String(form.get('tanggal') ?? '');
-		if (!pegawaiId || !isValidDate(tanggal)) return fail(400, { fail: 'Data presensi tidak valid.' });
-		await db.delete(tablePresensiPegawai).where(and(
-			eq(tablePresensiPegawai.sekolahId, sekolahId),
-			eq(tablePresensiPegawai.pegawaiId, pegawaiId),
-			eq(tablePresensiPegawai.tanggal, tanggal)
-		));
+		if (!pegawaiId || !isValidDate(tanggal))
+			return fail(400, { fail: 'Data presensi tidak valid.' });
+		await db
+			.delete(tablePresensiPegawai)
+			.where(
+				and(
+					eq(tablePresensiPegawai.sekolahId, sekolahId),
+					eq(tablePresensiPegawai.pegawaiId, pegawaiId),
+					eq(tablePresensiPegawai.tanggal, tanggal)
+				)
+			);
 		return { message: 'Data presensi dikosongkan.' };
 	}
 };

@@ -1,6 +1,33 @@
 import db from '$lib/server/db';
 import { tableSemester, tableTahunAjaran } from '$lib/server/db/schema';
 import { desc, eq } from 'drizzle-orm';
+import { academicPeriodForDate } from '$lib/academic-period';
+
+export async function resolveSekolahPeriodForDate(sekolahId: number, date: string) {
+	const context = await resolveSekolahAcademicContext(sekolahId);
+	return academicPeriodForDate(context.tahunAjaranList, date);
+}
+
+export async function documentSemester(
+	sekolahId: number,
+	kelasId: number | null,
+	activeSemesterId: number | null
+) {
+	const semesterId = kelasId
+		? (
+				await db.query.tableKelas.findFirst({
+					where: (kelas, { and, eq }) => and(eq(kelas.id, kelasId), eq(kelas.sekolahId, sekolahId)),
+					columns: { semesterId: true }
+				})
+			)?.semesterId
+		: activeSemesterId;
+	if (!semesterId) return null;
+	const semester = await db.query.tableSemester.findFirst({
+		where: eq(tableSemester.id, semesterId),
+		with: { tahunAjaran: true }
+	});
+	return semester?.tahunAjaran.sekolahId === sekolahId ? semester : null;
+}
 
 export type AcademicContext = {
 	tahunAjaranList: (typeof tableTahunAjaran.$inferSelect & {

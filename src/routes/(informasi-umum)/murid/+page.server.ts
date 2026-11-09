@@ -1,8 +1,8 @@
 import { personalQrExists } from '$lib/server/student-qr';
 import db from '$lib/server/db/index.js';
-import { tableMurid } from '$lib/server/db/schema.js';
+import { tableMurid, tablePegawai } from '$lib/server/db/schema.js';
 import { error, redirect } from '@sveltejs/kit';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import { buildKelasContext } from '$lib/server/route-utils';
 import { activeMuridFilter } from '$lib/server/murid-query';
 import { loadStudentRegistry, studentRegistryActions } from '$lib/server/student-registry';
@@ -82,12 +82,25 @@ export async function load(event: ServerLoadEvent) {
 	const currentPage = Math.min(Math.max(pageNumber, 1), totalPages);
 	const offset = (currentPage - 1) * perPage;
 
-	const daftarMurid = await db.query.tableMurid.findMany({
-		where: filter,
-		orderBy: asc(tableMurid.nama),
-		limit: perPage,
-		offset
-	});
+	const daftarMurid = await db
+		.select({
+			...getTableColumns(tableMurid),
+			waliAsuhDisplay: sql<
+				string | null
+			>`coalesce(nullif(trim(${tablePegawai.nama}), ''), nullif(trim(${tableMurid.waliAsuhNama}), ''))`
+		})
+		.from(tableMurid)
+		.leftJoin(
+			tablePegawai,
+			and(
+				eq(tablePegawai.id, tableMurid.waliAsuhPegawaiId),
+				eq(tablePegawai.sekolahId, tableMurid.sekolahId)
+			)
+		)
+		.where(filter)
+		.orderBy(asc(tableMurid.nama))
+		.limit(perPage)
+		.offset(offset);
 
 	if (pageNumber !== currentPage) {
 		const params = new URLSearchParams(url.searchParams);

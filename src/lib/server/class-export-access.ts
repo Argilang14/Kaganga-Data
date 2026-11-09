@@ -4,7 +4,6 @@ import { tableAuthUserKelas, tableKelas, tableMurid } from './db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { canLegacyWaliKelasAccess, getLegacyWaliKelasIds } from './legacy-wali-kelas';
 import { hasClassExportAccess } from '../export-access';
-import { resolveSekolahAcademicContext } from './db/academic';
 import { guardianStudentCondition } from './assignment-summary';
 
 export async function canAccessExportClass(
@@ -39,18 +38,6 @@ export async function canAccessExportClass(
 		assigned =
 			assignments.some((row) => row.id === kelasId) ||
 			(includeHomeroom && (await getLegacyWaliKelasIds(user, sekolahId)).includes(kelasId));
-		// Match the existing semester fallback, but never carry assignments into a new year.
-		if (!assigned && assignments.length) {
-			const context = await resolveSekolahAcademicContext(sekolahId);
-			assigned = Boolean(
-				context?.activeSemesterId &&
-				kelas.semesterId === context.activeSemesterId &&
-				!assignments.some((row) => row.semesterId === context.activeSemesterId) &&
-				assignments.some(
-					(row) => row.nama === kelas.nama && row.tahunAjaranId === kelas.tahunAjaranId
-				)
-			);
-		}
 	}
 	if (
 		!assigned &&

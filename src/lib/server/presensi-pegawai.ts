@@ -1,6 +1,9 @@
 import { and, asc, eq, gte, inArray, lte, or, sql } from 'drizzle-orm';
 import db from '$lib/server/db';
-import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
+import {
+	resolveSekolahAcademicContext,
+	resolveSekolahPeriodForDate
+} from '$lib/server/db/academic';
 import {
 	tableDinasLuarPermohonan,
 	tablePegawai,
@@ -31,14 +34,16 @@ export type PresensiPegawaiRow = {
 	inferredFromDinasLuar: boolean;
 };
 
-export async function getPresensiPegawaiSettings(sekolahId: number) {
-	const academic = await resolveSekolahAcademicContext(sekolahId);
-	if (!academic.activeTahunAjaranId) return null;
+export async function getPresensiPegawaiSettings(sekolahId: number, tanggal?: string) {
+	const tahunAjaranId = tanggal
+		? (await resolveSekolahPeriodForDate(sekolahId, tanggal))?.year.id
+		: (await resolveSekolahAcademicContext(sekolahId)).activeTahunAjaranId;
+	if (!tahunAjaranId) return null;
 	return (
 		(await db.query.tablePresensiSettings.findFirst({
 			where: and(
 				eq(tablePresensiSettings.sekolahId, sekolahId),
-				eq(tablePresensiSettings.tahunAjaranId, academic.activeTahunAjaranId)
+				eq(tablePresensiSettings.tahunAjaranId, tahunAjaranId)
 			)
 		})) ?? null
 	);
@@ -46,7 +51,7 @@ export async function getPresensiPegawaiSettings(sekolahId: number) {
 
 export async function isPresensiPegawaiWorkday(sekolahId: number, tanggal: string) {
 	const [year, month, day] = tanggal.split('-').map(Number);
-	const settings = await getPresensiPegawaiSettings(sekolahId);
+	const settings = await getPresensiPegawaiSettings(sekolahId, tanggal);
 	const schoolDays = settings?.hariSekolah ?? 6;
 	const weekend =
 		schoolDays === 5
@@ -124,7 +129,12 @@ async function dinasLuarEmployeeIds(sekolahId: number, start: string, end: strin
 	return byDate;
 }
 
-export async function listPresensiPegawaiHarian(sekolahId: number, tanggal: string, search = '', jenis: PegawaiJenis | '' = '') {
+export async function listPresensiPegawaiHarian(
+	sekolahId: number,
+	tanggal: string,
+	search = '',
+	jenis: PegawaiJenis | '' = ''
+) {
 	const employees = await activeEmployees(sekolahId, search, jenis);
 	if (!employees.length) return [] as PresensiPegawaiRow[];
 	const records = await db.query.tablePresensiPegawai.findMany({
@@ -234,13 +244,13 @@ export async function savePresensiPegawai(params: {
 		where: and(eq(tablePegawai.id, params.pegawaiId), eq(tablePegawai.sekolahId, params.sekolahId))
 	});
 	if (!employee) throw new Error('Pegawai tidak ditemukan pada sekolah aktif.');
-	const academic = await resolveSekolahAcademicContext(params.sekolahId);
+	const period = await resolveSekolahPeriodForDate(params.sekolahId, params.tanggal);
 	await db
 		.insert(tablePresensiPegawai)
 		.values({
 			sekolahId: params.sekolahId,
-			tahunAjaranId: academic.activeTahunAjaranId,
-			semesterId: academic.activeSemesterId,
+			tahunAjaranId: period?.year.id ?? null,
+			semesterId: period?.semester?.id ?? null,
 			pegawaiId: employee.id,
 			namaPegawai: employee.nama,
 			tanggal: params.tanggal,

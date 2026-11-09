@@ -7,7 +7,7 @@ import { canAccessStudentList, canManageMurid } from '$lib/murid-permissions';
 import { canManageKelas } from './kelas-manage';
 import { isHomeroomTeacher } from '$lib/homeroom-access';
 import { getLegacyWaliKelasIds } from './legacy-wali-kelas';
-import { dormRooms } from './dormitory-access';
+import { dormRooms, dormView } from './dormitory-access';
 import { dormId, dormStudentIds, dormToday, DormValidationError } from '$lib/dormitory';
 import { mutateDormitory, previewPlacement } from './dormitory';
 import { syncMuridGovernance } from './murid-lifecycle';
@@ -33,6 +33,7 @@ export type RegistryStudent = {
 	kelas_id: number | null;
 	semester_id: number;
 	kamar_id: number | null;
+	kamar_semester_id: number | null;
 	asrama: string | null;
 	wali_asuh: string | null;
 	canPassivate: boolean;
@@ -63,6 +64,7 @@ export async function loadStudentRegistry(event: ServerLoadEvent, requestedView?
 		error(403, 'Sekolah berada di luar penugasan Anda.');
 	const academic = await resolveSekolahAcademicContext(school);
 	const semester = academic.activeSemesterId ?? 0;
+	const periodIndependent = view === 'semua' || view === 'pasif';
 	const assignedClasses = isHomeroomTeacher(event.locals.user)
 		? await getLegacyWaliKelasIds(event.locals.user, school, semester)
 		: null;
@@ -73,23 +75,12 @@ export async function loadStudentRegistry(event: ServerLoadEvent, requestedView?
 			orderBy: asc(tableKelas.nama)
 		})
 	).filter((item) => !assignedClasses || assignedClasses.includes(item.id));
-	const rooms = await dormRooms(event.locals);
-	const requestedRoom =
-		event.url.searchParams.get('kamar_id') ?? event.cookies.get('active-kamar-id');
-	const room =
-		rooms.find((item) => item.id === Number(requestedRoom)) ??
-		(rooms.length === 1 ? rooms[0] : null);
-	if (
-		view === 'asrama' &&
-		event.url.searchParams.get('kamar_id') &&
-		room?.id !== Number(event.url.searchParams.get('kamar_id'))
-	)
-		error(403, 'Asrama berada di luar penugasan Anda.');
+	const { rooms, room } = await dormView(event.locals, event.url.searchParams, event.cookies);
 	const source = `WITH ranked AS (
 	 SELECT m.*,mi.identity_uid AS uid,COALESCE(l.status,'aktif') AS status,COALESCE(l.needs_identity_review,0) AS review,l.placement_status,l.tanggal_status,l.alasan,
-	 CASE WHEN m.semester_id=${semester} THEN c.nama ELSE NULL END AS kelas,p.kamar_id,g.nama || ' / ' || k.nama AS asrama,
+	 ${periodIndependent ? 'c.nama' : `CASE WHEN m.semester_id=${semester} THEN c.nama ELSE NULL END`} AS kelas,p.kamar_id,g.semester_id AS kamar_semester_id,g.nama || ' / ' || k.nama AS asrama,
 	 COALESCE(NULLIF(TRIM(w.nama),''),NULLIF(TRIM(m.wali_asuh_nama),'')) AS wali_asuh,
-	 ROW_NUMBER() OVER(PARTITION BY COALESCE(mi.identity_uid,'row:'||m.id) ORDER BY (m.id=l.last_murid_id) DESC,(m.semester_id=${semester}) DESC,s.created_at DESC,m.id DESC) AS position
+	 ROW_NUMBER() OVER(PARTITION BY COALESCE(mi.identity_uid,'row:'||m.id) ORDER BY (m.id=l.last_murid_id) DESC,${periodIndependent ? '' : `(m.semester_id=${semester}) DESC,`}s.created_at DESC,m.id DESC) AS position
 	 FROM murid m LEFT JOIN murid_identity_link mi ON mi.murid_id=m.id AND mi.sekolah_id=m.sekolah_id
 	 LEFT JOIN murid_lifecycle l ON l.sekolah_id=m.sekolah_id AND l.identity_key='uid:'||mi.identity_uid
 	 LEFT JOIN kelas c ON c.id=m.kelas_id LEFT JOIN semester s ON s.id=m.semester_id
@@ -98,7 +89,7 @@ export async function loadStudentRegistry(event: ServerLoadEvent, requestedView?
 	 LEFT JOIN asrama_kamar k ON k.id=p.kamar_id LEFT JOIN asrama g ON g.id=k.asrama_id WHERE m.sekolah_id=?
 	), students AS (SELECT * FROM ranked WHERE position=1)`;
 	const missingClass = `(kelas_id IS NULL OR semester_id<>${semester})`;
-	const passive = `(status<>'aktif' OR review=1 OR ${missingClass} OR kamar_id IS NULL)`;
+	const passive = `(status<>'aktif' OR review=1 OR kelas_id IS NULL OR kamar_id IS NULL)`;
 	const query = (event.url.searchParams.get('q') ?? '').trim().slice(0, 100);
 	const selectedClass = classes.find(
 		(item) => item.id === Number(event.url.searchParams.get('kelas_id'))
@@ -178,7 +169,7 @@ export async function loadStudentRegistry(event: ServerLoadEvent, requestedView?
 	const candidateCondition =
 		view === 'kelas'
 			? `${missingClass} AND (placement_status IS NULL OR (placement_status='pindah_kelas' AND semester_id=${semester}) OR (placement_status='naik_kelas' AND semester_id<>${semester}))`
-			: 'kamar_id IS NULL';
+			: `(kamar_id IS NULL OR kamar_semester_id<>${semester})`;
 	const poolQuery = (event.url.searchParams.get('pool_q') ?? '').trim().slice(0, 100);
 	const candidates = ['kelas', 'asrama'].includes(view)
 		? ((
@@ -194,7 +185,7 @@ export async function loadStudentRegistry(event: ServerLoadEvent, requestedView?
 			title: {
 				semua: 'Semua Murid',
 				kelas: 'Murid Kelas',
-				asrama: 'Data Murid Asrama',
+				asrama: 'Murid Asrama',
 				pasif: 'Murid Pasif'
 			}[view]
 		},
@@ -238,8 +229,15 @@ export const studentRegistryActions: Actions = {
 					error(403, 'Asrama berada di luar penugasan Anda.');
 				const input = { room, ids, date: dormToday(), reason: 'Penempatan dari Murid Pasif' };
 				const preview = await previewPlacement(event.locals, input);
-				if (preview.students.some((student) => student.lama_id))
-					error(409, 'Murid sudah memiliki asrama. Muat ulang Murid Pasif.');
+				const academic = await resolveSekolahAcademicContext(school);
+				for (const student of preview.students.filter((student) => student.lama_id)) {
+					const previous = await db.$client.execute({
+						sql: 'SELECT g.semester_id FROM asrama_penempatan p JOIN asrama_kamar k ON k.id=p.kamar_id JOIN asrama g ON g.id=k.asrama_id WHERE p.id=? AND p.sekolah_id=?',
+						args: [student.lama_id, school]
+					});
+					if (Number(previous.rows[0]?.semester_id) === academic.activeSemesterId)
+						error(409, 'Murid sudah memiliki asrama pada semester aktif. Muat ulang daftar murid.');
+				}
 				form.set('tanggal', input.date);
 				form.set('alasan', input.reason);
 				form.set('token', preview.token);
@@ -301,6 +299,8 @@ export const studentRegistryActions: Actions = {
 								...copy,
 								kelasId: target.id,
 								semesterId: target.semesterId,
+								qrToken: null,
+								dapodikAnggotaRombelId: null,
 								createdAt: new Date().toISOString(),
 								updatedAt: null
 							})

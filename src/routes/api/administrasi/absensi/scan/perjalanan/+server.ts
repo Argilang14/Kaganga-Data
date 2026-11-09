@@ -1,6 +1,7 @@
 import { currentQrStudent, rememberScannedQr } from '$lib/server/student-qr';
 import { error, json } from '@sveltejs/kit';
-import { and, desc, eq, isNull, ne } from 'drizzle-orm';
+import { and, desc, eq, isNull, ne, inArray } from 'drizzle-orm';
+import { muridIdentityIds } from '$lib/server/murid-identity-service';
 import { assertTravelAccess } from '$lib/server/attendance-travel-access';
 import { attendanceStaffName } from '$lib/server/attendance-staff';
 import {
@@ -68,10 +69,11 @@ export async function POST({ request, locals }) {
 		const murid = await currentQrStudent(sekolah.id, qr.muridId, academic.activeSemesterId, tx);
 		if (!murid) throw error(404, 'Murid aktif tidak ditemukan di sekolah ini.');
 		await rememberScannedQr(qr, body.token.trim(), tx);
+		const memberIds = await muridIdentityIds(tx, sekolah.id, murid.id);
 		const permits = await tx.query.tableIzinPulangMurid.findMany({
 			where: and(
 				eq(permitTable.sekolahId, sekolah.id),
-				eq(permitTable.muridId, murid.id),
+				inArray(permitTable.muridId, memberIds),
 				ne(permitTable.status, 'dibatalkan'),
 				isNull(permitTable.tanggalKembali)
 			),
@@ -99,7 +101,7 @@ export async function POST({ request, locals }) {
 			const last = await tx.query.tableIzinPulangMurid.findFirst({
 				where: and(
 					eq(permitTable.sekolahId, sekolah.id),
-					eq(permitTable.muridId, murid.id),
+					inArray(permitTable.muridId, memberIds),
 					ne(permitTable.status, 'dibatalkan')
 				),
 				with: { perjalanan: true },

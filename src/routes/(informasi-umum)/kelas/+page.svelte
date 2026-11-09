@@ -117,7 +117,10 @@
 						>Tentukan semester aktif untuk melihat atau menambahkan data kelas.</em
 					>
 				{:else}
-					<em class="opacity-50">Belum ada data kelas untuk semester ini</em>
+					<em class="opacity-50"
+						>Belum ada data kelas untuk semester ini. Tambahkan kelas, lalu tempatkan murid melalui
+						Murid Kelas. Data periode sebelumnya tetap tersimpan.</em
+					>
 				{/if}
 			</div>
 		</div>

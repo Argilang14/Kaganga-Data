@@ -12,8 +12,19 @@
 	import type { RegistryStudent } from '$lib/server/student-registry';
 	import './student-workspace.css';
 	import type { loadStudentRegistry } from '$lib/server/student-registry';
+	import type { AcademicContext } from '$lib/server/db/academic';
 	let { data }: { data: Awaited<ReturnType<typeof loadStudentRegistry>> } = $props();
 	const registry = $derived(data.registry);
+	const activeRoom = $derived(page.data.asramaAktif);
+	const academicContext = $derived(page.data.academicContext as AcademicContext | null);
+	const activeYear = $derived(
+		academicContext?.tahunAjaranList.find((year) =>
+			year.semester.some((semester) => semester.id === academicContext.activeSemesterId)
+		)
+	);
+	const activeSemester = $derived(
+		activeYear?.semester.find((semester) => semester.id === academicContext?.activeSemesterId)
+	);
 	function pageHref(number: number) {
 		const params = new URLSearchParams(page.url.search);
 		params.set('page', String(number));
@@ -45,6 +56,25 @@
 	}
 </script>
 
+{#if registry.view === 'asrama'}
+	<div class="alert alert-info alert-soft mb-6 flex items-center gap-3" role="status">
+		<Icon name="info" />
+		<span>
+			{#if activeRoom}
+				Menampilkan murid untuk <strong
+					>{activeRoom.asrama === activeRoom.nama
+						? activeRoom.nama
+						: `${activeRoom.asrama} / ${activeRoom.nama}`}</strong
+				>
+			{:else}
+				Pilih asrama melalui menu di pojok kanan atas
+			{/if}
+			{#if activeSemester}
+				· <strong>{activeSemester.nama}</strong> ({activeYear?.nama}){/if}.
+		</span>
+	</div>
+{/if}
+
 <section
 	class="student-workspace rounded-lg bg-base-100 p-4 shadow-md"
 	class:student-dorm-workspace={registry.view === 'asrama'}
@@ -67,21 +97,8 @@
 	</header>
 
 	<form method="GET" class="student-toolbar mb-5">
-		{#if registry.view === 'asrama'}
-			<label class="fieldset w-full sm:w-64">
-				<span class="fieldset-legend">Asrama</span>
-				<select
-					class="select w-full"
-					name="kamar_id"
-					value={registry.roomId ?? ''}
-					onchange={(event) => event.currentTarget.form?.requestSubmit()}
-				>
-					<option value="">Pilih asrama</option>
-					{#each registry.rooms as room (room.id)}<option value={room.id}
-							>{room.asrama === room.nama ? room.nama : room.asrama + ' / ' + room.nama}</option
-						>{/each}
-				</select>
-			</label>
+		{#if registry.view === 'asrama' && registry.roomId}
+			<input type="hidden" name="kamar_id" value={registry.roomId} />
 		{/if}
 		<label class="fieldset student-search min-w-0">
 			<span class="fieldset-legend">Cari murid</span>
@@ -131,9 +148,7 @@
 						class="student-class"
 					/><col class="student-dorm" />{#if registry.view === 'asrama'}<col
 							class="student-caregiver"
-						/>{/if}<col class="student-actions" />{#if registry.view === 'asrama'}<col
-							class="student-row-actions"
-						/>{/if}</colgroup
+						/>{/if}<col class="student-actions" /><col class="student-row-actions" /></colgroup
 				>
 				<thead
 					><tr
@@ -141,8 +156,7 @@
 							scope="col">Kelas</th
 						><th scope="col">Asrama</th>{#if registry.view === 'asrama'}<th scope="col"
 								>Wali Asuh</th
-							>{/if}<th scope="col" class="text-right">Riwayat</th
-						>{#if registry.view === 'asrama'}<th scope="col">Aksi</th>{/if}</tr
+							>{/if}<th scope="col" class="text-right">Riwayat</th><th scope="col">Aksi</th></tr
 					></thead
 				>
 				<tbody>
@@ -210,37 +224,36 @@
 									onclick={() => showHistory(student)}>Riwayat</button
 								></td
 							>
-							{#if registry.view === 'asrama'}
-								<td>
-									<div class="flex flex-row">
+							<td>
+								<div class="flex flex-row">
+									<a
+										class="btn btn-sm btn-soft pointer-events-auto shadow-none"
+										class:rounded-r-none={registry.view === 'asrama'}
+										href={resolve(`/murid/${student.id}`)}
+										use:modalRoute={'detail-murid'}
+										title="Lihat detail murid"
+										aria-label={'Lihat detail ' + student.nama}><Icon name="eye" /></a
+									>
+									{#if registry.view === 'asrama' && student.canPassivate}
 										<a
-											class="btn btn-sm btn-soft pointer-events-auto rounded-r-none shadow-none"
-											href={resolve(`/murid/${student.id}`)}
-											use:modalRoute={'detail-murid'}
-											title="Lihat detail murid"
-											aria-label={'Lihat detail ' + student.nama}><Icon name="eye" /></a
+											class="btn btn-sm btn-error btn-soft rounded-l-none shadow-none"
+											href={resolve(`/murid/${student.id}/delete`)}
+											use:modalRoute={'delete-murid'}
+											title="Jadikan pasif murid"
+											aria-label={'Jadikan pasif ' + student.nama}><Icon name="del" /></a
 										>
-										{#if student.canPassivate}
-											<a
-												class="btn btn-sm btn-error btn-soft rounded-l-none shadow-none"
-												href={resolve(`/murid/${student.id}/delete`)}
-												use:modalRoute={'delete-murid'}
-												title="Jadikan pasif murid"
-												aria-label={'Jadikan pasif ' + student.nama}><Icon name="del" /></a
-											>
-										{:else}
-											<button
-												type="button"
-												class="btn btn-sm btn-disabled rounded-l-none shadow-none"
-												disabled
-												aria-disabled="true"
-												title="Anda tidak memiliki izin menjadikan murid ini pasif"
-												aria-label={'Jadikan pasif ' + student.nama}><Icon name="del" /></button
-											>
-										{/if}
-									</div>
-								</td>
-							{/if}
+									{:else if registry.view === 'asrama'}
+										<button
+											type="button"
+											class="btn btn-sm btn-disabled rounded-l-none shadow-none"
+											disabled
+											aria-disabled="true"
+											title="Anda tidak memiliki izin menjadikan murid ini pasif"
+											aria-label={'Jadikan pasif ' + student.nama}><Icon name="del" /></button
+										>
+									{/if}
+								</div>
+							</td>
 						</tr>
 					{/each}
 				</tbody>
@@ -261,7 +274,7 @@
 			</p>
 			<p class="mt-1 text-sm text-base-content/60">
 				{registry.view === 'asrama' && !registry.roomId
-					? 'Gunakan pilihan asrama untuk menampilkan penghuninya.'
+					? 'Gunakan pilihan asrama di pojok kanan atas untuk menampilkan penghuninya.'
 					: registry.query
 						? 'Coba nama atau nomor identitas lainnya.'
 						: registry.view === 'pasif'
@@ -288,6 +301,4 @@
 	</footer>
 </section>
 
-{#if registry.view === 'asrama'}
-	<MuridModals formSubmitting={false} submitBulkDelete={(event) => event.preventDefault()} />
-{/if}
+<MuridModals formSubmitting={false} submitBulkDelete={(event) => event.preventDefault()} />

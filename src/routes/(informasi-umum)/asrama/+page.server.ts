@@ -3,6 +3,7 @@ import { canDorm } from '$lib/dormitory';
 import db from '$lib/server/db';
 import { dormRooms } from '$lib/server/dormitory-access';
 import { dormitoryActions } from '$lib/server/dormitory-page';
+import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, depends }) => {
@@ -10,6 +11,7 @@ export const load: PageServerLoad = async ({ locals, depends }) => {
 	const rooms = await dormRooms(locals);
 	const school = locals.sekolah?.id;
 	if (!school) error(400, 'Pilih sekolah aktif terlebih dahulu.');
+	const academicContext = await resolveSekolahAcademicContext(school);
 	const records = await db.$client.execute({
 		sql: `SELECT k.id,k.nama,k.kapasitas,k.versi,k.aktif,
 	 (SELECT w.pegawai_id FROM asrama_penugasan w WHERE w.kamar_id=k.id AND w.peran='utama' AND w.selesai IS NULL) AS pegawaiId
@@ -23,6 +25,7 @@ export const load: PageServerLoad = async ({ locals, depends }) => {
 	depends('app:asrama');
 	return {
 		meta: { title: 'Data Asrama' },
+		academicContext,
 		rooms: rooms.map((room) => ({
 			...room,
 			pegawaiId: Number(
@@ -30,7 +33,10 @@ export const load: PageServerLoad = async ({ locals, depends }) => {
 			)
 		})),
 		employees: employees.rows as unknown as { id: number; nama: string; nip: string }[],
-		manage: canDorm(locals.user, 'manage') && canDorm(locals.user, 'penugasan')
+		manage:
+			!!academicContext.activeSemesterId &&
+			canDorm(locals.user, 'manage') &&
+			canDorm(locals.user, 'penugasan')
 	};
 };
 export const actions: Actions = dormitoryActions;

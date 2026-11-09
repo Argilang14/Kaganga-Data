@@ -138,16 +138,6 @@
 		await goto(target, { replaceState: true, keepFocus: true });
 	}
 
-	async function selectClass(value: string) {
-		clearTimeout(searchTimer);
-		searchTimer = undefined;
-		selectedIds = new Set();
-		const url = new URL(page.url);
-		url.searchParams.set('kelas_id', value);
-		url.searchParams.delete('page');
-		await goto(url, { replaceState: true, keepFocus: true });
-	}
-
 	function buildPageUrl(pageNumber: number) {
 		const params = new SvelteURLSearchParams(page.url.search);
 		const sanitized = pageNumber < 1 ? 1 : pageNumber;
@@ -272,6 +262,17 @@
 	const offset = $derived((currentPage - 1) * data.page.perPage);
 </script>
 
+{#if academicContext?.activeSemesterId}
+	<div class="alert alert-info alert-soft mb-6 flex items-center gap-3" role="status">
+		<Icon name="info" />
+		<span>
+			Menampilkan murid untuk <strong>{kelasAktifLabel ?? 'kelas yang belum dipilih'}</strong>
+			{#if activeSemester}
+				· <strong>{activeSemester.nama}</strong> ({activeSemester.tahunAjaranNama}){/if}.
+		</span>
+	</div>
+{/if}
+
 {#if academicContext && !academicContext.activeSemesterId}
 	<div class="alert alert-warning mb-6 flex items-center gap-3">
 		<Icon name="warning" />
@@ -294,12 +295,6 @@
 		<div class="flex flex-col sm:flex-row sm:justify-between">
 			<div>
 				<h2 class="text-xl font-bold">Murid Kelas</h2>
-				{#if kelasAktifLabel}
-					<p class="text-base-content/65 mt-1 block text-sm">
-						{kelasAktifLabel}{#if activeSemester}
-							· {activeSemester.nama} ({activeSemester.tahunAjaranNama}){/if}
-					</p>
-				{/if}
 			</div>
 			<!-- Tombol Tambah Manual (dipindahkan ke kanan judul) -->
 			{#if hasSelection}
@@ -394,20 +389,6 @@
 		data-sveltekit-replacestate
 		onsubmit={submitSearch}
 	>
-		<label class="fieldset w-full sm:w-64">
-			<span class="fieldset-legend">Kelas</span>
-			<select
-				class="select w-full"
-				name="kelas_id"
-				value={data.page.kelasId ?? ''}
-				onchange={(event) => selectClass(event.currentTarget.value)}
-			>
-				<option value="" disabled>Pilih kelas</option>
-				{#each data.registry.classes as kelas (kelas.id)}
-					<option value={String(kelas.id)}>{kelas.nama}</option>
-				{/each}
-			</select>
-		</label>
 		<!-- Cari nama murid -->
 		<label class="fieldset student-search min-w-0">
 			<span class="fieldset-legend">Cari murid</span>
@@ -452,7 +433,9 @@
 							<colgroup>
 								<col class="murid-col-select" /><col class="murid-col-number" />
 								<col class="murid-col-name" /><col class="murid-col-religion" />
-								<col /><col class="murid-col-date" /><col class="murid-col-action" />
+								<col /><col class="murid-col-date" /><col class="murid-col-caregiver" /><col
+									class="murid-col-action"
+								/>
 							</colgroup>
 						{/if}
 						<!-- head -->
@@ -474,6 +457,7 @@
 								<th>Agama</th>
 								<th>Tempat Lahir</th>
 								<th>Tanggal Lahir</th>
+								<th>Wali Asuh</th>
 								<th>Aksi</th>
 							</tr>
 						</thead>
@@ -497,6 +481,9 @@
 									<td>{murid.agama}</td>
 									<td>{murid.tempatLahir}</td>
 									<td>{murid.tanggalLahir}</td>
+									<td class={!murid.waliAsuhDisplay ? 'text-base-content/55' : ''}
+										>{murid.waliAsuhDisplay ?? 'Belum ditentukan'}</td
+									>
 									<td>
 										<div class="flex flex-row">
 											<a
@@ -504,6 +491,7 @@
 												href="/murid/{murid.id}"
 												use:modalRoute={'detail-murid'}
 												title="Lihat detail murid"
+												aria-label={`Lihat detail ${murid.nama}`}
 											>
 												<Icon name="eye" />
 											</a>
@@ -514,6 +502,7 @@
 													href="/murid/{murid.id}/delete"
 													use:modalRoute={'delete-murid'}
 													title="Jadikan pasif murid"
+													aria-label={`Jadikan pasif ${murid.nama}`}
 												>
 													<Icon name="del" />
 												</a>
@@ -532,7 +521,7 @@
 								</tr>
 							{:else}
 								<tr>
-									<td class="text-center p-7" colspan="7">
+									<td class="text-center p-7" colspan="8">
 										<em class="opacity-50">Belum ada data murid</em>
 									</td>
 								</tr>
@@ -575,7 +564,7 @@
 		container: murid-table / inline-size;
 	}
 	.murid-table-populated {
-		min-width: 54rem;
+		min-width: 66rem;
 		table-layout: fixed;
 	}
 	.murid-col-select,
@@ -583,13 +572,16 @@
 		width: 3.25rem;
 	}
 	.murid-col-name {
-		width: 30%;
+		width: 24%;
 	}
 	.murid-col-religion {
 		width: 7rem;
 	}
 	.murid-col-date {
 		width: 9rem;
+	}
+	.murid-col-caregiver {
+		width: 12rem;
 	}
 	.murid-col-action {
 		width: 6.5rem;

@@ -106,23 +106,6 @@ export async function getKelasContextForUser(
 			)
 		});
 		if (directAccess) return { hasAccess: true };
-
-		// Cross-semester fallback: match by class name
-		const assigned = await db.query.tableAuthUserKelas.findMany({
-			columns: {},
-			where: eq(tableAuthUserKelas.authUserId, user.id),
-			with: { kelas: { columns: { nama: true } } }
-		});
-		const assignedNames = new Set(assigned.map((a) => a.kelas?.nama).filter(Boolean));
-		if (assignedNames.size > 0) {
-			const studentKelas = await db.query.tableKelas.findFirst({
-				columns: { nama: true },
-				where: eq(tableKelas.id, kelasId)
-			});
-			if (studentKelas?.nama && assignedNames.has(studentKelas.nama)) {
-				return { hasAccess: true };
-			}
-		}
 	}
 	return { hasAccess: false };
 }

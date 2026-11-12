@@ -60,6 +60,13 @@ export const attendanceGuard: Handle = async ({ event, resolve }) => {
 	if (!user || !sekolah) throw error(401, 'Sesi sekolah tidak valid.');
 	if (user.type !== 'admin' && user.sekolahId !== sekolah.id)
 		throw error(403, 'Sekolah di luar penugasan akun.');
+	// Registry and detail routes enforce their own read/edit and assignment policies.
+	if (
+		isStudent &&
+		(/^\/murid(?:\/(?:semua|pasif|asrama|\d+))?\/?$/.test(path) ||
+			/^\/api\/murid-photo\/\d+$/.test(path))
+	)
+		return resolve(event);
 	const mutating = !['GET', 'HEAD'].includes(event.request.method);
 	const schoolSummaryRead =
 		!mutating &&

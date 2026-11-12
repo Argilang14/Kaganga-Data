@@ -10,7 +10,6 @@
 	import { toast } from '$lib/components/toast.svelte';
 	import MuridPhotoUploadModal from '$lib/components/murid-photo-upload-modal.svelte';
 	import { page } from '$app/state';
-	import { canEditMurid } from '$lib/murid-permissions';
 	import StudentProfile from '$lib/components/murid/student-profile.svelte';
 	import { canUseStudentProfile } from '$lib/murid-profile';
 
@@ -22,11 +21,10 @@
 	);
 
 	const canEditData = $derived.by(() => {
-		return canEditMurid(page.data.user);
+		return data.canEditStudent === true;
 	});
 	const canManagePhoto = $derived.by(() => {
-		const u = page.data.user as { type?: string } | null | undefined;
-		return u?.type !== 'wali_asuh' && u?.type !== 'wali_asrama';
+		return canEditData;
 	});
 
 	let kelas = $derived(`${data.murid.kelas?.nama || '-'} Fase ${data.murid.kelas?.fase || '-'}`);
@@ -444,6 +442,7 @@
 				<div class="tab-content bg-base-100 p-3 sm:p-4">
 					{#if profileActive}{#key data.murid.id}<StudentProfile
 								muridId={data.murid.id}
+								readOnly={!canEditData}
 								ondirty={(dirty) => (profileDirty = dirty)}
 							/>{/key}{/if}
 				</div>

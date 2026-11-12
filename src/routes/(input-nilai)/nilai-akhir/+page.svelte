@@ -209,6 +209,7 @@
 					<th style="width: 50px; min-width: 40px;">Peringkat</th>
 					<th class="w-full" style="min-width: 140px;">Nama</th>
 					<th style="min-width: 140px;">Rata-rata Intrakurikuler</th>
+					<th style="min-width: 140px;">Level Martikulasi</th>
 					<th style="width: 120px;">Rata-rata Kokurikuler</th>
 					<th style="width: 120px;">Rata-rata Ekstrakurikuler</th>
 				</tr>
@@ -237,6 +238,7 @@
 									</div>
 								</a>
 							</td>
+							<td class="whitespace-nowrap">{murid.levelMartikulasi ?? '—'}</td>
 							<td>
 								<a
 									class="btn btn-sm btn-soft items-center gap-3 shadow-none"
@@ -256,6 +258,7 @@
 									</div>
 								</a>
 							</td>
+
 							<td>
 								<a
 									class="btn btn-sm btn-soft items-center gap-3 shadow-none"
@@ -278,7 +281,7 @@
 					{/each}
 				{:else}
 					<tr>
-						<td class="p-8 text-center" colspan="5">
+						<td class="p-8 text-center" colspan="6">
 							<em class="opacity-60">Belum ada data nilai akhir untuk ditampilkan.</em>
 						</td>
 					</tr>

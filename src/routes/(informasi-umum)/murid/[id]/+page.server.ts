@@ -4,6 +4,7 @@ import { tableKesehatanMurid, tableMurid } from '$lib/server/db/schema';
 import { fail } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import type { Actions } from './$types';
+import { canEditStudentRecord } from '$lib/server/student-access';
 
 function textValue(form: FormData, key: string) {
 	const value = form.get(key)?.toString().trim() ?? '';
@@ -46,9 +47,11 @@ export const actions: Actions = {
 
 		const murid = await db.query.tableMurid.findFirst({
 			where: and(eq(tableMurid.id, muridId), eq(tableMurid.sekolahId, sekolahId)),
-			columns: { id: true, sekolahId: true, semesterId: true }
+			columns: { id: true, sekolahId: true, semesterId: true, kelasId: true }
 		});
 		if (!murid) return fail(404, { fail: 'Data murid tidak ditemukan.' });
+		if (!(await canEditStudentRecord(locals, murid)))
+			return fail(403, { fail: 'Tidak memiliki izin mengubah data murid ini.' });
 
 		const form = await request.formData();
 		const tanggalPengukuran = textValue(form, 'tanggalPengukuran');
@@ -101,6 +104,13 @@ export const actions: Actions = {
 		if (!Number.isInteger(muridId) || muridId <= 0) {
 			return fail(400, { fail: 'Data murid tidak valid.' });
 		}
+		const murid = await db.query.tableMurid.findFirst({
+			where: and(eq(tableMurid.id, muridId), eq(tableMurid.sekolahId, sekolahId)),
+			columns: { id: true, sekolahId: true, kelasId: true }
+		});
+		if (!murid) return fail(404, { fail: 'Data murid tidak ditemukan.' });
+		if (!(await canEditStudentRecord(locals, murid)))
+			return fail(403, { fail: 'Tidak memiliki izin mengubah data murid ini.' });
 
 		const form = await request.formData();
 		const id = Number(form.get('id')?.toString() ?? '');

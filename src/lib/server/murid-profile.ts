@@ -13,7 +13,7 @@ import { ensureMuridProfileSchema } from './db/ensure-murid-profile';
 import { ensureDataGovernanceSchema } from './db/ensure-data-governance';
 import { ensureKesehatanMuridSchema } from './db/ensure-kesehatan-murid';
 import { resolveSekolahAcademicContext } from './db/academic';
-import { assertStudentAccess } from './student-access';
+import { assertStudentAccess, canEditStudentRecord } from './student-access';
 import { assertMuridIdentityConsistent } from './murid-identity-service';
 import { MuridIdentityConflictError } from './murid-identity-integrity';
 import { writeAuditLog } from './audit-log';
@@ -69,6 +69,8 @@ export async function requireStudentProfileAccess(
 		'assigned'
 	);
 	if (!student) error(404, 'Murid tidak ditemukan atau berada di luar cakupan akses.');
+	if (action === 'edit' && !(await canEditStudentRecord(locals, { ...student, sekolahId: school.id })))
+		error(403, 'Tidak memiliki izin mengubah data murid ini.');
 	if (user.type !== 'admin') {
 		const academic = await resolveSekolahAcademicContext(school.id);
 		if (!academic.activeSemesterId || student.semesterId !== academic.activeSemesterId)

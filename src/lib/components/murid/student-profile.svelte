@@ -9,8 +9,11 @@
 		studentProfileCompleteness
 	} from '$lib/student-profile-form';
 
-	let { muridId, ondirty = () => {} }: { muridId: number; ondirty?: (dirty: boolean) => void } =
-		$props();
+	let {
+		muridId,
+		readOnly = false,
+		ondirty = () => {}
+	}: { muridId: number; readOnly?: boolean; ondirty?: (dirty: boolean) => void } = $props();
 	type Photo = { id: number; jenis: string; updatedAt: string | null };
 	type ProfileData = {
 		values: StudentProfileValues;
@@ -28,6 +31,7 @@
 		} | null;
 	};
 	let loaded = $state<ProfileData | null>(null);
+	const editable = $derived(loaded?.editable === true && !readOnly);
 	let draft = $state<Record<string, string>>({});
 	let kinds = $state<string[]>([]);
 	let initial = $state('');
@@ -220,14 +224,14 @@
 			>
 		</div>
 		{#if loaded}
-			{#if !loaded.editable}<p class="border-l-2 border-info pl-3 text-base-content/70">
+			{#if !editable}<p class="border-l-2 border-info pl-3 text-base-content/70">
 					Profil ini hanya dapat dibaca. Hubungi admin untuk perubahan data.
 				</p>{/if}
 			<form onsubmit={save} class="space-y-5">
 				{#each studentProfileGroups as group (group.title)}
 					<fieldset
 						class="fieldset min-w-0 border-b border-base-300 pb-5"
-						disabled={!loaded.editable || busy}
+						disabled={!editable || busy}
 					>
 						<legend class="fieldset-legend text-sm">{group.title}</legend>
 						<div class="grid min-w-0 grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
@@ -291,7 +295,7 @@
 						{/if}
 					</fieldset>
 				{/each}
-				{#if loaded.editable}<div class="flex flex-wrap items-center justify-end gap-3">
+				{#if editable}<div class="flex flex-wrap items-center justify-end gap-3">
 						<span class="text-base-content/60 mr-auto"
 							>{dirty ? 'Ada perubahan belum disimpan' : 'Tidak ada perubahan'}</span
 						><button
@@ -332,7 +336,7 @@
 										alt={slot.label}
 									/>{:else}<span class="text-base-content/50">Belum ada foto</span>{/if}
 							</div>
-							{#if loaded.editable}<label class="block"
+							{#if editable}<label class="block"
 									><span class="sr-only">Pilih {slot.label.toLowerCase()}</span><input
 										class="file-input file-input-sm w-full"
 										type="file"

@@ -1,4 +1,5 @@
 import db from '$lib/server/db';
+import { getMartikulasiLevels } from '$lib/server/martikulasi-levels';
 import { ensureAsesmenSumatifSchema } from '$lib/server/db/ensure-asesmen-sumatif';
 import {
 	tableAsesmenSumatif,
@@ -94,6 +95,7 @@ function pickAgamaMapel(records: MapelRecord[], muridAgama: string | null | unde
 }
 
 type NilaiAkhirRow = {
+	levelMartikulasi: string | null;
 	id: number;
 	nama: string;
 	nilaiRataRata: number | null;
@@ -178,6 +180,7 @@ export const load: PageServerLoad = async ({ parent, locals, url, depends }) => 
 	});
 
 	const muridIds = muridRecords.map((murid) => murid.id);
+	const martikulasiLevels = await getMartikulasiLevels(sekolahId, kelasAktif.id, muridIds);
 
 	const rawMapelRecords = await db.query.tableMataPelajaran.findMany({
 		columns: { id: true, nama: true },
@@ -235,6 +238,7 @@ export const load: PageServerLoad = async ({ parent, locals, url, depends }) => 
 		return {
 			id: murid.id,
 			nama: murid.nama,
+			levelMartikulasi: martikulasiLevels.get(murid.id) ?? null,
 			nilaiRataRata: rataRata,
 			jumlahMapelDinilai: countDinilai,
 			totalMapelRelevan: relevantMapel.length,

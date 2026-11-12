@@ -1,6 +1,7 @@
 import { writeAuditLog } from '$lib/server/audit-log';
 import { isAuthorizedUser } from '../../routes/pengguna/permissions';
 import { hasSchoolWideOperationalAccess } from '$lib/access-position';
+import { canManageStudentArchive } from '$lib/murid-permissions';
 import db, { databaseUrl } from '$lib/server/db';
 import path from 'node:path';
 import { createConsistentDatabaseBackup } from '$lib/server/db/database-safety';
@@ -48,6 +49,7 @@ const PER_PAGE = 20;
 
 function requireAccess(locals: App.Locals) {
 	if (!locals.user) throw redirect(303, '/login');
+	if (!canManageStudentArchive(locals.user)) throw redirect(303, '/forbidden?required=murid_arsip');
 	if (!isAuthorizedUser(['murid_arsip'], locals.user)) {
 		throw redirect(303, '/forbidden?required=murid_arsip');
 	}

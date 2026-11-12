@@ -1,4 +1,6 @@
 .dashboard-shell {
+	--dashboard-gap: 12px;
+	--dashboard-panel-padding: 16px;
 	--dashboard-blue: #1e5aa8;
 	--dashboard-green: #087f5b;
 	--dashboard-rose: #be3455;
@@ -114,7 +116,7 @@
 .dashboard-shell .dashboard-statistics {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 12px;
+	gap: var(--dashboard-gap);
 }
 .dashboard-shell .dashboard-counts {
 	display: contents;
@@ -188,7 +190,7 @@
 .dashboard-shell .dashboard-bottom-grid {
 	display: grid;
 	min-width: 0;
-	gap: 12px;
+	gap: var(--dashboard-gap);
 	align-items: start;
 }
 .dashboard-shell .dashboard-side-panel {
@@ -229,7 +231,24 @@
 	order: 10;
 }
 .dashboard-shell .dashboard-panel > .p-5 {
-	padding: 16px;
+	padding: var(--dashboard-panel-padding);
+}
+
+.dashboard-shell .dashboard-progress-items {
+	display: grid;
+	gap: 16px;
+}
+
+.dashboard-shell .dashboard-progress-items .label {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+	width: 100%;
+	white-space: normal;
+}
+
+.dashboard-shell .dashboard-progress-items .label > :last-child {
+	flex-shrink: 0;
 }
 .dashboard-shell .dashboard-actions h2 {
 	margin-bottom: 12px;
@@ -583,6 +602,16 @@
 }
 
 @container dashboard (min-width: 580px) {
+	.dashboard-shell .dashboard-live-layout {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		align-items: stretch;
+	}
+	.dashboard-shell .dashboard-trend,
+	.dashboard-shell .dashboard-attendance,
+	.dashboard-shell .dashboard-class-summary,
+	.dashboard-shell .dashboard-missing {
+		grid-column: 1 / -1;
+	}
 	.dashboard-shell .dashboard-statistics {
 		grid-template-columns: repeat(4, minmax(0, 1fr));
 	}
@@ -595,6 +624,10 @@
 	}
 	.dashboard-shell .dashboard-bottom-grid--paired {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
+		align-items: stretch;
+	}
+	.dashboard-shell .dashboard-actions-grid {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}
 }
 
@@ -609,6 +642,7 @@
 	}
 	.dashboard-shell .dashboard-live-layout {
 		grid-template-columns: minmax(0, 1.8fr) minmax(280px, 1fr);
+		align-items: start;
 	}
 	.dashboard-shell .dashboard-main-stack,
 	.dashboard-shell .dashboard-side-panel {
@@ -618,8 +652,8 @@
 	.dashboard-shell .dashboard-detail-grid--paired {
 		grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
 	}
-	.dashboard-shell .dashboard-actions-grid {
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+	.dashboard-shell .dashboard-progress-items {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 }
 

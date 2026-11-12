@@ -7,7 +7,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { validNisn } from '$lib/server/murid-identity';
 import { activeMuridFilter } from '$lib/server/murid-query';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
-import { getKelasContextForUser } from '$lib/server/route-utils';
+import { canEditStudentRecord } from '$lib/server/student-access';
 import { canEditMurid } from '$lib/murid-permissions';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let unzipper: any;
@@ -198,6 +198,7 @@ export async function POST({
 				nisn: true,
 				nama: true,
 				foto: true,
+				kelasId: true,
 				sekolahId: true
 			}
 		});
@@ -227,7 +228,7 @@ export async function POST({
 		for (const murid of allowedMurids) {
 			if (
 				allowedMurids.filter((other) => other.nisn === murid.nisn).length !== 1 ||
-				!(await getKelasContextForUser(locals, new URL(request.url), String(murid.id))).hasAccess
+				!(await canEditStudentRecord(locals, murid))
 			) {
 				failedCount++;
 				continue;

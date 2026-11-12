@@ -1,4 +1,18 @@
 import { getUserRoles, type RoleUser, type UserRole } from './user-role.ts';
+import { canInputMartikulasi } from './martikulasi-access.ts';
+
+export const curriculumPermissions = [
+	'menu_kurikulum',
+	'kurikulum_rpm',
+	'administrasi_jadwal',
+	'ujian_manage',
+	'menu_jurnal'
+];
+export function canManageCurriculum(user: RoleUser) {
+	return getUserRoles(user).some((role) =>
+		['admin', 'kepala_sekolah', 'waka_kurikulum'].includes(role)
+	);
+}
 const shared = ['menu_murid', 'cetak_dokumen', 'surat_sppd', 'surat_dinas_luar'];
 const basicAttendance = [
 	'absensi_lihat',
@@ -121,7 +135,12 @@ const roleRules: Partial<Record<UserRole, readonly string[]>> = {
 		'cetak_dokumen'
 	]
 };
-export function roleGrants(user: RoleUser, permission: string) {
+export function roleGrants(
+	user: (NonNullable<RoleUser> & { waliKelasIds?: readonly number[] }) | null | undefined,
+	permission: string
+) {
+	if (curriculumPermissions.includes(permission)) return canManageCurriculum(user);
+	if (permission === 'menu_martikulasi') return canInputMartikulasi(user);
 	return getUserRoles(user).some((role) => {
 		if (role === 'admin' || role === 'kepala_sekolah') return true;
 		if (systemPermissions.includes(permission)) return false;

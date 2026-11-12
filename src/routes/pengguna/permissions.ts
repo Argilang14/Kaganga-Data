@@ -1,5 +1,10 @@
 import { getUserRoles, hasRole, isFullAccess, type RoleUser } from '../../lib/user-role.ts';
-import { roleGrants, rolePermissionList } from '../../lib/role-policy.ts';
+import {
+	curriculumPermissions,
+	canManageCurriculum,
+	roleGrants,
+	rolePermissionList
+} from '../../lib/role-policy.ts';
 import { isHomeroomTeacher } from '../../lib/homeroom-access.ts';
 import { parseAccessPosition, type AccessPosition } from '../../lib/access-position.ts';
 import { studentProfilePermissions } from '../../lib/murid-profile.ts';
@@ -278,6 +283,8 @@ export function permissionAppliesToUser(
 	permission: string
 ) {
 	if (isFullAccess(user)) return true;
+	if (curriculumPermissions.includes(permission)) return canManageCurriculum(user);
+	if (permission === 'menu_martikulasi') return roleGrants(user, permission);
 	if (systemOnlyPermissions.has(permission as UserPermission)) return false;
 	if (roleGrants(user, permission)) return true;
 	if (isHomeroomTeacher(user) && ['rapor_manage', 'cetak_akademik'].includes(permission))
@@ -341,7 +348,11 @@ export function effectivePermissions(
 			...automatic,
 			...stored,
 			...(isHomeroomTeacher(user)
-				? ['rapor_manage' as UserPermission, 'cetak_akademik' as UserPermission]
+				? [
+						'rapor_manage' as UserPermission,
+						'cetak_akademik' as UserPermission,
+						'menu_martikulasi' as UserPermission
+					]
 				: [])
 		])
 	];

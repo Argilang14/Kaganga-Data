@@ -4,6 +4,7 @@ import { error } from '@sveltejs/kit';
 import db from '$lib/server/db/index.js';
 import { tableMurid } from '$lib/server/db/schema.js';
 import { eq } from 'drizzle-orm';
+import { canEditStudentRecord } from '$lib/server/student-access';
 import {
 	isSupportedPhoto,
 	photoDirectory,
@@ -55,15 +56,16 @@ async function generateUniqueFilename(
 	return filename;
 }
 
-export async function GET({ params, url }: { params: Record<string, string>; url: URL }) {
+export async function GET({ params, url, locals }: { params: Record<string, string>; url: URL; locals: App.Locals }) {
 	const id = +params.id;
 	if (!id) throw error(400, 'Invalid id');
 
 	const murid = await db.query.tableMurid.findFirst({
 		where: eq(tableMurid.id, id),
-		columns: { foto: true }
+		columns: { foto: true, sekolahId: true }
 	});
 	if (!murid || !murid.foto) throw error(404, 'Not found');
+	if (!locals.user || murid.sekolahId !== locals.sekolah?.id || (locals.user.type !== 'admin' && locals.user.sekolahId !== murid.sekolahId)) throw error(403, 'Sekolah berada di luar penugasan Anda.');
 
 	const filename = safePhotoFilename(murid.foto);
 	if (!filename) throw error(404, 'Not found');
@@ -106,9 +108,10 @@ export async function DELETE({
 
 	const murid = await db.query.tableMurid.findFirst({
 		where: eq(tableMurid.id, id),
-		columns: { foto: true, sekolahId: true }
+		columns: { id: true, kelasId: true, foto: true, sekolahId: true }
 	});
 	if (!murid) return new Response(JSON.stringify({ message: 'Not found' }), { status: 404 });
+	if (!(await canEditStudentRecord(locals, murid))) throw error(403, 'Tidak memiliki izin mengubah foto murid ini.');
 
 	// ensure sekolah ownership
 	const sekolahId = locals.sekolah?.id;
@@ -138,9 +141,10 @@ export async function POST({
 
 	const murid = await db.query.tableMurid.findFirst({
 		where: eq(tableMurid.id, id),
-		columns: { id: true, nama: true, foto: true, sekolahId: true }
+		columns: { id: true, kelasId: true, nama: true, foto: true, sekolahId: true }
 	});
 	if (!murid) return new Response(JSON.stringify({ message: 'Murid not found' }), { status: 404 });
+	if (!(await canEditStudentRecord(locals, murid))) throw error(403, 'Tidak memiliki izin mengubah foto murid ini.');
 
 	// ensure sekolah ownership
 	const sekolahId = locals.sekolah?.id;

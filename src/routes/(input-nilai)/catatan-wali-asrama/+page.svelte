@@ -2,7 +2,6 @@
 	/* eslint-disable svelte/no-navigation-without-resolve -- search param helpers and goto usage */
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
-	import DormEvaluationScope from '$lib/components/keasramaan/DormEvaluationScope.svelte';
 	import BulkFillModal from '$lib/components/catatan-wali/bulk-fill-modal.svelte';
 	import FormEnhance from '$lib/components/form-enhance.svelte';
 	import Icon from '$lib/components/icon.svelte';
@@ -216,13 +215,6 @@
 	}
 </script>
 
-<DormEvaluationScope
-	rooms={data.rooms}
-	room={data.room}
-	periods={data.periods}
-	period={data.period}
-	history={data.history}
-/>
 
 <div class="card bg-base-100 rounded-lg border border-none p-4 shadow-md">
 	<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

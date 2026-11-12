@@ -2,7 +2,6 @@
 	/* eslint-disable svelte/no-navigation-without-resolve -- URLSearchParams helpers and page navigation */
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import DormEvaluationScope from '$lib/components/keasramaan/DormEvaluationScope.svelte';
 	import AsramaLegerDownload from '$lib/components/AsramaLegerDownload.svelte';
 	import Icon from '$lib/components/icon.svelte';
 	import SvelteURLSearchParams from '$lib/svelte-helpers/url-search-params';
@@ -99,13 +98,6 @@
 	});
 </script>
 
-<DormEvaluationScope
-	rooms={data.rooms}
-	room={data.room}
-	periods={data.periods}
-	period={data.period}
-	history={data.history}
-/>
 
 {#if !data.room}
 	<div class="alert alert-warning alert-soft mb-6 flex items-center gap-3">

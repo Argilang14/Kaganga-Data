@@ -306,6 +306,7 @@ declare module 'exceljs' {
 	// Minimal typing surface used in the project. Keep conservative types to
 	// avoid pulling a heavy dependency for full typings.
 	export class Workbook {
+		calcProperties: { fullCalcOnLoad: boolean };
 		addWorksheet(name: string): Worksheet;
 		getWorksheet(name: string): Worksheet | undefined;
 		worksheets: Worksheet[];

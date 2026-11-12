@@ -3,7 +3,8 @@ import { and, asc, eq } from 'drizzle-orm';
 import db from './db';
 import { tableKelas, tableMurid, tableMuridLifecycle } from './db/schema';
 import { resolveSekolahAcademicContext } from './db/academic';
-import { canAccessStudentList, canManageMurid } from '$lib/murid-permissions';
+import { canAccessStudentList, canManageMurid, canManageStudentList } from '$lib/murid-permissions';
+import { hasRole, schoolWideAcademic, isFullAccess } from '$lib/user-role';
 import { canManageKelas } from './kelas-manage';
 import { isHomeroomTeacher } from '$lib/homeroom-access';
 import { getLegacyWaliKelasIds } from './legacy-wali-kelas';
@@ -65,9 +66,10 @@ export async function loadStudentRegistry(event: ServerLoadEvent, requestedView?
 	const academic = await resolveSekolahAcademicContext(school);
 	const semester = academic.activeSemesterId ?? 0;
 	const periodIndependent = view === 'semua' || view === 'pasif';
-	const assignedClasses = isHomeroomTeacher(event.locals.user)
-		? await getLegacyWaliKelasIds(event.locals.user, school, semester)
-		: null;
+	const assignedClasses =
+		!schoolWideAcademic(event.locals.user) && isHomeroomTeacher(event.locals.user)
+			? await getLegacyWaliKelasIds(event.locals.user, school, semester)
+			: null;
 	const classes = (
 		await db.query.tableKelas.findMany({
 			columns: { id: true, nama: true },
@@ -75,7 +77,15 @@ export async function loadStudentRegistry(event: ServerLoadEvent, requestedView?
 			orderBy: asc(tableKelas.nama)
 		})
 	).filter((item) => !assignedClasses || assignedClasses.includes(item.id));
-	const { rooms, room } = await dormView(event.locals, event.url.searchParams, event.cookies);
+	const { rooms, room } =
+		view === 'asrama'
+			? await dormView(event.locals, event.url.searchParams, event.cookies)
+			: { rooms: [], room: null };
+	const ownWards =
+		view === 'asrama' &&
+		hasRole(event.locals.user, 'wali_asuh') &&
+		!isFullAccess(event.locals.user) &&
+		!hasRole(event.locals.user, 'operator', 'wali_asrama');
 	const source = `WITH ranked AS (
 	 SELECT m.*,mi.identity_uid AS uid,COALESCE(l.status,'aktif') AS status,COALESCE(l.needs_identity_review,0) AS review,l.placement_status,l.tanggal_status,l.alasan,
 	 ${periodIndependent ? 'c.nama' : `CASE WHEN m.semester_id=${semester} THEN c.nama ELSE NULL END`} AS kelas,p.kamar_id,g.semester_id AS kamar_semester_id,g.nama || ' / ' || k.nama AS asrama,
@@ -98,7 +108,7 @@ export async function loadStudentRegistry(event: ServerLoadEvent, requestedView?
 		view === 'pasif'
 			? passive
 			: view === 'asrama'
-				? `status='aktif' AND review=0 AND kamar_id=${room?.id ?? -1}`
+				? `status='aktif' AND review=0 AND kamar_id=${room?.id ?? -1}${ownWards ? ` AND wali_asuh_pegawai_id=${event.locals.user?.pegawaiId ?? -1}` : ''}`
 				: view === 'kelas'
 					? `status='aktif' AND review=0 AND kelas_id=${selectedClass?.id ?? -1} AND semester_id=${semester}`
 					: '1=1';
@@ -133,6 +143,7 @@ export async function loadStudentRegistry(event: ServerLoadEvent, requestedView?
 	const students = result.rows as unknown as RegistryStudent[];
 	for (const student of students) {
 		student.canPassivate =
+			canManageStudentList(event.locals.user, view) &&
 			canManageMurid(event.locals.user) &&
 			(!assignedClasses ||
 				(student.kelas_id !== null && assignedClasses.includes(student.kelas_id)));
@@ -171,14 +182,15 @@ export async function loadStudentRegistry(event: ServerLoadEvent, requestedView?
 			? `${missingClass} AND (placement_status IS NULL OR (placement_status='pindah_kelas' AND semester_id=${semester}) OR (placement_status='naik_kelas' AND semester_id<>${semester}))`
 			: `(kamar_id IS NULL OR kamar_semester_id<>${semester})`;
 	const poolQuery = (event.url.searchParams.get('pool_q') ?? '').trim().slice(0, 100);
-	const candidates = ['kelas', 'asrama'].includes(view)
-		? ((
-				await db.$client.execute({
-					sql: `${source} SELECT id,nama,nis FROM students WHERE status='aktif' AND review=0 AND ${candidateCondition} AND (nama LIKE ? OR nis LIKE ?) ORDER BY nama LIMIT 200`,
-					args: [dormToday(), school, `%${poolQuery}%`, `%${poolQuery}%`]
-				})
-			).rows as unknown as { id: number; nama: string; nis: string }[])
-		: [];
+	const candidates =
+		canManageStudentList(event.locals.user, view) && ['kelas', 'asrama'].includes(view)
+			? ((
+					await db.$client.execute({
+						sql: `${source} SELECT id,nama,nis FROM students WHERE status='aktif' AND review=0 AND ${candidateCondition} AND (nama LIKE ? OR nis LIKE ?) ORDER BY nama LIMIT 200`,
+						args: [dormToday(), school, `%${poolQuery}%`, `%${poolQuery}%`]
+					})
+				).rows as unknown as { id: number; nama: string; nis: string }[])
+			: [];
 	event.depends('app:murid');
 	return {
 		meta: {
@@ -191,6 +203,7 @@ export async function loadStudentRegistry(event: ServerLoadEvent, requestedView?
 		},
 		registry: {
 			view,
+			canManage: canManageStudentList(event.locals.user, view),
 			students,
 			candidates,
 			classes,
@@ -213,7 +226,7 @@ export const studentRegistryActions: Actions = {
 	assign: async (event) => {
 		try {
 			const view = event.url.pathname.endsWith('/asrama') ? 'asrama' : 'kelas';
-			if (!canAccessStudentList(event.locals.user, view))
+			if (!canManageStudentList(event.locals.user, view))
 				error(403, 'Penempatan tidak diizinkan untuk peran akun Anda.');
 			const school = event.locals.sekolah?.id;
 			if (
@@ -247,7 +260,7 @@ export const studentRegistryActions: Actions = {
 			if (!(await canManageKelas(event.locals.user, school, classId)))
 				error(403, 'Kelas berada di luar penugasan Anda.');
 			if (
-				event.locals.user?.type !== 'admin' &&
+				!schoolWideAcademic(event.locals.user) &&
 				!(await getLegacyWaliKelasIds(event.locals.user!, school)).includes(classId)
 			)
 				error(403, 'Kelas berada di luar penugasan Anda.');

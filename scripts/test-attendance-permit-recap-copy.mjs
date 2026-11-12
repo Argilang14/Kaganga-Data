@@ -840,6 +840,65 @@ try {
 	pass(
 		'Actual monthly PDF omits daily section and inactive students; below-threshold rows hidden, saved follow-up preserved, copy database unchanged by printing.'
 	);
+	// Imported pupils may have an October enrollment date but valid older attendance.
+	await client.execute({ sql: 'UPDATE semester SET tanggal_mulai=? WHERE id=?', args: ['2026-07-20', semesterId] });
+	await client.execute({
+		sql: 'UPDATE murid SET tanggal_masuk=? WHERE id=?',
+		args: ['2026-10-01', monthStudents[0].id]
+	});
+	for (const [date, status] of [
+		['2026-08-03', 'izin'],
+		['2026-08-04', 'izin'],
+		['2026-08-05', 'izin'],
+		['2026-08-06', 'izin'],
+		['2026-09-01', 'sakit'],
+		['2026-09-02', 'sakit'],
+		['2026-09-03', 'sakit'],
+		['2026-09-04', 'sakit']
+	])
+		await insert('absensi_kegiatan', {
+			sekolah_id: schoolId,
+			semester_id: semesterId,
+			kelas_id: monthlyClass,
+			murid_id: monthStudents[0].id,
+			kegiatan_id: Number(entry.id),
+			tanggal: date,
+			status,
+			metode: 'manual',
+			auto_alfa: 0
+		});
+	for (const [start, end, status] of [
+		['2026-08-01', '2026-08-31', 'izin'],
+		['2026-09-01', '2026-09-30', 'sakit']
+	]) {
+		const totals = await helper.loadSchoolPermitRecap({
+			...monthlyOptions,
+			start,
+			end,
+			studentIds: [monthStudents[0].id]
+		});
+		assert.equal(totals.get(monthStudents[0].id).counts[status], 4);
+		assert.equal(totals.get(monthStudents[0].id).belumTercatat, 0);
+	}
+	const monthRangeUrl = new URL(
+		`http://localhost/api/pdf/absensi-kegiatan?kelas_id=${monthlyClass}&bulan_awal=2026-08&bulan_akhir=2026-11`
+	);
+	const rangeResponse = await pdfRoute.GET({ locals: monthlyLocals, url: monthRangeUrl });
+	assert.equal(rangeResponse.status, 200);
+	await writeFile(
+		path.join(folder, 'rekap-agustus-november.pdf'),
+		Buffer.from(await rangeResponse.arrayBuffer())
+	);
+	const rangeHtml = globalThis.__permitQaPdfHtml;
+	await writeFile(path.join(folder, 'rekap-agustus-november.html'), rangeHtml);
+	const rangeIndicators = rangeHtml
+		.split('INDIKATOR YANG MEMERLUKAN TINDAK LANJUT')[1]
+		.split('CATATAN IZIN PULANG')[0];
+	for (const month of ['Agustus', 'September', 'Oktober']) assert(rangeIndicators.includes(month));
+	assert(rangeHtml.includes('Data sampai'));
+	pass(
+		'Multi-month PDF retains August/September attendance before imported enrollment; no missing-day warning before enrollment.'
+	);
 	const { todayLocalDate } = await vite.ssrLoadModule('/src/lib/server/absensi-digital.ts');
 	const today = todayLocalDate();
 	const teacherId = await insert(

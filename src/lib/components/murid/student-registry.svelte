@@ -89,11 +89,11 @@
 				{:else}Daftar penghuni sesuai asrama yang dipilih.{/if}
 			</p>
 		</div>
-		{#if registry.view === 'pasif'}
+		{#if registry.view === 'pasif' && registry.canManage}
 			<a class="btn btn-primary gap-2" href={resolve('/murid/form')}
 				><Icon name="plus" />Tambah murid</a
 			>
-		{:else if registry.view === 'asrama'}<StudentPlacement {registry} />{/if}
+		{:else if registry.view === 'asrama' && registry.canManage}<StudentPlacement {registry} />{/if}
 	</header>
 
 	<form method="GET" class="student-toolbar mb-5">
@@ -229,7 +229,7 @@
 									<a
 										class="btn btn-sm btn-soft pointer-events-auto shadow-none"
 										class:rounded-r-none={registry.view === 'asrama'}
-										href={resolve(`/murid/${student.id}`)}
+										href={resolve(`/murid/${student.id}?student_view=${registry.view}`)}
 										use:modalRoute={'detail-murid'}
 										title="Lihat detail murid"
 										aria-label={'Lihat detail ' + student.nama}><Icon name="eye" /></a

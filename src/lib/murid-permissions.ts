@@ -1,6 +1,4 @@
-import { roleGrants } from './role-policy.ts';
 import { hasRole, isFullAccess } from './user-role.ts';
-import { hasSchoolWideOperationalAccess } from './access-position.ts';
 import { isHomeroomTeacher } from './homeroom-access.ts';
 
 type MuridPermissionUser =
@@ -15,10 +13,7 @@ type MuridPermissionUser =
 	| undefined;
 
 export function canManageStudentArchive(user: MuridPermissionUser) {
-	return (
-		hasSchoolWideOperationalAccess(user) &&
-		(roleGrants(user, 'murid_arsip') || Boolean(user?.permissions?.includes('murid_arsip')))
-	);
+	return isFullAccess(user) || hasRole(user, 'operator', 'waka_kurikulum');
 }
 
 export function canAccessStudentList(
@@ -26,31 +21,32 @@ export function canAccessStudentList(
 	view: 'semua' | 'kelas' | 'asrama' | 'pasif'
 ) {
 	if (!user) return false;
-	if (
-		isFullAccess(user) ||
-		hasRole(user, 'operator', 'waka_kurikulum', 'waka_kesiswaan', 'waka_keasramaan')
-	)
-		return true;
-	if (view === 'kelas') return isHomeroomTeacher(user);
-	if (view === 'asrama') return hasRole(user, 'wali_asrama');
-	if (view === 'semua' && canManageStudentArchive(user)) return true;
+	if (view === 'semua' || view === 'pasif') return true;
+	if (view === 'kelas') return canManageStudentArchive(user) || isHomeroomTeacher(user);
+	return isFullAccess(user) || hasRole(user, 'operator', 'wali_asrama', 'wali_asuh');
+}
+
+export function canManageStudentList(
+	user: MuridPermissionUser,
+	view: 'semua' | 'kelas' | 'asrama' | 'pasif'
+) {
+	if (!canAccessStudentList(user, view)) return false;
+	if (view === 'semua') return canManageStudentArchive(user);
+	if (view === 'asrama') return isFullAccess(user) || hasRole(user, 'operator', 'wali_asrama');
 	return (
+		canManageStudentArchive(user) ||
 		isHomeroomTeacher(user) ||
-		hasRole(user, 'wali_asrama') ||
-		Boolean(user.permissions?.includes('kelas_manage'))
+		(view === 'pasif' && hasRole(user, 'wali_asrama'))
 	);
 }
 
 export function canRegisterMurid(user: MuridPermissionUser) {
-	return canAccessStudentList(user, 'pasif');
+	return canManageStudentList(user, 'pasif');
 }
 
 export function canManageMurid(user: MuridPermissionUser) {
 	return (
-		isFullAccess(user) ||
-		hasRole(user, 'operator', 'waka_kurikulum', 'waka_kesiswaan') ||
-		isHomeroomTeacher(user) ||
-		Boolean(user?.permissions?.includes('kelas_manage'))
+		isFullAccess(user) || hasRole(user, 'operator', 'waka_kurikulum') || isHomeroomTeacher(user)
 	);
 }
 

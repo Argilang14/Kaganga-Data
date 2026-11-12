@@ -20,32 +20,57 @@ test('cetak informasi siswa memerlukan grant cetak pribadi, bukan izin baca atau
 	assert.ok(canPrintDocument(user('admin'), 'informasi-siswa'));
 	for (const type of ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama']) {
 		for (const permissions of [[], ['murid_profil_lihat'], ['murid_profil_manage']])
-			assert.equal(canPrintDocument(user(type, { sekolahId: 1, permissions }), 'informasi-siswa'), false);
-		assert.ok(canPrintDocument(user(type, { sekolahId: 1, permissions: ['cetak_dokumen', 'murid_profil_cetak'] }), 'informasi-siswa'));
-		assert.ok(canAccessMenu(user(type, { permissions: ['murid_profil_cetak'] }), '/api/pdf/informasi-siswa'));
+			assert.equal(
+				canPrintDocument(user(type, { sekolahId: 1, permissions }), 'informasi-siswa'),
+				false
+			);
+		assert.ok(
+			canPrintDocument(
+				user(type, { sekolahId: 1, permissions: ['cetak_dokumen', 'murid_profil_cetak'] }),
+				'informasi-siswa'
+			)
+		);
+		assert.ok(
+			canAccessMenu(user(type, { permissions: ['murid_profil_cetak'] }), '/api/pdf/informasi-siswa')
+		);
 	}
-	assert.equal(canPrintDocument(user('user', { sekolahId: 1, jabatanAkses: 'kepala_sekolah' }), 'informasi-siswa'), true);
+	assert.equal(
+		canPrintDocument(
+			user('user', { sekolahId: 1, jabatanAkses: 'kepala_sekolah' }),
+			'informasi-siswa'
+		),
+		true
+	);
 });
 test('private student profile endpoints recognize explicit read/manage grants', () => {
 	for (const type of ['user', 'wali_asuh', 'wali_asrama']) {
 		assert.equal(canAccessMenu(user(type), '/api/murid-profil/1'), false);
 		for (const permission of ['murid_profil_lihat', 'murid_profil_manage']) {
 			assert.ok(canAccessMenu(user(type, { permissions: [permission] }), '/api/murid-profil/1'));
-			assert.ok(canAccessMenu(user(type, { permissions: [permission] }), '/api/murid-profil/1/foto/rumah'));
+			assert.ok(
+				canAccessMenu(user(type, { permissions: [permission] }), '/api/murid-profil/1/foto/rumah')
+			);
 		}
 	}
 });
 test('QR kelas printing remains restricted to class monitoring managers', () => {
 	assert.ok(canPrintDocument(user('admin'), 'qr-kelas'));
 	assert.ok(canPrintDocument(user('user', { jabatanAkses: 'kepala_sekolah' }), 'qr-kelas'));
-	assert.ok(canPrintDocument(user('user', { permissions: ['class_monitoring_manage'] }), 'qr-kelas'));
-	assert.ok(canAccessMenu(user('user', { permissions: ['class_monitoring_manage'] }), '/api/pdf/qr-kelas'));
+	assert.ok(
+		canPrintDocument(user('user', { permissions: ['class_monitoring_manage'] }), 'qr-kelas')
+	);
+	assert.ok(
+		canAccessMenu(user('user', { permissions: ['class_monitoring_manage'] }), '/api/pdf/qr-kelas')
+	);
 	assert.equal(canAccessMenu(user('user'), '/api/pdf/qr-kelas'), false);
 	for (const type of ['user', 'wali_kelas', 'wali_asuh', 'wali_asrama', 'tim_dapur', 'wali_murid'])
 		assert.equal(canPrintDocument(user(type), 'qr-kelas'), false, type);
 });
 test('monitoring kelas has independent menu and API permissions', () => {
-	for (const path of ['/administrasi/absensi/monitoring-kelas', '/api/administrasi/absensi/monitoring-kelas']) {
+	for (const path of [
+		'/administrasi/absensi/monitoring-kelas',
+		'/api/administrasi/absensi/monitoring-kelas'
+	]) {
 		assert.ok(canAccessMenu(user('user'), path));
 		assert.ok(canAccessMenu(user('admin'), path));
 		for (const type of ['wali_asuh', 'wali_asrama', 'tim_dapur', 'wali_murid']) {
@@ -59,7 +84,6 @@ test('monitoring kelas has independent menu and API permissions', () => {
 });
 test('guru only requested menus, APIs and documents', () => {
 	for (const path of [
-		'/jurnal-mengajar',
 		'/intrakurikuler',
 		'/asesmen-formatif',
 		'/asesmen-sumatif',
@@ -139,7 +163,10 @@ test('existing leadership stays broad, Humas only adds attendance and letters', 
 test('manual admin exceptions open menu but keep other features closed', () => {
 	assert.ok(canAccessMenu(user('user'), '/api/murid-photo/1'));
 	assert.equal(canAccessMenu(user('user'), '/api/murid-bulk-photo'), false);
-	assert.equal(canAccessMenu(user('user', { permissions: ['keasramaan_lihat'] }), '/keasramaan'), false);
+	assert.equal(
+		canAccessMenu(user('user', { permissions: ['keasramaan_lihat'] }), '/keasramaan'),
+		false
+	);
 	assert.equal(
 		canAccessMenu(user('user', { permissions: ['keasramaan_lihat'] }), '/asesmen-keasramaan'),
 		false
@@ -149,4 +176,66 @@ test('manual admin exceptions open menu but keep other features closed', () => {
 	assert.equal(canAccessMenu(null, '/murid'), false);
 	assert.equal(canAccessMenu(user('tidak_valid'), '/murid'), false);
 	assert.equal(canPrintDocument(user('tidak_valid'), 'rapor'), false);
+});
+
+test('curriculum is exclusive to Waka Kurikulum, Admin and Kepala Sekolah even with stored grants', () => {
+	const paths = [
+		'/data-mata-pelajaran',
+		'/rpm',
+		'/rapor/jadwal-pelajaran',
+		'/jadwal/pengaturan',
+		'/jadwal/kalender',
+		'/ujian',
+		'/jurnal-mengajar',
+		'/martikulasi/pengaturan',
+		'/api/jadwal',
+		'/api/pdf/rpm'
+	];
+	for (const role of [
+		'admin',
+		'kepala_sekolah',
+		'waka_kurikulum',
+		'operator',
+		'waka_kesiswaan',
+		'user',
+		'wali_asuh',
+		'wali_asrama'
+	]) {
+		const account = {
+			type: 'user',
+			roles: [role],
+			permissions: [
+				'menu_kurikulum',
+				'kurikulum_rpm',
+				'administrasi_jadwal',
+				'ujian_manage',
+				'menu_jurnal',
+				'menu_martikulasi'
+			]
+		};
+		for (const path of paths)
+			assert.equal(
+				canAccessMenu(account, path),
+				['admin', 'kepala_sekolah', 'waka_kurikulum'].includes(role),
+				role + ' ' + path
+			);
+	}
+});
+test('Martikulasi input grants follow roles and automatic homeroom assignment, separate from settings', () => {
+	for (const role of ['waka_kurikulum', 'waka_kesiswaan', 'wali_asuh', 'operator'])
+		assert.ok(
+			canAccessMenu({ type: 'user', roles: [role], permissions: [] }, '/asesmen-martikulasi')
+		);
+	const homeroom = { type: 'user', roles: ['user'], waliKelasIds: [9], permissions: [] };
+	assert.ok(canAccessMenu(homeroom, '/asesmen-martikulasi'));
+	assert.ok(effectivePermissions(homeroom).includes('menu_martikulasi'));
+	assert.equal(canAccessMenu(homeroom, '/martikulasi/pengaturan'), false);
+	for (const role of ['user', 'wali_asrama', 'waka_sarpras'])
+		assert.equal(
+			canAccessMenu(
+				{ type: 'user', roles: [role], permissions: ['menu_martikulasi'] },
+				'/asesmen-martikulasi'
+			),
+			false
+		);
 });

@@ -249,32 +249,6 @@
 					>{hasRecords ? 'Hadir termasuk terlambat' : 'Belum tercatat bukan alfa'}</span
 				>
 			</div>
-			<details class="mt-3 border-t border-base-200 pt-2 text-xs">
-				<summary class="cursor-pointer py-1 font-medium">Rincian 7 hari</summary>
-				<p class="py-2 text-base-content/60">
-					Belum tercatat tidak dihitung alfa. Cakupan memakai murid aktif semester berjalan.
-				</p>
-				<div class="overflow-x-auto">
-					<table class="table table-xs min-w-100">
-						<caption class="sr-only">Kehadiran murid per tanggal dan jenjang</caption><thead
-							><tr
-								><th scope="col">Tanggal</th><th scope="col">Jenjang</th><th scope="col"
-									>Hadir / murid</th
-								><th scope="col">Belum tercatat</th></tr
-							></thead
-						><tbody
-							>{#each dates as date (date)}{#each data.series as item (item.level)}{@const point =
-										item.points.find((point) => point.date === date)}{#if point}<tr
-											><td>{shortDate(date)}</td><td>{labels[item.level] ?? item.level}</td><td
-												>{point.rate === null
-													? 'Belum ada data'
-													: `${point.present} / ${point.total}`}</td
-											><td>{point.unrecorded}</td></tr
-										>{/if}{/each}{/each}</tbody
-						>
-					</table>
-				</div>
-			</details>
 		{/if}
 	</div>
 </section>

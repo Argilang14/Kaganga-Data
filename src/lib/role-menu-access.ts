@@ -5,7 +5,7 @@ import { isHomeroomTeacher } from './homeroom-access.ts';
 import { classMonitoringCapabilities } from './class-monitoring.ts';
 import { canUsePengasuhan } from './pengasuhan.ts';
 import { canUseStudentProfile } from './murid-profile.ts';
-import { canAccessStudentList } from './murid-permissions.ts';
+import { canAccessStudentList, canEditMurid, canRegisterMurid } from './murid-permissions.ts';
 
 export type MenuAccessUser =
 	| {
@@ -127,7 +127,7 @@ const rules: [string, string[]][] = [
 	['/nilai-akhir', ['rapor_manage']],
 	['/status-akhir', ['rapor_manage']],
 	['/asesmen-martikulasi', ['menu_martikulasi']],
-	['/martikulasi', ['menu_martikulasi']],
+	['/martikulasi', ['menu_kurikulum']],
 	['/data-mata-pelajaran', ['menu_kurikulum']],
 	['/rpm', ['kurikulum_rpm']],
 	['/rapor/jadwal-pelajaran', ['administrasi_jadwal']],
@@ -175,6 +175,7 @@ const rules: [string, string[]][] = [
 	['/api/asesmen-keasramaan', ['keasramaan_input']],
 	['/api/asesmen-sumatif', ['menu_nilai_intrakurikuler']],
 	['/api/assigned-mapel', ['menu_intrakurikuler']],
+	['/api/leger-metadata', ['rapor_manage']],
 	['/api/mapel', ['menu_intrakurikuler']],
 	['/api/tujuan-count', ['menu_intrakurikuler']],
 	['/api/ai', ['menu_nilai_intrakurikuler']],
@@ -224,6 +225,9 @@ export function canAccessMenu(user: MenuAccessUser, pathname: string) {
 			: /^\/murid\/(semua|asrama|pasif)(?:\/|$)/.exec(pathname)?.[1];
 	if (studentView)
 		return canAccessStudentList(user, studentView as 'semua' | 'kelas' | 'asrama' | 'pasif');
+	if (/^\/murid\/\d+\/?$/.test(pathname) || /^\/api\/murid-photo\/\d+\/?$/.test(pathname))
+		return true;
+	if (/^\/murid\/form(?:\/|$)/.test(pathname)) return canEditMurid(user) || canRegisterMurid(user);
 	if (/^\/(?:api\/)?pengasuhan(?:\/|$)/.test(pathname)) return canUsePengasuhan(user);
 	if (unrestricted(user)) return true;
 	const path = pathname.replace(/\/+$/, '') || '/';

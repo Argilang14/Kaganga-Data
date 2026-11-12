@@ -197,7 +197,7 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 			for (const route of [
 				'/',
 				'/pegawai',
-				...(['2.3.1', '2.3.2', '2.3.3', '2.3.4'].includes(version)
+				...(['2.3.1', '2.3.2', '2.3.3', '2.3.4', '2.3.5'].includes(version)
 					? [
 							'/asrama/gedung',
 							'/asrama/kamar',
@@ -209,7 +209,7 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 							'/murid/arsip/rapor?jenis=martikulasi&periode=ras'
 						]
 					: []),
-				...(['2.3.2', '2.3.3', '2.3.4'].includes(version)
+				...(['2.3.2', '2.3.3', '2.3.4', '2.3.5'].includes(version)
 					? [
 							'/murid/semua',
 							'/murid/pasif',
@@ -228,7 +228,7 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 				'/ujian',
 				'/cetak?dokumen=kartu-ujian',
 				'/cetak?dokumen=kartu-ujian-meja',
-				...(version === '2.3.4'
+				...(['2.3.4', '2.3.5'].includes(version)
 					? ['/cetak?dokumen=daftar-wali-asuh', '/api/pdf/daftar-wali-asuh']
 					: []),
 				'/asesmen-martikulasi',
@@ -247,7 +247,7 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 				const response = await fetch(base + route, { headers, redirect: 'manual' });
 				assert.equal(response.status, 200, `Paket upgrade ${route}`);
 			}
-			if (['2.3.3', '2.3.4'].includes(version)) {
+			if (['2.3.3', '2.3.4', '2.3.5'].includes(version)) {
 				for (const [table, column] of [
 					['qr_murid', 'token_value'],
 					['asrama', 'deleted_at'],
@@ -267,7 +267,7 @@ for (const [index, scenario] of ['fresh', 'upgrade'].entries()) {
 				assert.equal(header.split(';').length, 67, 'Template harus memuat 67 kolom');
 				assert.match(header, /Kode QR Murid/);
 			}
-			if (version === '2.3.4') {
+			if (['2.3.4', '2.3.5'].includes(version)) {
 				const columns = (await client.execute('PRAGMA table_info(asrama)')).rows;
 				assert.ok(
 					columns.some((column) => column.name === 'semester_id'),

@@ -1,5 +1,12 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import db from '$lib/server/db';
+import { error } from '@sveltejs/kit';
+import { canAccessExportClass } from '$lib/server/class-export-access';
+import { isHomeroomTeacher } from '$lib/homeroom-access';
+import { schoolWideAcademic } from '$lib/user-role';
+import { getLegacyWaliKelasIds } from '$lib/server/legacy-wali-kelas';
+import { getMartikulasiResults } from '$lib/server/martikulasi-levels';
+import { activeMuridFilter } from '$lib/server/murid-query';
 import {
 	tableKelas,
 	tableMataPelajaran,
@@ -10,6 +17,7 @@ import {
 	tableEkstrakurikuler,
 	tableAsesmenEkstrakurikuler
 } from '$lib/server/db/schema';
+import { martikulasiAspekAkademik, martikulasiAspekKarakter } from '$lib/martikulasi';
 import { sanitizeDimensionList } from '$lib/kokurikuler';
 
 type Person = { nama?: string; nip?: string };
@@ -28,6 +36,18 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	// event.locals.sekolah is set by hooks.server.ts
 	const sekolah = (locals as { sekolah?: unknown }).sekolah ?? null;
 	const kelasIdParam = url.searchParams.get('kelas_id');
+	const kelasId = Number(kelasIdParam);
+	const sekolahId = locals.sekolah?.id;
+	if (!sekolahId || !locals.user) error(401, 'Sesi sekolah tidak ditemukan.');
+	if (!Number.isSafeInteger(kelasId) || kelasId <= 0)
+		error(400, 'Pilih kelas untuk mengunduh leger.');
+	if (
+		!(await canAccessExportClass(locals.user, sekolahId, kelasId, { includeGuardians: false })) ||
+		(isHomeroomTeacher(locals.user) &&
+			!schoolWideAcademic(locals.user) &&
+			!(await getLegacyWaliKelasIds(locals.user, sekolahId)).includes(kelasId))
+	)
+		error(403, 'Kelas berada di luar penugasan Anda.');
 	let waliKelas = null;
 	let kelasNama: string | null = null;
 
@@ -81,7 +101,11 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			const id = Number(kelasIdParam);
 			if (Number.isInteger(id)) {
 				const mrd = await db.query.tableMurid.findMany({
-					where: eq(tableMurid.kelasId, id),
+					where: and(
+						eq(tableMurid.kelasId, id),
+						eq(tableMurid.sekolahId, sekolahId),
+						activeMuridFilter()
+					),
 					columns: { id: true, nama: true, agama: true },
 					orderBy: [asc(tableMurid.nama)]
 				});
@@ -137,6 +161,11 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	headerMap.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
 
 	// Build murid rows with nilai per header
+	const martikulasiLevels = await getMartikulasiResults(
+		sekolahId,
+		kelasId,
+		muridList.map((m) => m.id)
+	);
 	const muridRows = muridList.map((m) => {
 		const nilaiRecord: Record<string, number | null> = {};
 		for (const h of headerMap) {
@@ -156,7 +185,13 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 				nilaiRecord[String(h.id)] = v ?? null;
 			}
 		}
-		return { id: m.id, nama: m.nama, nilai: nilaiRecord };
+		return {
+			id: m.id,
+			nama: m.nama,
+			nilai: nilaiRecord,
+			levelMartikulasi: martikulasiLevels.get(m.id)?.level ?? null,
+			capaianMartikulasi: martikulasiLevels.get(m.id)?.capaian ?? {}
+		};
 	});
 
 	// fetch kokurikuler rows for kelas and compute per-murid kok values (kriteria)
@@ -365,6 +400,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			// raw mapel, and computed headers + murid rows with nilai
 			mapel,
 			headers: headerMap,
+			martikulasiAspek: { akademik: martikulasiAspekAkademik, asrama: martikulasiAspekKarakter },
 			kokRows,
 			ekstrakRows,
 			murid: muridRows

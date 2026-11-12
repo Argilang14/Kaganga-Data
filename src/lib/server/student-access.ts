@@ -1,5 +1,6 @@
 import { hasRole, schoolWideAcademic, isFullAccess } from '$lib/user-role';
-import { canRegisterMurid } from '$lib/murid-permissions';
+import { canManageStudentArchive, canRegisterMurid } from '$lib/murid-permissions';
+import { dormToday } from '$lib/dormitory';
 import { dormGuardianCondition } from './dormitory-membership';
 import { getLegacyWaliKelasIds } from './legacy-wali-kelas';
 import { isHomeroomTeacher } from '$lib/homeroom-access';
@@ -119,9 +120,18 @@ export async function canEditStudentRecord(
 		(user.type !== 'admin' && user.sekolahId !== student.sekolahId)
 	)
 		return false;
-	if (isFullAccess(user) || hasRole(user, 'operator', 'waka_kurikulum', 'waka_kesiswaan'))
-		return true;
-	if (!student.kelasId && canRegisterMurid(user)) return true;
+	if (canManageStudentArchive(user)) return true;
+	if (canRegisterMurid(user)) {
+		const passive = await db.$client.execute({
+			sql: `SELECT m.id FROM murid m
+ LEFT JOIN murid_identity_link mi ON mi.murid_id=m.id AND mi.sekolah_id=m.sekolah_id
+ LEFT JOIN murid_lifecycle l ON l.sekolah_id=m.sekolah_id AND l.identity_key='uid:'||mi.identity_uid
+ WHERE m.id=? AND m.sekolah_id=? AND (m.kelas_id IS NULL OR coalesce(l.status,'aktif')<>'aktif' OR coalesce(l.needs_identity_review,0)=1
+ OR NOT EXISTS(SELECT 1 FROM asrama_penempatan p WHERE p.sekolah_id=m.sekolah_id AND p.identity_uid=mi.identity_uid AND p.selesai IS NULL AND p.mulai<=?)) LIMIT 1`,
+			args: [student.id, student.sekolahId, dormToday()]
+		});
+		if (passive.rows.length) return true;
+	}
 	if (
 		isHomeroomTeacher(user) &&
 		student.kelasId &&

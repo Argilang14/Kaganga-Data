@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { isSummaryDate } from '$lib/attendance-summary';
+import { attendanceMonthRange } from '$lib/attendance-report-period';
 import { monthlyAttendanceIndicators, monthlyRecapPeriods } from '$lib/attendance-permit-recap';
 import { and, asc, between, eq, inArray } from 'drizzle-orm';
 import {
@@ -54,8 +55,24 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		throw error(400, 'Sekolah aktif tidak ditemukan.');
 
 	const today = todayLocalDate();
-	const tanggalAwal = normalizeDateInput(url.searchParams.get('tanggal_awal'), today);
-	const tanggalAkhir = normalizeDateInput(url.searchParams.get('tanggal_akhir'), tanggalAwal);
+	const monthMode = url.searchParams.has('bulan_awal') || url.searchParams.has('bulan_akhir');
+	let monthRange: ReturnType<typeof attendanceMonthRange> | null = null;
+	if (monthMode) {
+		try {
+			monthRange = attendanceMonthRange(
+				url.searchParams.get('bulan_awal') ?? '',
+				url.searchParams.get('bulan_akhir') ?? '',
+				today
+			);
+		} catch (cause) {
+			throw error(400, (cause as Error).message);
+		}
+	}
+	const tanggalAwal =
+		monthRange?.start ?? normalizeDateInput(url.searchParams.get('tanggal_awal'), today);
+	const requestedEnd =
+		monthRange?.end ?? normalizeDateInput(url.searchParams.get('tanggal_akhir'), tanggalAwal);
+	const tanggalAkhir = requestedEnd < today ? requestedEnd : today;
 	if (!isSummaryDate(tanggalAwal) || !isSummaryDate(tanggalAkhir) || tanggalAwal > tanggalAkhir)
 		throw error(400, 'Tanggal awal tidak boleh setelah tanggal akhir.');
 	const daySpan = Math.floor(
@@ -189,8 +206,15 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 				tanggalAkhir
 			)
 		: [];
-	const periodLabel =
-		tanggalAwal === tanggalAkhir
+	const monthLabel = (month: string) =>
+		new Date(`${month}-01T00:00:00Z`).toLocaleDateString('id-ID', {
+			month: 'long',
+			year: 'numeric',
+			timeZone: 'UTC'
+		});
+	const periodLabel = monthRange
+		? `${monthLabel(tanggalAwal.slice(0, 7))} - ${monthLabel(url.searchParams.get('bulan_akhir')!)}. Data sampai ${formatTanggal(tanggalAkhir)}`
+		: tanggalAwal === tanggalAkhir
 			? formatTanggal(tanggalAwal)
 			: `${formatTanggal(tanggalAwal)} - ${formatTanggal(tanggalAkhir)}`;
 	const html = renderAbsensiKegiatanHTML({

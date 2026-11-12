@@ -1,5 +1,4 @@
 <script lang="ts">
-	import DormEvaluationScope from '$lib/components/keasramaan/DormEvaluationScope.svelte';
 	/* eslint-disable svelte/no-navigation-without-resolve -- file-level: intentional prebuilt hrefs and small navigation helpers */
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
@@ -314,14 +313,6 @@
 			{/if}
 		</div>
 	</div>
-
-	<DormEvaluationScope
-		rooms={data.rooms}
-		room={data.room}
-		periods={data.periods}
-		period={data.period}
-		history={data.history}
-	/>
 
 	<ActionButtons
 		isDownloading={isDownloadingTemplate}

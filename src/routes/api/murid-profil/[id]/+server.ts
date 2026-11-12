@@ -10,6 +10,7 @@ import db from '$lib/server/db';
 import { tableMurid, tablePegawai } from '$lib/server/db/schema';
 import { activeMuridFilter } from '$lib/server/murid-query';
 import type { RequestHandler } from './$types';
+import { canEditStudentRecord } from '$lib/server/student-access';
 
 const headers = { 'Cache-Control': 'private, no-store' };
 export const GET: RequestHandler = async ({ locals, params }) => {
@@ -43,7 +44,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 			health: result.health,
 			staff,
 			surveyorName: result.profile?.petugasPendataanNama ?? null,
-			editable: canUseStudentProfile(locals.user, locals.sekolah!.id, 'edit') && active.length > 0
+			editable: canUseStudentProfile(locals.user, locals.sekolah!.id, 'edit') && active.length > 0 && !!result.student && await canEditStudentRecord(locals, result.student)
 		},
 		{ headers }
 	);

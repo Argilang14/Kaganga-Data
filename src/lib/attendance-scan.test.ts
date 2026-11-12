@@ -143,6 +143,9 @@ test('security permissions separate recording a journey from authorizing permits
 		'/administrasi/absensi/scan',
 		'/administrasi/absensi/konfirmasi-pulang',
 		'/api/administrasi/absensi/scan',
+		'/murid/semua',
+		'/murid/pasif',
+		'/api/murid-photo/1',
 		'/pengaturan/profil'
 	])
 		assert.equal(canAccessMenu(user, path), true, path);
@@ -153,8 +156,7 @@ test('security permissions separate recording a journey from authorizing permits
 		'/administrasi/absensi/kegiatan',
 		'/administrasi/absensi/monitoring',
 		'/administrasi/absensi/monitoring-kelas',
-		'/api/administrasi/absensi/kegiatan/rekap/export',
-		'/api/murid-photo/1'
+		'/api/administrasi/absensi/kegiatan/rekap/export'
 	])
 		assert.equal(canAccessMenu(user, path), false, path);
 	assert.equal(canPrintDocument(user, 'qr-kelas'), false);

@@ -1,6 +1,7 @@
 <script lang="ts">
 	/* eslint-disable svelte/no-navigation-without-resolve */
 	import { page } from '$app/state';
+	import { canInputMartikulasi } from '$lib/martikulasi-access';
 	import { onNavigate } from '$app/navigation';
 	import DarkMode from '$lib/components/dark-mode.svelte';
 	import Icon from '$lib/components/icon.svelte';
@@ -106,6 +107,7 @@
 	}
 
 	function hasPindahPermission() {
+		if (page.url.pathname === '/asesmen-martikulasi' && canInputMartikulasi(user)) return true;
 		if (user?.type === 'wali_asuh' || user?.type === 'wali_asrama') return true;
 		const perms = user?.permissions ?? [];
 		return perms.includes('kelas_pindah');

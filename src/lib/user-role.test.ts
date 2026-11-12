@@ -37,7 +37,7 @@ test('explicit roles override compatibility type and old position', () => {
 	assert.equal(userRoleLabel({ roles: ['user', 'waka_kurikulum'] }), 'Guru Mapel, Waka Kurikulum');
 	assert.deepEqual(getUserRoles({ type: 'wali_kelas' }), ['user']);
 });
-test('Admin and Kepala Sekolah have all permissions; Operator all operations', () => {
+test('Admin and Kepala Sekolah have all permissions; Operator operations outside Curriculum', () => {
 	for (const role of ['admin', 'kepala_sekolah']) {
 		const account = { roles: [role] };
 		assert.ok(isFullAccess(account));
@@ -48,7 +48,6 @@ test('Admin and Kepala Sekolah have all permissions; Operator all operations', (
 	for (const permission of [
 		'asrama_penempatan',
 		'keasramaan_input',
-		'menu_kurikulum',
 		'menu_nilai_intrakurikuler',
 		'persetujuan_setujui'
 	])

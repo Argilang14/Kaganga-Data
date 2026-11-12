@@ -5,13 +5,15 @@ import {
 	canManageStudentArchive,
 	canEditMurid
 } from './murid-permissions.ts';
+import { canManageStudentList, canRegisterMurid } from './murid-permissions.ts';
+import { creatableUserRoles } from './user-role.ts';
 import { canAccessMenu } from './role-menu-access.ts';
 
 test('menu kelas dan asrama mengikuti peran wali meski izin umum ditambahkan', () => {
 	for (const type of ['user', 'wali_asuh', 'wali_murid', 'tim_dapur']) {
 		const user = { type, permissions: ['menu_murid', 'kelas_manage', 'asrama_penempatan'] };
 		assert.equal(canAccessMenu(user, '/murid'), false);
-		assert.equal(canAccessMenu(user, '/murid/asrama'), false);
+		assert.equal(canAccessMenu(user, '/murid/asrama'), type === 'wali_asuh');
 	}
 	assert.equal(canAccessMenu({ type: 'wali_kelas', waliKelasIds: [123] }, '/murid'), true);
 	assert.equal(canAccessMenu({ type: 'wali_kelas' }, '/murid/asrama'), false);
@@ -45,7 +47,40 @@ test('guru wali kelas memperoleh menu kelas dan pasif selama masih ditugaskan', 
 });
 
 test('role operasional mengedit data murid tanpa penugasan guru semu', () => {
-	for (const role of ['operator', 'kepala_sekolah', 'waka_kurikulum', 'waka_kesiswaan'])
+	for (const role of ['operator', 'kepala_sekolah', 'waka_kurikulum'])
 		assert.equal(canEditMurid({ roles: [role] }), true);
 	assert.equal(canEditMurid({ roles: ['waka_sarpras'] }), false);
+});
+
+test('matriks empat daftar murid mengikuti role, bukan izin tambahan tersimpan', () => {
+	for (const role of ['admin', ...creatableUserRoles, 'wali_murid']) {
+		const user = {
+			type: role === 'admin' ? 'admin' : 'user',
+			roles: [role],
+			permissions: ['menu_murid', 'kelas_manage', 'asrama_penempatan', 'murid_arsip']
+		};
+		const wide = ['admin', 'kepala_sekolah', 'operator', 'waka_kurikulum'].includes(role);
+		for (const view of ['semua', 'pasif'] as const)
+			assert.equal(canAccessStudentList(user, view), true, role + view);
+		assert.equal(canAccessStudentList(user, 'kelas'), wide, role);
+		assert.equal(
+			canAccessStudentList(user, 'asrama'),
+			['admin', 'kepala_sekolah', 'operator', 'wali_asuh', 'wali_asrama'].includes(role),
+			role
+		);
+		assert.equal(canManageStudentList(user, 'semua'), wide, role);
+		assert.equal(canRegisterMurid(user), wide || role === 'wali_asrama', role);
+		assert.equal(
+			canManageStudentList(user, 'asrama'),
+			['admin', 'kepala_sekolah', 'operator', 'wali_asrama'].includes(role),
+			role
+		);
+	}
+	const homeroom = { type: 'user', roles: ['user'], waliKelasIds: [12] };
+	assert(canRegisterMurid(homeroom));
+	assert(canManageStudentList(homeroom, 'kelas'));
+	assert(!canManageStudentList(homeroom, 'semua'));
+	assert(!canAccessStudentList(null, 'semua'));
+	assert(!canRegisterMurid({ type: 'user', permissions: ['kelas_manage'] }));
+	assert(canAccessStudentList({ roles: ['waka_kurikulum', 'wali_asuh'] }, 'asrama'));
 });

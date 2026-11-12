@@ -14,14 +14,18 @@ import { error } from '@sveltejs/kit';
 import { and, desc, eq, isNull, lte, inArray } from 'drizzle-orm';
 import { muridIdentityIds } from '$lib/server/murid-identity-service';
 import { ensureDataGovernanceSchema } from '$lib/server/db/ensure-data-governance';
+import { canEditStudentRecord } from '$lib/server/student-access';
+import { canManageStudentList } from '$lib/murid-permissions';
 
-export const load: LayoutServerLoad = async ({ params, locals }) => {
+export const load: LayoutServerLoad = async ({ params, locals, url }) => {
 	await ensureMuridWaliAsramaSchema();
 	await ensureKesehatanMuridSchema();
 	await ensureDataGovernanceSchema();
 
 	const sekolahId = locals.sekolah?.id;
 	if (!sekolahId) error(400, 'Sekolah aktif tidak ditemukan');
+	if (!locals.user || (locals.user.type !== 'admin' && locals.user.sekolahId !== sekolahId))
+		error(403, 'Sekolah berada di luar penugasan Anda.');
 	const muridId = Number(params.id);
 	if (!Number.isInteger(muridId) || muridId <= 0) error(400, 'Data murid tidak valid');
 
@@ -64,6 +68,10 @@ export const load: LayoutServerLoad = async ({ params, locals }) => {
 
 	return {
 		murid,
+		canEditStudent:
+			(await canEditStudentRecord(locals, murid)) &&
+			(url.searchParams.get('student_view') !== 'semua' ||
+				canManageStudentList(locals.user, 'semua')),
 		asrama: placement
 			? placement.asrama === placement.kamar
 				? placement.asrama

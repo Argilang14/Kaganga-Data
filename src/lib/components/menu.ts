@@ -47,6 +47,7 @@ export const appMenuItems: MenuItem[] = [
 	},
 	{
 		title: 'Kurikulum',
+		permission: 'menu_kurikulum',
 		icon: 'calendar',
 		tags: ['jadwal', 'bell', 'akademik', 'jadwal pelajaran'],
 		subMenu: [

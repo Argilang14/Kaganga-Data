@@ -399,6 +399,124 @@ try {
 	const residents = await dormRegistry();
 	assert.equal(residents.students.find((s) => s.id === waiting).wali_asuh, 'Wali Asuh Terhubung');
 	assert.equal(residents.students.find((s) => s.id === dormOnly).wali_asuh, 'Wali Asuh Lama');
+	const { canEditStudentRecord } = await vite.ssrLoadModule('/src/lib/server/student-access.ts');
+	const photoRoute = await vite.ssrLoadModule('/src/routes/api/murid-photo/[id]/+server.ts');
+	const healthRoute = await vite.ssrLoadModule(
+		'/src/routes/(informasi-umum)/murid/[id]/+page.server.ts'
+	);
+	const detailRoute = await vite.ssrLoadModule(
+		'/src/routes/(informasi-umum)/murid/[id]/+layout.server.ts'
+	);
+	const wardUser = { ...admin, type: 'wali_asuh', roles: ['wali_asuh'], pegawaiId: caregiver };
+	const ownResidents = await dormRegistry(wardUser);
+	assert.deepEqual(
+		ownResidents.students.map((s) => s.id),
+		[waiting]
+	);
+	assert.equal(ownResidents.canManage, false);
+	assert.equal(ownResidents.candidates.length, 0);
+	assert.equal(
+		(
+			await registry.studentRegistryActions.assign(
+				event('/murid/asrama', wardUser, { muridId: waiting, kamarId: roomA })
+			)
+		).status,
+		403
+	);
+	for (const role of [
+		'user',
+		'wali_asuh',
+		'tim_dapur',
+		'tim_keamanan',
+		'waka_kesiswaan',
+		'waka_keasramaan',
+		'waka_sarpras',
+		'waka_humas',
+		'wali_murid'
+	]) {
+		const reader = {
+			...admin,
+			type: role === 'wali_murid' ? role : 'user',
+			roles: [role],
+			permissions: ['menu_murid', 'kelas_manage', 'murid_arsip']
+		};
+		for (const view of ['semua', 'pasif']) {
+			const loaded = await registry.loadStudentRegistry(event(`/murid/${view}`, reader));
+			assert.equal(loaded.registry.canManage, false, role + view);
+			assert(loaded.registry.students.length > 0);
+		}
+		assert.equal(
+			await canEditStudentRecord(locals(reader), {
+				id: waiting,
+				sekolahId: school,
+				kelasId: classA
+			}),
+			false,
+			role
+		);
+		await assert.rejects(
+			intakeRoute.load({ params: {}, locals: locals(reader) }),
+			(e) => e.status === 303
+		);
+		await assert.rejects(
+			photoRoute.DELETE({ params: { id: String(waiting) }, locals: locals(reader) }),
+			(e) => e.status === 403
+		);
+		assert.equal(
+			(
+				await healthRoute.actions['save-kesehatan']({
+					params: { id: String(waiting) },
+					locals: locals(reader),
+					request: event('/murid', reader).request
+				})
+			).status,
+			403
+		);
+		assert.equal(
+			(
+				await healthRoute.actions['delete-kesehatan']({
+					params: { id: String(waiting) },
+					locals: locals(reader),
+					request: event('/murid', reader).request
+				})
+			).status,
+			403
+		);
+	}
+	for (const role of ['operator', 'kepala_sekolah', 'waka_kurikulum']) {
+		const manager = { ...admin, type: 'user', roles: [role], permissions: [] };
+		assert((await registry.loadStudentRegistry(event('/murid/semua', manager))).registry.canManage);
+		assert((await registry.loadStudentRegistry(event('/murid/pasif', manager))).registry.canManage);
+		assert.equal(
+			(await registry.loadStudentRegistry(event(`/murid?kelas_id=${classA}`, manager), 'kelas'))
+				.registry.classes.length,
+			2
+		);
+		if (role === 'waka_kurikulum')
+			await assert.rejects(dormRegistry(manager), (e) => e.status === 403);
+		else assert((await dormRegistry(manager)).canManage);
+	}
+	assert(
+		await canEditStudentRecord(locals(homeroom), { id: dormOnly, sekolahId: school, kelasId: null })
+	);
+	assert(
+		await canEditStudentRecord(locals(guardian), { id: dormOnly, sekolahId: school, kelasId: null })
+	);
+	const allDetail = await detailRoute.load({
+		params: { id: String(waiting) },
+		locals: locals(homeroom),
+		url: new URL('http://localhost/murid/1?student_view=semua')
+	});
+	assert.equal(allDetail.canEditStudent, false);
+	await assert.rejects(
+		registry.loadStudentRegistry({
+			...event('/murid/semua', { ...admin, type: 'user', roles: ['user'], sekolahId: school + 1 })
+		}),
+		(e) => e.status === 403
+	);
+	console.log(
+		'PASS student role matrix: shared read-only lists, own wards, full managers, passive editors; direct photo/health/intake writes denied and cross-school access rejected.'
+	);
 	const classPage = await vite.ssrLoadModule('/src/routes/(informasi-umum)/murid/+page.server.ts');
 	const loadClassPage = () =>
 		classPage.load({

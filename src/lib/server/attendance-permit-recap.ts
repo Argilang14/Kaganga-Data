@@ -281,7 +281,10 @@ export async function loadSchoolPermitRecap(options: {
 			: 'unknown';
 		const studentSchoolDates = schoolDates.filter(
 			(date) =>
-				(!isSummaryDate(student.tanggalMasuk) || date >= student.tanggalMasuk) &&
+				// Imported historical records remain evidence even if the enrollment date is newer.
+				(!isSummaryDate(student.tanggalMasuk) ||
+					date >= student.tanggalMasuk ||
+					recorded.has(`${id}:${date}`)) &&
 				!calendar.some(
 					(item) =>
 						(!item.semesterId || item.semesterId === semesterId) &&

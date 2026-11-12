@@ -18,7 +18,8 @@ import {
 	martikulasiLevelOptions
 } from '$lib/martikulasi';
 import { inferKelasJadwalJenjang } from '$lib/server/jadwal';
-import { getKelasContextForUser } from '$lib/server/route-utils';
+import { canInputMartikulasi } from '$lib/martikulasi-access';
+import { martikulasiStudentCondition } from '$lib/server/martikulasi-access';
 import { fail, redirect } from '@sveltejs/kit';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 
@@ -66,7 +67,8 @@ export async function load({ locals, url, depends, parent }) {
 				where: and(
 					eq(tableMurid.sekolahId, sekolahId),
 					eq(tableMurid.kelasId, selectedKelas.id),
-					activeMuridFilter()
+					activeMuridFilter(),
+					await martikulasiStudentCondition(locals.user, sekolahId)
 				),
 				orderBy: asc(tableMurid.nama)
 			})
@@ -140,7 +142,7 @@ export async function load({ locals, url, depends, parent }) {
 		jumlahMurid: semuaMurid.length,
 		jumlahLengkap: semuaMurid.filter((murid) => murid.statusKelengkapan === 'lengkap').length,
 		page: { search, currentPage, totalPages, totalItems, perPage },
-		canEdit: locals.user?.type !== 'wali_asuh' && locals.user?.type !== 'wali_asrama',
+		canEdit: canInputMartikulasi(locals.user),
 		selectedMurid,
 		hasil: hasil
 			? {
@@ -162,7 +164,7 @@ export const actions = {
 	simpan: async ({ locals, request, cookies }) => {
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(401, { fail: 'Sesi sekolah tidak ditemukan.' });
-		if (locals.user?.type === 'wali_asuh' || locals.user?.type === 'wali_asrama') {
+		if (!canInputMartikulasi(locals.user)) {
 			return fail(403, { fail: 'Akun ini tidak memiliki izin mengubah nilai Martikulasi.' });
 		}
 
@@ -200,20 +202,14 @@ export const actions = {
 				where: and(
 					eq(tableMurid.id, muridId),
 					eq(tableMurid.sekolahId, sekolahId),
-					eq(tableMurid.kelasId, kelasId)
+					eq(tableMurid.kelasId, kelasId),
+					activeMuridFilter(),
+					await martikulasiStudentCondition(locals.user, sekolahId)
 				)
 			})
 		]);
 		if (!tahun || !kelas || !murid) {
 			return fail(400, { fail: 'Konteks Martikulasi tidak cocok dengan sekolah aktif.' });
-		}
-		const access = await getKelasContextForUser(
-			locals,
-			{ searchParams: new URLSearchParams() },
-			String(murid.id)
-		);
-		if (!access.hasAccess) {
-			return fail(403, { fail: 'Akun tidak memiliki akses ke kelas murid ini.' });
 		}
 
 		const levelRaw = cleanText(formData.get('levelPenempatan'), 50);
@@ -324,7 +320,7 @@ export const actions = {
 	isi_massal: async ({ locals, request, cookies }) => {
 		const sekolahId = locals.sekolah?.id;
 		if (!sekolahId) return fail(401, { fail: 'Sesi sekolah tidak ditemukan.' });
-		if (locals.user?.type === 'wali_asuh' || locals.user?.type === 'wali_asrama') {
+		if (!canInputMartikulasi(locals.user)) {
 			return fail(403, { fail: 'Akun ini tidak memiliki izin mengubah nilai Martikulasi.' });
 		}
 		await ensureMartikulasiSchema();
@@ -361,20 +357,17 @@ export const actions = {
 			where: and(
 				eq(tableMurid.sekolahId, sekolahId),
 				eq(tableMurid.kelasId, kelasId),
+				activeMuridFilter(),
+				await martikulasiStudentCondition(locals.user, sekolahId),
 				scope === 'terpilih'
 					? inArray(tableMurid.id, selectedIds.length ? selectedIds : [-1])
 					: undefined
 			)
 		});
+		if (scope === 'terpilih' && muridRows.length !== selectedIds.length)
+			return fail(403, { fail: 'Pilihan memuat murid di luar penugasan Anda.' });
 		if (!muridRows.length) return fail(400, { fail: 'Pilih minimal satu murid.' });
-		const access = await getKelasContextForUser(
-			locals,
-			{ searchParams: new URLSearchParams() },
-			String(muridRows[0].id)
-		);
-		if (!access.hasAccess) {
-			return fail(403, { fail: 'Akun tidak memiliki akses mengisi kelas ini.' });
-		}
+
 		const aspek = martikulasiAspek.find((item) => item.kode === aspekKode);
 		const nilaiFields = [
 			'capaianAwal',

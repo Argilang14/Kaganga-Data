@@ -1,4 +1,5 @@
 import { schoolWideAcademic, hasRole } from '$lib/user-role';
+import { martikulasiClassIds } from '$lib/server/martikulasi-access';
 import { accessibleClassIds } from '$lib/server/student-access';
 import db from '$lib/server/db';
 import { resolveSekolahAcademicContext } from '$lib/server/db/academic';
@@ -30,8 +31,9 @@ export const load: LayoutServerLoad = async ({ url, locals, cookies }) => {
 		waliKelas: { id: number; nama: string } | null;
 	}> = [];
 	if (sekolah && user) {
-		const ids =
-			isHomeroomPage(url.pathname) && isHomeroomTeacher(user) && !schoolWideAcademic(user)
+		const ids = url.pathname.startsWith('/asesmen-martikulasi')
+			? await martikulasiClassIds(user, sekolah.id, academicContext?.activeSemesterId ?? null)
+			: isHomeroomPage(url.pathname) && isHomeroomTeacher(user) && !schoolWideAcademic(user)
 				? await getLegacyWaliKelasIds(user, sekolah.id, academicContext?.activeSemesterId)
 				: await accessibleClassIds(
 						user,

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { attendanceMonthRange } from '$lib/attendance-report-period';
 	import { goto } from '$app/navigation';
 	import { canPrintDocument } from '$lib/role-menu-access';
 	/* eslint-disable @typescript-eslint/no-unused-vars */
@@ -155,7 +156,8 @@
 		const availableOptions = documentOptions.filter(
 			(option) =>
 				(option.value !== 'qr-kelas' || data.classQrPrintContext) &&
-				(!['informasi-siswa', 'daftar-wali-asuh'].includes(option.value) || canPrintDocument(page.data.user, option.value))
+				(!['informasi-siswa', 'daftar-wali-asuh'].includes(option.value) ||
+					canPrintDocument(page.data.user, option.value))
 		);
 		if (documentGroup === 'dokumen')
 			return availableOptions.filter(
@@ -224,8 +226,17 @@
 	let downloadLoading = $state(false);
 	let jurnalTanggalMulai = $state('');
 	let jurnalTanggalSelesai = $state('');
-	let absensiTanggalAwal = $state(data.absensiToday ?? '');
-	let absensiTanggalAkhir = $state(data.absensiToday ?? '');
+	let absensiBulanAwal = $state((data.absensiToday ?? '').slice(0, 7));
+	let absensiBulanAkhir = $state((data.absensiToday ?? '').slice(0, 7));
+	const absensiPeriod = $derived.by(() => {
+		try {
+			return attendanceMonthRange(absensiBulanAwal, absensiBulanAkhir, data.absensiToday ?? '');
+		} catch {
+			return null;
+		}
+	});
+	const absensiTanggalAwal = $derived(absensiPeriod?.start ?? '');
+	const absensiTanggalAkhir = $derived(absensiPeriod?.end ?? '');
 	let absensiKelasId = $state<number | null>(
 		data.absensiKelasList?.some((kelas) => kelas.id === Number(data.kelasId))
 			? Number(data.kelasId)
@@ -750,8 +761,8 @@
 			if (documentType === 'rekap-absensi-kegiatan') {
 				if (!absensiKelasId) throw new Error('Pilih kelas absensi terlebih dahulu.');
 				const params = new URLSearchParams({
-					tanggal_awal: absensiTanggalAwal,
-					tanggal_akhir: absensiTanggalAkhir,
+					bulan_awal: absensiBulanAwal,
+					bulan_akhir: absensiBulanAkhir,
 					kelas_id: String(absensiKelasId)
 				});
 				if (absensiKegiatanId) params.set('kegiatan_id', String(absensiKegiatanId));
@@ -1528,19 +1539,22 @@
 				class="border-base-300 bg-base-200/30 mt-3 grid items-end gap-3 rounded-lg border p-3 sm:grid-cols-2 xl:grid-cols-5"
 			>
 				<label class="form-control min-w-0">
-					<span class="label-text mb-1">Tanggal Awal</span>
+					<span class="label-text mb-1">Bulan Awal</span>
 					<input
 						class="input input-bordered bg-base-100 w-full"
-						type="date"
-						bind:value={absensiTanggalAwal}
+						type="month"
+						max={(data.absensiToday ?? '').slice(0, 7)}
+						bind:value={absensiBulanAwal}
 					/>
 				</label>
 				<label class="form-control min-w-0">
-					<span class="label-text mb-1">Tanggal Akhir</span>
+					<span class="label-text mb-1">Bulan Akhir</span>
 					<input
 						class="input input-bordered bg-base-100 w-full"
-						type="date"
-						bind:value={absensiTanggalAkhir}
+						type="month"
+						min={absensiBulanAwal}
+						max={(data.absensiToday ?? '').slice(0, 7)}
+						bind:value={absensiBulanAkhir}
 					/>
 				</label>
 				<label class="form-control min-w-0">
@@ -1567,6 +1581,17 @@
 				>
 					Buka Rekap Kegiatan
 				</a>
+				<p class="text-base-content/70 text-sm sm:col-span-2 xl:col-span-5" role="status">
+					{#if absensiPeriod}
+						Data sampai {new Date(`${absensiTanggalAkhir}T00:00:00`).toLocaleDateString('id-ID', {
+							day: 'numeric',
+							month: 'long',
+							year: 'numeric'
+						})}. Indikator dihitung per bulan.
+					{:else}
+						Pilih bulan yang berurutan, maksimal satu tahun dan tidak melewati bulan berjalan.
+					{/if}
+				</p>
 			</div>
 		{/if}
 

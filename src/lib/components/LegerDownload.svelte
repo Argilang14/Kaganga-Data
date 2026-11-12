@@ -2,7 +2,7 @@
 	import Icon from './icon.svelte';
 
 	/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
-	export let kelasId: number | null = null;
+	let { kelasId = null }: { kelasId?: number | null } = $props();
 
 	// Download leger as Excel (.xlsx) using ExcelJS
 	// Requires dependency: exceljs (npm i exceljs)
@@ -28,8 +28,10 @@
 			const kepala = meta.kepalaSekolah?.nama || '';
 			const wali = meta.waliKelas?.nama || '';
 
-			const { Workbook } = await import('exceljs');
+			const excel = await import('exceljs');
+			const Workbook = excel.Workbook ?? excel.default.Workbook;
 			const workbook = new Workbook();
+			workbook.calcProperties.fullCalcOnLoad = true;
 			const ws: any = workbook.addWorksheet('Leger');
 
 			// Build headers from server-provided headers (which collapse agama variants)
@@ -85,6 +87,21 @@
 			// include kokurikuler column names before the Jumlah column
 			const kokNames = kokRows.length ? kokRows.map((k) => k.nama) : [];
 			const ekstrakNames = ekstrakRows.length ? ekstrakRows.map((k) => k.nama) : [];
+			const aspekAkademik: Array<{ kode: string; label: string }> =
+				meta.martikulasiAspek?.akademik ?? [];
+			const aspekAsrama: Array<{ kode: string; label: string }> =
+				meta.martikulasiAspek?.asrama ?? [];
+			const aspekMartikulasi = [...aspekAkademik, ...aspekAsrama];
+			const labelMartikulasi: Record<string, string> = {
+				literasi: 'LIT',
+				numerasi: 'NUM',
+				sains: 'IPA',
+				bahasa_inggris: 'BING',
+				keagamaan_akhlak: 'PAPB',
+				kepemimpinan_kesamaptaan: 'KEPM',
+				sosial_kepribadian: 'KETR',
+				kemandirian_keasramaan: 'KEMN'
+			};
 			const header = [
 				'No',
 				'Nama Siswa',
@@ -92,7 +109,9 @@
 				...kokNames,
 				...ekstrakNames,
 				'Jumlah',
-				'Capaian Kelas',
+				'Rata-rata Intrakurikuler',
+				'Level Martikulasi',
+				...aspekMartikulasi.map((aspek) => labelMartikulasi[aspek.kode] ?? aspek.label),
 				'Ket'
 			];
 			// Insert a title row above subject headers for a merged "Intrakurikuler" label
@@ -143,7 +162,16 @@
 						}
 					}
 					rowValues.push(''); // Jumlah (could compute if desired)
-					rowValues.push(''); // Capaian Kelas
+					rowValues.push(''); // Rata-rata Intrakurikuler
+					rowValues.push(m.levelMartikulasi ?? '');
+					for (const [index, aspek] of aspekMartikulasi.entries()) {
+						const value = String(m.capaianMartikulasi?.[aspek.kode] ?? '').trim();
+						rowValues.push(
+							index < aspekAkademik.length && /^-?\d+(?:[.,]\d+)?$/.test(value)
+								? Number(value.replace(',', '.'))
+								: value
+						);
+					}
 					rowValues.push(''); // Ket
 					rows.push(rowValues);
 				}
@@ -169,7 +197,8 @@
 					for (let i = 0; i < subjectCols.length; i++) rataRow.push('');
 				}
 				// for kok columns, leave rata cells empty (kok are categorical)
-				for (let i = 0; i < kokRows.length; i++) rataRow.push('');
+				for (let i = 0; i < kokRows.length + ekstrakRows.length + 1 + aspekMartikulasi.length; i++)
+					rataRow.push('');
 				rataRow.push('');
 				rataRow.push('');
 				rataRow.push('');
@@ -177,10 +206,10 @@
 			} else {
 				// fallback to 30 empty student rows
 				for (let i = 1; i <= 30; i++) {
-					const r = [i, ...Array(subjectCols.length).fill(''), '', '', ''];
+					const r = [i, ...Array(header.length - 1).fill('')];
 					rows.push(r);
 				}
-				const rata = ['RATA-RATA', ...Array(subjectCols.length).fill(''), '', '', ''];
+				const rata = ['RATA-RATA', ...Array(header.length - 1).fill('')];
 				rows.push(rata);
 			}
 
@@ -313,7 +342,7 @@
 			// Additionally merge specific pairs across row 4 and 5 as requested (A4:A5, B4:B5, L4:L5, M4:M5, N4:N5)
 			try {
 				// keep existing merges and also merge O4:O5 and P4:P5 per request
-				const mergePairs = ['A4:A5', 'B4:B5', 'L4:L5', 'M4:M5', 'N4:N5', 'O4:O5', 'P4:P5'];
+				const mergePairs = ['A4:A5', 'B4:B5'];
 				for (const r of mergePairs) {
 					try {
 						const [topAddr, bottomAddr] = r.split(':');
@@ -525,7 +554,7 @@
 					const start = `${colLetter(subjectStartCol)}${rowNum}`;
 					const end = `${colLetter(subjectEndCol)}${rowNum}`;
 					const sumFormula = `SUM(${start}:${end})`;
-					const avgFormula = `ROUND(AVERAGE(${start}:${end}),2)`;
+					const avgFormula = `IF(COUNT(${start}:${end})=0,"",ROUND(AVERAGE(${start}:${end}),2))`;
 					const row = ws.getRow(rowNum);
 					// set formula cells
 					row.getCell(jumlahCol).value = { formula: sumFormula, result: null } as any;
@@ -547,7 +576,7 @@
 				const rataRowNum = studentStartRow + studentCount; // next row after students
 				const capaianStartCell = `${colLetter(capaianCol)}${studentStartRow}`;
 				const capaianEndCell = `${colLetter(capaianCol)}${studentStartRow + studentCount - 1}`;
-				const classAvgFormula = `ROUND(AVERAGE(${capaianStartCell}:${capaianEndCell}),2)`;
+				const classAvgFormula = `IF(COUNT(${capaianStartCell}:${capaianEndCell})=0,"",ROUND(AVERAGE(${capaianStartCell}:${capaianEndCell}),2))`;
 				const rataRow = ws.getRow(rataRowNum);
 				rataRow.getCell(capaianCol).value = { formula: classAvgFormula, result: null } as any;
 				rataRow.getCell(capaianCol).numFmt = '0.00';
@@ -590,8 +619,11 @@
 				// with the cell above (row 4) so headers remain visually consistent even
 				// when the number of subject/kok/ekstra columns change.
 				try {
-					const ketCol = capaianCol + 1;
-					const mergeCols = [jumlahCol, capaianCol, ketCol];
+					const levelCol = capaianCol + 1;
+					const ketCol = header.length;
+					const mergeCols = [jumlahCol, capaianCol, levelCol, ketCol];
+					ws.getColumn(capaianCol).width = 22;
+					ws.getColumn(levelCol).width = 20;
 					for (const colIndex of mergeCols) {
 						try {
 							const topAddr = `${colLetter(colIndex)}4`;
@@ -627,8 +659,18 @@
 				}
 				// Align special columns (No, Nama Siswa, Jumlah, Capaian Kelas, Ket) to middle vertically and left horizontally
 				try {
-					const ketCol = capaianCol + 1;
-					const specialCols = [1, 2, jumlahCol, capaianCol, ketCol];
+					const levelCol = capaianCol + 1;
+					const ketCol = header.length;
+					const specialCols = [
+						1,
+						2,
+						jumlahCol,
+						capaianCol,
+						levelCol,
+						levelCol + 1,
+						levelCol + 2,
+						ketCol
+					];
 					for (const colIndex of specialCols) {
 						// header alignment
 						headerRow.getCell(colIndex).alignment = {
@@ -732,7 +774,7 @@
 						? kokEndCol + 1
 						: subjectEndCol + 1;
 				const capaianCol = jumlahCol + 1;
-				const ketCol = capaianCol + 1;
+				const ketCol = header.length;
 
 				const studentStartRow = 6; // header is row 5
 				const studentCount =
@@ -740,7 +782,7 @@
 				const rataRowNum = studentStartRow + studentCount; // RATA-RATA row
 
 				// Apply thin border to every cell in the rectangle from A4 to {Ket}{RATA}
-				const topRow = 4; // start above header so merges remain enclosed
+				const topRow = 3; // include the three-level Martikulasi header
 				const bottomRow = rataRowNum;
 				for (let r = topRow; r <= bottomRow; r++) {
 					for (let c = 1; c <= ketCol; c++) {
@@ -762,6 +804,70 @@
 				// non-fatal: continue if border application fails on some worksheet implementations
 				console.warn('failed to apply table borders', e);
 			}
+
+			// Reuse the formerly blank third row for the top-level Martikulasi heading.
+			// Data still starts on row 6, so formulas and signatures retain their references.
+			const akademikCol = header.length - aspekMartikulasi.length;
+			const asramaCol = akademikCol + aspekAkademik.length;
+			const levelCol = akademikCol - 1;
+			for (const column of [1, 2, levelCol - 2, levelCol - 1, levelCol, header.length]) {
+				const label = ws.getCell(4, column).value;
+				ws.unMergeCells(4, column, 5, column);
+				ws.getCell(4, column).value = null;
+				ws.getCell(5, column).value = null;
+				ws.mergeCells(3, column, 5, column);
+				const cell = ws.getCell(3, column);
+				cell.value = label;
+				cell.font = { bold: true };
+				cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+			}
+			for (const group of [
+				{ start: 3, count: subjectCols.length, label: 'Intrakurikuler' },
+				{ start: 3 + subjectCols.length, count: kokNames.length, label: 'Kokurikuler' },
+				{
+					start: 3 + subjectCols.length + kokNames.length,
+					count: ekstrakNames.length,
+					label: 'Ekstrakurikuler'
+				}
+			]) {
+				if (!group.count) continue;
+				const end = group.start + group.count - 1;
+				ws.unMergeCells(4, group.start, 4, end);
+				ws.mergeCells(3, group.start, 4, end);
+				const cell = ws.getCell(3, group.start);
+				cell.value = group.label;
+				cell.font = { bold: true };
+				cell.alignment = { horizontal: 'center', vertical: 'middle' };
+			}
+			for (const group of [
+				{ row: 3, start: akademikCol, count: aspekMartikulasi.length, label: 'Martikulasi' },
+				{ row: 4, start: akademikCol, count: aspekAkademik.length, label: 'Akademik' },
+				{ row: 4, start: asramaCol, count: aspekAsrama.length, label: 'Asrama' }
+			]) {
+				if (!group.count) continue;
+				ws.mergeCells(group.row, group.start, group.row, group.start + group.count - 1);
+				const cell = ws.getCell(group.row, group.start);
+				cell.value = group.label;
+				cell.font = { bold: true };
+				cell.alignment = { horizontal: 'center', vertical: 'middle' };
+			}
+			for (let index = 0; index < aspekMartikulasi.length; index++) {
+				const column = akademikCol + index;
+				ws.getColumn(column).width = 7;
+				ws.getColumn(column).alignment = {
+					horizontal: 'center',
+					vertical: 'middle',
+					wrapText: true
+				};
+				ws.getCell(5, column).alignment = {
+					horizontal: 'center',
+					vertical: 'middle',
+					textRotation: 90
+				};
+			}
+			ws.getRow(3).height = 20;
+			ws.getRow(4).height = 20;
+			ws.getRow(5).height = 180;
 
 			// Write workbook to buffer and trigger download
 			const buffer = await workbook.xlsx.writeBuffer();
@@ -787,6 +893,6 @@
 
 <button
 	class="btn btn-primary btn-soft shadow-none max-sm:w-full"
-	on:click={downloadLeger}
+	onclick={downloadLeger}
 	title="Download Leger (Excel)"><Icon name="download" />Download Leger (.xlsx)</button
 >

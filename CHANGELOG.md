@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.3.5 - 2026-11-13
+
+- Menyesuaikan akses Kurikulum untuk Waka Kurikulum, Admin, dan Kepala Sekolah serta akses input Martikulasi sesuai role dan penugasan.
+- Menambahkan level dan delapan capaian Martikulasi pada rekap akademik serta leger Excel, dengan kelompok Akademik/Asrama dan judul kolom ringkas.
+- Menggunakan periode bulan pada Rekap Absensi Kegiatan; indikator tindak lanjut menghitung seluruh bulan yang dipilih dan tetap membaca presensi historis sebelum tanggal masuk hasil impor.
+- Menyesuaikan akses empat menu peserta didik, memperkuat batas kelas/asrama/anak binaan, serta menolak perubahan data, foto, dan kesehatan dari akun baca-saja.
+- Merapikan ukuran dan susunan kartu dashboard, menghapus Rincian 7 hari, dan menghapus pilihan periode/asrama berulang dari halaman keasramaan.
+- Panduan pembaruan dan hasil pengujian tersedia pada [catatan rilis v2.3.5](docs/releases/v2.3.5.md).
+
 ## 2.3.4 - 2026-11-09
 
 - Merapikan tabel peserta didik, menambahkan akses informasi murid dan nama wali asuh, serta mengikuti pilihan kelas/asrama pada navbar.

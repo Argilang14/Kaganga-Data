@@ -14,7 +14,7 @@ import {
 import { formatNomorSttm, isFormatNomorSttmValid } from '$lib/martikulasi';
 import { getClassEducationIdentity } from '$lib/server/education-units';
 import { composeAlamat, fallbackTempat } from '$lib/server/pdf/preview-utils';
-import { hasSchoolWideOperationalAccess } from '$lib/access-position';
+import { canManageCurriculum } from '$lib/role-policy';
 
 const positiveInteger = (value: FormDataEntryValue | null) => {
 	const parsed = Number(value);
@@ -28,7 +28,7 @@ const clean = (value: FormDataEntryValue | null, max = 1000) => {
 };
 
 function requireManager(locals: App.Locals) {
-	if (!hasSchoolWideOperationalAccess(locals.user)) {
+	if (!canManageCurriculum(locals.user)) {
 		return fail(403, { fail: 'Anda tidak memiliki akses operasional sekolah.' });
 	}
 	return null;
@@ -91,7 +91,7 @@ export async function load({ locals, url, depends }) {
 		settings,
 		pegawaiList,
 		hasilLengkapBelumBernomor: hasilLengkapBelumBernomor.length,
-		canManage: hasSchoolWideOperationalAccess(locals.user)
+		canManage: canManageCurriculum(locals.user)
 	};
 }
 

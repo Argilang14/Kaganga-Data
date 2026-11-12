@@ -52,6 +52,7 @@
 
 	const disableInteraction = $derived(
 		isRestrictedTeacher(data.user) &&
+			!/^\/murid(?:\/(?:semua|pasif|asrama|\d+))?\/?$/.test(page.url.pathname) &&
 			!(isHomeroomTeacher(data.user) && isHomeroomPage(page.url.pathname)) &&
 			isReadonlyPage &&
 			!(
